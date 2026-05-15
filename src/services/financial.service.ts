@@ -62,6 +62,21 @@ class FinancialService {
       customInstallments,
     );
 
+    // Registrar auditoria de criação
+    await this.logPaymentAudit({
+      agreement_id: created.id,
+      action: 'agreement_created',
+      description: `Acordo criado: "${created.title}" — Valor: R$ ${created.total_value.toFixed(2)}, ${created.installments_count} parcela(s)`,
+      new_value: {
+        title: created.title,
+        total_value: created.total_value,
+        fee_value: created.fee_value,
+        installments_count: created.installments_count,
+        payment_type: created.payment_type,
+        status: created.status,
+      },
+    });
+
     return created;
   }
 
@@ -143,6 +158,28 @@ class FinancialService {
       .single();
 
     if (error) throw error;
+
+    // Registrar auditoria de edição
+    await this.logPaymentAudit({
+      agreement_id: id,
+      action: 'agreement_edited',
+      description: `Acordo editado: "${updated.title}"`,
+      old_value: {
+        title: current.title,
+        total_value: current.total_value,
+        fee_value: current.fee_value,
+        installments_count: current.installments_count,
+        status: current.status,
+      },
+      new_value: {
+        title: updated.title,
+        total_value: updated.total_value,
+        fee_value: updated.fee_value,
+        installments_count: updated.installments_count,
+        status: updated.status,
+      },
+    });
+
     return updated;
   }
 
@@ -292,12 +329,25 @@ class FinancialService {
   }
 
   async cancelInstallment(id: string): Promise<void> {
+    const { data: oldData } = await supabase.from('installments').select('*').eq('id', id).single();
+
     const { error } = await supabase
       .from('installments')
       .update({ status: 'cancelado', updated_at: new Date().toISOString() })
       .eq('id', id);
 
     if (error) throw error;
+
+    if (oldData) {
+      await this.logPaymentAudit({
+        agreement_id: oldData.agreement_id,
+        installment_id: id,
+        action: 'installment_cancelled',
+        description: `Parcela ${oldData.installment_number} cancelada — Vencimento: ${oldData.due_date} — Valor: R$ ${oldData.value.toFixed(2)}`,
+        old_value: { status: oldData.status, value: oldData.value, due_date: oldData.due_date },
+        new_value: { status: 'cancelado' },
+      });
+    }
   }
 
   async listInstallments(agreementId: string): Promise<Installment[]> {

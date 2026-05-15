@@ -202,6 +202,17 @@ const MainApp: React.FC = () => {
     return () => navigator.serviceWorker.removeEventListener('message', handler);
   }, [navigateTo]);
 
+  // Cross-module navigation via events
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.NAVIGATE_REQUEST, (data?: { module: string; params?: Record<string, any> }) => {
+      if (data?.module) {
+        safeNavigateTo(data.module as any, data.params);
+      }
+    });
+    return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const handleCloudHeaderState = (event: Event) => {
       const detail = (event as CustomEvent<CloudHeaderStateDetail>).detail;

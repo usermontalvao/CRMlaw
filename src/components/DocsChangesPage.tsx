@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.067': { name: 'Café Enterprise', emoji: '🏛️' },
   '1.10.066': { name: 'Café Sem Overflow', emoji: '📐' },
   '1.10.065': { name: 'Café Header Compacto', emoji: '📱' },
   '1.10.064': { name: 'Café Chat no Lugar', emoji: '💬' },
@@ -771,6 +772,98 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.067',
+    date: '14/05/2026',
+    summary: 'Redesign integral do Módulo Financeiro e da Gestão de Clientes — relatório IRPF com gráficos, máscara monetária BR, auto-import de dados da assinatura digital, avatares com fotos reais e refinamentos cross-module.',
+    modules: [
+      {
+        moduleId: 'financial',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Relatório IRPF reconstruído: branding JURIUS, gráficos com eixos, filtros interativos',
+            description: 'O relatório anual agora abre com header/footer JURIUS, gráfico de barras com gridlines/escala automática, donut de composição por forma de pagamento, ranking Top 5 fontes pagadoras, resumo trimestral e tabelas mês-a-mês. Filtros interativos por forma de pagamento (PIX/Transferência/Dinheiro/Cartão/Cheque) recalculam KPIs e totais em tempo real. Cada documento tem ID único e máscara CPF/CNPJ automática.',
+          },
+          {
+            type: 'fix',
+            title: 'Recibo agora usa valores realmente baixados (paid_value)',
+            description: 'O recibo do acordo completo passa a somar apenas as parcelas efetivamente pagas (paid_value × fee_ratio), não o fee_value total agendado. Forma de pagamento e data são derivadas da baixa mais recente quando o recibo é gerado pelo acordo (sem parcela específica).',
+          },
+          {
+            type: 'feature',
+            title: 'Máscara monetária BR automática nos formulários',
+            description: 'Campos "Valor total" e "Honorários fixos" (novo e editar acordo) agora aplicam formatação em tempo real: 14587 → "145,87" / 1458700 → "14.587,00". Prefixo R$ embutido, tabular-nums para alinhamento.',
+          },
+          {
+            type: 'feature',
+            title: 'Animação líquida nas barras de progresso dos acordos',
+            description: 'As barras de progresso (card + list view) ganharam shimmer líquido que sweep horizontalmente a cada 2.2s.',
+          },
+          {
+            type: 'improvement',
+            title: 'Auditoria integrada: linhas clicáveis navegam para cliente/acordo',
+            description: 'Nome do cliente na auditoria abre a ficha do cliente; título do acordo abre o modal de detalhes do acordo — navegação cross-module via novo evento NAVIGATE_REQUEST.',
+          },
+          {
+            type: 'improvement',
+            title: 'Resumo ao vivo no rodapé do form (command bar)',
+            description: 'Faixa navy embaixo do form mostra em tempo real: Valor / Honorários (verde) / Parcelas / Primeiro vencimento — confirma mentalmente antes de submeter.',
+          },
+        ],
+      },
+      {
+        moduleId: 'clients',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Avatar com fotos reais dos clientes na lista',
+            description: 'A lista carrega a foto do cliente em camadas: 1) photo_path pinado → URL assinada direta; 2) sem pinada → fallback para foto facial da assinatura digital mais recente; 3) sem assinatura → iniciais coloridas determinísticas. Cache em localStorage com TTL 50min + miss cache 24h. Concorrência 12 (pinados) / 4 (busca assinaturas).',
+          },
+          {
+            type: 'feature',
+            title: 'Auto-import de dados da assinatura digital',
+            description: 'No modal de detalhes, quando o cliente tem assinaturas concluídas com email/telefone/CPF que faltam no cadastro, aparece banner azul com botões "Importar tudo" ou importar campo a campo. Filtra automaticamente emails do sistema (@crm.local, public+xxx) e prioriza auth_email (real) sobre placeholders.',
+          },
+          {
+            type: 'improvement',
+            title: 'Identity card unificado no modal de detalhes',
+            description: 'Reconstrução do header do modal: foto + chip CPF/CNPJ clicável (copia) + status pill com dot + meta line (cliente desde, email, telefone, WhatsApp). KPI strip integrado sem cores carregadas. Tabs com underline limpo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Honorários recebidos = paid_value × fee_ratio',
+            description: 'O KPI "Receita total" virou "Honorários recebidos" e agora soma apenas o que foi efetivamente recebido (com ratio do fee_value/total_value), não o valor bruto dos acordos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Gestão de Clientes: KPIs enterprise + busca sempre visível',
+            description: '5 KPI cards consolidados em strip único com divisores verticais (Total/Ativos/PF/PJ/Incompletos) com proporções (% da base). Card Incompletos clicável → filtra a lista. Banners de aviso compactos (150px → 32px single strip). Campo de busca saiu do collapsible para sempre visível.',
+          },
+          {
+            type: 'improvement',
+            title: 'Tabela polida: linhas clicáveis, status com dot, actions uniformes',
+            description: 'Linhas da tabela inteiramente clicáveis para abrir detalhes. Status chip com dot pulsante (Ativo/Inativo/Arquivado). Action buttons ghost com hover semântico (👁 verde / ✏️ azul / 🗑 vermelho). stopPropagation correto em links/checkboxes.',
+          },
+        ],
+      },
+      {
+        moduleId: 'general',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'ESC fecha o modal aberto no topo da pilha',
+            description: 'No módulo financeiro, ESC fecha o modal em ordem de prioridade (pagamento > auditoria > edição > detalhes > novo > IR). Quality-of-life padrão.',
+          },
+          {
+            type: 'improvement',
+            title: 'Navegação cross-module via NAVIGATE_REQUEST',
+            description: 'Novo evento SYSTEM_EVENTS.NAVIGATE_REQUEST permite que qualquer módulo dispare navegação para outro (financeiro → cliente, auditoria → acordo, etc.). App.tsx escuta e chama safeNavigateTo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.066',
     date: '14/05/2026',

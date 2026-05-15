@@ -3,6 +3,7 @@ import {
   FileText, FileCheck, Plus, Clock, FolderPlus,
   Gavel, Loader2, PenTool, Trash2, DollarSign, AlertTriangle,
   Scale, ExternalLink, Search, Printer, CalendarPlus, StickyNote,
+  User, Mail, Phone, Calendar as CalendarIcon, ChevronRight, Building2, MessageCircle, Sparkles, Check,
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -352,6 +353,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [previewSelfie, setPreviewSelfie] = useState<SelfieEntry | null>(null);
   const [selfiePickerOpen, setSelfiePickerOpen] = useState(false);
   const [settingPhoto, setSettingPhoto] = useState(false);
+  const [syncingSignatureData, setSyncingSignatureData] = useState(false);
+  const [signatureSyncDismissed, setSignatureSyncDismissed] = useState(false);
+  const [, forceRefresh] = useState(0);
 
   // ── Petitions
   const [clientPetitions, setClientPetitions] = useState<SavedPetition[]>([]);
@@ -573,7 +577,22 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
   }, [calendarEvents]);
 
-  const totalRevenue = useMemo(() => agreements.reduce((s, a) => s + a.total_value, 0), [agreements]);
+  // Receita = honorários efetivamente recebidos (paid_value × feeRatio das parcelas pagas)
+  const totalRevenue = useMemo(() => {
+    let sum = 0;
+    agreements.forEach((agreement) => {
+      const insts = installmentsMap[agreement.id] || [];
+      insts.filter((i) => i.status === 'pago').forEach((inst) => {
+        const paid = inst.paid_value ?? inst.value ?? 0;
+        const feeRatio =
+          agreement.total_value > 0 && agreement.fee_value > 0
+            ? agreement.fee_value / agreement.total_value
+            : 1;
+        sum += paid * feeRatio;
+      });
+    });
+    return sum;
+  }, [agreements, installmentsMap]);
 
   const paidAmount = useMemo(() => {
     let sum = 0;
@@ -908,73 +927,388 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   return (
     <div className="w-full space-y-4 text-xs sm:text-sm">
 
-      {/* ── KPI Row + Selfie ── */}
-      <div className="flex gap-3 items-start">
-        {/* Foto de perfil */}
-        {selfies.length > 0 && (() => {
-          const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
-          return (
-            <div className="flex-shrink-0 flex flex-col items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPreviewSelfie(profileSelfie)}
-                className="group relative w-[88px] h-[110px] rounded-xl overflow-hidden border-2 border-white shadow-md ring-1 ring-slate-200 hover:ring-orange-300 transition focus:outline-none block"
-                title="Ampliar foto"
-              >
-                <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <svg className="w-6 h-6 text-white drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
-                </div>
-                <span className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1 py-0.5 rounded shadow">ID</span>
-                {selfies.length > 1 && (
-                  <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">+{selfies.length - 1}</span>
-                )}
-              </button>
-              {selfies.length > 1 && (
+      {/* ══════════════════════════════════════════════════════════════════
+          IDENTITY CARD — Foto + Nome + Meta + KPIs integrados
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+        {/* Identidade (foto + nome + meta) */}
+        <div className="flex gap-5 p-5 items-center">
+
+          {/* Avatar */}
+          {selfies.length > 0 ? (() => {
+            const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
+            return (
+              <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setSelfiePickerOpen(true)}
-                  className="text-[10px] font-semibold text-orange-600 hover:text-orange-700 transition"
+                  onClick={() => setPreviewSelfie(profileSelfie)}
+                  className="group relative w-[92px] h-[116px] rounded-xl overflow-hidden ring-1 ring-slate-200 hover:ring-orange-300 shadow-sm hover:shadow-md transition focus:outline-none block"
+                  title="Ampliar foto"
                 >
-                  Gerenciar
+                  <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/0 to-transparent" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <Search className="w-5 h-5 text-white drop-shadow" />
+                  </div>
+                  <span className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow tracking-wider">ID</span>
+                  {selfies.length > 1 && (
+                    <span className="absolute bottom-1.5 right-1.5 bg-black/70 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">+{selfies.length - 1}</span>
+                  )}
                 </button>
+                {selfies.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelfiePickerOpen(true)}
+                    className="text-[10px] font-semibold text-slate-500 hover:text-orange-600 transition"
+                  >
+                    Gerenciar fotos
+                  </button>
+                )}
+              </div>
+            );
+          })() : (() => {
+            // Fallback: avatar com iniciais determinísticas (PF) ou ícone (PJ)
+            const isPj = client.client_type === 'pessoa_juridica';
+            const stringHue = (s: string) => {
+              let h = 0;
+              for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i);
+              return Math.abs(h) % 360;
+            };
+            const initials = (() => {
+              const parts = client.full_name.trim().split(/\s+/).filter(Boolean);
+              if (!parts.length) return '?';
+              if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+              return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+            })();
+            const hue = stringHue(client.full_name);
+            return (
+              <div
+                className="flex-shrink-0 w-[92px] h-[116px] rounded-xl flex items-center justify-center font-bold shadow-sm ring-1 ring-inset"
+                style={isPj
+                  ? { background: '#f1f5f9', color: '#64748b', borderColor: '#e2e8f0' }
+                  : {
+                      background: `hsl(${hue}, 55%, 94%)`,
+                      color: `hsl(${hue}, 50%, 32%)`,
+                      fontSize: 32,
+                      // @ts-ignore inline ring color
+                      '--tw-ring-color': `hsl(${hue}, 50%, 80%)`,
+                    } as React.CSSProperties}
+              >
+                {isPj ? <Building2 className="w-10 h-10" strokeWidth={1.5} /> : initials}
+              </div>
+            );
+          })()}
+
+          {/* Identidade — sem repetir o nome (já está no header do modal) */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Tag CPF/CNPJ + status, em vez de duplicar o nome */}
+              <button
+                type="button"
+                onClick={() => { if (formattedDoc) { void navigator.clipboard.writeText(formattedDoc); } }}
+                className="inline-flex items-center gap-2 group bg-slate-100 hover:bg-slate-200 transition rounded-lg px-3 py-1.5"
+                title="Clique para copiar"
+              >
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
+                <strong className="font-semibold text-slate-900 tabular-nums text-sm">{formattedDoc || '—'}</strong>
+              </button>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' :
+                client.status === 'inativo' ? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' :
+                'bg-red-50 text-red-700 ring-1 ring-red-200'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  client.status === 'ativo' ? 'bg-emerald-500' :
+                  client.status === 'inativo' ? 'bg-slate-400' :
+                  'bg-red-500'
+                }`} />
+                {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">
+                {client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
+              </span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+              {client.created_at && (
+                <span className="inline-flex items-center gap-1.5"><CalendarIcon className="w-3 h-3 text-slate-400" />Cliente desde <strong className="text-slate-700 font-medium">{formatDate(client.created_at)}</strong></span>
+              )}
+              {client.email && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 hover:text-blue-600 transition">
+                    <Mail className="w-3 h-3 text-slate-400" />{client.email}
+                  </a>
+                </>
+              )}
+              {primaryPhone && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <a href={`tel:${primaryPhone}`} className="inline-flex items-center gap-1 hover:text-blue-600 transition" title="Ligar">
+                      <Phone className="w-3 h-3 text-slate-400" />{primaryPhone}
+                    </a>
+                    <a
+                      href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition ml-1"
+                      title="Abrir no WhatsApp"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                    </a>
+                  </span>
+                </>
               )}
             </div>
-          );
-        })()}
+          </div>
+        </div>
 
-        {/* KPI cards */}
-        <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard
-          label="Casos ativos"
-          value={relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}
-          sub={relationsLoading ? undefined : `${activeProcesses.length} processo(s) · ${activeRequirements.length} req.`}
-          color="border-blue-100 bg-blue-50 text-blue-800"
-          icon={Scale}
-        />
-        <KpiCard
-          label="Receita total"
-          value={financialLoading ? '…' : formatCurrency(totalRevenue)}
-          sub={agreements.length > 0 ? `${agreements.length} acordo(s)` : 'Sem acordos'}
-          color="border-emerald-100 bg-emerald-50 text-emerald-800"
-          icon={DollarSign}
-        />
-        <KpiCard
-          label="Prazos pendentes"
-          value={deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}
-          sub={overdueDeadlines.length > 0 ? `${overdueDeadlines.length} vencido(s)` : upcomingDeadlines[0] ? `Próximo: ${formatDate(upcomingDeadlines[0].due_date)}` : 'Em dia'}
-          color={overdueDeadlines.length > 0 ? 'border-rose-100 bg-rose-50 text-rose-800' : 'border-amber-100 bg-amber-50 text-amber-800'}
-          icon={overdueDeadlines.length > 0 ? AlertTriangle : Gavel}
-        />
-        <KpiCard
-          label="Próximo Compromisso"
-          value={nextHearing ? formatDate(nextHearing.date) : '—'}
-          sub={nextHearing ? nextHearing.label : 'Nenhuma agendada'}
-          color="border-violet-100 bg-violet-50 text-violet-800"
-          icon={Gavel}
-        />
-        </div>{/* end KPI grid */}
-      </div>{/* end flex row */}
+        {/* KPI strip — integrado, sem cores carregadas */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-slate-100 divide-x divide-slate-100">
+          {/* Casos ativos */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Casos ativos</span>
+              <Scale className="w-3.5 h-3.5 text-slate-300" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900 tabular-nums leading-none">
+              {relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}
+            </div>
+            {!relationsLoading && (
+              <div className="mt-1.5 text-[10px] text-slate-500">
+                {activeProcesses.length} processo{activeProcesses.length !== 1 ? 's' : ''} · {activeRequirements.length} req.
+              </div>
+            )}
+          </div>
+
+          {/* Honorários recebidos */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Honorários recebidos</span>
+              <DollarSign className="w-3.5 h-3.5 text-emerald-500/70" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-600 tabular-nums leading-none">
+              {financialLoading ? '…' : formatCurrency(totalRevenue)}
+            </div>
+            <div className="mt-1.5 text-[10px] text-slate-500">
+              {totalRevenue > 0
+                ? `${agreements.length} lançamento${agreements.length !== 1 ? 's' : ''} · efetivamente pago`
+                : agreements.length > 0
+                  ? <span className="text-amber-600 font-medium">Aguardando baixa</span>
+                  : 'Sem lançamentos'}
+            </div>
+          </div>
+
+          {/* Prazos pendentes */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Prazos pendentes</span>
+              {overdueDeadlines.length > 0
+                ? <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                : <Clock className="w-3.5 h-3.5 text-slate-300" />}
+            </div>
+            <div className={`text-2xl font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+              {deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}
+            </div>
+            <div className="mt-1.5 text-[10px] text-slate-500">
+              {overdueDeadlines.length > 0
+                ? <span className="text-rose-600 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span>
+                : upcomingDeadlines[0]
+                  ? `Próximo: ${formatDate(upcomingDeadlines[0].due_date)}`
+                  : 'Em dia'}
+            </div>
+          </div>
+
+          {/* Próximo compromisso */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Próximo compromisso</span>
+              <Gavel className="w-3.5 h-3.5 text-slate-300" />
+            </div>
+            <div className="text-base font-bold text-slate-900 leading-tight">
+              {nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-400">—</span>}
+            </div>
+            <div className="mt-1.5 text-[10px] text-slate-500 truncate">
+              {nextHearing ? nextHearing.label : 'Nenhuma agendada'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          AUTO-IMPORT — Dados detectados em assinaturas digitais
+      ══════════════════════════════════════════════════════════════════ */}
+      {!signatureSyncDismissed && (() => {
+        // Detecta emails gerados pelo próprio sistema (não são emails reais do usuário)
+        const isSystemEmail = (raw?: string | null): boolean => {
+          if (!raw) return true;
+          const e = raw.trim().toLowerCase();
+          if (!e || !e.includes('@')) return true;
+          if (/@crm\.local$/i.test(e)) return true;        // placeholders internos
+          if (/^public[+@-]/i.test(e)) return true;        // links públicos
+          if (/@example\./i.test(e)) return true;          // exemplos
+          if (/^noreply@/i.test(e) || /^no-reply@/i.test(e)) return true;
+          return false;
+        };
+
+        const allSigners = signatureRequests.flatMap((r) => r.signers ?? []);
+        const signedSigners = allSigners
+          .filter((s) => s.status === 'signed')
+          .sort((a, b) => new Date(b.signed_at ?? 0).getTime() - new Date(a.signed_at ?? 0).getTime());
+
+        // Procura o melhor email real entre TODOS os signers (não só o mais recente)
+        // Prioridade: auth_email (usado pra logar) > email do cadastro do signer
+        let bestEmail = '';
+        for (const s of signedSigners) {
+          if (!bestEmail && s.auth_email && !isSystemEmail(s.auth_email)) bestEmail = s.auth_email.trim();
+          if (!bestEmail && s.email && !isSystemEmail(s.email)) bestEmail = s.email.trim();
+          if (bestEmail) break;
+        }
+
+        const latest = signedSigners[0];
+        if (!latest && !bestEmail) return null;
+
+        const clientEmail = (client.email || '').trim();
+        const clientPhone = (client.phone || client.mobile || '').trim();
+        const clientCpfDigits = (client.cpf_cnpj || '').replace(/\D/g, '');
+
+        const sigPhone = (latest?.phone || '').trim();
+        const sigCpfDigits = (latest?.cpf || '').replace(/\D/g, '');
+
+        const suggestEmail = !clientEmail && !!bestEmail;
+        const suggestPhone = !clientPhone && !!sigPhone;
+        const suggestCpf = clientCpfDigits.length < 11 && sigCpfDigits.length === 11;
+
+        const sigEmail = bestEmail; // alias pra usar no botão
+
+        if (!suggestEmail && !suggestPhone && !suggestCpf) return null;
+
+        const handleImportAll = async () => {
+          setSyncingSignatureData(true);
+          try {
+            const updates: any = {};
+            if (suggestEmail) updates.email = sigEmail;
+            if (suggestPhone) updates.phone = sigPhone;
+            if (suggestCpf) updates.cpf_cnpj = sigCpfDigits;
+            await clientService.updateClient(client.id, updates);
+            // mutate prop in-place + force refresh (matches existing pattern for photo_path)
+            Object.assign(client, updates);
+            forceRefresh((x) => x + 1);
+          } catch (err: any) {
+            alert(err?.message ?? 'Erro ao importar dados');
+          } finally {
+            setSyncingSignatureData(false);
+          }
+        };
+
+        const handleImportField = async (field: 'email' | 'phone' | 'cpf_cnpj', value: string) => {
+          setSyncingSignatureData(true);
+          try {
+            await clientService.updateClient(client.id, { [field]: value } as any);
+            (client as any)[field] = value;
+            forceRefresh((x) => x + 1);
+          } catch (err: any) {
+            alert(err?.message ?? 'Erro ao importar');
+          } finally {
+            setSyncingSignatureData(false);
+          }
+        };
+
+        return (
+          <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/70 via-white to-white shadow-sm">
+            <div className="flex items-start gap-3 p-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-blue-900">Dados detectados na assinatura digital</p>
+                    <p className="text-[11px] text-blue-700/70 mt-0.5">
+                      Encontramos informações fornecidas pelo cliente ao assinar
+                      {latest.signed_at && (
+                        <> em <strong className="font-semibold">{formatDate(latest.signed_at)}</strong></>
+                      )}. Importe direto para o cadastro.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleImportAll}
+                      disabled={syncingSignatureData}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition disabled:opacity-60"
+                    >
+                      {syncingSignatureData ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      Importar tudo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignatureSyncDismissed(true)}
+                      className="text-blue-500 hover:text-blue-700 hover:bg-blue-100 rounded p-1 transition text-sm"
+                      title="Dispensar"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {suggestEmail && (
+                    <button
+                      type="button"
+                      onClick={() => handleImportField('email', sigEmail)}
+                      disabled={syncingSignatureData}
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      title="Importar apenas este campo"
+                    >
+                      <Mail className="w-3 h-3 text-blue-500" />
+                      <span className="text-slate-500">Email:</span>
+                      <strong className="text-slate-900 font-semibold">{sigEmail}</strong>
+                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                    </button>
+                  )}
+                  {suggestPhone && (
+                    <button
+                      type="button"
+                      onClick={() => handleImportField('phone', sigPhone)}
+                      disabled={syncingSignatureData}
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      title="Importar apenas este campo"
+                    >
+                      <Phone className="w-3 h-3 text-blue-500" />
+                      <span className="text-slate-500">Telefone:</span>
+                      <strong className="text-slate-900 font-semibold tabular-nums">{sigPhone}</strong>
+                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                    </button>
+                  )}
+                  {suggestCpf && (
+                    <button
+                      type="button"
+                      onClick={() => handleImportField('cpf_cnpj', sigCpfDigits)}
+                      disabled={syncingSignatureData}
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      title="Importar apenas este campo"
+                    >
+                      <User className="w-3 h-3 text-blue-500" />
+                      <span className="text-slate-500">CPF:</span>
+                      <strong className="text-slate-900 font-semibold tabular-nums">
+                        {`${sigCpfDigits.slice(0,3)}.${sigCpfDigits.slice(3,6)}.${sigCpfDigits.slice(6,9)}-${sigCpfDigits.slice(9)}`}
+                      </strong>
+                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Preview modal (full-size) ── */}
       {previewSelfie && (
@@ -1091,72 +1425,99 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         );
       })()}
 
-      {/* ── Quick Actions ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-        <div className="flex flex-wrap gap-2">
-          {onCreateProcess && (
-            <button
-              onClick={onCreateProcess}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo Processo
-            </button>
+      {/* ══════════════════════════════════════════════════════════════════
+          QUICK ACTIONS — agrupado e harmonizado
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+
+          {/* Grupo: Criar item jurídico */}
+          {(onCreateProcess || onCreateRequirement || onCreateDeadline) && (
+            <>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-2 select-none">Criar</span>
+              {onCreateProcess && (
+                <button
+                  onClick={onCreateProcess}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
+                >
+                  <Plus className="w-3 h-3" /> Processo
+                </button>
+              )}
+              {onCreateRequirement && (
+                <button
+                  onClick={onCreateRequirement}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
+                >
+                  <Plus className="w-3 h-3" /> Requerimento
+                </button>
+              )}
+              {onCreateDeadline && (
+                <button
+                  onClick={onCreateDeadline}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
+                >
+                  <Plus className="w-3 h-3" /> Prazo
+                </button>
+              )}
+            </>
           )}
-          {onCreateRequirement && (
-            <button
-              onClick={onCreateRequirement}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo Requerimento
-            </button>
-          )}
-          {onCreateDeadline && (
-            <button
-              onClick={onCreateDeadline}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo Prazo
-            </button>
-          )}
+
+          {/* Divisor */}
+          <span className="h-6 w-px bg-slate-200 mx-2" />
+
+          {/* Grupo: Ações destacadas (cores reservadas pra elas) */}
           <button
             onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-amber-200 bg-amber-50 text-sm font-semibold text-amber-700 hover:bg-amber-100 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 hover:border-amber-300 transition"
           >
-            <PenTool className="w-3.5 h-3.5" /> Nova Petição
+            <PenTool className="w-3 h-3" /> Petição
           </button>
           <button
             onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-violet-200 bg-violet-50 text-sm font-semibold text-violet-700 hover:bg-violet-100 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 hover:border-violet-300 transition"
           >
-            <CalendarPlus className="w-3.5 h-3.5" /> Novo Compromisso
+            <CalendarPlus className="w-3 h-3" /> Compromisso
           </button>
+
+          {/* Push to right */}
+          <span className="flex-1" />
+
+          {/* Utility */}
           <button
             onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+            title="Exportar ficha do cliente"
           >
-            <Printer className="w-3.5 h-3.5" /> Exportar
+            <Printer className="w-3 h-3" /> Exportar
           </button>
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* ══════════════════════════════════════════════════════════════════
+          TABS — underline limpo, sem wash de cor no fundo
+      ══════════════════════════════════════════════════════════════════ */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex border-b border-slate-100 overflow-x-auto">
+        <div className="flex border-b border-slate-200 overflow-x-auto bg-slate-50/40">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-shrink-0 px-5 py-3 text-sm font-semibold transition border-b-2 ${
+              className={`flex-shrink-0 px-5 py-3 text-sm font-semibold transition relative ${
                 activeTab === tab.id
-                  ? 'border-orange-500 text-orange-600 bg-orange-50/40'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  ? 'text-orange-600'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'
-                }`}>{tab.count}</span>
+              <span className="inline-flex items-center gap-1.5">
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${
+                    activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
+                  }`}>{tab.count}</span>
+                )}
+              </span>
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-orange-500 rounded-t-full" />
               )}
             </button>
           ))}

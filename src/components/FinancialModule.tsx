@@ -44,6 +44,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { processService } from '../services/process.service';
+import { requirementService } from '../services/requirement.service';
+import type { Process } from '../types/process.types';
+import type { Requirement } from '../types/requirement.types';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import type {
   Agreement,
@@ -149,6 +153,13 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const [isIRModalOpen, setIsIRModalOpen] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [showPaidInstallments, setShowPaidInstallments] = useState(false);
+  const [overpaymentWarning, setOverpaymentWarning] = useState<{ diff: number; scheduled: number } | null>(null);
+
+  // Navigate to another module
+  const navigateToClient = (clientId: string) => {
+    events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'clientes', params: { mode: 'details', entityId: clientId } });
+  };
   const activeAgreementsCount = useMemo(
     () => agreements.filter((agreement) => agreement.status === 'ativo').length,
     [agreements],
@@ -201,6 +212,54 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [auditAgreementId, setAuditAgreementId] = useState<string | null>(null);
   const [auditFilterMonth, setAuditFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  // Estados para selector processo/requerimento
+  const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
+  const [clientRequirements, setClientRequirements] = useState<Requirement[]>([]);
+  const [loadingLinkedEntities, setLoadingLinkedEntities] = useState(false);
+
+  const loadLinkedEntities = useCallback(async (clientId: string) => {
+    if (!clientId) {
+      setClientProcesses([]);
+      setClientRequirements([]);
+      return;
+    }
+    setLoadingLinkedEntities(true);
+    try {
+      const [procs, reqs] = await Promise.all([
+        processService.listProcesses({ client_id: clientId }),
+        requirementService.listRequirements({ client_id: clientId }),
+      ]);
+      setClientProcesses(procs);
+      setClientRequirements(reqs);
+    } catch {
+      setClientProcesses([]);
+      setClientRequirements([]);
+    } finally {
+      setLoadingLinkedEntities(false);
+    }
+  }, []);
+
+  const practiceLabelMap: Record<string, string> = {
+    trabalhista: 'Trabalhista',
+    familia: 'Família',
+    consumidor: 'Consumidor',
+    previdenciario: 'Previdenciário',
+    civel: 'Cível',
+  };
+  const benefitLabelMap: Record<string, string> = {
+    bpc_loas: 'BPC/LOAS',
+    bpc_loas_deficiencia: 'BPC – Deficiência',
+    bpc_loas_idoso: 'BPC – Idoso',
+    aposentadoria_tempo: 'Aposen. Tempo',
+    aposentadoria_idade: 'Aposen. Idade',
+    aposentadoria_invalidez: 'Aposen. Invalidez',
+    auxilio_acidente: 'Auxílio Acidente',
+    auxilio_doenca: 'Auxílio Doença',
+    pensao_morte: 'Pensão por Morte',
+    salario_maternidade: 'Sal. Maternidade',
+    outro: 'Outro',
+  };
 
   const focusAgreementConsumedRef = React.useRef<string | null>(null);
 
@@ -449,6 +508,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         ? customFromAgreement.map((item) => ({ dueDate: item.due_date, value: item.value.toFixed(2) }))
         : installmentsData.map((inst) => ({ dueDate: inst.due_date, value: inst.value.toFixed(2) }));
 
+      loadLinkedEntities(agreement.client_id);
       setEditForm({
         clientId: agreement.client_id,
         processId: agreement.process_id || '',
@@ -457,10 +517,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         notes: agreement.notes || '',
         agreementDate: agreement.agreement_date || today,
         status: agreement.status,
-        totalValue: agreement.total_value.toString(),
+        totalValue: formatCurrencyInput(Math.round((agreement.total_value || 0) * 100).toString()),
         feeType: agreement.fee_type,
         feePercentage: agreement.fee_percentage?.toString() || '',
-        feeFixedValue: agreement.fee_fixed_value?.toString() || '',
+        feeFixedValue: agreement.fee_fixed_value ? formatCurrencyInput(Math.round(agreement.fee_fixed_value * 100).toString()) : '',
         paymentType: agreement.payment_type,
         installmentsCount: agreement.installments_count.toString(),
         firstDueDate: agreement.first_due_date,
@@ -482,6 +542,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
   const handleEditChange = (field: keyof typeof editForm, value: string) => {
     setEditForm((prev) => {
+      if (field === 'clientId') {
+        loadLinkedEntities(value);
+        return { ...prev, clientId: value, processId: '' };
+      }
       if (field === 'paymentType') {
         const nextPayment = value as 'installments' | 'upfront';
         return {
@@ -500,6 +564,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           feePercentage: nextType === 'percentage' ? (prev.feePercentage || '40') : '',
           feeFixedValue: nextType === 'fixed' ? (prev.feeFixedValue || '') : '',
         };
+      }
+
+      if (['totalValue', 'feeFixedValue'].includes(field as string)) {
+        return { ...prev, [field]: formatCurrencyInput(value) };
       }
 
       return {
@@ -522,7 +590,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
       const installments = Array.from({ length: count }, (_, index) => ({
         dueDate: index === 0 ? prev.firstDueDate : '',
-        value: prev.totalValue && count ? (Number(prev.totalValue) / count).toFixed(2) : '',
+        value: prev.totalValue && count ? (parseCurrencyToNumber(prev.totalValue) / count).toFixed(2) : '',
       }));
 
       return { ...prev, customInstallments: installments };
@@ -545,7 +613,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         return prev;
       }
 
-      const baseValue = Number(prev.totalValue) / count;
+      const baseValue = parseCurrencyToNumber(prev.totalValue) / count;
       return {
         ...prev,
         customInstallments: prev.customInstallments.map((item, index) => ({
@@ -570,7 +638,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       return;
     }
 
-    if (!editForm.totalValue || Number(editForm.totalValue) <= 0) {
+    if (!editForm.totalValue || parseCurrencyToNumber(editForm.totalValue) <= 0) {
       setEditError('Informe um valor total válido');
       return;
     }
@@ -580,7 +648,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       return;
     }
 
-    if (editForm.feeType === 'fixed' && (!editForm.feeFixedValue || Number(editForm.feeFixedValue) <= 0)) {
+    if (editForm.feeType === 'fixed' && (!editForm.feeFixedValue || parseCurrencyToNumber(editForm.feeFixedValue) <= 0)) {
       setEditError('Informe o valor fixo dos honorários');
       return;
     }
@@ -697,8 +765,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     }));
   };
 
+  // Campos monetários que aplicam máscara BR (ex: 14587 → "145,87"; 1458700 → "14.587,00")
+  const CURRENCY_FIELDS = new Set(['totalValue', 'feeFixedValue']);
+
   const handleChange = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => {
+      if (field === 'clientId') {
+        loadLinkedEntities(value);
+        return { ...prev, clientId: value, processId: '' };
+      }
       if (field === 'paymentType') {
         return {
           ...prev,
@@ -715,6 +790,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           feeFixedValue: value === 'fixed' ? (prev.feeFixedValue || '') : '',
         };
       }
+      if (CURRENCY_FIELDS.has(field as string)) {
+        return { ...prev, [field]: formatCurrencyInput(value) };
+      }
       return { ...prev, [field]: value };
     });
   };
@@ -722,11 +800,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const validateForm = () => {
     if (!formData.clientId) return 'Selecione um cliente';
     if (!formData.title.trim()) return 'Informe o título do acordo';
-    if (!formData.totalValue || Number(formData.totalValue) <= 0) return 'Informe um valor total válido';
+    if (!formData.totalValue || parseCurrencyToNumber(formData.totalValue) <= 0) return 'Informe um valor total válido';
     if (formData.feeType === 'percentage') {
       if (!formData.feePercentage || Number(formData.feePercentage) <= 0) return 'Informe o percentual de honorários';
     } else {
-      if (!formData.feeFixedValue || Number(formData.feeFixedValue) <= 0) return 'Informe o valor fixo de honorários';
+      if (!formData.feeFixedValue || parseCurrencyToNumber(formData.feeFixedValue) <= 0) return 'Informe o valor fixo de honorários';
     }
     if (formData.paymentType === 'upfront' && !formData.firstDueDate) return 'Informe a data do pagamento';
     if (formData.paymentType === 'installments' && !formData.firstDueDate && !formData.customInstallments.length) return 'Informe a data da primeira parcela';
@@ -840,6 +918,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const handleClosePaymentModal = () => {
     setIsPaymentModalOpen(false);
     setSelectedInstallment(null);
+    setOverpaymentWarning(null);
     setPaymentData({
       paymentDate: today,
       paymentMethod: 'pix',
@@ -850,17 +929,21 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
   const handleConfirmPayment = async () => {
     if (!selectedInstallment || !selectedAgreement) return;
-    
-    if (!paymentData.paidValue || Number(paymentData.paidValue) <= 0) {
+
+    const parsedValue = parsePaidValue(paymentData.paidValue);
+    if (!paymentData.paidValue || parsedValue <= 0) {
       toast.error('Erro', 'Informe o valor pago');
       return;
     }
+
+    // Registra o valor real pago (mesmo que diferente do agendado)
+    // O paid_value sempre reflete a realidade da transação
 
     try {
       await financialService.payInstallment(selectedInstallment.id, {
         payment_date: paymentData.paymentDate,
         payment_method: paymentData.paymentMethod,
-        paid_value: Number(paymentData.paidValue),
+        paid_value: parsedValue,
         notes: paymentData.notes || undefined,
       });
 
@@ -902,10 +985,39 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const handleOpenAuditModal = async (agreementId: string) => {
     setAuditAgreementId(agreementId);
     setIsAuditModalOpen(true);
+    // Reseta o filtro de mês para o mês atual e carrega com contexto do acordo
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    setAuditFilterMonth(currentMonth);
+    await loadAuditByMonth(currentMonth, agreementId);
+  };
+
+  const loadAuditByMonth = async (month: string, forAgreementId?: string | null) => {
+    // forAgreementId permite sobrepor o contexto; undefined = usar auditAgreementId atual
+    const targetAgreementId = forAgreementId !== undefined ? forAgreementId : auditAgreementId;
     setLoadingAudit(true);
     try {
-      const logs = await financialService.getPaymentAuditLog(agreementId);
-      setAuditLogs(logs);
+      if (targetAgreementId) {
+        // Contexto de acordo específico: busca todos os logs do acordo e filtra por mês no client
+        const logs = await financialService.getPaymentAuditLog(targetAgreementId);
+        const [y, m] = month.split('-').map(Number);
+        const monthStart = new Date(y, m - 1, 1);
+        const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
+        const filtered = logs.filter((l) => {
+          const d = new Date(l.created_at);
+          return d >= monthStart && d <= monthEnd;
+        });
+        setAuditLogs(filtered);
+      } else {
+        const startDate = `${month}-01T00:00:00`;
+        const endDate = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0);
+        const endDateStr = `${month}-${endDate.getDate().toString().padStart(2, '0')}T23:59:59`;
+        const logs = await financialService.getAllPaymentAuditLogs({
+          start_date: startDate,
+          end_date: endDateStr,
+          limit: 200,
+        });
+        setAuditLogs(logs);
+      }
     } catch (err) {
       console.error('Erro ao carregar auditoria:', err);
       toast.error('Erro ao carregar histórico de auditoria');
@@ -914,26 +1026,22 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     }
   };
 
-  const loadAuditByMonth = async (month: string) => {
-    setLoadingAudit(true);
-    try {
-      const startDate = `${month}-01T00:00:00`;
-      const endDate = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0);
-      const endDateStr = `${month}-${endDate.getDate().toString().padStart(2, '0')}T23:59:59`;
-      
-      const logs = await financialService.getAllPaymentAuditLogs({
-        start_date: startDate,
-        end_date: endDateStr,
-        limit: 100,
-      });
-      setAuditLogs(logs);
-    } catch (err) {
-      console.error('Erro ao carregar auditoria:', err);
-      toast.error('Erro ao carregar histórico de auditoria');
-    } finally {
-      setLoadingAudit(false);
-    }
-  };
+  // ESC fecha o modal aberto no topo da pilha (mais novo)
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Ordem de prioridade: payment > audit > edit > details > new > IR
+      if (isPaymentModalOpen) { handleClosePaymentModal(); }
+      else if (isAuditModalOpen) { setIsAuditModalOpen(false); setAuditLogs([]); setAuditAgreementId(null); }
+      else if (isEditModalOpen) { handleCloseEditModal(); }
+      else if (isDetailsModalOpen) { handleCloseDetails(); }
+      else if (isModalOpen) { handleCloseModal(); }
+      else if (isIRModalOpen) { setIsIRModalOpen(false); }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaymentModalOpen, isAuditModalOpen, isEditModalOpen, isDetailsModalOpen, isModalOpen, isIRModalOpen]);
 
   const handleCloseAuditModal = () => {
     setIsAuditModalOpen(false);
@@ -1011,16 +1119,31 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   };
 
   // Calcular totais da auditoria filtrada (incluindo honorários proporcionais)
+  /** Resolve o valor pago de um log de auditoria.
+   *  Tenta: new_value.paid_value → installment.paid_value → installment.value (fallback)
+   *  Necessário porque registros antigos foram gravados com paid_value=null (bug de parse pt-BR). */
+  const resolveAuditPaidValue = useCallback((log: PaymentAuditLog): number => {
+    const raw = log.new_value?.paid_value;
+    if (typeof raw === 'number' && !isNaN(raw) && raw > 0) return raw;
+    if (log.installment_id) {
+      const inst = allInstallments.find(i => i.id === log.installment_id);
+      if (inst) {
+        if (typeof inst.paid_value === 'number' && inst.paid_value > 0) return inst.paid_value;
+        if (typeof inst.value === 'number' && inst.value > 0) return inst.value;
+      }
+    }
+    return 0;
+  }, [allInstallments]);
+
   const auditTotals = useMemo(() => {
     let total = 0;
     let totalHonorarios = 0;
 
     auditLogs.forEach((log) => {
-      const paidValue = log.new_value?.paid_value;
-      if (typeof paidValue === 'number') {
+      if (log.action !== 'payment_registered') return; // só somar baixas reais
+      const paidValue = resolveAuditPaidValue(log);
+      if (paidValue > 0) {
         total += paidValue;
-
-        // Calcular honorários proporcionais a partir do acordo
         const agreement = agreements.find(a => a.id === log.agreement_id);
         if (agreement && agreement.total_value > 0) {
           const ratio = agreement.fee_value / agreement.total_value;
@@ -1029,8 +1152,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       }
     });
 
-    return { count: auditLogs.length, total, totalHonorarios };
-  }, [auditLogs, agreements]);
+    return { count: auditLogs.filter(l => l.action === 'payment_registered').length, total, totalHonorarios };
+  }, [auditLogs, agreements, resolveAuditPaidValue]);
 
   const handleExportMonthlyReport = () => {
     const monthLabel = formatMonthYear(activeMonth).replace(/^./, (char) => char.toUpperCase());
@@ -1317,359 +1440,659 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
   const handleGenerateIRReport = async (year: number) => {
     try {
-      // Buscar todos os pagamentos do ano
       const yearStart = `${year}-01-01`;
-      const yearEnd = `${year}-12-31`;
-      
-      const allInstallmentsYear = allInstallments.filter(inst => 
-        inst.status === 'pago' && 
-        inst.payment_date && 
-        inst.payment_date >= yearStart && 
+      const yearEnd   = `${year}-12-31`;
+
+      const allInstallmentsYear = allInstallments.filter(inst =>
+        inst.status === 'pago' &&
+        inst.payment_date &&
+        inst.payment_date >= yearStart &&
         inst.payment_date <= yearEnd
       );
 
-      // Agrupar por cliente
-      const clientPayments = new Map<string, { client: any; payments: typeof allInstallmentsYear; total: number }>();
-      
-      allInstallmentsYear.forEach(inst => {
-        if (!inst.agreement) return;
-        const clientId = inst.agreement.client_id;
-        const client = clients.find(c => c.id === clientId);
-        
-        if (!clientPayments.has(clientId)) {
-          clientPayments.set(clientId, {
-            client,
-            payments: [],
-            total: 0
-          });
+      // Honorários proporcionais ao que foi efetivamente baixado
+      const computeFee = (inst: any): number => {
+        const ag = inst?.agreement;
+        if (!ag) return 0;
+        const paid = inst.paid_value ?? inst.value ?? 0;
+        if (ag.total_value > 0 && ag.fee_value > 0) {
+          return paid * (ag.fee_value / ag.total_value);
         }
-        
-        const entry = clientPayments.get(clientId)!;
-        const feeValue = inst.agreement.fee_value / inst.agreement.installments_count;
-        entry.payments.push(inst);
-        entry.total += feeValue;
+        return ag.installments_count > 0
+          ? ag.fee_value / ag.installments_count
+          : ag.fee_value;
+      };
+
+      const monthNames  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const monthShort  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+      const monthlyData = Array.from({ length: 12 }, (_, i) => {
+        const insts = allInstallmentsYear.filter(inst => {
+          if (!inst.payment_date) return false;
+          return new Date(inst.payment_date + 'T12:00:00').getMonth() === i;
+        });
+        return {
+          index: i,
+          name : monthNames[i],
+          short: monthShort[i],
+          count: insts.length,
+          total: insts.reduce((s, inst) => s + computeFee(inst), 0),
+          insts,
+        };
       });
 
-      // Dados fixos do advogado
-      const lawyerName = 'PEDRO RODRIGUES MONTALVAO NETO';
-      const lawyerOab = '30.021';
+      const totalHonorarios = monthlyData.reduce((s, m) => s + m.total, 0);
+      const totalPayments   = allInstallmentsYear.length;
+
+      // Mapa por cliente
+      const clientMap = new Map<string, { name: string; cpf: string; email: string; count: number; total: number }>();
+      allInstallmentsYear.forEach(inst => {
+        if (!inst.agreement) return;
+        const cid    = inst.agreement.client_id;
+        const client = clients.find(c => c.id === cid);
+        const fee    = computeFee(inst);
+        if (!clientMap.has(cid)) {
+          clientMap.set(cid, {
+            name : client?.full_name || (client as any)?.name || 'Desconhecido',
+            cpf  : client?.cpf_cnpj || '—',
+            email: (client as any)?.email || '',
+            count: 0,
+            total: 0,
+          });
+        }
+        const e = clientMap.get(cid)!;
+        e.count++;
+        e.total += fee;
+      });
+
+      const lawyerName  = 'PEDRO RODRIGUES MONTALVAO NETO';
+      const lawyerOab   = '30.021';
       const lawyerState = 'MT';
       const lawyerEmail = 'pedro@advcuiaba.com';
+      const issueDateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
-      const totalReceived = Array.from(clientPayments.values()).reduce((sum, entry) => sum + entry.total, 0);
-      const issueDate = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+      // Helpers para o HTML
+      const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const fmtShortVal = (v: number) => {
+        if (v === 0) return '';
+        if (v >= 1000) return 'R$ ' + (v / 1000).toFixed(1).replace('.', ',') + 'k';
+        return 'R$ ' + Math.round(v);
+      };
+      const methodLabelFn = (m?: string | null) => {
+        const labels: Record<string, string> = { pix: 'PIX', transferencia: 'Transferência', dinheiro: 'Dinheiro', cartao_credito: 'Cartão Crédito', cartao_debito: 'Cartão Débito', cheque: 'Cheque' };
+        return m ? (labels[m] ?? m) : '—';
+      };
+      // Máscara CPF (000.000.000-00) / CNPJ (00.000.000/0000-00)
+      const maskDoc = (raw?: string | null): string => {
+        if (!raw) return '—';
+        const digits = String(raw).replace(/\D/g, '');
+        if (digits.length === 11) {
+          return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+        }
+        if (digits.length === 14) {
+          return `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5,8)}/${digits.slice(8,12)}-${digits.slice(12)}`;
+        }
+        return String(raw) || '—';
+      };
+      // "Nice" max for chart Y-axis (rounds up to clean number)
+      const niceMax = (val: number): number => {
+        if (val <= 0) return 1000;
+        const mag = Math.pow(10, Math.floor(Math.log10(val)));
+        const norm = val / mag;
+        let n: number;
+        if (norm <= 1) n = 1; else if (norm <= 2) n = 2;
+        else if (norm <= 2.5) n = 2.5; else if (norm <= 5) n = 5; else n = 10;
+        return n * mag;
+      };
+
+      // ── SVG Bar Chart ── Executive style com eixos e gridlines ─────
+      const chartW       = 880;
+      const chartH       = 320;
+      const padL         = 78;     // y-axis labels
+      const padR         = 24;
+      const padT         = 28;     // top: value labels
+      const padB         = 56;     // bottom: x-labels + count
+      const plotW        = chartW - padL - padR;
+      const plotH        = chartH - padT - padB;
+      const plotBottomY  = padT + plotH;
+      const slotW        = plotW / 12;
+      const barW         = 38;
+      const rawMax       = Math.max(...monthlyData.map(m => m.total), 0);
+      const yMax         = niceMax(rawMax);
+      const maxMonthIdx  = monthlyData.reduce((bi, m, i, arr) => m.total > arr[bi].total ? i : bi, 0);
+
+      // Gridlines (5 níveis: 0, 25%, 50%, 75%, 100%)
+      const gridLevels = [0, 0.25, 0.5, 0.75, 1];
+      const svgGridLines = gridLevels.map(lvl => {
+        const y = plotBottomY - lvl * plotH;
+        const val = yMax * lvl;
+        const label = lvl === 0 ? 'R$ 0' : 'R$ ' + fmtShortVal(val);
+        return `
+          <line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="#eef2f6" stroke-width="1" stroke-dasharray="${lvl === 0 ? '0' : '3,3'}"/>
+          <text x="${padL - 10}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="#94a3b8" font-family="Inter,system-ui,sans-serif" font-weight="500">${label}</text>
+        `;
+      }).join('');
+
+      const svgBarsHTML = monthlyData.map((m, i) => {
+        const has = m.total > 0;
+        const slotX = padL + i * slotW;
+        const bx = slotX + (slotW - barW) / 2;
+        const bh = has ? Math.max((m.total / yMax) * plotH, 3) : 0;
+        const by = plotBottomY - bh;
+        const isMax = has && i === maxMonthIdx && rawMax > 0;
+        const fill = isMax ? '#0e2a47' : has ? '#3b5b7d' : '#f1f5f9';
+        const labelY = by - 7;
+        return [
+          `<rect x="${bx}" y="${by}" width="${barW}" height="${bh}" rx="2" fill="${fill}"/>`,
+          has ? `<text x="${bx + barW/2}" y="${labelY}" text-anchor="middle" font-size="10" fill="#0e2a47" font-weight="700" font-family="Inter,system-ui,sans-serif">${fmtR(m.total)}</text>` : '',
+          `<text x="${slotX + slotW/2}" y="${plotBottomY + 18}" text-anchor="middle" font-size="11" fill="${has ? '#0f172a' : '#94a3b8'}" font-weight="${has ? '600' : '400'}" font-family="Inter,system-ui,sans-serif" letter-spacing="0.05em">${m.short.toUpperCase()}</text>`,
+          has ? `<text x="${slotX + slotW/2}" y="${plotBottomY + 33}" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="Inter,system-ui,sans-serif">${m.count} ${m.count === 1 ? 'baixa' : 'baixas'}</text>` : '',
+        ].join('');
+      }).join('');
+
+      // Baseline (eixo X)
+      const svgBaseline = `<line x1="${padL}" y1="${plotBottomY}" x2="${padL + plotW}" y2="${plotBottomY}" stroke="#cbd5e1" stroke-width="1"/>`;
+
+      const activeMonths = monthlyData.filter(m => m.count > 0);
+
+      // ── Ticket médio ───────────────────────────────────────────────
+      const ticketMedio = totalPayments > 0 ? totalHonorarios / totalPayments : 0;
+
+      // ── Agregação por forma de pagamento ───────────────────────────
+      const methodKeys = ['pix','transferencia','dinheiro','cartao_credito','cartao_debito','cheque','outros'];
+      const methodLabelMap: Record<string, string> = { pix: 'PIX', transferencia: 'Transferência', dinheiro: 'Dinheiro', cartao_credito: 'Cartão Crédito', cartao_debito: 'Cartão Débito', cheque: 'Cheque', outros: 'Outros' };
+      const methodPalette: Record<string, string> = { pix: '#0e2a47', transferencia: '#2d4a6f', dinheiro: '#5774a0', cartao_credito: '#7e95bc', cartao_debito: '#a5b6cf', cheque: '#c9d2e0', outros: '#dee5ee' };
+      const methodAgg = new Map<string, { total: number; count: number }>();
+      allInstallmentsYear.forEach(inst => {
+        const raw = (inst as any).payment_method;
+        const key = (raw && methodKeys.includes(raw)) ? raw : 'outros';
+        const cur = methodAgg.get(key) ?? { total: 0, count: 0 };
+        cur.total += computeFee(inst);
+        cur.count += 1;
+        methodAgg.set(key, cur);
+      });
+      const sortedMethods = methodKeys
+        .filter(k => methodAgg.has(k) && methodAgg.get(k)!.total > 0)
+        .map(k => ({ key: k, ...methodAgg.get(k)! }))
+        .sort((a, b) => b.total - a.total);
+
+      // ── Donut chart de métodos ─────────────────────────────────────
+      const donutR  = 64;
+      const donutSW = 22;
+      const donutCx = 90;
+      const donutCy = 90;
+      const donutC  = 2 * Math.PI * donutR;
+      let donutOff  = 0;
+      const donutArcs = sortedMethods.map(m => {
+        const pct = totalHonorarios > 0 ? m.total / totalHonorarios : 0;
+        const dash = pct * donutC;
+        const arc = `<circle cx="${donutCx}" cy="${donutCy}" r="${donutR}" stroke="${methodPalette[m.key] ?? '#94a3b8'}" stroke-width="${donutSW}" fill="none" stroke-dasharray="${dash.toFixed(2)} ${(donutC - dash).toFixed(2)}" stroke-dashoffset="${(-donutOff).toFixed(2)}" transform="rotate(-90 ${donutCx} ${donutCy})"/>`;
+        donutOff += dash;
+        return arc;
+      }).join('');
+      const donutLegendHTML = sortedMethods.map(m => {
+        const pct = totalHonorarios > 0 ? (m.total / totalHonorarios * 100) : 0;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9;">
+          <span style="display:inline-block;width:10px;height:10px;background:${methodPalette[m.key] ?? '#94a3b8'};flex-shrink:0;"></span>
+          <span style="flex:1;font-size:11.5px;color:#334155;font-weight:500;">${methodLabelMap[m.key] ?? m.key}</span>
+          <span style="font-size:10.5px;color:#94a3b8;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;">${pct.toFixed(1)}%</span>
+          <span style="font-size:11.5px;color:#0e2a47;font-weight:600;font-variant-numeric:tabular-nums;min-width:90px;text-align:right;">${fmtR(m.total)}</span>
+        </div>`;
+      }).join('');
+
+      // ── Trimestres ─────────────────────────────────────────────────
+      const quarters = [
+        { name: 'Q1', range: 'Jan – Mar', months: [0,1,2] },
+        { name: 'Q2', range: 'Abr – Jun', months: [3,4,5] },
+        { name: 'Q3', range: 'Jul – Set', months: [6,7,8] },
+        { name: 'Q4', range: 'Out – Dez', months: [9,10,11] },
+      ].map(q => {
+        const insts = q.months.flatMap(mi => monthlyData[mi].insts);
+        const total = insts.reduce((s, inst) => s + computeFee(inst), 0);
+        return { ...q, count: insts.length, total };
+      });
+      const qMax = Math.max(...quarters.map(q => q.total), 1);
+      const quartersHTML = quarters.map(q => {
+        const pct = (q.total / qMax) * 100;
+        const has = q.total > 0;
+        return `<div style="padding:18px 20px;border-right:1px solid #e2e8f0;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:11px;font-weight:700;color:#0e2a47;letter-spacing:.05em;">${q.name}</span>
+            <span style="font-size:9.5px;color:#94a3b8;letter-spacing:.05em;">${q.range}</span>
+          </div>
+          <div class="serif" style="font-size:17px;font-weight:600;color:${has ? '#0e2a47' : '#cbd5e1'};letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.1;">${fmtR(q.total)}</div>
+          <div style="margin-top:5px;font-size:10px;color:#64748b;">${q.count} ${q.count === 1 ? 'baixa' : 'baixas'}</div>
+          <div style="margin-top:8px;height:3px;background:#f1f5f9;overflow:hidden;">
+            <div style="height:100%;width:${pct.toFixed(1)}%;background:${has ? '#0e2a47' : 'transparent'};"></div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // ── Top 5 fontes pagadoras ─────────────────────────────────────
+      const sortedClients = Array.from(clientMap.values()).sort((a, b) => b.total - a.total);
+      const top5 = sortedClients.slice(0, 5);
+      const restClients = sortedClients.slice(5);
+      const restTotal = restClients.reduce((s, e) => s + e.total, 0);
+      const restCount = restClients.reduce((s, e) => s + e.count, 0);
+      const top5HTML = top5.map((e, i) => {
+        const pct = totalHonorarios > 0 ? (e.total / totalHonorarios * 100) : 0;
+        return `<div style="display:grid;grid-template-columns:22px minmax(0,1fr) 90px;column-gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9;">
+          <span class="serif" style="font-size:16px;font-weight:600;color:#94a3b8;letter-spacing:-.02em;font-variant-numeric:tabular-nums;">${String(i + 1).padStart(2, '0')}</span>
+          <div style="min-width:0;overflow:hidden;">
+            <div style="font-size:11.5px;font-weight:600;color:#0e2a47;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.name}</div>
+            <div style="margin-top:2px;display:flex;align-items:center;gap:8px;font-size:10px;color:#94a3b8;">
+              <span style="font-variant-numeric:tabular-nums;white-space:nowrap;">${maskDoc(e.cpf)}</span>
+              <span style="opacity:.5;">·</span>
+              <span style="white-space:nowrap;">${e.count} ${e.count === 1 ? 'baixa' : 'baixas'}</span>
+              <span style="opacity:.5;">·</span>
+              <span style="font-variant-numeric:tabular-nums;color:#64748b;font-weight:500;">${pct.toFixed(1)}%</span>
+            </div>
+            <div style="margin-top:6px;height:3px;background:#f1f5f9;position:relative;overflow:hidden;">
+              <div style="position:absolute;inset:0;width:${pct.toFixed(1)}%;background:#0e2a47;"></div>
+            </div>
+          </div>
+          <div class="num serif" style="font-size:13px;font-weight:600;color:#0e2a47;text-align:right;letter-spacing:-.01em;white-space:nowrap;">${fmtR(e.total)}</div>
+        </div>`;
+      }).join('');
+      const restRowHTML = restClients.length > 0 ? `<div style="display:grid;grid-template-columns:22px minmax(0,1fr) 90px;column-gap:12px;align-items:center;padding:12px 0 4px;font-size:11px;color:#64748b;">
+        <span style="text-align:center;">+</span>
+        <span style="font-style:italic;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Outros ${restClients.length} ${restClients.length === 1 ? 'cliente' : 'clientes'} · ${restCount} ${restCount === 1 ? 'baixa' : 'baixas'}</span>
+        <span class="num" style="text-align:right;font-weight:600;color:#475569;white-space:nowrap;">${fmtR(restTotal)}</span>
+      </div>` : '';
+
+      // ── ID único do documento ──────────────────────────────────────
+      const docId = `IRPF-${year}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      // ── Monthly detail rows ────────────────────────────────────────
+      const monthlyTablesHTML = activeMonths.map(m => {
+        const rowsHTML = m.insts
+          .slice()
+          .sort((a, b) => (a.payment_date ?? '').localeCompare(b.payment_date ?? ''))
+          .map(inst => {
+            if (!inst.agreement) return '';
+            const cid    = inst.agreement.client_id;
+            const client = clients.find(c => c.id === cid);
+            const cName  = client?.full_name || (client as any)?.name || '—';
+            const cCpf   = maskDoc(client?.cpf_cnpj || (client as any)?.cpf || (client as any)?.document);
+            const dateStr = inst.payment_date
+              ? new Date(inst.payment_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              : '—';
+            const rawMeth = (inst as any).payment_method;
+            const methKey = (rawMeth && methodKeys.includes(rawMeth)) ? rawMeth : 'outros';
+            const fee  = computeFee(inst);
+            return `<tr data-method="${methKey}" data-value="${fee.toFixed(4)}">
+              <td style="color:#475569;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${dateStr}</td>
+              <td style="font-weight:500;color:#0f172a;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${cName}</td>
+              <td style="color:#475569;font-size:11px;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${cCpf}</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:11px;">
+                <span style="display:inline-flex;align-items:center;gap:6px;">
+                  <span style="display:inline-block;width:6px;height:6px;background:${methodPalette[methKey] ?? '#94a3b8'};"></span>
+                  ${methodLabelFn(rawMeth)}
+                </span>
+              </td>
+              <td style="text-align:right;font-weight:600;color:#0e2a47;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:12px;">${fmtR(fee)}</td>
+            </tr>`;
+          }).join('');
+        return `
+        <div data-month-block style="margin-bottom:24px;page-break-inside:avoid;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 0 8px;border-bottom:2px solid #0e2a47;margin-bottom:0;">
+            <div style="display:flex;align-items:baseline;gap:14px;">
+              <span style="font-size:14px;font-weight:700;color:#0e2a47;letter-spacing:-.01em;">${m.name}</span>
+              <span data-month-count style="font-size:10px;color:#94a3b8;font-weight:500;letter-spacing:.08em;text-transform:uppercase;">${year} · ${m.count} ${m.count === 1 ? 'baixa' : 'baixas'}</span>
+            </div>
+            <span data-month-total style="font-size:15px;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;letter-spacing:-.01em;">${fmtR(m.total)}</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-top:0;">
+            <thead>
+              <tr>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Data</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">CPF / CNPJ</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Forma de pagamento</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários (R$)</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHTML}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" style="text-align:right;font-size:10px;color:#475569;font-weight:600;padding:10px 14px;letter-spacing:.06em;text-transform:uppercase;">Subtotal</td>
+                <td data-month-subtotal style="text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:13px;border-top:1px solid #0e2a47;">${fmtR(m.total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>`;
+      }).join('');
+
+      // ── Client summary rows ────────────────────────────────────────
+      const clientRowsHTML = Array.from(clientMap.values())
+        .sort((a, b) => b.total - a.total)
+        .map((e) => `<tr>
+          <td style="padding:11px 16px;font-weight:500;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${e.name}</td>
+          <td style="padding:11px 16px;font-size:11px;color:#475569;font-variant-numeric:tabular-nums;border-bottom:1px solid #f1f5f9;">${maskDoc(e.cpf)}</td>
+          <td style="padding:11px 16px;text-align:center;color:#475569;font-size:12px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${e.count}</td>
+          <td style="padding:11px 16px;text-align:right;font-weight:600;color:#0e2a47;font-variant-numeric:tabular-nums;font-size:12.5px;border-bottom:1px solid #f1f5f9;">${fmtR(e.total)}</td>
+        </tr>`).join('');
 
       const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Relatório de Honorários para Imposto de Renda ${year}</title>
-  <link rel="preconnect" href="${window.location.origin}" />
-  <link rel="dns-prefetch" href="${window.location.origin}" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Relatório IRPF ${year} — ${lawyerName}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Serif+4:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
-    @page { size: A4; margin: 15mm; }
-    @media print {
-      html, body { margin: 0; padding: 0; background: white; }
-      .no-print { display: none !important; }
-      .report-container { 
-        box-shadow: none !important;
-        border: none !important;
-        page-break-inside: avoid;
-        margin: 0 !important;
-        padding: 20mm !important;
-      }
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Georgia', 'Times New Roman', serif;
-      background: #f5f5f5;
-      padding: 20px;
-      color: #1a1a1a;
-      line-height: 1.6;
-    }
-    .report-container {
-      max-width: 210mm;
-      margin: 0 auto;
-      background: white;
-      padding: 25mm 20mm;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-      border: 2px solid #000;
-      position: relative;
-    }
-    .hero-box {
-      text-align: center;
-      margin-bottom: 30px;
-      padding-bottom: 20px;
-      border-bottom: 3px double #000;
-    }
-    .lawyer-name {
-      font-size: 18px;
-      font-weight: 700;
-      color: #000;
-      margin: 10px 0 5px;
-      letter-spacing: 0.5px;
-    }
-    .lawyer-oab {
-      font-size: 14px;
-      color: #333;
-      font-weight: 600;
-    }
-    .header {
-      text-align: center;
-      padding: 20px;
-      margin-bottom: 30px;
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border: 2px solid #000;
-      border-radius: 8px;
-    }
-    .header h1 {
-      font-size: 24px;
-      color: #000;
-      font-weight: 700;
-      margin-bottom: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    .header .year {
-      font-size: 36px;
-      font-weight: 900;
-      color: #000;
-      margin: 15px 0;
-      letter-spacing: 2px;
-    }
-    .summary-box {
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border: 3px double #000;
-      border-radius: 12px;
-      padding: 30px;
-      margin: 40px 0;
-      text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-      position: relative;
-      overflow: hidden;
-    }
-    .summary-box::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: linear-gradient(90deg, #000 0%, #333 100%);
-    }
-    .summary-label {
-      font-size: 14px;
-      color: #000;
-      font-weight: 700;
-      text-transform: uppercase;
-      margin-bottom: 12px;
-      letter-spacing: 1px;
-    }
-    .summary-value {
-      font-size: 48px;
-      font-weight: 900;
-      color: #000;
-      margin: 15px 0;
-      font-family: 'Arial', sans-serif;
-      letter-spacing: -1px;
-    }
-    .section-title {
-      background: #000;
-      color: white;
-      padding: 12px 18px;
-      font-size: 14px;
-      font-weight: 700;
-      margin: 30px 0 15px 0;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 15px 0;
-      font-size: 12px;
-      border: 2px solid #000;
-    }
-    .data-table thead {
-      background: #000;
-      color: white;
-    }
-    .data-table th {
-      padding: 12px;
-      text-align: left;
-      font-weight: 700;
-      border: 1px solid #333;
-      letter-spacing: 0.5px;
-    }
-    .data-table td {
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-    }
-    .data-table tbody tr:nth-child(even) {
-      background: #f8f9fa;
-    }
-    .data-table tbody tr:hover {
-      background: #e9ecef;
-    }
-    .total-row {
-      background: #000 !important;
-      color: white !important;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-    }
-    .lawyer-info {
-      background: #f8f9fa;
-      border: 2px solid #000;
-      border-radius: 8px;
-    }
-    .footer {
-      margin-top: 30px;
-      text-align: center;
-      font-size: 11px;
-      color: #475467;
-      border-top: 1px solid #e2e8f0;
-      padding-top: 14px;
-    }
-    .print-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: #0f172a;
-      color: #fff;
-      border: none;
-      border-radius: 999px;
-      padding: 12px 24px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 24px;
-    }
-    @media print {
-      body { background: #fff; }
-      .wrapper { box-shadow: none; border: none; }
-      .print-btn { display: none; }
+    @page{size:A4 portrait;margin:0;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#eef2f7;color:#0e2a47;font-size:13px;line-height:1.55;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .doc{max-width:920px;margin:0 auto;background:#fff;box-shadow:0 4px 32px rgba(15,23,42,.06);}
+    .serif{font-family:'Source Serif 4',Georgia,serif;}
+    .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+    .eyebrow{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:#64748b;}
+
+    /* JURIUS Brand Bars */
+    .jurius-top{background:#0a1828;color:#fff;padding:14px 32px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #d4a857;}
+    .jurius-logo{display:flex;align-items:center;gap:14px;}
+    .jurius-mark{width:34px;height:34px;background:#d4a857;display:flex;align-items:center;justify-content:center;font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:18px;color:#0a1828;letter-spacing:-.02em;}
+    .jurius-wordmark{font-family:'Source Serif 4',Georgia,serif;font-size:18px;font-weight:600;letter-spacing:.18em;color:#fff;}
+    .jurius-tagline{font-size:9px;letter-spacing:.25em;color:#d4a857;text-transform:uppercase;margin-top:1px;}
+    .jurius-meta{text-align:right;font-size:10px;color:#94a3b8;letter-spacing:.05em;line-height:1.5;}
+    .jurius-meta strong{color:#fff;font-weight:600;}
+
+    .jurius-bottom{background:#0a1828;color:#94a3b8;padding:16px 32px;display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.04em;border-top:3px solid #d4a857;}
+    .jurius-bottom strong{color:#d4a857;letter-spacing:.18em;}
+
+    /* Filter bar */
+    .filter-bar{display:flex;flex-wrap:wrap;gap:6px;padding:14px 32px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
+    .filter-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#475569;border:1px solid #e2e8f0;padding:6px 12px;font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;letter-spacing:.04em;text-transform:uppercase;transition:all .12s ease;}
+    .filter-btn:hover{border-color:#94a3b8;color:#0e2a47;}
+    .filter-btn.filter-active{background:#0e2a47;color:#fff;border-color:#0e2a47;}
+    .filter-btn .count{opacity:.55;font-size:9.5px;font-weight:500;}
+    .filter-status{margin-left:auto;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:8px;}
+
+    @media print{
+      body{background:#fff;}
+      .doc{box-shadow:none;max-width:none;}
+      .no-print{display:none!important;}
+      .filter-bar{display:none!important;}
+      .page-break{page-break-before:always;}
+      .jurius-top, .jurius-bottom{position:running(header);}
     }
   </style>
 </head>
 <body>
-  <div class="report-container">
-    <div class="hero-box">
-      <h1>Relatório de Honorários – IRPF</h1>
-      <div class="year">${year}</div>
-      <p>Emitido em ${issueDate}</p>
+
+  <!-- Print toolbar -->
+  <div class="no-print" style="max-width:920px;margin:18px auto 14px;text-align:right;padding:0 4px;">
+    <button onclick="window.print()" style="display:inline-flex;align-items:center;gap:8px;background:#0a1828;color:#fff;border:none;padding:10px 22px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;">
+      Imprimir / Salvar PDF
+    </button>
+  </div>
+
+<div class="doc">
+
+  <!-- ════════ JURIUS HEADER BAR ════════ -->
+  <div class="jurius-top">
+    <div class="jurius-logo">
+      <div class="jurius-mark">J</div>
+      <div>
+        <div class="jurius-wordmark">JURIUS</div>
+        <div class="jurius-tagline">Sistema Jurídico</div>
+      </div>
     </div>
-    <div class="summary-box">
-      <div class="summary-label">Total de honorários declarados</div>
-      <div class="summary-value">${formatCurrency(totalReceived)}</div>
-      <p style="margin-top:6px; color:#475467; font-size:12px;">${numberToWords(totalReceived)}</p>
-    </div>
-    <h2 class="section-title">Dados do profissional</h2>
-    <table>
-      <tbody>
-        <tr>
-          <th style="width:35%;">Nome</th>
-          <td>${lawyerName}</td>
-        </tr>
-        <tr>
-          <th>OAB</th>
-          <td>${lawyerOab}/${lawyerState}</td>
-        </tr>
-        <tr>
-          <th>E-mail profissional</th>
-          <td>${lawyerEmail}</td>
-        </tr>
-      </tbody>
-    </table>
-    <h2 class="section-title">Resumo por cliente / fonte pagadora</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Cliente</th>
-          <th>CPF/CNPJ</th>
-          <th style="text-align:center;">Pagamentos</th>
-          <th style="text-align:right;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${Array.from(clientPayments.entries()).map(([clientId, entry]) => {
-          const clientName = entry.client?.full_name || (entry.client as any)?.name || 'Cliente não identificado';
-          const clientCpf = (entry.client as any)?.cpf || (entry.client as any)?.document || 'Não informado';
-          return `
-          <tr>
-            <td>${clientName}</td>
-            <td>${clientCpf}</td>
-            <td style="text-align:center;">${entry.payments.length}</td>
-            <td class="amount">${formatCurrency(entry.total)}</td>
-          </tr>`;
-        }).join('')}
-        <tr class="total-row">
-          <td colspan="3" style="text-align:right;">Total geral</td>
-          <td class="amount">${formatCurrency(totalReceived)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <h2 class="section-title">Resumo mensal</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Mês</th>
-          <th style="text-align:center;">Pagamentos</th>
-          <th style="text-align:right;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${Array.from({ length: 12 }, (_, i) => {
-          const month = i + 1;
-          const monthPayments = allInstallmentsYear.filter(inst => inst.payment_date && (new Date(inst.payment_date).getMonth() + 1) === month);
-          const monthTotal = monthPayments.reduce((sum, inst) => {
-            if (!inst.agreement) return sum;
-            return sum + (inst.agreement.fee_value / inst.agreement.installments_count);
-          }, 0);
-          const monthName = new Date(year, i, 1).toLocaleDateString('pt-BR', { month: 'long' });
-          return `
-          <tr>
-            <td>${monthName.charAt(0).toUpperCase() + monthName.slice(1)}</td>
-            <td style="text-align:center;">${monthPayments.length}</td>
-            <td class="amount">${formatCurrency(monthTotal)}</td>
-          </tr>`;
-        }).join('')}
-        <tr class="total-row">
-          <td>Total anual</td>
-          <td style="text-align:center;">${allInstallmentsYear.length}</td>
-          <td class="amount">${formatCurrency(totalReceived)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <h2 class="section-title">Instruções para declaração</h2>
-    <div class="notes-box">
-      <ul style="margin-left:18px; line-height:1.8;">
-        <li>Declarar como <strong>Rendimentos Tributáveis Recebidos de Pessoa Física</strong>.</li>
-        <li>Manter este relatório e os recibos arquivados por, no mínimo, 5 anos.</li>
-        <li>Utilizar CPF/CNPJ de cada cliente listado como fonte pagadora.</li>
-        <li>Apresentar este documento em conjunto com os comprovantes, se solicitado pela Receita Federal.</li>
-        <li>Verificar obrigatoriedade de Carnê-Leão conforme legislação vigente.</li>
-      </ul>
-      <p style="margin-top:12px; font-size:12px; color:#c2410c;"><strong>Atenção:</strong> Relatório informativo. Consulte um contador para orientações específicas.</p>
-    </div>
-    <div class="footer">
-      Documento emitido em ${issueDate}. Sistema de Gestão Financeira.
-      <p>Guarde este relatório junto com os recibos individuais para comprovação fiscal.</p>
+    <div class="jurius-meta">
+      <div><strong>Relatório IRPF · Exercício ${year}</strong></div>
+      <div>Documento · ${docId}</div>
     </div>
   </div>
 
-  <button class="print-button no-print" onclick="window.print()">🖨️ Imprimir Relatório</button>
-</body>
-</html>
+  <!-- ════════ DOCUMENT HEADER ════════ -->
+  <header style="padding:32px 32px 24px;display:flex;justify-content:space-between;align-items:flex-start;gap:32px;">
+    <div style="flex:1;">
+      <div class="eyebrow" style="margin-bottom:6px;">Escritório</div>
+      <div class="serif" style="font-size:20px;font-weight:600;color:#0e2a47;letter-spacing:-.01em;line-height:1.2;">${lawyerName}</div>
+      <div style="margin-top:8px;font-size:11.5px;color:#475569;letter-spacing:.01em;">OAB/${lawyerState} nº ${lawyerOab} &nbsp;·&nbsp; ${lawyerEmail}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="eyebrow">Documento</div>
+      <div class="serif" style="font-size:22px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;margin-top:4px;line-height:1.1;">Relatório de Honorários</div>
+      <div style="margin-top:6px;font-size:11.5px;color:#475569;">Exercício fiscal · <strong style="color:#0e2a47;">${year}</strong></div>
+      <div style="margin-top:2px;font-size:10.5px;color:#94a3b8;">Emitido em ${issueDateStr}</div>
+    </div>
+  </header>
 
-    <div class="footer">
-      <p><strong>Este documento foi gerado automaticamente pelo sistema de gestão financeira.</strong></p>
-      <p>Guarde este relatório junto com os recibos individuais para comprovação fiscal.</p>
-      <p style="margin-top: 10px;">Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+  <!-- ════════ KPI ROW (4 col) ════════ -->
+  <section style="margin:0 32px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+    <div style="padding:22px 24px 22px 0;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Total de honorários · ${year}</div>
+      <div id="kpi-total" class="serif num" style="font-size:30px;font-weight:700;color:#0e2a47;letter-spacing:-.025em;line-height:1;">${fmtR(totalHonorarios)}</div>
+      <div style="margin-top:8px;font-size:10.5px;color:#64748b;line-height:1.4;font-style:italic;">${numberToWords(totalHonorarios)}</div>
+    </div>
+    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Baixas</div>
+      <div id="kpi-count" class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${totalPayments}</div>
+      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">pagamentos</div>
+    </div>
+    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Ticket médio</div>
+      <div id="kpi-medio" class="serif num" style="font-size:20px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(ticketMedio)}</div>
+      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">por baixa</div>
+    </div>
+    <div style="padding:22px 0 22px 20px;">
+      <div class="eyebrow" style="margin-bottom:8px;">Fontes pagadoras</div>
+      <div class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${clientMap.size}</div>
+      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">clientes distintos</div>
+    </div>
+  </section>
+
+  <!-- ════════ FILTER BAR (interactive) ════════ -->
+  <div class="filter-bar no-print">
+    <button class="filter-btn filter-active" data-filter="all">Todos <span class="count">${totalPayments}</span></button>
+    ${sortedMethods.map(m => `<button class="filter-btn" data-filter="${m.key}">${methodLabelMap[m.key]} <span class="count">${m.count}</span></button>`).join('')}
+    <span class="filter-status">Filtre as baixas para análise contextual</span>
+  </div>
+
+  <!-- ════════ QUARTERLY ════════ -->
+  <section style="margin:32px 32px 0;">
+    <div style="margin-bottom:14px;">
+      <div class="eyebrow">Resumo Trimestral</div>
+      <div class="serif" style="font-size:15px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Evolução por trimestre — ${year}</div>
+    </div>
+    <div style="border:1px solid #e2e8f0;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;">
+      ${quartersHTML}
+    </div>
+  </section>
+
+  <!-- ════════ CHART 01: Monthly Bars ════════ -->
+  <section style="margin:36px 32px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
+      <div>
+        <div class="eyebrow">Gráfico 01</div>
+        <div class="serif" style="font-size:15px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Distribuição mensal de honorários recebidos</div>
+      </div>
+      <div style="font-size:10.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;">Valores em R$</div>
+    </div>
+    <div style="border:1px solid #e2e8f0;padding:18px 14px 12px;">
+      <svg viewBox="0 0 ${chartW} ${chartH}" width="100%" style="display:block;">
+        ${svgGridLines}
+        ${svgBaseline}
+        ${svgBarsHTML}
+      </svg>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:18px;font-size:10px;color:#64748b;">
+      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-block;width:10px;height:10px;background:#0e2a47;"></span>Maior mês do exercício</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-block;width:10px;height:10px;background:#3b5b7d;"></span>Demais meses com baixas</span>
+    </div>
+  </section>
+
+  <!-- ════════ CHART 02: Method Donut + Top 5 ════════ -->
+  <section style="margin:36px 32px 0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;page-break-inside:avoid;">
+
+    <!-- Donut -->
+    <div style="min-width:0;">
+      <div style="margin-bottom:14px;">
+        <div class="eyebrow">Gráfico 02</div>
+        <div class="serif" style="font-size:15px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Composição por forma de pagamento</div>
+      </div>
+      <div style="border:1px solid #e2e8f0;padding:18px;display:grid;grid-template-columns:140px minmax(0,1fr);column-gap:16px;align-items:center;">
+        <svg viewBox="0 0 180 180" width="140" height="140" style="display:block;">
+            ${donutArcs}
+            <text x="90" y="84" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="Inter,system-ui,sans-serif" letter-spacing="0.1em" font-weight="600">TOTAL</text>
+            <text x="90" y="100" text-anchor="middle" font-size="13" fill="#0e2a47" font-family="Source Serif 4,Georgia,serif" font-weight="700">${fmtR(totalHonorarios).replace('R$ ', 'R$ ')}</text>
+            <text x="90" y="116" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="Inter,system-ui,sans-serif">${sortedMethods.length} método${sortedMethods.length !== 1 ? 's' : ''}</text>
+        </svg>
+        <div style="min-width:0;overflow:hidden;">
+          ${donutLegendHTML || '<div style="font-size:11px;color:#94a3b8;text-align:center;padding:24px 0;">Sem dados</div>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 5 -->
+    <div style="min-width:0;">
+      <div style="margin-bottom:14px;">
+        <div class="eyebrow">Ranking</div>
+        <div class="serif" style="font-size:15px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Top 5 fontes pagadoras</div>
+      </div>
+      <div style="border:1px solid #e2e8f0;padding:6px 18px;min-height:180px;overflow:hidden;">
+        ${top5HTML || '<div style="font-size:11px;color:#94a3b8;text-align:center;padding:40px 0;">Sem dados</div>'}
+        ${restRowHTML}
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ════════ MONTHLY DETAIL ════════ -->
+  <section style="margin:44px 32px 0;">
+    <div style="margin-bottom:6px;">
+      <div class="eyebrow">Tabela 01</div>
+      <div class="serif" style="font-size:16px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Detalhamento analítico — Mês a mês</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">Cada linha representa uma baixa registrada no sistema, com data, fonte pagadora, documento, forma de pagamento e o valor de honorários efetivamente recebido. Use os filtros acima para isolar formas de pagamento.</div>
+    </div>
+    <div style="margin-top:18px;">
+      ${activeMonths.length > 0 ? monthlyTablesHTML : '<div style="text-align:center;color:#94a3b8;padding:48px 0;font-size:12px;border:1px dashed #e2e8f0;">Nenhuma baixa registrada em ' + year + '.</div>'}
+    </div>
+  </section>
+
+  <!-- ════════ CLIENT SUMMARY ════════ -->
+  <section style="margin:44px 32px 0;page-break-inside:avoid;">
+    <div style="margin-bottom:18px;">
+      <div class="eyebrow">Tabela 02</div>
+      <div class="serif" style="font-size:16px;font-weight:600;color:#0e2a47;margin-top:2px;letter-spacing:-.01em;">Resumo consolidado por fonte pagadora</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">Agrupamento anual completo (não afetado pelos filtros) para preenchimento da Ficha de Rendimentos Tributáveis (IRPF).</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-top:2px solid #0e2a47;border-bottom:1px solid #0e2a47;">
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:left;">Cliente / Fonte pagadora</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:left;">CPF / CNPJ</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:center;">Baixas</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;">Total (R$)</th>
+        </tr>
+      </thead>
+      <tbody>${clientRowsHTML}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" style="padding:14px 16px;font-weight:700;color:#0e2a47;font-size:12px;text-transform:uppercase;letter-spacing:.08em;border-top:2px solid #0e2a47;">Total geral</td>
+          <td style="padding:14px 16px;text-align:center;font-weight:700;color:#0e2a47;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${totalPayments}</td>
+          <td class="serif num" style="padding:14px 16px;text-align:right;font-weight:700;color:#0e2a47;font-size:15px;border-top:2px solid #0e2a47;letter-spacing:-.01em;">${fmtR(totalHonorarios)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>
+
+  <!-- ════════ DOCUMENT FOOTER (lawyer info) ════════ -->
+  <footer style="margin:48px 32px 24px;padding-top:18px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-end;font-size:10px;color:#94a3b8;">
+    <div>
+      <div style="font-weight:600;color:#475569;font-size:11px;letter-spacing:.02em;">${lawyerName}</div>
+      <div style="margin-top:2px;">OAB/${lawyerState} ${lawyerOab} · ${lawyerEmail}</div>
+    </div>
+    <div style="text-align:right;">
+      <div>Relatório IRPF · Exercício ${year}</div>
+      <div style="margin-top:2px;">Emitido em ${issueDateStr}</div>
+    </div>
+  </footer>
+
+  <!-- ════════ JURIUS FOOTER BAR ════════ -->
+  <div class="jurius-bottom">
+    <div>
+      <strong>JURIUS</strong> &nbsp;·&nbsp; Sistema Jurídico &nbsp;·&nbsp; © ${new Date().getFullYear()}
+    </div>
+    <div style="text-align:right;">
+      <div>Documento confidencial · Sigilo profissional (Lei 8.906/94, art. 7º, II)</div>
+      <div style="margin-top:2px;color:#64748b;font-size:9.5px;">ID: ${docId}</div>
     </div>
   </div>
 
-  <button class="print-button no-print" onclick="window.print()">🖨️ Imprimir Relatório</button>
+</div><!-- /.doc -->
+
+<!-- Print button bottom -->
+<div class="no-print" style="max-width:920px;margin:18px auto 32px;text-align:center;">
+  <button onclick="window.print()" style="display:inline-flex;align-items:center;gap:8px;background:#0a1828;color:#fff;border:none;padding:11px 28px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;">
+    Imprimir / Salvar PDF
+  </button>
+</div>
+
+<script>
+(function(){
+  const fmtBRL = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const buttons = document.querySelectorAll('.filter-btn');
+  const totalAll = ${totalHonorarios};
+  const countAll = ${totalPayments};
+  const medioAll = ${ticketMedio};
+  const totalEl  = document.getElementById('kpi-total');
+  const countEl  = document.getElementById('kpi-count');
+  const medioEl  = document.getElementById('kpi-medio');
+
+  function setActive(btn){
+    buttons.forEach(b => b.classList.toggle('filter-active', b === btn));
+  }
+  function applyFilter(method){
+    const rows = document.querySelectorAll('tr[data-method]');
+    rows.forEach(row => {
+      row.style.display = (method === 'all' || row.dataset.method === method) ? '' : 'none';
+    });
+
+    // Recalc por mês
+    document.querySelectorAll('[data-month-block]').forEach(block => {
+      const visible = Array.from(block.querySelectorAll('tr[data-method]')).filter(r => r.style.display !== 'none');
+      const subtotal = visible.reduce((s, r) => s + parseFloat(r.dataset.value || '0'), 0);
+      const count = visible.length;
+      const tEl = block.querySelector('[data-month-total]');
+      const cEl = block.querySelector('[data-month-count]');
+      const sEl = block.querySelector('[data-month-subtotal]');
+      if (tEl) tEl.textContent = fmtBRL(subtotal);
+      if (cEl) {
+        const baseMonth = cEl.textContent.split('·')[0].trim();
+        cEl.textContent = baseMonth + ' · ' + count + ' ' + (count === 1 ? 'baixa' : 'baixas');
+      }
+      if (sEl) sEl.textContent = fmtBRL(subtotal);
+      block.style.display = count === 0 ? 'none' : '';
+    });
+
+    // Recalc KPIs
+    if (method === 'all') {
+      if (totalEl) totalEl.textContent = fmtBRL(totalAll);
+      if (countEl) countEl.textContent = countAll;
+      if (medioEl) medioEl.textContent = fmtBRL(medioAll);
+    } else {
+      let gt = 0, gc = 0;
+      document.querySelectorAll('tr[data-method]').forEach(r => {
+        if (r.style.display !== 'none') {
+          gt += parseFloat(r.dataset.value || '0');
+          gc++;
+        }
+      });
+      if (totalEl) totalEl.textContent = fmtBRL(gt);
+      if (countEl) countEl.textContent = gc;
+      if (medioEl) medioEl.textContent = fmtBRL(gc > 0 ? gt / gc : 0);
+    }
+  }
+  buttons.forEach(b => b.addEventListener('click', () => {
+    setActive(b);
+    applyFilter(b.dataset.filter);
+  }));
+})();
+</script>
+
 </body>
 </html>`;
 
@@ -1849,13 +2272,29 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   ) => {
     const client = clients.find(c => c.id === agreement.client_id);
     const clientName = client?.full_name || (client as any)?.name || 'Cliente não encontrado';
-    const clientCpf = (client as any)?.cpf || (client as any)?.document || '';
+    const rawCpf = (client as any)?.cpf_cnpj || (client as any)?.cpf || (client as any)?.document || '';
+    const clientCpf = (() => {
+      const d = String(rawCpf).replace(/\D/g, '');
+      if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+      if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+      return rawCpf;
+    })();
     const clientAddress = (client as any)?.address || '';
     const issueDate = new Date();
     const year = issueDate.getFullYear();
     const issueDateFormatted = issueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-    const feePerInstallment = agreement.installments_count ? agreement.fee_value / agreement.installments_count : 0;
-    const amount = options?.totalPaid ?? (installment ? feePerInstallment : agreement.fee_value);
+    // Usa o valor real pago (paid_value) — não o valor agendado
+    const actualPaid = installment?.paid_value ?? installment?.value ?? 0;
+    // Para recibo do acordo completo: soma apenas os honorários das parcelas efetivamente baixadas
+    const totalPaidFees = !installment
+      ? allInstallments
+          .filter(i => i.agreement_id === agreement.id && i.status === 'pago')
+          .reduce((sum, i) => {
+            const feeRatio = agreement.total_value > 0 ? agreement.fee_value / agreement.total_value : 1;
+            return sum + (i.paid_value ?? i.value ?? 0) * feeRatio;
+          }, 0)
+      : 0;
+    const amount = options?.totalPaid ?? (installment ? actualPaid : (totalPaidFees || agreement.fee_value));
     const amountInWords = numberToWords(amount || 0);
     const receiptNumber = `REC-${issueDate.getFullYear()}-${String(issueDate.getMonth() + 1).padStart(2, '0')}-${String(issueDate.getDate()).padStart(2, '0')}-${String(issueDate.getHours()).padStart(2, '0')}${String(issueDate.getMinutes()).padStart(2, '0')}${String(issueDate.getSeconds()).padStart(2, '0')}`;
     
@@ -1866,14 +2305,33 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     const lawyerEmail = 'pedro@advcuiaba.com';
     const lawyerTitle = `Dr. ${lawyerName}`;
     
-    const paymentMethod = options?.paymentMethodLabel ?? getPaymentMethodLabel(installment?.payment_method);
+    // Para recibo do acordo completo, deriva forma/data da(s) baixa(s) efetiva(s)
+    const paidInstallmentsForAgreement = !installment
+      ? allInstallments
+          .filter(i => i.agreement_id === agreement.id && i.status === 'pago')
+          .sort((a, b) => (b.payment_date ?? '').localeCompare(a.payment_date ?? ''))
+      : [];
+    const distinctMethods = Array.from(new Set(paidInstallmentsForAgreement.map(i => i.payment_method).filter(Boolean)));
+    const aggregateMethodLabel = distinctMethods.length === 1
+      ? getPaymentMethodLabel(distinctMethods[0])
+      : distinctMethods.length > 1
+        ? 'Múltiplas formas de pagamento'
+        : null;
+    const latestPaidDate = paidInstallmentsForAgreement[0]?.payment_date ?? null;
+
+    const paymentMethod = options?.paymentMethodLabel
+      ?? (installment ? getPaymentMethodLabel(installment.payment_method) : null)
+      ?? aggregateMethodLabel
+      ?? 'Não informado';
     const paymentDateDisplay = options?.paymentDate
       ? new Date(options.paymentDate).toLocaleDateString('pt-BR')
       : installment?.payment_date
         ? new Date(installment.payment_date).toLocaleDateString('pt-BR')
         : installment?.due_date
           ? (parseLocalDate(installment.due_date) ?? new Date(installment.due_date)).toLocaleDateString('pt-BR')
-          : '_____/_____/_____';
+          : latestPaidDate
+            ? new Date(latestPaidDate + 'T12:00:00').toLocaleDateString('pt-BR')
+            : new Date().toLocaleDateString('pt-BR');
     
     const description = options?.descriptionOverride
       || (installment
@@ -1883,163 +2341,150 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     const serviceDescription = agreement.description || 'Serviços advocatícios prestados conforme contrato de honorários.';
 
     const html = `<!DOCTYPE html>
-<html lang="pt-BR"><head>
+<html lang="pt-BR">
+<head>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Recibo de Honorários Advocatícios - Alta Profissionalidade</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "primary": "#3b82f6",
-                        "background-light": "#f1f5f9",
-                        "background-dark": "#020617",
-                        "paper-light": "#ffffff",
-                        "paper-dark": "#1e293b",
-                        "heading-light": "#1e293b",
-                        "heading-dark": "#f1f5f9",
-                        "text-light": "#334155",
-                        "text-dark": "#94a3b8",
-                        "subtle-light": "#64748b",
-                        "subtle-dark": "#64748b",
-                        "border-light": "#e2e8f0",
-                        "border-dark": "#334155",
-                    },
-                    fontFamily: {
-                        "display": ["Inter", "sans-serif"],
-                        "serif": ["Roboto Slab", "serif"],
-                    },
-                    borderRadius: {
-                        "DEFAULT": "0.375rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "2xl": "1rem",
-                        "full": "9999px"
-                    },
-                },
-            },
-        }
-    </script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Recibo de Honorários Nº ${receiptNumber}</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0,
-            'wght' 300, 'GRAD' 0,
-            'opsz' 24
-        }
-        @media print {
-            body {
-                background-color: #fff !important;
-            }
-            .print-hide {
-                display: none !important;
-            }
-            .print-shadow-none {
-                box-shadow: none !important;
-            }
-            .print-p-0 {
-                padding: 0 !important;
-            }
-        }
-    </style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:13px;line-height:1.5}
+.wrapper{max-width:720px;margin:0 auto;padding:2rem 1rem}
+.page{background:#fff;border:1px solid #c8c8c8;position:relative}
+/* Top stripe */
+.stripe-top{height:6px;background:#1a2744}
+.stripe-green{height:3px;background:#2d6a4f}
+/* Header */
+.header{padding:2rem 2.5rem 1.5rem;display:flex;justify-content:space-between;align-items:flex-start;gap:2rem;border-bottom:1.5px solid #e0e0e0}
+.office-name{font-family:'EB Garamond',Georgia,serif;font-size:1.5rem;font-weight:700;color:#1a2744;letter-spacing:-.01em;line-height:1.1}
+.office-meta{margin-top:.4rem;font-size:.75rem;color:#555;line-height:1.6}
+.receipt-badge{text-align:right}
+.receipt-title{font-family:'EB Garamond',Georgia,serif;font-size:1.1rem;font-weight:600;color:#1a2744;text-transform:uppercase;letter-spacing:.05em}
+.receipt-num{font-size:.7rem;color:#777;margin-top:.2rem;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.receipt-date{font-size:.75rem;color:#555;margin-top:.1rem}
+/* Main body text */
+.body-text{padding:1.75rem 2.5rem;border-bottom:1px dashed #ccc}
+.decl-text{font-size:1rem;line-height:1.9;color:#1a1a1a;text-align:justify}
+.decl-text strong{font-weight:600}
+.amount-inline{font-family:'EB Garamond',Georgia,serif;font-size:1.15rem;font-weight:700;color:#1a2744}
+/* Details table */
+.details{padding:1.25rem 2.5rem;border-bottom:1px solid #e0e0e0}
+.details-title{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:.75rem}
+.details-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem 2rem}
+.detail-row{display:flex;flex-direction:column;gap:.1rem;padding:.4rem 0;border-bottom:1px dotted #e8e8e8}
+.detail-key{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:#999;font-weight:600}
+.detail-val{font-size:.82rem;color:#1a1a1a;font-weight:500}
+/* Signature */
+.signature-section{padding:2rem 2.5rem 1.5rem;display:flex;align-items:flex-end;justify-content:space-between;gap:3rem}
+.sig-block{display:flex;flex-direction:column;align-items:center;gap:.3rem}
+.sig-line{width:200px;border-top:1px solid #333;margin-bottom:.3rem}
+.sig-name{font-size:.78rem;font-weight:600;color:#1a1a1a;text-align:center;text-transform:uppercase;letter-spacing:.03em}
+.sig-oab{font-size:.7rem;color:#666;text-align:center}
+.date-block{font-size:.78rem;color:#555;text-align:right;line-height:1.6}
+/* Footer */
+.footer{background:#f5f5f3;border-top:1.5px solid #e0e0e0;padding:.75rem 2.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.footer-note{font-size:.65rem;color:#999;line-height:1.5}
+.btn-print{display:inline-flex;align-items:center;gap:.4rem;background:#1a2744;color:#fff;border:none;padding:.4rem 1rem;font-size:.72rem;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:.03em}
+.btn-print:hover{background:#243660}
+/* Watermark */
+.watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-family:'EB Garamond',Georgia,serif;font-size:5rem;font-weight:700;color:rgba(26,39,68,.04);pointer-events:none;white-space:nowrap;z-index:0;letter-spacing:.1em}
+.content{position:relative;z-index:1}
+@media print{
+  html,body{background:#fff}
+  .wrapper{padding:0;max-width:100%}
+  .page{border:none}
+  .btn-print{display:none!important}
+  .stripe-top,.stripe-green{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
 </head>
-<body class="font-display bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
-<div class="relative flex min-h-screen w-full flex-col items-center justify-center p-4 sm:p-6 lg:p-8 group/design-root print-p-0" style='font-family: Inter, "Noto Sans", sans-serif;'>
-<div class="w-full max-w-4xl max-h-[92vh] bg-paper-light dark:bg-paper-dark shadow-xl print-shadow-none">
-<div class="flex flex-col">
-<header class="p-8 md:p-12 border-b border-border-light dark:border-border-dark">
-<div class="flex justify-between items-start">
-<div>
-<h1 class="font-serif text-3xl font-bold text-heading-light dark:text-heading-dark">RECIBO DE HONORÁRIOS</h1>
-<p class="text-xs font-semibold uppercase tracking-wider text-subtle-light dark:text-subtle-dark mt-1">Nº ${receiptNumber}</p>
-</div>
-<div class="text-right flex-shrink-0">
-<p class="text-xs font-semibold uppercase tracking-wider text-subtle-light dark:text-subtle-dark">Data de Emissão</p>
-<p class="text-base font-medium text-text-light dark:text-text-dark mt-1">${issueDateFormatted}</p>
-</div>
-</div>
-</header>
-<main class="p-8 md:p-12 space-y-10">
-<section>
-<p class="text-base leading-relaxed text-text-light dark:text-text-dark">
-                            Recebi(emos) de <strong class="font-semibold text-heading-light dark:text-heading-dark">${clientName}</strong>${clientCpf ? `, CPF ${clientCpf}` : ''}, a importância total de:
-                        </p>
-<div class="mt-4 rounded-lg border border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-800/50 p-6 flex items-center justify-between">
-<p class="font-serif text-4xl font-bold text-heading-light dark:text-heading-dark">${formatCurrency(amount)}</p>
-<p class="text-base text-subtle-light dark:text-subtle-dark font-medium">(${amountInWords} reais)</p>
-</div>
-</section>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-<section class="space-y-4">
-<h2 class="text-sm font-semibold uppercase tracking-widest text-subtle-light dark:text-subtle-dark pb-2 border-b border-border-light dark:border-border-dark">Profissional</h2>
-<div class="text-sm space-y-2.5">
-<div class="flex">
-<span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">Nome:</span>
-<span class="font-medium text-heading-light dark:text-heading-dark">${lawyerName}</span>
-</div>
-<div class="flex">
-<span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">OAB:</span>
-<span class="font-medium text-heading-light dark:text-heading-dark">${lawyerOab}/${lawyerState}</span>
-</div>
-<div class="flex">
-<span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">E-mail:</span>
-<span class="font-medium text-heading-light dark:text-heading-dark">${lawyerEmail}</span>
-</div>
-</div>
-</section>
-<section class="space-y-4">
-<h2 class="text-sm font-semibold uppercase tracking-widest text-subtle-light dark:text-subtle-dark pb-2 border-b border-border-light dark:border-border-dark">Cliente / Pagador</h2>
-<div class="text-sm space-y-2.5">
-<div class="flex">
-<span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">Nome:</span>
-<span class="font-medium text-heading-light dark:text-heading-dark">${clientName}</span>
-</div>
-${clientCpf ? `<div class="flex"><span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">CPF:</span><span class="font-medium text-heading-light dark:text-heading-dark">${clientCpf}</span></div>` : ''}
-${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-subtle-dark w-20 shrink-0">Endereço:</span><span class="font-medium text-heading-light dark:text-heading-dark">${clientAddress}</span></div>` : ''}
-</div>
-</section>
-</div>
-<section class="space-y-4">
-<h2 class="text-sm font-semibold uppercase tracking-widest text-subtle-light dark:text-subtle-dark pb-2 border-b border-border-light dark:border-border-dark">Detalhes do Pagamento</h2>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 text-sm">
-<div>
-<h3 class="font-medium text-subtle-light dark:text-subtle-dark mb-1">Referente a</h3>
-<p class="text-text-light dark:text-text-dark">${description}</p>
-<p class="text-text-light dark:text-text-dark mt-2">${serviceDescription}</p>
-</div>
-<div>
-<h3 class="font-medium text-subtle-light dark:text-subtle-dark mb-1">Forma de Pagamento</h3>
-<p class="text-text-light dark:text-text-dark">${paymentMethod}</p>
-<p class="text-text-light dark:text-text-dark mt-2">Data do Pagamento: ${paymentDateDisplay} </p>
-</div>
-</div>
-</section>
-<div class="pt-12 flex flex-col items-center text-center">
-<div class="w-80 border-t border-gray-400 dark:border-slate-600 mb-2"></div>
-<p class="text-sm font-semibold text-heading-light dark:text-heading-dark">${lawyerName}</p>
-<p class="text-xs text-subtle-light dark:text-subtle-dark">OAB/${lawyerState} ${lawyerOab}</p>
-</div>
-</main>
-<footer class="p-8 md:p-10 border-t border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 print-hide">
-<div class="flex flex-col md:flex-row items-center justify-between gap-4">
-<p class="text-xs text-subtle-light dark:text-subtle-dark text-center md:text-left">
-                            Documento emitido em ${issueDateFormatted}. Válido como comprovante de pagamento.
-                        </p>
-<button class="flex w-full md:w-auto shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 h-10 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 dark:focus:ring-offset-paper-dark" onclick="window.print()">
-<span class="material-symbols-outlined !text-xl">print</span>
-<span>Imprimir Recibo</span>
-</button>
-</div>
-</footer>
-</div>
-</div>
-</div>
+<body>
+<div class="wrapper">
+<div class="page">
+  <div class="watermark">RECIBO</div>
+  <div class="content">
+  <div class="stripe-top"></div>
+  <div class="stripe-green"></div>
 
+  <div class="header">
+    <div>
+      <div class="office-name">${lawyerTitle}</div>
+      <div class="office-meta">
+        Advogado &nbsp;|&nbsp; OAB/${lawyerState} n° ${lawyerOab}<br>
+        ${lawyerEmail}
+      </div>
+    </div>
+    <div class="receipt-badge">
+      <div class="receipt-title">Recibo de Honorários</div>
+      <div class="receipt-num">Nº ${receiptNumber}</div>
+      <div class="receipt-date">${issueDateFormatted}</div>
+    </div>
+  </div>
+
+  <div class="body-text">
+    <p class="decl-text">
+      Recebi de <strong>${clientName}</strong>${clientCpf ? `, CPF/MF nº ${clientCpf},` : ','} a quantia de
+      <span class="amount-inline">${formatCurrency(amount)}</span>
+      <em>(${amountInWords} reais)</em>, referente a honorários advocatícios pela prestação dos seguintes serviços:
+      <strong>${description}</strong>${serviceDescription && serviceDescription !== 'Serviços advocatícios prestados conforme contrato de honorários.' ? ` — ${serviceDescription}` : '.'}
+      Dou plena, geral e irrevogável quitação pelo valor acima descrito.
+    </p>
+  </div>
+
+  <div class="details">
+    <div class="details-title">Dados do Pagamento</div>
+    <div class="details-grid">
+      <div class="detail-row">
+        <span class="detail-key">Cliente / Pagador</span>
+        <span class="detail-val">${clientName}</span>
+      </div>
+      ${clientCpf ? `<div class="detail-row"><span class="detail-key">CPF</span><span class="detail-val">${clientCpf}</span></div>` : `<div class="detail-row"><span class="detail-key">Referente ao Acordo</span><span class="detail-val">${agreement.title}</span></div>`}
+      <div class="detail-row">
+        <span class="detail-key">Data do Recebimento</span>
+        <span class="detail-val">${paymentDateDisplay}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-key">Forma de Pagamento</span>
+        <span class="detail-val">${paymentMethod}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-key">Valor Recebido</span>
+        <span class="detail-val" style="font-weight:700;color:#1a2744;font-size:.9rem">${formatCurrency(amount)}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-key">Advogado Responsável</span>
+        <span class="detail-val">${lawyerName} — OAB/${lawyerState} ${lawyerOab}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="signature-section">
+    <div class="date-block">
+      Cuiabá/MT,<br>
+      ${issueDateFormatted}
+    </div>
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-name">${lawyerName}</div>
+      <div class="sig-oab">OAB/${lawyerState} n° ${lawyerOab}</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note">
+      Documento válido como comprovante de pagamento de honorários advocatícios conforme Lei nº 8.906/94.<br>
+      Ref.: ${receiptNumber} &nbsp;|&nbsp; Emitido em ${issueDateFormatted}
+    </span>
+    <button class="btn-print" onclick="window.print()">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Imprimir / PDF
+    </button>
+  </div>
+  </div>
+</div>
+</div>
 </body></html>`;
 
     const blob = new Blob([html], { type: 'text/html' });
@@ -2132,9 +2577,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-          <p className="text-slate-600">Carregando dados financeiros...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
+          </div>
+          <p className="text-sm font-medium text-slate-500">Carregando dados financeiros…</p>
         </div>
       </div>
     );
@@ -2148,16 +2595,18 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="p-4 border-b border-slate-100">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+              <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-sm">
                 <PiggyBank className="w-5 h-5" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-slate-900">Gestão Financeira</h1>
-                <div className="flex items-center gap-2 mt-0.5 text-xs">
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                <div className="flex items-center gap-2 mt-1 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                     {activeAgreementsCount} ativos
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-100">
+                    <CheckCircle className="w-3 h-3" />
                     {concludedThisMonth} concluídos no mês
                   </span>
                 </div>
@@ -2182,7 +2631,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               <button onClick={() => { setIsAuditModalOpen(true); setAuditAgreementId(null); loadAuditByMonth(auditFilterMonth); }} className="p-1.5 sm:p-2 border border-purple-200 hover:bg-purple-50 rounded-lg transition" title="Auditoria">
                 <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
               </button>
-              <button onClick={handleOpenModal} className="inline-flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition">
+              <button onClick={handleOpenModal} className="inline-flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition shadow-sm hover:shadow-md">
                 <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 Novo Lançamento
               </button>
@@ -2247,53 +2696,65 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* A Receber */}
-        <div className="rounded-xl bg-emerald-600 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
-              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden relative">
+          <div className="absolute inset-y-0 left-0 w-1 bg-emerald-500" />
+          <div className="p-3 sm:p-4 pl-4 sm:pl-5">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">A Receber</span>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+              </div>
             </div>
-            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">A Receber</span>
+            <p className="text-lg sm:text-2xl font-bold text-slate-900 leading-tight tabular-nums">{formatCurrency(stats?.monthly_fees || 0)}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1">Previsto no mês</p>
           </div>
-          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees || 0)}</p>
-          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Previsto no mês</p>
         </div>
 
         {/* Recebido */}
-        <div className="rounded-xl bg-blue-600 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
-              <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden relative">
+          <div className="absolute inset-y-0 left-0 w-1 bg-blue-500" />
+          <div className="p-3 sm:p-4 pl-4 sm:pl-5">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">Recebido</span>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
+              </div>
             </div>
-            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Recebido</span>
+            <p className="text-lg sm:text-2xl font-bold text-slate-900 leading-tight tabular-nums">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1">Já quitado</p>
           </div>
-          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
-          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Já quitado</p>
         </div>
 
         {/* Pendente */}
-        <div className="rounded-xl bg-orange-500 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
-              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden relative">
+          <div className="absolute inset-y-0 left-0 w-1 bg-amber-400" />
+          <div className="p-3 sm:p-4 pl-4 sm:pl-5">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">Pendente</span>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
+              </div>
             </div>
-            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Pendente</span>
+            <p className="text-lg sm:text-2xl font-bold text-slate-900 leading-tight tabular-nums">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1">Aguardando</p>
           </div>
-          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
-          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Aguardando</p>
         </div>
 
         {/* Vencidas */}
-        <div className="rounded-xl bg-slate-700 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
-              <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        <div className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden relative ${stats?.overdue_installments ? 'border-red-200' : 'border-slate-200'}`}>
+          <div className={`absolute inset-y-0 left-0 w-1 ${stats?.overdue_installments ? 'bg-red-500' : 'bg-slate-300'}`} />
+          <div className="p-3 sm:p-4 pl-4 sm:pl-5">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencidas</span>
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center ${stats?.overdue_installments ? 'bg-red-50' : 'bg-slate-50'}`}>
+                <AlertCircle className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${stats?.overdue_installments ? 'text-red-500' : 'text-slate-400'}`} />
+              </div>
             </div>
-            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Vencidas</span>
+            <p className={`text-lg sm:text-2xl font-bold leading-tight tabular-nums ${stats?.overdue_installments ? 'text-red-600' : 'text-slate-900'}`}>{stats?.overdue_installments || 0}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1">{stats?.overdue_installments ? 'Em atraso' : 'Em dia'}</p>
           </div>
-          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{stats?.overdue_installments || 0}</p>
-          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">{stats?.overdue_installments ? 'Em atraso' : 'Nenhuma'}</p>
         </div>
       </div>
 
@@ -2302,7 +2763,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseEditModal} aria-hidden="true" />
           <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-amber-400" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Edição</p>
@@ -2318,12 +2779,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               </button>
             </div>
             <form id="edit-agreement-form" onSubmit={handleSubmitEdit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+              <div className="flex flex-col p-5 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
 
                 {editInitialLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                    <span className="ml-2 text-zinc-600 dark:text-zinc-400">Carregando dados...</span>
+                    <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+                    <span className="ml-2 text-slate-600 dark:text-zinc-400">Carregando dados...</span>
                   </div>
                 ) : (
                   <>
@@ -2333,10 +2794,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       </div>
                     )}
 
-                    {/* Cliente e Processo */}
+                    {/* Seção 1 — Identificação */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
+                      <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                        <div className="w-5 h-5 rounded bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                          <User className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Identificação</span>
+                      </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                       <div className="flex flex-col w-full">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Cliente *</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></p>
                         <ClientSearchSelect
                           value={editForm.clientId}
                           onChange={(clientId) => handleEditChange('clientId', clientId)}
@@ -2347,71 +2815,115 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         />
                       </div>
                       <div className="flex flex-col w-full">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Processo (opcional)</p>
-                        <input
-                          type="text"
-                          placeholder="Selecione o processo"
-                          value={editForm.processId}
-                          onChange={(e) => handleEditChange('processId', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
-                        />
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+                          Processo / Requerimento
+                          <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
+                        </p>
+                        <div className="relative">
+                          <select
+                            value={editForm.processId}
+                            onChange={(e) => handleEditChange('processId', e.target.value)}
+                            disabled={!editForm.clientId || loadingLinkedEntities}
+                            className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
+                          >
+                            <option value="">
+                              {!editForm.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
+                            </option>
+                            {clientProcesses.length > 0 && (
+                              <optgroup label="Processos">
+                                {clientProcesses.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.process_code || '—'} · {practiceLabelMap[p.practice_area] ?? p.practice_area}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {clientRequirements.length > 0 && (
+                              <optgroup label="Requerimentos">
+                                {clientRequirements.map(r => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.protocol ? `Prot. ${r.protocol}` : 'Sem protocolo'} · {benefitLabelMap[r.benefit_type] ?? r.benefit_type}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            {loadingLinkedEntities
+                              ? <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+                              : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+                          </div>
+                        </div>
                       </div>
                       <div className="flex flex-col w-full">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Título do acordo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Título do acordo <span className="text-red-400">*</span></p>
                         <input
                           type="text"
-                          placeholder="Digite o título do acordo"
+                          placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
                           value={editForm.title}
                           onChange={(e) => handleEditChange('title', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
                           required
                         />
                       </div>
                       <div className="flex flex-col w-full">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Data do acordo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Data do acordo</p>
                         <input
                           type="date"
                           value={editForm.agreementDate}
                           onChange={(e) => handleEditChange('agreementDate', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
                         />
                       </div>
                       <div className="flex flex-col w-full md:col-span-2">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Descrição (opcional)</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+                          Objeto / Descrição
+                          <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
+                        </p>
                         <textarea
-                          placeholder="Digite a descrição do acordo"
+                          placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
                           value={editForm.description}
                           onChange={(e) => handleEditChange('description', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-zinc-500 px-4 py-3 text-sm resize-none"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
                         />
                       </div>
                     </div>
+                    </div>
 
-                    {/* Valores e Honorários */}
+                    {/* Seção 2 — Financeiro */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
+                      <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                        <div className="w-5 h-5 rounded bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+                          <DollarSign className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Financeiro</span>
+                      </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total</p>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder=""
-                          value={editForm.totalValue}
-                          onChange={(e) => handleEditChange('totalValue', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          required
-                        />
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></p>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none select-none">R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0,00"
+                            value={editForm.totalValue}
+                            onChange={(e) => handleEditChange('totalValue', e.target.value)}
+                            className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 pl-10 pr-4 text-sm font-medium tabular-nums transition"
+                            required
+                          />
+                        </div>
                       </div>
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Tipo de honorário</p>
-                        <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700/50 p-1 bg-zinc-100 dark:bg-zinc-800 h-11 items-center">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Tipo de honorário</p>
+                        <div className="flex rounded-lg border border-slate-200 dark:border-zinc-700 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
                           <button
                             type="button"
                             onClick={() => handleEditChange('feeType', 'percentage')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               editForm.feeType === 'percentage'
-                                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                             }`}
                           >
                             Percentual
@@ -2419,10 +2931,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           <button
                             type="button"
                             onClick={() => handleEditChange('feeType', 'fixed')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               editForm.feeType === 'fixed'
-                                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                             }`}
                           >
                             Valor fixo
@@ -2432,60 +2944,73 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       {editForm.feeType === 'percentage' ? (
                         <>
                           <div className="flex flex-col w-full md:col-span-1">
-                            <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Percentual (%)</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Percentual (%) <span className="text-red-400">*</span></p>
                             <input
                               type="number"
                               min="1"
                               max="100"
                               step="0.5"
-                              placeholder="0%"
+                              placeholder="0"
                               value={editForm.feePercentage}
                               onChange={(e) => handleEditChange('feePercentage', e.target.value)}
-                              className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
                               required
                             />
                           </div>
-                          <div className="flex flex-col w-full justify-end md:col-span-1 pb-1">
-                            <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                              Honorários: {editForm.totalValue ? formatCurrency(Number(editForm.totalValue) * (Number(editForm.feePercentage || '0') / 100)) : '—'}
-                            </p>
+                          <div className="flex flex-col w-full justify-end md:col-span-1">
+                            <div className="h-11 flex items-center">
+                              {editForm.totalValue && editForm.feePercentage ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  {formatCurrency(parseCurrencyToNumber(editForm.totalValue) * (Number(editForm.feePercentage || '0') / 100))}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
+                              )}
+                            </div>
                           </div>
                         </>
                       ) : (
                         <>
                           <div className="flex flex-col w-full md:col-span-1">
-                            <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor fixo</p>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">R$</span>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Honorários fixos <span className="text-red-400">*</span></p>
+                            <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 px-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition">
+                              <span className="text-slate-500 dark:text-slate-400 text-sm font-medium select-none">R$</span>
                               <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                placeholder=""
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0,00"
                                 value={editForm.feeFixedValue}
                                 onChange={(e) => handleEditChange('feeFixedValue', e.target.value)}
-                                className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 pl-9 pr-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums"
                                 required
                               />
                             </div>
                           </div>
-                          <div className="flex flex-col w-full justify-end md:col-span-1 pb-1">
-                            <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                              Honorários: {editForm.feeFixedValue ? formatCurrency(Number(editForm.feeFixedValue)) : '—'}
-                            </p>
+                          <div className="flex flex-col w-full justify-end md:col-span-1">
+                            <div className="h-11 flex items-center">
+                              {editForm.feeFixedValue ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  {formatCurrency(parseCurrencyToNumber(editForm.feeFixedValue))}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
+                              )}
+                            </div>
                           </div>
                         </>
                       )}
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Forma de pagamento</p>
-                        <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700/50 p-1 bg-zinc-100 dark:bg-zinc-800 h-11 items-center">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Forma de pagamento</p>
+                        <div className="flex rounded-lg border border-slate-200 dark:border-zinc-700 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
                           <button
                             type="button"
                             onClick={() => handleEditChange('paymentType', 'upfront')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               editForm.paymentType === 'upfront'
-                                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                             }`}
                           >
                             À vista
@@ -2493,10 +3018,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           <button
                             type="button"
                             onClick={() => handleEditChange('paymentType', 'installments')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               editForm.paymentType === 'installments'
-                                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                             }`}
                           >
                             Parcelado
@@ -2506,66 +3031,68 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       {editForm.paymentType === 'installments' && (
                         <>
                           <div className="flex flex-col w-full md:col-span-1">
-                            <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Nº de parcelas</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Nº de parcelas</p>
                             <input
                               type="number"
                               min="2"
                               max="120"
-                              placeholder="1"
+                              placeholder="2"
                               value={editForm.installmentsCount}
                               onChange={(e) => handleEditChange('installmentsCount', e.target.value)}
-                              className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                              className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
                               required
                             />
                           </div>
-                          <div className="flex flex-col w-full justify-end md:col-span-1 gap-1 pb-1">
-                            <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                              Parcela: {editForm.totalValue && editForm.installmentsCount
-                                ? formatCurrency(Number(editForm.totalValue) / Number(editForm.installmentsCount))
-                                : '—'}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={handleToggleEditCustomInstallments}
-                              className="text-sm font-medium text-blue-500 hover:underline text-left"
-                            >
-                              {editForm.customInstallments.length ? 'Remover personalizadas' : 'Parcelas personalizadas'}
-                            </button>
+                          <div className="flex flex-col w-full justify-end md:col-span-1 gap-2">
+                            <div className="h-11 flex items-center gap-3">
+                              {editForm.totalValue && editForm.installmentsCount ? (
+                                <span className="text-sm text-slate-500 dark:text-slate-400">
+                                  Parcela: <strong className="text-slate-800 dark:text-white tabular-nums">{formatCurrency(parseCurrencyToNumber(editForm.totalValue) / Number(editForm.installmentsCount))}</strong>
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={handleToggleEditCustomInstallments}
+                                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                              >
+                                {editForm.customInstallments.length ? 'Remover personalizadas' : 'Personalizar parcelas'}
+                              </button>
+                            </div>
                           </div>
                         </>
                       )}
                       {editForm.customInstallments.length > 0 && (
-                        <div className="md:col-span-4 border border-zinc-200 dark:border-zinc-600 rounded-xl overflow-hidden">
+                        <div className="md:col-span-4 border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
                           <table className="w-full text-sm">
-                            <thead className="bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 uppercase text-xs">
+                            <thead className="bg-slate-50 dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700">
                               <tr>
-                                <th className="py-2 px-3 text-left">Parcela</th>
-                                <th className="py-2 px-3 text-left">Data</th>
-                                <th className="py-2 px-3 text-left">Valor</th>
+                                <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
+                                <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencimento</th>
+                                <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
                               </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-slate-100 dark:divide-zinc-700">
                               {editForm.customInstallments.map((item, index) => (
-                                <tr key={index} className="border-t border-zinc-200 dark:border-zinc-600">
-                                  <td className="py-2 px-3 text-zinc-900 dark:text-white">#{index + 1}</td>
-                                  <td className="py-2 px-3">
+                                <tr key={index} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
+                                  <td className="py-2 px-4 text-slate-500 dark:text-slate-400 font-medium">{index + 1}</td>
+                                  <td className="py-2 px-4">
                                     <input
                                       type="date"
                                       value={item.dueDate}
                                       onChange={(e) => handleEditCustomInstallmentChange(index, 'dueDate', e.target.value)}
-                                      className="border border-zinc-200 dark:border-zinc-600 rounded-lg px-2 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                      className="border border-slate-200 dark:border-zinc-600 rounded-lg px-2 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm"
                                     />
                                   </td>
-                                  <td className="py-2 px-3">
+                                  <td className="py-2 px-4">
                                     <div className="relative">
-                                      <span className="absolute left-2 top-1.5 text-zinc-500 text-sm">R$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm select-none">R$</span>
                                       <input
                                         type="number"
                                         min="0"
                                         step="0.01"
                                         value={item.value}
                                         onChange={(e) => handleEditCustomInstallmentChange(index, 'value', e.target.value)}
-                                        className="border border-zinc-200 dark:border-zinc-600 rounded-lg pl-8 pr-2 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="border border-slate-200 dark:border-zinc-600 rounded-lg pl-8 pr-2 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none tabular-nums"
                                       />
                                     </div>
                                   </td>
@@ -2573,18 +3100,18 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               ))}
                             </tbody>
                           </table>
-                          <div className="bg-zinc-50 dark:bg-zinc-700 py-2 px-3 text-sm text-zinc-600 dark:text-zinc-300 flex justify-between">
-                            <span>
-                              Total: {
+                          <div className="bg-slate-50 dark:bg-zinc-800 py-2.5 px-4 text-sm text-slate-600 dark:text-slate-300 flex justify-between items-center border-t border-slate-100 dark:border-zinc-700">
+                            <span className="font-medium">
+                              Total: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{
                                 editForm.customInstallments.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
                                   ? formatCurrency(editForm.customInstallments.reduce((sum, item) => sum + (Number(item.value) || 0), 0))
                                   : '—'
-                              }
+                              }</span>
                             </span>
                             <button
                               type="button"
                               onClick={handleEditRecalculateCustomInstallments}
-                              className="text-blue-500 hover:underline"
+                              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                             >
                               Recalcular
                             </button>
@@ -2592,11 +3119,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         </div>
                       )}
                       <div className="flex flex-col w-full md:col-span-2">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Status do acordo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Status do acordo</p>
                         <select
                           value={editForm.status}
                           onChange={(e) => handleEditChange('status', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 h-11 px-4 text-sm"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition appearance-none"
                         >
                           <option value="ativo">Ativo</option>
                           <option value="concluido">Concluído</option>
@@ -2604,22 +3131,23 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         </select>
                       </div>
                       <div className="flex flex-col w-full md:col-span-2">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Notas internas (opcional)</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Notas internas <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span></p>
                         <textarea
-                          placeholder="Digite as notas internas"
+                          placeholder="Observações internas sobre este lançamento…"
                           value={editForm.notes}
                           onChange={(e) => handleEditChange('notes', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-zinc-500 px-4 py-3 text-sm resize-none"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
                         />
                       </div>
+                    </div>
                     </div>
                   </>
                 )}
               </div>
             </form>
             {/* Footer */}
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex justify-between gap-3">
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={async () => {
@@ -2635,17 +3163,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     handleCloseEditModal();
                   }}
                   disabled={editLoading}
-                  className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition"
+                  className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition border border-red-200 dark:border-red-900/50"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                   Excluir
                 </button>
-                <div className="flex gap-3">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleCloseEditModal}
                     disabled={editLoading}
-                    className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
                   >
                     Cancelar
                   </button>
@@ -2653,14 +3181,16 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     type="submit"
                     form="edit-agreement-form"
                     disabled={editLoading}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
                   >
                     {editLoading ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
                       </>
                     ) : (
-                      'Salvar Alterações'
+                      <>
+                        <CheckCircle className="w-4 h-4" /> Salvar Alterações
+                      </>
                     )}
                   </button>
                 </div>
@@ -2673,24 +3203,24 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
       {/* Parcelas Vencidas */}
       {stats && stats.overdue_installments > 0 && (
         <div className="bg-white border border-red-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="bg-red-50 border-b border-red-100 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="border-b border-red-100 px-4 py-3.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-gradient-to-r from-red-50 to-rose-50">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-500 text-white rounded-lg flex items-center justify-center">
-                <AlertCircle className="w-4 h-4" />
+              <div className="w-9 h-9 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-4.5 h-4.5" />
               </div>
               <div>
-                <p className="text-base font-semibold text-red-900">
+                <p className="text-sm font-bold text-red-900">
                   {stats.overdue_installments} parcela{stats.overdue_installments > 1 ? 's' : ''} em atraso
                 </p>
-                <p className="text-xs text-red-600">Acompanhe e faça a cobrança para evitar inadimplência</p>
+                <p className="text-xs text-red-500">Regularize para evitar inadimplência</p>
               </div>
             </div>
             <button
               onClick={() => setShowOverdueOnly(!showOverdueOnly)}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 py-2 bg-white text-red-700 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-semibold transition"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white text-red-700 hover:bg-red-50 border border-red-200 rounded-lg text-xs font-semibold transition shadow-sm"
             >
               {showOverdueOnly ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {showOverdueOnly ? 'Ocultar' : 'Expandir'}
+              {showOverdueOnly ? 'Ocultar' : 'Ver parcelas'}
             </button>
           </div>
 
@@ -2791,6 +3321,14 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             
             return (
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-1 flex items-center justify-between border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                      Acordos Ativos &nbsp;·&nbsp; {activeAgreements.length}
+                    </h2>
+                  </div>
+                </div>
                 <div className="p-4 sm:p-6">
                   {viewMode === 'grid' ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-1.5 sm:p-2">
@@ -2846,7 +3384,13 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     return (
                       <div
                         key={agreement.id}
-                        className="group relative cursor-pointer bg-white aspect-auto sm:aspect-square flex flex-col rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200"
+                        className={`group relative cursor-pointer bg-white aspect-auto sm:aspect-square flex flex-col rounded-xl sm:rounded-2xl border shadow-sm hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 ${
+                          isFullyPaid
+                            ? 'border-emerald-200 hover:border-emerald-300'
+                            : overdueInstallments.length > 0
+                              ? 'border-red-200 hover:border-red-300'
+                              : 'border-slate-200 hover:border-slate-300'
+                        }`}
                         onClick={() => handleOpenDetails(agreement)}
                       >
                         {/* Indicador de status no canto */}
@@ -3059,17 +3603,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
                           <div className="hidden sm:block overflow-x-auto">
                             <table className="w-full text-sm min-w-[680px]">
-                              <thead className="bg-slate-50 border-b border-slate-200">
-                                <tr>
-                                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Acordo</th>
-                                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor</th>
-                                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
-                                  <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden md:table-cell">Vencimento</th>
-                                  <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden lg:table-cell">Progresso</th>
-                                  <th className="text-center px-4 py-3 font-semibold text-slate-600">Status</th>
+                              <thead>
+                                <tr className="border-b-2 border-slate-100">
+                                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Acordo</th>
+                                  <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
+                                  <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-emerald-600">Honorários</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden md:table-cell">Vencimento</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden lg:table-cell">Progresso</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-100">
+                              <tbody>
                                 {sortedAgreements.map((agreement) => {
                                   const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                                   const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
@@ -3091,44 +3635,49 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                   return (
                                     <tr
                                       key={agreement.id}
-                                      className="hover:bg-slate-50 cursor-pointer transition"
+                                      className={`group cursor-pointer border-b border-slate-50 hover:bg-slate-50/80 transition-colors duration-100 ${overdueInstallments.length > 0 ? 'hover:bg-red-50/40' : ''}`}
                                       onClick={() => handleOpenDetails(agreement)}
                                     >
-                                      <td className="px-4 py-3">
-                                        <p className="font-semibold text-slate-900 truncate max-w-[260px]">{agreement.title}</p>
-                                        <p className="text-xs text-slate-400">{getClientName(agreement.client_id)}</p>
+                                      <td className="px-5 py-3.5">
+                                        <div className="flex items-center gap-3">
+                                          <div className={`w-1 h-8 rounded-full flex-shrink-0 ${isFullyPaid ? 'bg-emerald-400' : overdueInstallments.length > 0 ? 'bg-red-400' : 'bg-amber-400'}`} />
+                                          <div className="min-w-0">
+                                            <p className="font-semibold text-slate-900 truncate max-w-[220px] group-hover:text-emerald-700 transition-colors">{agreement.title}</p>
+                                            <p className="text-xs text-slate-400 truncate">{getClientName(agreement.client_id)}</p>
+                                          </div>
+                                        </div>
                                       </td>
-                                      <td className="px-4 py-3 text-right">
-                                        <p className="font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                                      <td className="px-4 py-3.5 text-right">
+                                        <p className="font-semibold text-slate-700 tabular-nums">{formatCurrency(agreement.total_value)}</p>
                                       </td>
-                                      <td className="px-4 py-3 text-right">
-                                        <p className={`font-bold ${isFullyPaid ? 'text-emerald-600' : overdueInstallments.length > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                      <td className="px-4 py-3.5 text-right">
+                                        <p className={`font-bold tabular-nums ${isFullyPaid ? 'text-emerald-600' : overdueInstallments.length > 0 ? 'text-red-600' : 'text-slate-800'}`}>
                                           {formatCurrency(agreement.fee_value)}
                                         </p>
                                       </td>
-                                      <td className="px-4 py-3 text-center hidden md:table-cell">
-                                        <p className="text-slate-600">{nextDueLabel}</p>
+                                      <td className="px-4 py-3.5 text-center hidden md:table-cell">
+                                        <span className="text-sm font-medium text-slate-600 tabular-nums">{nextDueLabel}</span>
                                       </td>
-                                      <td className="px-4 py-3 hidden lg:table-cell">
-                                        <div className="flex items-center gap-2">
-                                          <div className="financial-progress-track flex-1 h-1.5 bg-slate-200 dark:bg-orange-500/25 rounded-full overflow-hidden">
+                                      <td className="px-4 py-3.5 hidden lg:table-cell">
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                             <div
-                                              className={`financial-progress-fill h-full rounded-full ${isFullyPaid ? 'bg-emerald-500 dark:bg-orange-500' : overdueInstallments.length > 0 ? 'bg-red-500 dark:bg-orange-500' : 'bg-amber-500 dark:bg-orange-500'}`}
+                                              className={`financial-progress-fill h-full rounded-full transition-all duration-500 ${isFullyPaid ? 'bg-emerald-500' : overdueInstallments.length > 0 ? 'bg-red-400' : 'bg-amber-400'}`}
                                               style={{ width: `${progress}%` }}
                                             />
                                           </div>
-                                          <span className="text-xs text-slate-500 w-10 text-right">{paidInstallments.length}/{agreementInstallments.length}</span>
+                                          <span className="text-xs font-medium text-slate-400 w-10 text-right tabular-nums">{paidInstallments.length}/{agreementInstallments.length}</span>
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3 text-center">
-                                        <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold ${
+                                      <td className="px-4 py-3.5 text-center">
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${
                                           isFullyPaid
-                                            ? 'bg-emerald-100 text-emerald-700'
+                                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                                             : overdueInstallments.length > 0
-                                              ? 'bg-red-100 text-red-700'
-                                              : 'bg-amber-100 text-amber-700'
+                                              ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
+                                              : 'bg-slate-100 text-slate-600'
                                         }`}>
-                                          {isFullyPaid ? 'QUITADO' : overdueInstallments.length > 0 ? `${overdueInstallments.length} ATR.` : `${pendingInstallments.length} PEND.`}
+                                          {isFullyPaid ? 'QUITADO' : overdueInstallments.length > 0 ? `${overdueInstallments.length} ATRAS.` : `${pendingInstallments.length} PEND.`}
                                         </span>
                                       </td>
                                     </tr>
@@ -3157,33 +3706,22 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             
             return (
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-5">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-3 text-blue-800">
-                      <CheckCircle className="w-5 h-5" />
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em]">Encerrados</p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h2 className="text-xl font-bold text-blue-900">Acordos concluídos</h2>
-                        <p className="text-sm text-blue-700">
-                          {showAllCompleted 
-                            ? `${completedAgreements.length} acordo${completedAgreements.length !== 1 ? 's' : ''} encerrado${completedAgreements.length !== 1 ? 's' : ''}`
-                            : `${Math.min(3, completedAgreements.length)} de ${completedAgreements.length} acordo${completedAgreements.length !== 1 ? 's' : ''}`
-                          }
-                        </p>
-                      </div>
-                      {hasMore && (
-                        <button
-                          onClick={() => setShowAllCompleted(!showAllCompleted)}
-                          className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:text-blue-900"
-                        >
-                          {showAllCompleted ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          {showAllCompleted ? 'Ver menos' : `Mostrar todos (${completedAgreements.length})`}
-                        </button>
-                      )}
-                    </div>
+                <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex items-center justify-between border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                      Acordos Concluídos &nbsp;·&nbsp; {completedAgreements.length}
+                    </h2>
                   </div>
+                  {hasMore && (
+                    <button
+                      onClick={() => setShowAllCompleted(!showAllCompleted)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                    >
+                      {showAllCompleted ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      {showAllCompleted ? 'Ver menos' : `Mostrar todos (${completedAgreements.length})`}
+                    </button>
+                  )}
                 </div>
                 {viewMode === 'list' ? (
                   <div className="p-2 sm:p-6">
@@ -3445,7 +3983,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseModal} aria-hidden="true" />
           <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-emerald-500" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
@@ -3461,7 +3999,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               </button>
             </div>
             <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+              <div className="flex flex-col p-5 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
 
                 {formError && (
                   <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
@@ -3469,10 +4007,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   </div>
                 )}
 
-                {/* Cliente e Processo */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                {/* Seção 1 — Identificação */}
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
+                  <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="w-5 h-5 rounded bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                      <User className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Identificação</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Cliente *</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></p>
                     <ClientSearchSelect
                       value={formData.clientId}
                       onChange={(clientId) => handleChange('clientId', clientId)}
@@ -3483,71 +4028,115 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     />
                   </div>
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Processo (opcional)</p>
-                    <input
-                      type="text"
-                      placeholder="Selecione o processo"
-                      value={formData.processId}
-                      onChange={(e) => handleChange('processId', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
-                    />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+                      Processo / Requerimento
+                      <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
+                    </p>
+                    <div className="relative">
+                      <select
+                        value={formData.processId}
+                        onChange={(e) => handleChange('processId', e.target.value)}
+                        disabled={!formData.clientId || loadingLinkedEntities}
+                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
+                      >
+                        <option value="">
+                          {!formData.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
+                        </option>
+                        {clientProcesses.length > 0 && (
+                          <optgroup label="Processos">
+                            {clientProcesses.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.process_code || '—'} · {practiceLabelMap[p.practice_area] ?? p.practice_area}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {clientRequirements.length > 0 && (
+                          <optgroup label="Requerimentos">
+                            {clientRequirements.map(r => (
+                              <option key={r.id} value={r.id}>
+                                {r.protocol ? `Prot. ${r.protocol}` : 'Sem protocolo'} · {benefitLabelMap[r.benefit_type] ?? r.benefit_type}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                        {loadingLinkedEntities
+                          ? <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+                          : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+                      </div>
+                    </div>
                   </div>
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Título do lançamento</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Título do lançamento <span className="text-red-400">*</span></p>
                     <input
                       type="text"
-                      placeholder="Digite o título do lançamento"
+                      placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
                       value={formData.title}
                       onChange={(e) => handleChange('title', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
                       required
                     />
                   </div>
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Data do lançamento</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Data do lançamento</p>
                     <input
                       type="date"
                       value={formData.agreementDate}
                       onChange={(e) => handleChange('agreementDate', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
                     />
                   </div>
                   <div className="flex flex-col w-full md:col-span-2">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Descrição (opcional)</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+                      Objeto / Descrição
+                      <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
+                    </p>
                     <textarea
-                      placeholder="Digite a descrição do acordo"
+                      placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
                       value={formData.description}
                       onChange={(e) => handleChange('description', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-zinc-500 px-4 py-3 text-sm resize-none"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
                     />
+                  </div>
                   </div>
                 </div>
 
-                {/* Valores e Honorários */}
+                {/* Seção 2 — Financeiro */}
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
+                  <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="w-5 h-5 rounded bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+                      <DollarSign className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Financeiro</span>
+                  </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
                   <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total</p>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder=""
-                      value={formData.totalValue}
-                      onChange={(e) => handleChange('totalValue', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      required
-                    />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></p>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none select-none">R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0,00"
+                        value={formData.totalValue}
+                        onChange={(e) => handleChange('totalValue', e.target.value)}
+                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 pl-10 pr-4 text-sm font-medium tabular-nums transition"
+                        required
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Tipo de honorário</p>
-                    <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-600 p-1 bg-zinc-100 dark:bg-zinc-700/50 h-11 items-center">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Tipo de honorário</p>
+                    <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
                       <button
                         type="button"
                         onClick={() => handleChange('feeType', 'percentage')}
                         className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
                           formData.feeType === 'percentage'
-                            ? 'bg-white dark:bg-zinc-600 text-zinc-900 dark:text-white shadow'
-                            : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-600'
+                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                       >
                         Percentual
@@ -3557,8 +4146,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         onClick={() => handleChange('feeType', 'fixed')}
                         className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
                           formData.feeType === 'fixed'
-                            ? 'bg-white dark:bg-zinc-600 text-zinc-900 dark:text-white shadow'
-                            : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-600'
+                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                       >
                         Valor fixo
@@ -3568,60 +4157,73 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   {formData.feeType === 'percentage' ? (
                     <>
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Percentual (%)</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Percentual (%) <span className="text-red-400">*</span></p>
                         <input
                           type="number"
                           min="1"
                           max="100"
                           step="0.5"
-                          placeholder="0%"
+                          placeholder="0"
                           value={formData.feePercentage}
                           onChange={(e) => handleChange('feePercentage', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
                           required
                         />
                       </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1 pb-1">
-                        <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                          Honorários: {formData.totalValue ? formatCurrency(Number(formData.totalValue) * (Number(formData.feePercentage || '0') / 100)) : '—'}
-                        </p>
+                      <div className="flex flex-col w-full justify-end md:col-span-1">
+                        <div className="h-11 flex items-center">
+                          {formData.totalValue && formData.feePercentage ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {formatCurrency(parseCurrencyToNumber(formData.totalValue) * (Number(formData.feePercentage || '0') / 100))}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
+                          )}
+                        </div>
                       </div>
                     </>
                   ) : (
                     <>
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor fixo</p>
-                        <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-3">
-                          <span className="text-zinc-500 text-sm font-medium">R$</span>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Honorários fixos <span className="text-red-400">*</span></p>
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition">
+                          <span className="text-slate-500 dark:text-slate-400 text-sm font-medium select-none">R$</span>
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0,00"
                             value={formData.feeFixedValue}
                             onChange={(e) => handleChange('feeFixedValue', e.target.value)}
-                            className="flex-1 bg-transparent outline-none border-none text-zinc-900 dark:text-white text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums"
                             required
                           />
                         </div>
                       </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1 pb-1">
-                        <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                          Honorários: {formData.feeFixedValue ? formatCurrency(Number(formData.feeFixedValue)) : '—'}
-                        </p>
+                      <div className="flex flex-col w-full justify-end md:col-span-1">
+                        <div className="h-11 flex items-center">
+                          {formData.feeFixedValue ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {formatCurrency(parseCurrencyToNumber(formData.feeFixedValue))}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
                   <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Forma de pagamento</p>
-                    <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-600 p-1 bg-zinc-100 dark:bg-zinc-700/50 h-11 items-center">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Forma de pagamento</p>
+                    <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
                       <button
                         type="button"
                         onClick={() => handleChange('paymentType', 'upfront')}
                         className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
                           formData.paymentType === 'upfront'
-                            ? 'bg-white dark:bg-zinc-600 text-zinc-900 dark:text-white shadow'
-                            : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-600'
+                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                       >
                         À vista
@@ -3631,8 +4233,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         onClick={() => handleChange('paymentType', 'installments')}
                         className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
                           formData.paymentType === 'installments'
-                            ? 'bg-white dark:bg-zinc-600 text-zinc-900 dark:text-white shadow'
-                            : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-600'
+                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                       >
                         Parcelado
@@ -3640,73 +4242,75 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     </div>
                   </div>
                   <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Primeiro vencimento</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Primeiro vencimento</p>
                     <input
                       type="date"
                       value={formData.firstDueDate}
                       onChange={(e) => handleChange('firstDueDate', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
                       required={formData.paymentType === 'upfront' || !formData.customInstallments.length}
                     />
                   </div>
                   {formData.paymentType === 'installments' && (
                     <>
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Nº de parcelas</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Nº de parcelas</p>
                         <input
                           type="number"
                           min="2"
                           max="120"
-                          placeholder="1"
+                          placeholder="2"
                           value={formData.installmentsCount}
                           onChange={(e) => handleChange('installmentsCount', e.target.value)}
-                          className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
                           required
                         />
                       </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1 gap-1 pb-1">
-                        <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">
-                          Parcela: {formData.totalValue && formData.installmentsCount
-                            ? formatCurrency(Number(formData.totalValue) / Number(formData.installmentsCount))
-                            : '—'}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              customInstallments: prev.customInstallments.length
-                                ? []
-                                : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
-                                    dueDate: index === 0 ? prev.firstDueDate : '',
-                                    value: prev.totalValue && prev.installmentsCount 
-                                      ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                      : '',
-                                  })),
-                            }))
-                          }
-                          className="text-sm font-medium text-blue-500 hover:underline text-left"
-                        >
-                          {formData.customInstallments.length ? 'Remover personalizadas' : 'Parcelas personalizadas'}
-                        </button>
+                      <div className="flex flex-col w-full justify-end md:col-span-1 gap-2">
+                        <div className="h-11 flex items-center gap-3">
+                          {formData.totalValue && formData.installmentsCount ? (
+                            <span className="text-sm text-slate-500 dark:text-slate-400">
+                              Parcela: <strong className="text-slate-800 dark:text-white tabular-nums">{formatCurrency(parseCurrencyToNumber(formData.totalValue) / Number(formData.installmentsCount))}</strong>
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                customInstallments: prev.customInstallments.length
+                                  ? []
+                                  : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
+                                      dueDate: index === 0 ? prev.firstDueDate : '',
+                                      value: prev.totalValue && prev.installmentsCount
+                                        ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                        : '',
+                                    })),
+                              }))
+                            }
+                            className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                          >
+                            {formData.customInstallments.length ? 'Remover personalizadas' : 'Personalizar parcelas'}
+                          </button>
+                        </div>
                       </div>
                     </>
                   )}
                   {formData.customInstallments.length > 0 && (
-                    <div className="md:col-span-4 border border-zinc-200 dark:border-zinc-600 rounded-xl overflow-hidden">
+                    <div className="md:col-span-4 border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
                       <table className="w-full text-sm">
-                        <thead className="bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 uppercase text-xs">
+                        <thead className="bg-slate-50 dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700">
                           <tr>
-                            <th className="py-2 px-3 text-left">Parcela</th>
-                            <th className="py-2 px-3 text-left">Data</th>
-                            <th className="py-2 px-3 text-left">Valor</th>
+                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
+                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencimento</th>
+                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100 dark:divide-zinc-700">
                           {formData.customInstallments.map((item, index) => (
-                            <tr key={index} className="border-t border-zinc-200 dark:border-zinc-600">
-                              <td className="py-2 px-3 text-zinc-900 dark:text-white">#{index + 1}</td>
-                              <td className="py-2 px-3">
+                            <tr key={index} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
+                              <td className="py-2 px-4 text-slate-500 dark:text-slate-400 font-medium">{index + 1}</td>
+                              <td className="py-2 px-4">
                                 <input
                                   type="date"
                                   value={item.dueDate}
@@ -3719,10 +4323,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                       ),
                                     }));
                                   }}
-                                  className="border border-zinc-200 dark:border-zinc-600 rounded-lg px-2 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                  className="border border-slate-200 dark:border-zinc-600 rounded-lg px-2 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm"
                                 />
                               </td>
-                              <td className="py-2 px-3">
+                              <td className="py-2 px-4">
                                 <input
                                   type="text"
                                   placeholder="R$ 0,00"
@@ -3736,20 +4340,20 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                       ),
                                     }));
                                   }}
-                                  className="w-full border border-zinc-200 dark:border-zinc-600 rounded-lg px-3 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                  className="w-full border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 tabular-nums"
                                 />
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      <div className="bg-zinc-50 dark:bg-zinc-700 py-2 px-3 text-sm text-zinc-600 dark:text-zinc-300 flex justify-between">
-                        <span>
-                          Total: {
+                      <div className="bg-slate-50 dark:bg-zinc-800 py-2.5 px-4 text-sm text-slate-600 dark:text-slate-300 flex justify-between items-center border-t border-slate-100 dark:border-zinc-700">
+                        <span className="font-medium">
+                          Total: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{
                             formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0)
                               ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0))
                               : '—'
-                          }
+                          }</span>
                         </span>
                         <button
                           type="button"
@@ -3763,12 +4367,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                     : prev.customInstallments[index - 1]?.dueDate || prev.firstDueDate,
                                 value:
                                   prev.totalValue && prev.installmentsCount
-                                    ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                    ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     : item.value,
                               })),
                             }))
                           }
-                          className="text-blue-500 hover:underline"
+                          className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                         >
                           Recalcular
                         </button>
@@ -3776,42 +4380,79 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     </div>
                   )}
                   <div className="flex flex-col w-full md:col-span-4">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Notas internas (opcional)</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Notas internas <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span></p>
                     <textarea
-                      placeholder="Digite as notas internas"
+                      placeholder="Observações internas sobre este lançamento…"
                       value={formData.notes}
                       onChange={(e) => handleChange('notes', e.target.value)}
-                      className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-zinc-500 px-4 py-3 text-sm resize-none"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
                     />
                   </div>
                 </div>
+                </div>
               </div>
             </form>
+            {/* Live Summary Preview */}
+            {(() => {
+              const total = parseCurrencyToNumber(formData.totalValue);
+              if (total <= 0) return null;
+              const feeVal = formData.feeType === 'percentage'
+                ? total * (Number(formData.feePercentage || '0') / 100)
+                : parseCurrencyToNumber(formData.feeFixedValue);
+              const count = formData.paymentType === 'upfront' ? 1 : Math.max(Number(formData.installmentsCount || '1'), 1);
+              const perInst = total / count;
+              const dueDateStr = formData.firstDueDate
+                ? new Date(formData.firstDueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+                : '—';
+              return (
+                <div className="border-t border-slate-900/10 bg-slate-900 dark:bg-zinc-950 px-5 sm:px-8 py-3">
+                  <div className="flex items-center gap-x-5 gap-y-1.5 flex-wrap text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
+                      <span className="w-1 h-1 rounded-full bg-emerald-400" /> Resumo
+                    </span>
+                    <span className="text-slate-400">Valor <strong className="text-white tabular-nums font-semibold ml-1">{formatCurrency(total)}</strong></span>
+                    <span className="text-slate-700">|</span>
+                    <span className="text-slate-400">Honorários <strong className="text-emerald-400 tabular-nums font-semibold ml-1">{formatCurrency(feeVal)}</strong></span>
+                    <span className="text-slate-700">|</span>
+                    <span className="text-slate-400">
+                      {count === 1 ? 'À vista' : `${count}× de`} <strong className="text-white tabular-nums font-semibold ml-1">{formatCurrency(perInst)}</strong>
+                    </span>
+                    <span className="text-slate-700">|</span>
+                    <span className="text-slate-400">{count === 1 ? 'Vence' : '1ª parcela'} <strong className="text-white font-semibold ml-1">{dueDateStr}</strong></span>
+                  </div>
+                </div>
+              );
+            })()}
             {/* Footer */}
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  disabled={formLoading}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  form="new-agreement-form"
-                  disabled={formLoading}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
-                >
-                  {formLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
-                    </>
-                  ) : (
-                    'Criar Acordo'
-                  )}
-                </button>
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-xs text-slate-400 hidden sm:block">Campos com <span className="text-red-400">*</span> são obrigatórios</p>
+                <div className="flex items-center gap-3 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    disabled={formLoading}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    form="new-agreement-form"
+                    disabled={formLoading}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
+                  >
+                    {formLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <PlusCircle className="w-4 h-4" /> Criar Acordo
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -3823,12 +4464,21 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center px-3 sm:px-6 py-4 overflow-y-auto">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseDetails} aria-hidden="true" />
           <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-slate-800" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedAgreement.title}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{getClientName(selectedAgreement.client_id)}</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white leading-tight">{selectedAgreement.title}</h2>
+                <button
+                  type="button"
+                  onClick={() => { handleCloseDetails(); navigateToClient(selectedAgreement.client_id); }}
+                  className="mt-1 inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition group"
+                  title="Abrir ficha do cliente"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  {getClientName(selectedAgreement.client_id)}
+                  <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+                </button>
               </div>
               <button
                 type="button"
@@ -3846,112 +4496,149 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 {/* Coluna 1 - Resumo e Ações */}
                 <div className="lg:col-span-1 flex flex-col gap-6">
                   {/* Resumo do Acordo */}
-                  <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-4">
-                    <h2 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-white">📋 Resumo do Acordo</h2>
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Valor Total</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.totalValue || selectedAgreement.total_value)}</span>
+                  <div className="border border-slate-200 dark:border-zinc-700 rounded-xl p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-700 flex items-center justify-center">
+                        <FileText className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Honorários ({selectedAgreement.fee_type === 'percentage' ? `${selectedAgreement.fee_percentage}%` : 'Fixo'})</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.feeValue || selectedAgreement.fee_value)}</span>
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resumo do Acordo</h2>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-700/50 text-sm">
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Valor Total</span>
+                        <span className="font-semibold text-slate-900 dark:text-white tabular-nums">{formatCurrency(agreementSummary?.totalValue || selectedAgreement.total_value)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Honorários ({selectedAgreement.fee_type === 'percentage' ? `${selectedAgreement.fee_percentage}%` : 'Fixo'})</span>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(agreementSummary?.feeValue || selectedAgreement.fee_value)}</span>
                       </div>
                       {selectedAgreement.fee_type === 'percentage' && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500 dark:text-gray-400">Valor Líquido Cliente</span>
-                          <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.netValue || selectedAgreement.net_value)}</span>
+                        <div className="flex justify-between items-center py-2.5">
+                          <span className="text-slate-500 dark:text-slate-400">Valor Líquido Cliente</span>
+                          <span className="font-semibold text-slate-900 dark:text-white tabular-nums">{formatCurrency(agreementSummary?.netValue || selectedAgreement.net_value)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Data do Acordo</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{new Date(selectedAgreement.agreement_date).toLocaleDateString('pt-BR')}</span>
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Data do Acordo</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">{new Date(selectedAgreement.agreement_date).toLocaleDateString('pt-BR')}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Forma de Pagamento</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{selectedAgreement.payment_type === 'upfront' ? 'À Vista' : 'Parcelado'}</span>
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Forma de Pagamento</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">{selectedAgreement.payment_type === 'upfront' ? 'À Vista' : 'Parcelado'}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Parcelas</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{(agreementSummary?.installmentsCount || selectedAgreement.installments_count)}x de {formatCurrency(agreementSummary?.installmentValue || selectedAgreement.installment_value)}</span>
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Parcelas</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">{(agreementSummary?.installmentsCount || selectedAgreement.installments_count)}x de {formatCurrency(agreementSummary?.installmentValue || selectedAgreement.installment_value)}</span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-500 dark:text-gray-400">Status</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          selectedAgreement.status === 'ativo' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
-                          selectedAgreement.status === 'concluido' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                          selectedAgreement.status === 'cancelado' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      <div className="flex justify-between items-center py-2.5">
+                        <span className="text-slate-500 dark:text-slate-400">Status</span>
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          selectedAgreement.status === 'ativo' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
+                          selectedAgreement.status === 'concluido' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' :
+                          selectedAgreement.status === 'cancelado' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                          'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
                         }`}>
                           {selectedAgreement.status === 'ativo' ? 'Em Andamento' : selectedAgreement.status.charAt(0).toUpperCase() + selectedAgreement.status.slice(1)}
                         </span>
                       </div>
                     </div>
                     {selectedAgreement.description && (
-                      <div className="mt-4 pt-3 border-t border-gray-200 dark:border-zinc-700">
-                        <span className="text-gray-500 dark:text-gray-400 text-sm">Descrição</span>
-                        <p className="text-sm text-gray-800 dark:text-gray-200 mt-1">{selectedAgreement.description}</p>
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-zinc-700">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Descrição</span>
+                        <p className="text-sm text-slate-700 dark:text-slate-200 mt-1 leading-relaxed">{selectedAgreement.description}</p>
                       </div>
                     )}
                   </div>
 
                   {/* Ações Rápidas */}
-                  <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-3">
-                    <h2 className="text-sm font-semibold mb-2 text-zinc-900 dark:text-white">⚡ Ações Rápidas</h2>
-                    <div className="flex flex-wrap gap-1">
-                      <span
+                  <div className="border border-slate-200 dark:border-zinc-700 rounded-xl p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-700 flex items-center justify-center">
+                        <Bell className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                      </div>
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ações</h2>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
                         onClick={() => handleGenerateReceipt(selectedAgreement)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-600 dark:text-gray-400 bg-transparent"
+                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 transition border border-slate-200 dark:border-zinc-600"
                       >
-                        <Receipt className="w-3 h-3" />Recibo
-                      </span>
-                      <span
-                        onClick={() => handleAddDeadline(selectedAgreement)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-600 dark:text-gray-400 bg-transparent"
-                      >
-                        <CalendarIcon className="w-3 h-3" />Prazo
-                      </span>
-                      <span
-                        onClick={() => handleExportAgreement(selectedAgreement)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-600 dark:text-gray-400 bg-transparent"
-                      >
-                        <Download className="w-3 h-3" />Exportar
-                      </span>
-                      <span
+                        <Receipt className="w-3.5 h-3.5 text-slate-500" />Gerar Recibo
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleOpenEditModal(selectedAgreement)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-yellow-600 dark:text-yellow-500 bg-transparent"
+                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-400 transition border border-amber-200 dark:border-amber-700/50"
                       >
-                        <Edit className="w-3 h-3" />Editar
-                      </span>
-                      <span
-                        onClick={() => handleDeleteAgreement(selectedAgreement)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-red-600 dark:text-red-500 bg-transparent"
-                      >
-                        <Trash2 className="w-3 h-3" />Excluir
-                      </span>
-                      <span
+                        <Edit className="w-3.5 h-3.5" />Editar Acordo
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleOpenAuditModal(selectedAgreement.id)}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-purple-600 dark:text-purple-400 bg-transparent"
+                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400 transition border border-purple-200 dark:border-purple-700/50"
                       >
-                        <History className="w-3 h-3" />Auditoria
-                      </span>
+                        <History className="w-3.5 h-3.5" />Auditoria
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAgreement(selectedAgreement)}
+                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition border border-red-200 dark:border-red-700/50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />Excluir
+                      </button>
                     </div>
                   </div>
 
+                  {/* Cliente — acesso rápido */}
+                  {(() => {
+                    const detailClient = clients.find(c => c.id === selectedAgreement.client_id);
+                    if (!detailClient) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => { handleCloseDetails(); navigateToClient(selectedAgreement.client_id); }}
+                        className="group w-full text-left border border-blue-100 dark:border-blue-700/40 rounded-xl p-4 bg-blue-50/60 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-6 h-6 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                            <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <h2 className="text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400 flex-1">Cliente</h2>
+                          <ChevronRight className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover:opacity-100 transition" />
+                        </div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{getClientName(selectedAgreement.client_id)}</p>
+                        {(detailClient as any).cpf && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">CPF: {(detailClient as any).cpf}</p>}
+                        {(detailClient as any).phone && <p className="text-xs text-slate-500 dark:text-slate-400">{(detailClient as any).phone}</p>}
+                        <p className="text-xs text-blue-500 dark:text-blue-400 mt-1.5 font-medium">Abrir ficha do cliente →</p>
+                      </button>
+                    );
+                  })()}
+
                   {/* Notas Internas */}
                   {selectedAgreement.notes && (
-                    <div className="border border-amber-200 dark:border-amber-700 rounded-lg p-4 bg-amber-50 dark:bg-amber-900/20">
-                      <h2 className="text-lg font-semibold mb-2 text-amber-900 dark:text-amber-300">📝 Notas Internas</h2>
-                      <p className="text-sm text-amber-800 dark:text-amber-200">{selectedAgreement.notes}</p>
+                    <div className="border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 sm:p-5 bg-amber-50 dark:bg-amber-900/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Notas Internas</h2>
+                      </div>
+                      <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">{selectedAgreement.notes}</p>
                     </div>
                   )}
                 </div>
 
                 {/* Coluna 2 - Parcelas */}
                 <div className="lg:col-span-2 lg:h-full min-h-0">
-                  <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-3 lg:h-full flex flex-col min-h-0 bg-white dark:bg-zinc-800/60">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <h2 className="text-base font-semibold text-zinc-900 dark:text-white">💳 Parcelas e Pagamentos</h2>
+                  <div className="border border-slate-200 dark:border-zinc-700 rounded-xl p-4 sm:p-5 lg:h-full flex flex-col min-h-0 bg-white dark:bg-zinc-800/60">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-700 flex items-center justify-center">
+                          <CreditCard className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                        </div>
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Parcelas e Pagamentos</h2>
+                      </div>
                       {installments.length > 0 && installments.every(inst => inst.status === 'pago') && (
                         <button
                           onClick={() => handleGenerateFullReceipt(selectedAgreement)}
@@ -3973,7 +4660,61 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       </div>
                     ) : (
                       <div className="space-y-2 pr-1 lg:flex-grow lg:overflow-y-auto">
-                        {installments.map((installment, index) => {
+                        {/* Parcelas pagas — colapsáveis */}
+                        {(() => {
+                          const paid = installments.filter(i => i.status === 'pago');
+                          const unpaid = installments.filter(i => i.status !== 'pago');
+                          if (paid.length === 0) return null;
+                          return (
+                            <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/40 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setShowPaidInstallments(v => !v)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                    {paid.length} parcela{paid.length > 1 ? 's' : ''} paga{paid.length > 1 ? 's' : ''} · {formatCurrency(paid.reduce((s, i) => s + (i.paid_value ?? i.value), 0))} recebido
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                                  {showPaidInstallments ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  {showPaidInstallments ? 'Ocultar' : 'Expandir'}
+                                </div>
+                              </button>
+                              {showPaidInstallments && (
+                                <div className="divide-y divide-emerald-100 dark:divide-emerald-800/30">
+                                  {paid.map(inst => (
+                                    <div key={inst.id} className="px-4 py-2.5 flex items-center justify-between bg-white dark:bg-zinc-900/50 text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">{inst.installment_number}</span>
+                                        <div>
+                                          <p className="font-semibold text-slate-700 dark:text-slate-300">Parcela {inst.installment_number}/{selectedAgreement.installments_count}</p>
+                                          <p className="text-slate-400 dark:text-slate-500">
+                                            Recebido em {inst.payment_date ? new Date(inst.payment_date).toLocaleDateString('pt-BR') : '—'} · {inst.payment_method ? { pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' }[inst.payment_method] ?? inst.payment_method : '—'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(inst.paid_value ?? inst.value)}</p>
+                                        <button
+                                          onClick={() => handleGenerateReceipt(selectedAgreement, inst)}
+                                          className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition mt-0.5"
+                                        >
+                                          Recibo
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {installments.filter(i => i.status !== 'pago').length === 0 && <div />}
+                        {installments.filter(i => i.status !== 'pago').map((installment, index) => {
+                          const _ = index; // suppress unused var
                           const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < today;
                           const isPaid = installment.status === 'pago';
                           const dueMidnight = parseLocalDate(installment.due_date);
@@ -4176,7 +4917,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                 </div>
                               )}
                               </div>
-                              {installments.length > 1 && index < installments.length - 1 && (
+                              {index < installments.filter(i => i.status !== 'pago').length - 1 && (
                                 <div className="hidden dark:block h-px bg-gradient-to-r from-transparent via-white/15 to-transparent mx-2 rounded-full" />
                               )}
                             </React.Fragment>
@@ -4190,13 +4931,13 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             </div>
 
             {/* Footer */}
-            <div className="flex justify-between items-center border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Criado em {new Date(selectedAgreement.created_at).toLocaleDateString('pt-BR')} às {new Date(selectedAgreement.created_at).toLocaleTimeString('pt-BR')}
+            <div className="flex justify-between items-center border-t border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900 px-5 sm:px-8 py-3.5">
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                Criado em {new Date(selectedAgreement.created_at).toLocaleDateString('pt-BR')}
               </span>
               <button
                 onClick={handleCloseDetails}
-                className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-white text-sm font-medium rounded-lg transition"
+                className="px-4 py-2 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 text-sm font-medium rounded-lg transition"
               >
                 Fechar
               </button>
@@ -4210,7 +4951,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleClosePaymentModal} aria-hidden="true" />
           <div className="relative w-full max-w-3xl max-h-[85vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-emerald-500" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Pagamento</p>
@@ -4232,47 +4973,78 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-zinc-900">
 
               <div className="space-y-5">
-                {/* Valor da Parcela */}
-                <div className="relative">
-                  <div className="absolute -inset-x-4 -inset-y-2 bg-slate-200/70 dark:bg-slate-800/30 rounded-xl blur-sm" aria-hidden="true" />
-                  <div className="relative rounded-lg bg-white border border-slate-200 dark:bg-slate-800/60 dark:border-slate-700 p-3">
-                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-200">Valor da Parcela</label>
-                    <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(selectedInstallment.value)}</p>
+                {/* Resumo da Parcela */}
+                <div className="rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-0.5">
+                      Parcela {selectedInstallment.installment_number}{selectedAgreement?.installments_count ? `/${selectedAgreement.installments_count}` : ''}
+                    </p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{formatCurrency(selectedInstallment.value)}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                      Vencimento: {(parseLocalDate(selectedInstallment.due_date) ?? new Date(selectedInstallment.due_date)).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                    <DollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                   </div>
                 </div>
 
                 {/* Data e Valor */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Data do Pagamento</label>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Data do Pagamento</label>
                     <div className="relative">
-                      <CalendarIcon className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 w-5 h-5 top-2.5" />
+                      <CalendarIcon className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 w-4 h-4 top-3" />
                       <input
                         type="date"
                         value={paymentData.paymentDate}
                         onChange={(e) => setPaymentData(prev => ({ ...prev, paymentDate: e.target.value }))}
-                        className="w-full rounded-lg border-gray-300 bg-white py-2.5 pl-10 pr-3 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-100"
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-slate-900 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 transition"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Valor Pago</label>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Valor Pago</label>
                     <div className="relative">
+                      <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 text-sm font-medium">R$</span>
                       <input
                         type="text"
                         value={paymentData.paidValue}
-                        onChange={(e) => setPaymentData(prev => ({ ...prev, paidValue: formatPaidValueInput(e.target.value) }))}
-                        className="w-full rounded-lg border-gray-300 bg-white py-2.5 px-3 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-100"
-                        placeholder=""
+                        onChange={(e) => {
+                          const formatted = formatPaidValueInput(e.target.value);
+                          setPaymentData(prev => ({ ...prev, paidValue: formatted }));
+                          if (selectedInstallment) {
+                            const parsed = parsePaidValue(formatted);
+                            if (parsed > selectedInstallment.value * 1.001) {
+                              setOverpaymentWarning({ diff: parsed - selectedInstallment.value, scheduled: selectedInstallment.value });
+                            } else {
+                              setOverpaymentWarning(null);
+                            }
+                          }
+                        }}
+                        className={`w-full rounded-lg border py-2.5 pl-9 pr-3 bg-white text-slate-900 text-sm font-semibold focus:ring-1 transition tabular-nums dark:bg-zinc-800 dark:text-gray-100 ${overpaymentWarning ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500 dark:border-amber-500' : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 dark:border-zinc-700'}`}
+                        placeholder="0,00"
                         inputMode="decimal"
                       />
                     </div>
                   </div>
                 </div>
 
+                {/* Aviso de sobrepagamento */}
+                {overpaymentWarning && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700/50 px-4 py-3 flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800 dark:text-amber-200">
+                      <p className="font-semibold mb-0.5">Valor acima do agendado</p>
+                      <p>Parcela: <span className="font-semibold tabular-nums">{formatCurrency(overpaymentWarning.scheduled)}</span> · Excedente: <span className="font-semibold tabular-nums text-amber-700 dark:text-amber-300">+{formatCurrency(overpaymentWarning.diff)}</span></p>
+                      <p className="mt-0.5 text-amber-600 dark:text-amber-400">O valor <strong>real pago</strong> será registrado integralmente.</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Método de Pagamento */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Método de Pagamento</label>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Método de Pagamento</label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { key: 'pix', icon: Smartphone, label: 'PIX' },
@@ -4305,11 +5077,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
                 {/* Observações */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Observações (opcional)</label>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Observações (opcional)</label>
                   <textarea
                     value={paymentData.notes}
                     onChange={(e) => setPaymentData(prev => ({ ...prev, notes: e.target.value }))}
-                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-100 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 px-3 py-2 resize-none transition"
                     rows={2}
                     placeholder="Adicione uma anotação sobre o pagamento..."
                   />
@@ -4331,8 +5103,9 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   type="button"
                   onClick={handleConfirmPayment}
                   disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
+                  <CheckCircle className="w-4 h-4" />
                   Confirmar Pagamento
                 </button>
               </div>
@@ -4346,7 +5119,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsReportModalOpen(false)} aria-hidden="true" />
           <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-blue-600" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
@@ -4366,7 +5139,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             <div className="px-6 py-6 space-y-6">
               {/* Seletor de Mês */}
               <div>
-                <label className="text-sm font-semibold text-slate-700 mb-2 block">📅 Selecione o Mês</label>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block">Selecione o Mês</label>
                 <input
                   type="month"
                   value={reportMonth}
@@ -4396,7 +5169,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
               {/* Informações para IR */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                <h4 className="text-sm font-semibold text-slate-900 mb-4">📋 Informações para Declaração</h4>
+                <h4 className="text-sm font-semibold text-slate-900 mb-4">Informações para Declaração</h4>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-600">Código da Receita:</span>
@@ -4418,33 +5191,87 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               </div>
 
               {/* Detalhamento */}
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-3">📝 Detalhamento de Recebimentos</h4>
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
-                      <tr>
-                        <th className="py-3 px-4 text-left">Cliente</th>
-                        <th className="py-3 px-4 text-left">Acordo</th>
-                        <th className="py-3 px-4 text-right">Valor Recebido</th>
-                        <th className="py-3 px-4 text-right">Honorários</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-t border-slate-200">
-                        <td colSpan={4} className="py-8 text-center text-slate-500">
-                          <FileSpreadsheet className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                          <p>Detalhamento será gerado após implementação completa</p>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {(() => {
+                const [ry, rm] = reportMonth.split('-').map(Number);
+                const monthStart = new Date(ry, rm - 1, 1);
+                const monthEnd = new Date(ry, rm, 0, 23, 59, 59, 999);
+                const monthPaidInsts = allInstallments.filter(inst => {
+                  if (inst.status !== 'pago') return false;
+                  const d = inst.payment_date ? new Date(inst.payment_date + 'T12:00:00') : null;
+                  return d && d >= monthStart && d <= monthEnd;
+                });
+                // Agrupar por acordo
+                const byAgreement = new Map<string, { agreement: Agreement; insts: typeof monthPaidInsts }>();
+                monthPaidInsts.forEach(inst => {
+                  const ag = agreements.find(a => a.id === inst.agreement_id);
+                  if (!ag) return;
+                  if (!byAgreement.has(ag.id)) byAgreement.set(ag.id, { agreement: ag, insts: [] });
+                  byAgreement.get(ag.id)!.insts.push(inst);
+                });
+                const rows = Array.from(byAgreement.values());
+                return (
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900 mb-3">Detalhamento de Recebimentos</h4>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
+                          <tr>
+                            <th className="py-3 px-4 text-left">Cliente</th>
+                            <th className="py-3 px-4 text-left">Acordo</th>
+                            <th className="py-3 px-4 text-center">Parcelas</th>
+                            <th className="py-3 px-4 text-right">Valor Recebido</th>
+                            <th className="py-3 px-4 text-right">Honorários</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.length === 0 ? (
+                            <tr className="border-t border-slate-200">
+                              <td colSpan={5} className="py-8 text-center text-slate-500">
+                                <FileSpreadsheet className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                                <p>Nenhum recebimento neste mês</p>
+                              </td>
+                            </tr>
+                          ) : rows.map(({ agreement: ag, insts }) => {
+                            const totalPaid = insts.reduce((s, i) => s + (i.paid_value || i.value), 0);
+                            const feePerInstallment = ag.fee_value / (ag.installments_count || 1);
+                            const totalFee = feePerInstallment * insts.length;
+                            return (
+                              <tr key={ag.id} className="border-t border-slate-200 hover:bg-slate-50">
+                                <td className="py-2.5 px-4 font-medium text-slate-900">{getClientName(ag.client_id)}</td>
+                                <td className="py-2.5 px-4 text-slate-600 max-w-[180px] truncate">{ag.title}</td>
+                                <td className="py-2.5 px-4 text-center text-slate-700">{insts.length}</td>
+                                <td className="py-2.5 px-4 text-right font-semibold text-slate-900">{formatCurrency(totalPaid)}</td>
+                                <td className="py-2.5 px-4 text-right font-semibold text-emerald-600">{formatCurrency(totalFee)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        {rows.length > 0 && (() => {
+                          const grandTotal = rows.reduce((s, r) => s + r.insts.reduce((ss, i) => ss + (i.paid_value || i.value), 0), 0);
+                          const grandFee = rows.reduce((s, r) => {
+                            const ag = r.agreement;
+                            const feePerInst = ag.fee_value / (ag.installments_count || 1);
+                            return s + feePerInst * r.insts.length;
+                          }, 0);
+                          return (
+                            <tfoot>
+                              <tr className="bg-slate-100 font-semibold border-t-2 border-slate-300">
+                                <td colSpan={3} className="py-3 px-4 text-right text-slate-700 uppercase text-xs tracking-wide">Total</td>
+                                <td className="py-3 px-4 text-right text-slate-900">{formatCurrency(grandTotal)}</td>
+                                <td className="py-3 px-4 text-right text-emerald-700">{formatCurrency(grandFee)}</td>
+                              </tr>
+                            </tfoot>
+                          );
+                        })()}
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Observações Importantes */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-amber-900 mb-2">⚠️ Observações Importantes</h4>
+                <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Observações Importantes</h4>
                 <ul className="text-xs text-amber-800 space-y-1 list-disc list-inside">
                   <li>Os valores apresentados referem-se aos honorários efetivamente recebidos no período</li>
                   <li>Consulte seu contador para orientações específicas sobre deduções permitidas</li>
@@ -4465,7 +5292,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               <button
                 type="button"
                 onClick={handleExportMonthlyReport}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition shadow-sm"
               >
                 <Download className="w-4 h-4" />
                 Exportar PDF
@@ -4480,12 +5307,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsIRModalOpen(false)} aria-hidden="true" />
           <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-indigo-600" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-orange-500" />
+                  <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   Imposto de Renda
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Selecione o ano para gerar o relatório</p>
@@ -4512,7 +5339,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
-                    📊 Anos disponíveis com pagamentos registrados:
+                    Anos disponíveis com pagamentos registrados:
                   </p>
                   {availableYears.map((year) => {
                     const yearPayments = allInstallments.filter(inst => 
@@ -4532,23 +5359,23 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           handleGenerateIRReport(year);
                           setIsIRModalOpen(false);
                         }}
-                        className="w-full border-2 border-slate-200 dark:border-zinc-700 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-xl p-4 transition text-left group"
+                        className="w-full border border-slate-200 dark:border-zinc-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 rounded-xl p-4 transition text-left group shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-600 group-hover:bg-red-700 text-white rounded-lg w-12 h-12 flex items-center justify-center font-bold text-lg transition">
+                            <div className="bg-indigo-600 group-hover:bg-indigo-700 text-white rounded-xl w-12 h-12 flex items-center justify-center font-bold text-sm transition">
                               {year}
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-orange-700 dark:group-hover:text-orange-400">Ano {year}</p>
-                              <p className="text-sm text-slate-600 dark:text-slate-400">
+                              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400">Exercício {year}</p>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">
                                 {yearPayments.length} pagamento{yearPayments.length > 1 ? 's' : ''} registrado{yearPayments.length > 1 ? 's' : ''}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{formatCurrency(yearTotal)}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Total recebido</p>
+                            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(yearTotal)}</p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">Honorários</p>
                           </div>
                         </div>
                       </button>
@@ -4572,16 +5399,27 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseAuditModal} aria-hidden="true" />
           <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+            <div className="h-1 w-full bg-purple-600" />
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky top-0">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center rounded-xl p-2.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">
+                <div className="flex items-center justify-center rounded-xl p-2.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
                   <ClipboardList className="w-5 h-5" />
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Auditoria</p>
                   <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Histórico de Baixas</h2>
+                  {auditAgreementId && (() => {
+                    const ag = agreements.find(a => a.id === auditAgreementId);
+                    return ag ? (
+                      <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mt-0.5">
+                        {ag.title} — {getClientName(ag.client_id)}
+                      </p>
+                    ) : null;
+                  })()}
+                  {!auditAgreementId && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Todos os acordos</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -4627,7 +5465,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   <p className="text-base font-bold text-blue-600">{formatCurrency(auditTotals.total)}</p>
                 </div>
                 <div className="bg-gradient-to-br from-emerald-50 via-emerald-50 to-green-50 dark:from-emerald-900/40 dark:via-emerald-900/30 dark:to-green-900/40 rounded-xl p-3 border border-emerald-300 dark:border-emerald-700 shadow-sm">
-                  <p className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold mb-1">💰 Honorários</p>
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold mb-1">Honorários</p>
                   <p className="text-base font-bold text-emerald-600">{formatCurrency(auditTotals.totalHonorarios)}</p>
                 </div>
               </div>
@@ -4679,7 +5517,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                             : paymentMethod === 'cartao_debito' ? 'Cartão Déb.'
                             : paymentMethod === 'cheque' ? 'Cheque'
                             : 'N/I';
-                          const paidValue = log.new_value?.paid_value || 0;
+                          const paidValue = resolveAuditPaidValue(log);
                           // Extrair número da parcela da descrição
                           const parcelaMatch = log.description.match(/parcela (\d+)/i);
                           const parcelaNum = parcelaMatch ? parcelaMatch[1] : '-';
@@ -4692,14 +5530,14 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           // Honorários proporcionais deste pagamento
                           const agreement = agreements.find(a => a.id === log.agreement_id);
                           let feeThisPayment = 0;
-                          if (agreement && agreement.total_value > 0 && typeof paidValue === 'number') {
+                          if (agreement && agreement.total_value > 0 && paidValue > 0) {
                             const ratio = agreement.fee_value / agreement.total_value;
                             feeThisPayment = paidValue * ratio;
                           }
                           
                           return (
-                            <tr 
-                              key={log.id} 
+                            <tr
+                              key={log.id}
                               className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition"
                             >
                               <td className="py-3 px-3">
@@ -4709,12 +5547,34 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                 </div>
                               </td>
                               <td className="py-3 px-3">
-                                <span className="font-semibold text-slate-900 dark:text-white">{agreementInfo.clientName}</span>
+                                {agreement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => { handleCloseAuditModal(); navigateToClient(agreement.client_id); }}
+                                    className="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition text-left"
+                                    title="Abrir ficha do cliente"
+                                  >
+                                    {agreementInfo.clientName}
+                                  </button>
+                                ) : (
+                                  <span className="font-semibold text-slate-900 dark:text-white">{agreementInfo.clientName}</span>
+                                )}
                               </td>
                               <td className="py-3 px-3 hidden lg:table-cell">
-                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[160px] block" title={agreementInfo.title}>
-                                  {agreementInfo.title.length > 25 ? agreementInfo.title.substring(0, 25) + '...' : agreementInfo.title}
-                                </span>
+                                {agreement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => { handleCloseAuditModal(); setTimeout(() => handleOpenDetails(agreement), 80); }}
+                                    className="text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:underline transition truncate max-w-[160px] block text-left"
+                                    title={`Abrir acordo: ${agreementInfo.title}`}
+                                  >
+                                    {agreementInfo.title.length > 25 ? agreementInfo.title.substring(0, 25) + '...' : agreementInfo.title}
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-600 dark:text-slate-400 truncate max-w-[160px] block" title={agreementInfo.title}>
+                                    {agreementInfo.title.length > 25 ? agreementInfo.title.substring(0, 25) + '...' : agreementInfo.title}
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3 px-2 text-center">
                                 <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-bold">
@@ -4754,16 +5614,29 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         })}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-slate-100 dark:bg-zinc-800 font-semibold">
-                          <td colSpan={6} className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
-                            Total do Período:
+                        <tr className="bg-slate-100 dark:bg-zinc-800 font-semibold border-t-2 border-slate-300 dark:border-zinc-600">
+                          {/* Data */}
+                          <td className="py-3 px-3" />
+                          {/* Cliente */}
+                          <td className="py-3 px-3" />
+                          {/* Acordo (hidden lg) */}
+                          <td className="py-3 px-3 hidden lg:table-cell" />
+                          {/* Parc. */}
+                          <td className="py-3 px-2" />
+                          {/* Método (hidden sm) */}
+                          <td className="py-3 px-2 hidden sm:table-cell text-right text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide">
+                            Total do Período
                           </td>
-                          <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-200">
-                            {formatCurrency(auditTotals.total)}
+                          {/* Valor */}
+                          <td className="py-3 px-3 text-right">
+                            <span className="font-bold text-slate-900 dark:text-white">{formatCurrency(auditTotals.total)}</span>
                           </td>
-                          <td className="py-3 px-4 text-right text-emerald-600 dark:text-emerald-400">
-                            {formatCurrency(auditTotals.totalHonorarios)}
+                          {/* Honorário */}
+                          <td className="py-3 px-3 text-right">
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(auditTotals.totalHonorarios)}</span>
                           </td>
+                          {/* Usuário */}
+                          <td className="py-3 px-3" />
                         </tr>
                       </tfoot>
                     </table>

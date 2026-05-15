@@ -97,6 +97,39 @@
   accent-color: #6366f1;
 }
 
+/* ===== FINANCIAL MODULE — LIQUID PROGRESS ANIMATION ===== */
+@keyframes financial-liquid-shimmer {
+  0%   { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(500%) skewX(-12deg); opacity: 0; }
+}
+
+.financial-progress-fill {
+  position: relative;
+  overflow: hidden;
+}
+
+.financial-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 28%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 40%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.55) 60%,
+    transparent 100%
+  );
+  animation: financial-liquid-shimmer 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
 @keyframes float-soft {
   0%,
   100% {

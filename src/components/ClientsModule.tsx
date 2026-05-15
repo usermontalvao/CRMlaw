@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock, Merge } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
+import { signatureService } from '../services/signature.service';
 import type { Client, ClientFilters, CreateClientDTO } from '../types/client.types';
 import ClientList from './ClientList';
 import ClientForm from './ClientForm';
@@ -40,6 +41,146 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const { confirmDelete } = useDeleteConfirm();
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+
+  // ── Cache de fotos em localStorage (sobrevive reload) ─────────────
+  // Schema: { [clientId]: { url, path, expiresAt, miss?: true } }
+  // miss=true marca que o cliente não tem foto disponível — evita refetch repetido.
+  const PHOTO_CACHE_KEY = 'jurius.clientPhotoCache.v1';
+  const PHOTO_CACHE_TTL_MS = 50 * 60 * 1000; // 50min (URL assinada vale 60min)
+  const MISS_CACHE_TTL_MS  = 24 * 60 * 60 * 1000; // 24h pra "sem foto"
+
+  type CacheEntry = { url?: string; path?: string; expiresAt: number; miss?: boolean };
+  const loadCache = (): Record<string, CacheEntry> => {
+    try {
+      const raw = localStorage.getItem(PHOTO_CACHE_KEY);
+      if (!raw) return {};
+      return JSON.parse(raw);
+    } catch { return {}; }
+  };
+  const saveCache = (cache: Record<string, CacheEntry>) => {
+    try { localStorage.setItem(PHOTO_CACHE_KEY, JSON.stringify(cache)); } catch { /* quota */ }
+  };
+
+  const [clientPhotoUrls, setClientPhotoUrls] = useState<Map<string, string>>(() => {
+    // Pre-carrega URLs ainda válidas do cache
+    const cache = loadCache();
+    const now = Date.now();
+    const map = new Map<string, string>();
+    Object.entries(cache).forEach(([id, entry]) => {
+      if (entry.url && entry.expiresAt > now) map.set(id, entry.url);
+    });
+    return map;
+  });
+
+  // Resolve foto do cliente para a lista, com cache em localStorage.
+  // Estratégias em ordem:
+  //   1) photo_path pinado no banco → URL assinada direta
+  //   2) Sem pinado → busca assinaturas concluídas e usa a foto facial mais recente
+  // Fast pass (pinados): concurrency 12 · Slow pass (fallback): concurrency 4
+  useEffect(() => {
+    if (clients.length === 0) return;
+    const cache = loadCache();
+    const now = Date.now();
+
+    // Skip: já no state OU cache válido (foto OU "miss" recente)
+    const targets = clients.filter((c) => {
+      if (clientPhotoUrls.has(c.id)) return false;
+      const cached = cache[c.id];
+      if (cached) {
+        if (cached.url && cached.expiresAt > now) return false;
+        if (cached.miss && cached.expiresAt > now) return false;
+      }
+      return true;
+    });
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+
+    const setEntry = (id: string, entry: CacheEntry) => {
+      cache[id] = entry;
+    };
+
+    const tryUrl = async (path: string): Promise<string | null> => {
+      try {
+        return await signatureService.getSignedImageUrl(path, 3600);
+      } catch { return null; }
+    };
+
+    const resolvePinned = async (c: Client): Promise<[string, string] | null> => {
+      if (!c.photo_path) return null;
+      const url = await tryUrl(c.photo_path);
+      if (url) {
+        setEntry(c.id, { url, path: c.photo_path, expiresAt: now + PHOTO_CACHE_TTL_MS });
+        return [c.id, url];
+      }
+      return null;
+    };
+
+    const resolveFromSignatures = async (c: Client): Promise<[string, string] | null> => {
+      try {
+        const requests = await signatureService.listRequestsWithSigners({ client_id: c.id });
+        const signed = requests
+          .filter((r: any) => r.status === 'signed')
+          .sort((a: any, b: any) =>
+            new Date(b.signed_at || b.updated_at).getTime() -
+            new Date(a.signed_at || a.updated_at).getTime()
+          );
+        for (const req of signed) {
+          for (const signer of req.signers ?? []) {
+            if (signer.facial_image_path && signer.status === 'signed') {
+              const url = await tryUrl(signer.facial_image_path);
+              if (url) {
+                setEntry(c.id, { url, path: signer.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS });
+                return [c.id, url];
+              }
+            }
+          }
+          if (req.facial_image_path) {
+            const url = await tryUrl(req.facial_image_path);
+            if (url) {
+              setEntry(c.id, { url, path: req.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS });
+              return [c.id, url];
+            }
+          }
+        }
+      } catch { /* */ }
+      // Marca como "miss" pra não voltar a buscar por 24h
+      setEntry(c.id, { miss: true, expiresAt: now + MISS_CACHE_TTL_MS });
+      return null;
+    };
+
+    const runBatched = async (
+      items: Client[],
+      worker: (c: Client) => Promise<[string, string] | null>,
+      concurrency: number
+    ) => {
+      for (let i = 0; i < items.length; i += concurrency) {
+        if (cancelled) return;
+        const batch = items.slice(i, i + concurrency);
+        const results = await Promise.all(batch.map(worker));
+        if (cancelled) return;
+        setClientPhotoUrls((prev) => {
+          const next = new Map(prev);
+          results.forEach((e) => { if (e) next.set(e[0], e[1]); });
+          return next;
+        });
+        saveCache(cache);
+      }
+    };
+
+    (async () => {
+      // 1ª passada: fotos pinadas (rápida — só 1 round-trip cada)
+      const pinned = targets.filter((c) => c.photo_path);
+      const unpinned = targets.filter((c) => !c.photo_path);
+      await runBatched(pinned, resolvePinned, 12);
+      if (cancelled) return;
+      // 2ª passada: buscar nas assinaturas (mais lenta)
+      await runBatched(unpinned, resolveFromSignatures, 4);
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients]);
   const [loading, setLoading] = useState(true);
   const [modalState, setModalState] = useState<{ type: 'none' | 'create' | 'edit' | 'details'; client: Client | null }>({
     type: 'none',
@@ -564,42 +705,80 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     <>
       <div className="space-y-4">
         
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
-          <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Total</span>
-              <User className="w-4 h-4 text-slate-600" />
+        {/* Stats — enterprise treatment */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-slate-100">
+            {/* Total */}
+            <div className="px-4 py-4 sm:px-5 sm:py-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total</span>
+                <Users className="w-3.5 h-3.5 text-slate-300" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums leading-none">{stats.total}</p>
+              <p className="mt-1.5 text-[10px] text-slate-400">cadastros no sistema</p>
             </div>
-            <p className="text-lg sm:text-xl font-semibold text-slate-900">{stats.total}</p>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] sm:text-xs font-medium text-emerald-600 uppercase">Ativos</span>
-              <UserPlus className="w-4 h-4 text-emerald-600" />
+            {/* Ativos */}
+            <div className="px-4 py-4 sm:px-5 sm:py-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Ativos</span>
+                <UserPlus className="w-3.5 h-3.5 text-emerald-500/70" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-emerald-600 tabular-nums leading-none">{stats.active}</p>
+              <p className="mt-1.5 text-[10px] text-slate-400">
+                {stats.total > 0 ? `${Math.round((stats.active / stats.total) * 100)}% da base` : '—'}
+              </p>
             </div>
-            <p className="text-lg sm:text-xl font-semibold text-emerald-600">{stats.active}</p>
-          </div>
-          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-blue-600 uppercase">P. Física</span>
-              <User className="w-4 h-4 text-blue-600" />
+            {/* P. Física */}
+            <div className="hidden sm:block px-4 py-4 sm:px-5 sm:py-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">P. Física</span>
+                <User className="w-3.5 h-3.5 text-slate-300" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums leading-none">{stats.pessoaFisica}</p>
+              <p className="mt-1.5 text-[10px] text-slate-400">
+                {stats.total > 0 ? `${Math.round((stats.pessoaFisica / stats.total) * 100)}% PF` : '—'}
+              </p>
             </div>
-            <p className="text-xl font-semibold text-blue-600">{stats.pessoaFisica}</p>
-          </div>
-          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-purple-600 uppercase">P. Jurídica</span>
-              <Building2 className="w-4 h-4 text-purple-600" />
+            {/* P. Jurídica */}
+            <div className="hidden sm:block px-4 py-4 sm:px-5 sm:py-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">P. Jurídica</span>
+                <Building2 className="w-3.5 h-3.5 text-slate-300" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums leading-none">{stats.pessoaJuridica}</p>
+              <p className="mt-1.5 text-[10px] text-slate-400">
+                {stats.total > 0 ? `${Math.round((stats.pessoaJuridica / stats.total) * 100)}% PJ` : '—'}
+              </p>
             </div>
-            <p className="text-xl font-semibold text-purple-600">{stats.pessoaJuridica}</p>
-          </div>
-          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-amber-600 uppercase">Incompletos</span>
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-xl font-semibold text-amber-600">{stats.incomplete}</p>
+            {/* Incompletos — clicável: filtra a lista */}
+            <button
+              type="button"
+              onClick={() => stats.incomplete > 0 && setShowIncompleteOnly((v) => !v)}
+              disabled={stats.incomplete === 0}
+              className={`hidden sm:block px-4 py-4 sm:px-5 sm:py-5 text-left w-full transition relative ${
+                stats.incomplete > 0
+                  ? 'cursor-pointer hover:bg-amber-50/40'
+                  : 'cursor-default'
+              } ${showIncompleteOnly ? 'bg-amber-50/60' : ''}`}
+              title={stats.incomplete > 0 ? (showIncompleteOnly ? 'Mostrar todos' : 'Filtrar somente incompletos') : ''}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Incompletos</span>
+                <AlertTriangle className={`w-3.5 h-3.5 ${stats.incomplete > 0 ? 'text-amber-500' : 'text-slate-300'}`} />
+              </div>
+              <p className={`text-2xl sm:text-3xl font-bold tabular-nums leading-none ${stats.incomplete > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{stats.incomplete}</p>
+              <p className="mt-1.5 text-[10px] text-slate-400 flex items-center gap-1">
+                {stats.incomplete > 0 ? (
+                  <span className="text-amber-600 font-medium inline-flex items-center gap-1">
+                    {showIncompleteOnly ? 'filtro ativo — clique para limpar' : 'clique para filtrar'}
+                    {showIncompleteOnly && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+                  </span>
+                ) : 'tudo em dia'}
+              </p>
+              {showIncompleteOnly && stats.incomplete > 0 && (
+                <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -672,60 +851,70 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </div>
               </div>
             )}
-            {missingFieldsMap.size > 0 && showMissingBanner && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div className="flex items-start gap-3 flex-1">
-                  <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-sm">Cadastros com dados obrigatórios pendentes</p>
-                    <p className="text-xs mt-1">
-                      Identificamos {missingFieldsMap.size} cliente(s) com informações essenciais ausentes. Complete os dados para garantir consistência.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 self-stretch sm:self-auto">
-                  {!showIncompleteOnly && (
+            {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0) && (
+              <div className="flex items-center gap-3 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                {missingFieldsMap.size > 0 && showMissingBanner && (
+                  <div className="inline-flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    <span className="text-slate-600">
+                      <strong className="text-amber-700 font-semibold">{missingFieldsMap.size}</strong> incompletos
+                    </span>
+                    {!showIncompleteOnly && (
+                      <button
+                        onClick={() => setShowIncompleteOnly(true)}
+                        className="text-amber-700 hover:text-amber-900 hover:underline font-medium decoration-dotted underline-offset-2"
+                      >
+                        mostrar
+                      </button>
+                    )}
                     <button
-                      onClick={() => setShowIncompleteOnly(true)}
-                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-md transition-colors"
+                      type="button"
+                      onClick={() => setShowMissingBanner(false)}
+                      className="text-slate-300 hover:text-slate-500 text-sm leading-none px-1"
+                      aria-label="Fechar aviso de cadastros incompletos"
+                      title="Dispensar"
                     >
-                      Mostrar incompletos
+                      ×
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowMissingBanner(false)}
-                    className="ml-auto text-amber-700 hover:text-amber-900 text-xs font-semibold px-2 py-1 rounded-md hover:bg-amber-100 transition-colors"
-                    aria-label="Fechar aviso de cadastros incompletos"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            )}
-            {outdatedSet.size > 0 && (
-              <div className="bg-sky-50 border border-sky-200 text-sky-800 px-4 py-2.5 rounded-lg flex items-start gap-3">
-                <Clock className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-sm">Cadastros desatualizados</p>
-                  <p className="text-xs mt-1">
-                    Encontramos {outdatedSet.size} cliente(s) com última atualização superior a {OUTDATED_THRESHOLD_DAYS} dias.
-                  </p>
-                </div>
+                  </div>
+                )}
+                {missingFieldsMap.size > 0 && showMissingBanner && outdatedSet.size > 0 && (
+                  <span className="text-slate-300">·</span>
+                )}
+                {outdatedSet.size > 0 && (
+                  <div className="inline-flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
+                    <span className="text-slate-600">
+                      <strong className="text-sky-700 font-semibold">{outdatedSet.size}</strong> desatualizados
+                    </span>
+                    <span className="text-slate-400">(&gt; {OUTDATED_THRESHOLD_DAYS} dias)</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
-            <div className="flex items-center gap-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          {/* Linha 1: busca sempre visível + actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
+                placeholder="Buscar por nome, CPF, e-mail ou telefone…"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleNewClient}
-                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
+                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-2 rounded-lg text-xs font-semibold text-white shadow-sm shadow-orange-500/30"
               >
                 <Plus className="w-4 h-4" />
                 Novo Cliente
@@ -734,7 +923,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={openManualMerge}
-                className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 shadow-sm"
+                className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-2 rounded-lg text-xs font-medium text-slate-700 shadow-sm"
                 title="Mesclar contatos manualmente"
               >
                 <Merge className="w-4 h-4" />
@@ -744,7 +933,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={toggleSelectionMode}
-                className={`inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                className={`inline-flex items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                   selectionMode
                     ? 'border-indigo-600 bg-indigo-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -756,30 +945,17 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowFilters((prev) => !prev)}
-                className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
+                title={showFilters ? 'Ocultar filtros' : 'Mostrar mais filtros'}
               >
-                {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+                <Filter className="w-3.5 h-3.5" />
+                {showFilters ? 'Menos filtros' : 'Mais filtros'}
               </button>
             </div>
           </div>
 
           {showFilters && (
-            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-              <div className="sm:col-span-2 lg:col-span-4">
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Buscar Cliente</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                    placeholder="Nome, CPF, e-mail..."
-                  />
-                </div>
-              </div>
-
+            <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
               <div className="lg:col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Status</label>
                 <select
@@ -931,6 +1107,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onView={handleViewClient}
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}
+          photoUrls={clientPhotoUrls}
         />
       </div>
 

@@ -66,4 +66,6 @@ export const SYSTEM_EVENTS = {
   // Petition Editor block modal
   BLOCK_MODAL_OPEN: 'block_modal_open',
   BLOCK_MODAL_CLOSE: 'block_modal_close',
+  // Cross-module navigation
+  NAVIGATE_REQUEST: 'navigate_request',
 };

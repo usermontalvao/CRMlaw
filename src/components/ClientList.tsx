@@ -3,6 +3,69 @@ import { Eye, Edit, Trash2, User, Building2, MessageCircle, AlertTriangle, Clock
 import type { Client } from '../types/client.types';
 import { formatCPF, formatCNPJ } from '../utils/formatters';
 
+/* ───── Avatar com iniciais determinísticas ─────
+ * Para PF: gera fundo pastel + texto contrastante a partir do hash do nome.
+ * Para PJ: ícone neutro de prédio em escala de cinza.
+ */
+const stringToHue = (s: string): number => {
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash) + s.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+};
+
+const getInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const ClientAvatar: React.FC<{ client: Client; size?: number; photoUrl?: string }> = ({ client, size = 40, photoUrl }) => {
+  // 1ª prioridade: foto real do cliente
+  if (photoUrl) {
+    return (
+      <div
+        className="flex-shrink-0 rounded-full overflow-hidden ring-1 ring-slate-200 shadow-sm bg-slate-100"
+        style={{ width: size, height: size }}
+      >
+        <img src={photoUrl} alt={client.full_name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  // 2º: PJ → ícone neutro
+  if (client.client_type === 'pessoa_juridica') {
+    return (
+      <div
+        className="flex-shrink-0 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center"
+        style={{ width: size, height: size }}
+      >
+        <Building2 style={{ width: size * 0.5, height: size * 0.5 }} />
+      </div>
+    );
+  }
+  // 3º: PF sem foto → iniciais coloridas determinísticas
+  const hue = stringToHue(client.full_name);
+  return (
+    <div
+      className="flex-shrink-0 rounded-full flex items-center justify-center font-semibold ring-1 ring-inset"
+      style={{
+        width: size,
+        height: size,
+        background: `hsl(${hue}, 55%, 94%)`,
+        color: `hsl(${hue}, 50%, 32%)`,
+        fontSize: size * 0.38,
+        // @ts-ignore — ring-color via inline style
+        '--tw-ring-color': `hsl(${hue}, 50%, 80%)`,
+      } as React.CSSProperties}
+    >
+      {getInitials(client.full_name)}
+    </div>
+  );
+};
+
 interface ClientListProps {
   clients: Client[];
   loading: boolean;
@@ -16,9 +79,10 @@ interface ClientListProps {
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelected?: (clientId: string) => void;
+  photoUrls?: Map<string, string>;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected, photoUrls }) => {
   const formatCpfCnpj = (client: Client) => {
     const raw = client.cpf_cnpj || '';
     const digits = raw.replace(/\D/g, '');
@@ -91,20 +155,10 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                       />
                     </div>
                   )}
-                  <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-                    client.client_type === 'pessoa_fisica' 
-                      ? 'bg-blue-100 text-blue-600' 
-                      : 'bg-purple-100 text-purple-600'
-                  }`}>
-                    {client.client_type === 'pessoa_fisica' ? (
-                      <User className="w-5 h-5" />
-                    ) : (
-                      <Building2 className="w-5 h-5" />
-                    )}
-                  </div>
+                  <ClientAvatar client={client} size={40} photoUrl={photoUrls?.get(client.id)} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{client.full_name}</div>
-                    <div className="text-xs text-gray-500">{client.profession || 'N/A'}</div>
+                    <div className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</div>
+                    <div className="text-xs text-slate-500 truncate">{client.profession || (client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica')}</div>
                   </div>
                 </div>
                 <span className={`flex-shrink-0 px-2 py-0.5 text-[10px] leading-4 font-semibold rounded-full ${
@@ -212,32 +266,32 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
       </div>
 
       {/* Layout de Tabela para Desktop */}
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-slate-50">
+          <table className="min-w-full divide-y divide-slate-100">
+            <thead className="bg-slate-50/60 border-b border-slate-200">
               <tr>
                 {selectionMode && (
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Selecionar
+                  <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Sel.
                   </th>
                 )}
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Cliente
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Tipo
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  CPF/CNPJ
+                <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  CPF / CNPJ
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Contato
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Status
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-6 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Ações
                 </th>
               </tr>
@@ -250,7 +304,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                 const primaryPhone = client.phone || client.mobile || '';
                 const isSelected = selectionMode && Boolean(selectedIds?.has(client.id));
                 return (
-                <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={client.id} className="group hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => onView(client)}>
                 {selectionMode && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <input
@@ -263,20 +317,10 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                 )}
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
-                    <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-                      client.client_type === 'pessoa_fisica' 
-                        ? 'bg-blue-100 text-blue-600' 
-                        : 'bg-purple-100 text-purple-600'
-                    }`}>
-                      {client.client_type === 'pessoa_fisica' ? (
-                        <User className="w-5 h-5" />
-                      ) : (
-                        <Building2 className="w-5 h-5" />
-                      )}
-                    </div>
+                    <ClientAvatar client={client} size={42} photoUrl={photoUrls?.get(client.id)} />
                     <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">{client.full_name}</div>
-                      <div className="text-sm text-gray-500">{client.profession || 'N/A'}</div>
+                      <div className="text-sm font-semibold text-slate-900">{client.full_name}</div>
+                      <div className="text-xs text-slate-500">{client.profession || (client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica')}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {duplicateInfo && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
@@ -301,18 +345,18 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                    client.client_type === 'pessoa_fisica'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-purple-100 text-purple-800'
-                  }`}>
-                    {client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    {client.client_type === 'pessoa_fisica' ? (
+                      <><User className="w-3 h-3 text-slate-400" /> Pessoa Física</>
+                    ) : (
+                      <><Building2 className="w-3 h-3 text-slate-400" /> Pessoa Jurídica</>
+                    )}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {formatCpfCnpj(client)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-2">
                     {primaryPhone ? (
                       <>
@@ -320,51 +364,57 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                           href={`https://wa.me/${primaryPhone.replace(/\D/g, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                          title={primaryPhone}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                          title={`WhatsApp: ${primaryPhone}`}
                         >
                           <MessageCircle className="w-4 h-4" />
                         </a>
-                        <span className="text-xs text-slate-600">{primaryPhone}</span>
+                        <span className="text-xs text-slate-600 tabular-nums">{primaryPhone}</span>
                       </>
                     ) : (
-                      <span className="text-xs text-gray-400">Sem contato</span>
+                      <span className="text-xs text-slate-400 italic">Sem contato</span>
                     )}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ring-1 ${
                     client.status === 'ativo'
-                      ? 'bg-green-100 text-green-800'
+                      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
                       : client.status === 'inativo'
-                      ? 'bg-gray-100 text-gray-800'
-                      : 'bg-yellow-100 text-yellow-800'
+                      ? 'bg-slate-100 text-slate-600 ring-slate-200'
+                      : 'bg-amber-50 text-amber-700 ring-amber-200'
                   }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      client.status === 'ativo' ? 'bg-emerald-500' :
+                      client.status === 'inativo' ? 'bg-slate-400' :
+                      'bg-amber-500'
+                    }`} />
                     {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end gap-2">
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
+                  <div className="inline-flex items-center gap-0.5">
                     <button
-                      onClick={() => onView(client)}
-                      className="text-primary-600 hover:text-primary-900 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); onView(client); }}
+                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition"
                       title="Ver detalhes"
                     >
-                      <Eye className="w-5 h-5" />
+                      <Eye className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => onEdit(client)}
-                      className="text-blue-600 hover:text-blue-900 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); onEdit(client); }}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition"
                       title="Editar"
                     >
-                      <Edit className="w-5 h-5" />
+                      <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => onDelete(client.id)}
-                      className="text-red-600 hover:text-red-900 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
                       title="Desativar"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>
