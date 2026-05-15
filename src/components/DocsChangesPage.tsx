@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.072': { name: 'Café Modal Refinado', emoji: '✨' },
   '1.10.071': { name: 'Café Barra Limpa', emoji: '🧹' },
   '1.10.070': { name: 'Café Histórico Vivo', emoji: '📜' },
   '1.10.069': { name: 'Café Prazos Pro', emoji: '⚡' },
@@ -776,6 +777,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.072',
+    date: '15/05/2026',
+    summary: 'Modal de visualização de prazo completamente redesenhado, visão de carga por responsável em cards e correção do layout workload.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Modal de visualização redesenhado', description: 'Novo modal com barra de acento por prioridade, contador de dias em destaque, cards de status/prioridade/vencimento, pessoas em cards com avatar, comentários sempre visíveis com avatares e ações no rodapé.' },
+          { type: 'fix', title: 'Visão de carga não sobrepõe a lista', description: 'Ao ativar o modo Carga por Responsável, a lista de prazos abertos é ocultada corretamente.' },
+          { type: 'improvement', title: 'Carga por responsável em grid de cards', description: 'Cada responsável aparece em um card com avatar, contadores de vencidos/urgentes, barra de progresso colorida e número em destaque.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.071',
     date: '15/05/2026',

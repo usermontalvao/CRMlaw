@@ -1463,6 +1463,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const handleViewDeadline = (deadline: Deadline) => {
     setSelectedDeadlineForView(deadline);
     setShowViewDeadlineModal(true);
+    setShowCommentsFor(deadline.id);
+    void loadComments(deadline.id);
   };
 
   const handleCloseViewDeadlineModal = () => {
@@ -2286,140 +2288,217 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const viewDeadlineModal = showViewDeadlineModal && selectedDeadlineForView && createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-      <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-        onClick={handleCloseViewDeadlineModal}
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Prazo</h2>
-          </div>
-          <button
-            type="button"
-            onClick={handleCloseViewDeadlineModal}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    (() => {
+      const d = selectedDeadlineForView;
+      const daysLeft = getDaysUntilDue(d.due_date);
+      const isOverdue = daysLeft < 0;
+      const isUrgent = daysLeft >= 0 && daysLeft <= 3;
+      const accentColor =
+        d.priority === 'urgente' ? 'bg-red-500' :
+        d.priority === 'alta' ? 'bg-orange-500' :
+        d.priority === 'media' ? 'bg-amber-400' : 'bg-blue-500';
+      const countdownBg = isOverdue ? 'bg-red-50 border-red-200' : isUrgent ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200';
+      const countdownColor = isOverdue ? 'text-red-600' : isUrgent ? 'text-orange-600' : 'text-slate-800';
+      const countdownLabel = isOverdue ? 'dias atrasado' : daysLeft === 0 ? 'vence hoje' : 'dias restantes';
 
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
-          {error && (
-            <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-              {error}
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Título</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1 font-semibold">{selectedDeadlineForView.title}</p>
-            </div>
+      return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleCloseViewDeadlineModal} />
+          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Priority accent bar */}
+            <div className={`h-1 w-full ${accentColor}`} />
 
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Data de Vencimento</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1">{formatDate(selectedDeadlineForView.due_date)}</p>
-              <p className="text-xs text-slate-500 mt-1">
-                {getDaysUntilDue(selectedDeadlineForView.due_date) >= 0 
-                  ? `Faltam ${getDaysUntilDue(selectedDeadlineForView.due_date)} dia(s)`
-                  : `Vencido há ${Math.abs(getDaysUntilDue(selectedDeadlineForView.due_date))} dia(s)`
-                }
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
-              <p className="mt-1">
-                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedDeadlineForView.status)}`}>
-                  {getStatusLabel(selectedDeadlineForView.status)}
-                </span>
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Prioridade</label>
-              <p className="mt-1">
-                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getPriorityBadge(selectedDeadlineForView.priority)}`}>
-                  {getPriorityLabel(selectedDeadlineForView.priority)}
-                </span>
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Tipo</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1">{getTypeLabel(selectedDeadlineForView.type)}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1">
-                {selectedDeadlineForView.client_id ? clientMap.get(selectedDeadlineForView.client_id)?.full_name || 'Cliente não encontrado' : 'Não vinculado'}
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Responsável</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1">
-                {selectedDeadlineForView.responsible_id ? memberMap.get(selectedDeadlineForView.responsible_id)?.name || 'Não encontrado' : 'Não definido'}
-              </p>
-            </div>
-
-            {(selectedDeadlineForView.process_id || selectedDeadlineForView.requirement_id) && (
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Vinculado a</label>
-                <p className="text-base text-slate-900 dark:text-white mt-1 font-mono">
-                  {selectedDeadlineForView.process_id 
-                    ? processes.find(p => p.id === selectedDeadlineForView.process_id)?.process_code || 'Processo'
-                    : requirements.find(r => r.id === selectedDeadlineForView.requirement_id)?.protocol || 'Requerimento'
-                  }
-                </p>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-orange-500" />
+                </div>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">{getTypeLabel(d.type)}</span>
               </div>
-            )}
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Notificação</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1">{selectedDeadlineForView.notify_days_before ?? 2} dias antes</p>
+              <div className="flex items-center gap-2">
+                {d.status === 'pendente' && (
+                  <button
+                    onClick={() => { void handleStatusChange(d.id, 'cumprido'); handleCloseViewDeadlineModal(); }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Marcar cumprido
+                  </button>
+                )}
+                <button
+                  onClick={() => { handleCloseViewDeadlineModal(); handleOpenModal(d); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  Editar
+                </button>
+                <button onClick={handleCloseViewDeadlineModal} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Descrição / Observações</label>
-              <p className="text-base text-slate-900 dark:text-white mt-1 whitespace-pre-wrap">
-                {selectedDeadlineForView.description || 'Nenhuma descrição informada.'}
-              </p>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Title + description */}
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 leading-snug">{d.title}</h2>
+                {d.description && (
+                  <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">{d.description}</p>
+                )}
+              </div>
+
+              {/* Key metrics row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {/* Countdown card */}
+                <div className={`flex flex-col items-center justify-center rounded-xl p-3 border ${countdownBg}`}>
+                  <span className={`text-3xl font-black leading-none ${countdownColor}`}>{Math.abs(daysLeft)}</span>
+                  <span className={`text-[10px] font-semibold mt-1 text-center ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>{countdownLabel}</span>
+                </div>
+                {/* Due date */}
+                <div className="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Vencimento</span>
+                  <span className="text-sm font-bold text-slate-800">{formatDate(d.due_date)}</span>
+                </div>
+                {/* Status */}
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Status</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getStatusBadge(d.status)}`}>
+                    {getStatusLabel(d.status)}
+                  </span>
+                </div>
+                {/* Priority */}
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prioridade</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getPriorityBadge(d.priority)}`}>
+                    {getPriorityLabel(d.priority)}
+                  </span>
+                </div>
+              </div>
+
+              {/* People row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <UserCircle className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>
+                    <p className="text-sm font-semibold text-slate-800 truncate">
+                      {d.client_id ? clientMap.get(d.client_id)?.full_name || '—' : '—'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <UserCircle className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
+                    <p className="text-sm font-semibold text-slate-800 truncate">
+                      {d.responsible_id ? memberMap.get(d.responsible_id)?.name || '—' : '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Process/Requirement link */}
+              {(d.process_id || d.requirement_id) && (
+                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-purple-100 bg-purple-50">
+                  <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-purple-500">
+                      {d.process_id ? 'Processo Vinculado' : 'Requerimento Vinculado'}
+                    </p>
+                    <p className="text-sm font-bold text-purple-900 font-mono">
+                      {d.process_id
+                        ? processes.find(p => p.id === d.process_id)?.process_code || '—'
+                        : requirements.find(r => r.id === d.requirement_id)?.protocol || '—'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Comments */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <MessageSquare className="w-4 h-4 text-slate-400" />
+                  <h4 className="text-sm font-semibold text-slate-700">Comentários</h4>
+                  {comments.length > 0 && (
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{comments.length}</span>
+                  )}
+                </div>
+                {commentsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-3"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                ) : comments.length === 0 ? (
+                  <p className="text-sm text-slate-400 italic mb-3">Nenhum comentário ainda.</p>
+                ) : (
+                  <div className="space-y-2 max-h-44 overflow-y-auto mb-3 pr-1">
+                    {comments.map((c) => (
+                      <div key={c.id} className="flex gap-2.5 p-3 bg-slate-50 rounded-xl">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-blue-700">
+                          {(c.user_name[0] || '?').toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
+                            <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
+                          </div>
+                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{c.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddComment(d.id); } }}
+                    placeholder="Escreva um comentário..."
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <button
+                    onClick={() => void handleAddComment(d.id)}
+                    disabled={savingComment || !commentText.trim()}
+                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-40"
+                  >
+                    {savingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => void handleCloneDeadline(d)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Duplicar
+                </button>
+                <button
+                  onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50 transition"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir
+                </button>
+              </div>
+              <button onClick={handleCloseViewDeadlineModal} className="px-4 py-1.5 text-sm text-slate-500 hover:text-slate-700 transition">
+                Fechar
+              </button>
             </div>
           </div>
         </div>
-
-        {/* Footer fixo */}
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleCloseViewDeadlineModal}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-            >
-              Fechar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                handleCloseViewDeadlineModal();
-                handleOpenModal(selectedDeadlineForView);
-              }}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
-            >
-              <Edit2 className="w-4 h-4" />
-              Editar Prazo
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
+      );
+    })(),
     document.body
   );
 
@@ -3658,16 +3737,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             })}
           </div>
         </div>
-      ) : (!isPastMonth && loading) ? (
+      ) : (!isPastMonth && viewMode !== 'workload' && loading) ? (
         <div className="bg-white border border-gray-200 rounded-xl p-16 flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-slate-600">Carregando prazos...</p>
         </div>
-      ) : (!isPastMonth && filteredDeadlines.length === 0) ? (
+      ) : (!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length === 0) ? (
         <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
           <p className="text-slate-600">Nenhum prazo encontrado.</p>
         </div>
-      ) : !isPastMonth ? (
+      ) : (!isPastMonth && viewMode !== 'workload') ? (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {/* Mobile Cards */}
           <div className="block lg:hidden divide-y divide-gray-200">
@@ -3948,67 +4027,82 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
       {/* ── Visão de carga por responsável ─────────────────────────────── */}
       {viewMode === 'workload' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
-            <Users className="w-5 h-5 text-blue-500" />
-            <h4 className="text-base font-semibold text-slate-900">Carga por Responsável</h4>
-            <span className="text-xs text-slate-400">— prazos pendentes e vencidos</span>
+        <div className="space-y-3">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-500" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-900">Carga por Responsável</h4>
+              <p className="text-xs text-slate-400">prazos pendentes e vencidos em aberto</p>
+            </div>
           </div>
-          <div className="divide-y divide-slate-100">
-            {members.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">Nenhum membro encontrado.</p>
-            ) : (() => {
-              const workloadRows = members.map((member) => {
-                const memberDeadlines = deadlines.filter((d) =>
-                  d.responsible_id === member.id && (d.status === 'pendente' || d.status === 'vencido')
-                );
-                const overdue = memberDeadlines.filter((d) => d.status === 'vencido' || getDaysUntilDue(d.due_date) < 0).length;
-                const urgent = memberDeadlines.filter((d) => d.priority === 'urgente' || d.priority === 'alta').length;
-                const total = memberDeadlines.length;
-                return { member, total, overdue, urgent };
-              }).sort((a, b) => b.total - a.total);
 
-              const maxTotal = Math.max(...workloadRows.map((r) => r.total), 1);
+          {members.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+              <p className="text-sm text-slate-400">Nenhum membro encontrado.</p>
+            </div>
+          ) : (() => {
+            const workloadRows = members.map((member) => {
+              const memberDeadlines = deadlines.filter((d) =>
+                d.responsible_id === member.id && (d.status === 'pendente' || d.status === 'vencido')
+              );
+              const overdue = memberDeadlines.filter((d) => d.status === 'vencido' || getDaysUntilDue(d.due_date) < 0).length;
+              const urgent = memberDeadlines.filter((d) => d.priority === 'urgente' || d.priority === 'alta').length;
+              const total = memberDeadlines.length;
+              return { member, total, overdue, urgent };
+            }).sort((a, b) => b.total - a.total);
 
-              return workloadRows.map(({ member, total, overdue, urgent }) => (
-                <div key={member.id} className="px-6 py-4 hover:bg-slate-50 transition">
-                  <div className="flex items-center justify-between gap-4 mb-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-blue-700">
-                          {member.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
-                        </span>
+            const maxTotal = Math.max(...workloadRows.map((r) => r.total), 1);
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {workloadRows.map(({ member, total, overdue, urgent }) => {
+                  const initials = member.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?';
+                  const pct = Math.round((total / maxTotal) * 100);
+                  const barColor = overdue > 0 ? 'bg-red-500' : urgent > 0 ? 'bg-orange-400' : 'bg-blue-500';
+                  const cardBorder = overdue > 0 ? 'border-red-200' : 'border-slate-200';
+
+                  return (
+                    <div key={member.id} className={`bg-white rounded-xl border ${cardBorder} p-4 hover:shadow-sm transition`}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold ${
+                          overdue > 0 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-800 truncate">{member.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className="text-xs text-slate-500 font-medium">{total} prazo{total !== 1 ? 's' : ''}</span>
+                            {overdue > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
+                                <AlertTriangle className="w-2.5 h-2.5" /> {overdue} vencido{overdue !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {urgent > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold">
+                                {urgent} urgente{urgent !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-2xl font-black text-slate-200 flex-shrink-0">{total}</span>
                       </div>
-                      <span className="text-sm font-semibold text-slate-800 truncate">{member.name}</span>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0 text-xs">
-                      <span className="font-bold text-slate-700">{total} prazo{total !== 1 ? 's' : ''}</span>
-                      {overdue > 0 && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
-                          <AlertTriangle className="w-3 h-3" /> {overdue} vencido{overdue !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                      {urgent > 0 && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold">
-                          {urgent} urgente{urgent !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${overdue > 0 ? 'bg-red-500' : urgent > 0 ? 'bg-orange-400' : 'bg-blue-500'}`}
-                      style={{ width: `${(total / maxTotal) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ));
-            })()}
-          </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
-      {!isPastMonth && filteredDeadlines.length > pageSize && (
+      {!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length > pageSize && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
