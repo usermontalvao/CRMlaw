@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.071': { name: 'Café Barra Limpa', emoji: '🧹' },
   '1.10.070': { name: 'Café Histórico Vivo', emoji: '📜' },
   '1.10.069': { name: 'Café Prazos Pro', emoji: '⚡' },
   '1.10.068': { name: 'Café Galeria', emoji: '🖼️' },
@@ -775,6 +776,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.071',
+    date: '15/05/2026',
+    summary: 'Toolbar do módulo de prazos simplificada, histórico redesenhado como tabela e filtro por responsável adicionado ao histórico.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Toolbar simplificada e menos poluída', description: 'Barra de ferramentas reestruturada com apenas um botão "Filtros" colapsável, ações secundárias com ícones compactos e layout mais limpo.' },
+          { type: 'improvement', title: 'Histórico redesenhado em formato de tabela', description: 'Seção de histórico agora usa tabela com colunas Prazo/Cliente, Vencimento, Cumprido em e Responsável. Ações aparecem no hover.' },
+          { type: 'feature', title: 'Filtro por responsável no histórico', description: 'Novo filtro de responsável na seção de histórico de prazos cumpridos, combinável com busca, mês, ano, tipo e prioridade.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.070',
     date: '15/05/2026',

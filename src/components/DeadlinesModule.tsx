@@ -426,6 +426,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [historyYear, setHistoryYear] = useState<number | ''>('');
   const [historyType, setHistoryType] = useState<DeadlineType | ''>('');
   const [historyPriority, setHistoryPriority] = useState<DeadlinePriority | ''>('');
+  const [historyResponsible, setHistoryResponsible] = useState('');
   const [historyPage, setHistoryPage] = useState(1);
   const [historyFiltersExpanded, setHistoryFiltersExpanded] = useState(false);
   const HISTORY_PAGE_SIZE = 10;
@@ -883,8 +884,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
     if (historyType) base = base.filter((d) => d.type === historyType);
     if (historyPriority) base = base.filter((d) => d.priority === historyPriority);
+    if (historyResponsible) base = base.filter((d) => d.responsible_id === historyResponsible);
     return base;
-  }, [isPastMonth, monthlyCompleted, completedDeadlines, historySearch, historyMonth, historyYear, historyType, historyPriority, clientMap]);
+  }, [isPastMonth, monthlyCompleted, completedDeadlines, historySearch, historyMonth, historyYear, historyType, historyPriority, historyResponsible, clientMap]);
 
   const historyTotalPages = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
   const paginatedHistory = filteredHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
@@ -3086,201 +3088,128 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {/* Toolbar Compacta - Tudo em Uma Linha */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-1.5">
-        <div className="flex items-center gap-2">
-          {/* Abas de Visualização */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-              title="Lista"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-              title="Kanban"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setCalendarExpanded(!calendarExpanded)}
-              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                calendarExpanded ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-              title="Calendário"
-            >
-              <Calendar className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode(viewMode === 'workload' ? 'list' : 'workload')}
-              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                viewMode === 'workload' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-              title="Carga por responsável"
-            >
-              <Users className="w-4 h-4" />
-            </button>
+      {/* Toolbar */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Linha principal */}
+        <div className="flex items-center gap-2 px-3 py-2">
+          {/* Views */}
+          <div className="flex items-center gap-0.5 bg-slate-100 rounded-xl p-1">
+            {([
+              { key: 'list', icon: List, label: 'Lista', action: () => setViewMode('list'), active: viewMode === 'list' },
+              { key: 'kanban', icon: LayoutGrid, label: 'Kanban', action: () => setViewMode('kanban'), active: viewMode === 'kanban' },
+              { key: 'calendar', icon: Calendar, label: 'Calendário', action: () => setCalendarExpanded(!calendarExpanded), active: calendarExpanded },
+              { key: 'workload', icon: Users, label: 'Carga', action: () => setViewMode(viewMode === 'workload' ? 'list' : 'workload'), active: viewMode === 'workload' },
+            ] as const).map(({ key, icon: Icon, label, action, active }) => (
+              <button key={key} onClick={action} title={label}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                <Icon className="w-4 h-4" />
+              </button>
+            ))}
           </div>
 
-          <div className="h-6 w-px bg-slate-200"></div>
+          <div className="w-px h-5 bg-slate-200 mx-1" />
 
-          {/* Seletor de Mês */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => {
-                if (internalCalendarMonth === 0) {
-                  const newMonth = 11;
-                  const newYear = internalCalendarYear - 1;
-                  setInternalCalendarMonth(newMonth);
-                  setInternalCalendarYear(newYear);
-                  onCalendarChange?.(newMonth, newYear);
-                } else {
-                  const newMonth = internalCalendarMonth - 1;
-                  setInternalCalendarMonth(newMonth);
-                  onCalendarChange?.(newMonth, internalCalendarYear);
-                }
-              }}
-              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+          {/* Mês */}
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => { const m = internalCalendarMonth === 0 ? 11 : internalCalendarMonth - 1; const y = internalCalendarMonth === 0 ? internalCalendarYear - 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <span className="text-sm font-semibold text-slate-800 capitalize min-w-[140px] text-center">
+            <span className="text-sm font-semibold text-slate-800 capitalize w-36 text-center select-none">
               {new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </span>
-            <button
-              onClick={() => {
-                if (internalCalendarMonth === 11) {
-                  const newMonth = 0;
-                  const newYear = internalCalendarYear + 1;
-                  setInternalCalendarMonth(newMonth);
-                  setInternalCalendarYear(newYear);
-                  onCalendarChange?.(newMonth, newYear);
-                } else {
-                  const newMonth = internalCalendarMonth + 1;
-                  setInternalCalendarMonth(newMonth);
-                  onCalendarChange?.(newMonth, internalCalendarYear);
-                }
-              }}
-              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+            <button onClick={() => { const m = internalCalendarMonth === 11 ? 0 : internalCalendarMonth + 1; const y = internalCalendarMonth === 11 ? internalCalendarYear + 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             </button>
           </div>
 
-          <div className="h-6 w-px bg-slate-200"></div>
+          <div className="w-px h-5 bg-slate-200 mx-1" />
 
           {/* Busca */}
-          <div className="relative flex-grow max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
               placeholder="Buscar prazo..."
-              className="w-full h-9 pl-9 pr-3 bg-slate-50 border-none rounded-lg text-sm placeholder:text-slate-400 focus:ring-1 focus:ring-blue-500/40 transition-all"
+              className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
             />
           </div>
 
           {/* Filtros */}
-          <div className="flex items-center gap-2">
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as DeadlineType | '')}
-              className="h-9 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors appearance-none"
-            >
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-xl border text-sm font-medium transition-all ${
+              filtersExpanded || filterType || filterPriority || filterResponsible
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filtros</span>
+            {(filterType || filterPriority || filterResponsible) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+            )}
+          </button>
+
+          <div className="flex-1" />
+
+          {/* Ações secundárias */}
+          <div className="flex items-center gap-1">
+            <button onClick={handleExportFiltered} title="Exportar lista filtrada"
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+              <Download className="w-4 h-4" />
+            </button>
+            <button onClick={() => setShowReportModal(true)} title="Relatórios"
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+              <BarChart3 className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-1.5 h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm shadow-blue-600/20 transition-all active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            Prazo
+          </button>
+        </div>
+
+        {/* Painel de filtros */}
+        {filtersExpanded && (
+          <div className="border-t border-slate-100 px-3 py-2.5 flex flex-wrap items-center gap-2 bg-slate-50/60">
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value as DeadlineType | '')}
+              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
               <option value="">Tipo</option>
               <option value="processo">Processo</option>
               <option value="requerimento">Requerimento</option>
-              <option value="outro">Outro</option>
+              <option value="geral">Geral</option>
             </select>
-            <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value as DeadlinePriority | '')}
-              className="h-9 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors appearance-none"
-            >
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as DeadlinePriority | '')}
+              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
               <option value="">Prioridade</option>
               <option value="urgente">Urgente</option>
               <option value="alta">Alta</option>
               <option value="media">Média</option>
               <option value="baixa">Baixa</option>
             </select>
-          </div>
-
-          <div className="flex-grow"></div>
-
-          {/* Filtros Avançados - Dropdown na mesma linha */}
-          <button
-            onClick={() => setFiltersExpanded(!filtersExpanded)}
-            className={`flex items-center gap-1.5 h-9 px-3 border border-slate-200 rounded-lg text-sm font-medium transition-all ${
-              filtersExpanded ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-            title="Filtros Avançados"
-          >
-            <Filter className="w-4 h-4" />
-            <span className="hidden lg:inline">Filtros Avançados</span>
-            <svg className={`w-3 h-3 transition-transform ${filtersExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {/* Botões de Ação */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportFiltered}
-              className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Exportar lista filtrada"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden lg:inline">Exportar</span>
-            </button>
-            <button
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Relatórios"
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span className="hidden lg:inline">Relatórios</span>
-            </button>
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-1.5 h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-md shadow-blue-600/20 transition-all active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Prazo</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Dropdown de Filtros Avançados */}
-      {filtersExpanded && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
-          <div className="flex items-center gap-2">
-            <select
-              value={filterResponsible}
-              onChange={(event) => setFilterResponsible(event.target.value)}
-              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors"
-            >
-              <option value="">Todos</option>
+            <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)}
+              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
+              <option value="">Responsável</option>
               <option value={UNASSIGNED_FILTER_VALUE}>Sem responsável</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
+            {(filterType || filterPriority || filterResponsible) && (
+              <button onClick={() => { setFilterType(''); setFilterPriority(''); setFilterResponsible(''); }}
+                className="h-8 px-3 text-xs text-red-600 border border-red-200 bg-white rounded-lg hover:bg-red-50 transition">
+                Limpar filtros
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Calendário Mensal de Prazos - Retrátil */}
       {calendarExpanded && (
@@ -4109,188 +4038,180 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
 
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <h4 className="text-base font-bold text-slate-900">Histórico de Prazos Cumpridos</h4>
-                <p className="text-xs text-slate-400 mt-0.5">{filteredHistory.length} prazo{filteredHistory.length !== 1 ? 's' : ''} encontrado{filteredHistory.length !== 1 ? 's' : ''}</p>
-              </div>
+        <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            <h4 className="text-sm font-bold text-slate-800">Histórico de Prazos Cumpridos</h4>
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredHistory.length}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Busca inline */}
+            <div className="relative hidden sm:block">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                placeholder="Buscar..."
+                className="h-7 pl-7 pr-3 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/40 w-36"
+              />
             </div>
+
+            {/* Mês */}
+            <select
+              value={historyMonth === '' ? '' : String(historyMonth)}
+              onChange={(e) => { setHistoryMonth(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600"
+            >
+              <option value="">Mês</option>
+              {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
+                <option key={i} value={i}>{m}</option>
+              ))}
+            </select>
+
+            {/* Ano */}
+            <select
+              value={historyYear === '' ? '' : String(historyYear)}
+              onChange={(e) => { setHistoryYear(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600"
+            >
+              <option value="">Ano</option>
+              {historyYears.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+
+            {/* Mais filtros toggle */}
             <button
               onClick={() => setHistoryFiltersExpanded(!historyFiltersExpanded)}
-              className={`inline-flex items-center gap-2 h-9 px-3 rounded-xl border text-sm font-medium transition-all ${
-                historyFiltersExpanded ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              className={`h-7 px-2.5 text-xs border rounded-lg font-medium transition flex items-center gap-1 ${
+                historyFiltersExpanded || historyType || historyPriority || historyResponsible
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}
             >
-              <Filter className="w-4 h-4" />
+              <Filter className="w-3 h-3" />
               Filtros
-              {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority) && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              )}
+              {(historyType || historyPriority || historyResponsible) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
             </button>
-          </div>
 
-          {/* Filtros */}
-          {historyFiltersExpanded && (
-            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={historySearch}
-                  onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
-                  placeholder="Buscar..."
-                  className="h-8 pl-8 pr-3 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 w-44"
-                />
-              </div>
-              <select
-                value={historyMonth === '' ? '' : String(historyMonth)}
-                onChange={(e) => { setHistoryMonth(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
-                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
+            {/* Limpar */}
+            {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority || historyResponsible) && (
+              <button
+                onClick={() => { setHistorySearch(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryResponsible(''); setHistoryPage(1); }}
+                className="h-7 px-2 text-xs text-red-500 hover:text-red-700 transition"
               >
-                <option value="">Mês</option>
-                {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
-                  <option key={i} value={i}>{m}</option>
-                ))}
-              </select>
-              <select
-                value={historyYear === '' ? '' : String(historyYear)}
-                onChange={(e) => { setHistoryYear(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
-                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
-              >
-                <option value="">Ano</option>
-                {historyYears.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <select
-                value={historyType}
-                onChange={(e) => { setHistoryType(e.target.value as DeadlineType | ''); setHistoryPage(1); }}
-                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
-              >
-                <option value="">Tipo</option>
-                <option value="processo">Processo</option>
-                <option value="requerimento">Requerimento</option>
-                <option value="geral">Geral</option>
-              </select>
-              <select
-                value={historyPriority}
-                onChange={(e) => { setHistoryPriority(e.target.value as DeadlinePriority | ''); setHistoryPage(1); }}
-                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
-              >
-                <option value="">Prioridade</option>
-                <option value="urgente">Urgente</option>
-                <option value="alta">Alta</option>
-                <option value="media">Média</option>
-                <option value="baixa">Baixa</option>
-              </select>
-              {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority) && (
-                <button
-                  onClick={() => { setHistorySearch(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryPage(1); }}
-                  className="h-8 px-3 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition"
-                >
-                  Limpar
-                </button>
-              )}
-            </div>
-          )}
+                Limpar
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Lista */}
-        {filteredHistory.length === 0 ? (
-          <div className="py-14 text-center">
-            <CheckCircle2 className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Nenhum prazo cumprido encontrado.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {paginatedHistory.map((deadline) => {
-              const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-              const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
-              const priorityColors: Record<string, string> = {
-                urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
-              };
-              return (
-                <div
-                  key={deadline.id}
-                  className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition group"
-                >
-                  {/* Prioridade dot */}
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityColors[deadline.priority] || 'bg-slate-300'}`} />
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{deadline.title}</p>
-                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      {clientItem && <span className="text-xs text-slate-400 truncate max-w-[160px]">{clientItem.full_name}</span>}
-                      <span className="text-xs text-slate-300">·</span>
-                      <span className="text-xs text-slate-400">{getTypeLabel(deadline.type)}</span>
-                      {responsibleItem && (
-                        <>
-                          <span className="text-xs text-slate-300">·</span>
-                          <span className="text-xs text-slate-400">{responsibleItem.name}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Datas */}
-                  <div className="hidden sm:flex items-center gap-6 text-xs flex-shrink-0">
-                    <div className="text-center">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Vencimento</p>
-                      <p className="font-medium text-slate-700">{formatDate(deadline.due_date)}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Cumprido em</p>
-                      <p className="font-medium text-emerald-600">{deadline.completed_at ? formatDate(deadline.completed_at) : '—'}</p>
-                    </div>
-                  </div>
-
-                  {/* Ações */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-                    <button
-                      onClick={() => handleViewDeadline(deadline)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
-                      title="Ver detalhes"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleStatusChange(deadline.id, 'pendente')}
-                      className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg transition"
-                      title="Reabrir prazo"
-                    >
-                      Reabrir
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+        {/* Filtros extras */}
+        {historyFiltersExpanded && (
+          <div className="px-5 py-2 border-b border-slate-100 bg-slate-50/60 flex flex-wrap gap-2">
+            <select value={historyType} onChange={(e) => { setHistoryType(e.target.value as DeadlineType | ''); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              <option value="">Tipo</option>
+              <option value="processo">Processo</option>
+              <option value="requerimento">Requerimento</option>
+              <option value="geral">Geral</option>
+            </select>
+            <select value={historyPriority} onChange={(e) => { setHistoryPriority(e.target.value as DeadlinePriority | ''); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              <option value="">Prioridade</option>
+              <option value="urgente">Urgente</option>
+              <option value="alta">Alta</option>
+              <option value="media">Média</option>
+              <option value="baixa">Baixa</option>
+            </select>
+            <select value={historyResponsible} onChange={(e) => { setHistoryResponsible(e.target.value); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              <option value="">Responsável</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
           </div>
         )}
 
-        {/* Paginação do histórico */}
-        {historyTotalPages > 1 && (
-          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
-            <p className="text-xs text-slate-400">
-              {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}–{Math.min(historyPage * HISTORY_PAGE_SIZE, filteredHistory.length)} de {filteredHistory.length}
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                disabled={historyPage === 1}
-                className="h-7 px-3 text-xs font-medium bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 transition"
-              >Anterior</button>
-              <span className="text-xs text-slate-500 px-2">{historyPage}/{historyTotalPages}</span>
-              <button
-                onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
-                disabled={historyPage === historyTotalPages}
-                className="h-7 px-3 text-xs font-medium bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 transition"
-              >Próxima</button>
-            </div>
+        {/* Tabela */}
+        {filteredHistory.length === 0 ? (
+          <div className="py-12 text-center">
+            <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+            <p className="text-sm text-slate-400">Nenhum prazo cumprido encontrado.</p>
           </div>
+        ) : (
+          <>
+            {/* Header da tabela */}
+            <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <span>Prazo / Cliente</span>
+              <span className="w-24 text-center">Vencimento</span>
+              <span className="w-24 text-center">Cumprido em</span>
+              <span className="w-28 text-center">Responsável</span>
+              <span className="w-16 text-right">Ações</span>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {paginatedHistory.map((deadline) => {
+                const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
+                const priorityDot: Record<string, string> = {
+                  urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
+                };
+                return (
+                  <div key={deadline.id} className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
+                    {/* Prazo */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[deadline.priority] || 'bg-slate-300'}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{deadline.title}</p>
+                        {clientItem && <p className="text-xs text-slate-400 truncate">{clientItem.full_name}</p>}
+                      </div>
+                    </div>
+                    {/* Vencimento */}
+                    <div className="w-24 text-center">
+                      <p className="text-xs text-slate-600 font-medium">{formatDate(deadline.due_date)}</p>
+                    </div>
+                    {/* Cumprido em */}
+                    <div className="w-24 text-center">
+                      <p className="text-xs font-semibold text-emerald-600">{deadline.completed_at ? formatDate(deadline.completed_at) : '—'}</p>
+                    </div>
+                    {/* Responsável */}
+                    <div className="w-28 text-center">
+                      <p className="text-xs text-slate-500 truncate">{responsibleItem?.name || '—'}</p>
+                    </div>
+                    {/* Ações */}
+                    <div className="w-16 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => handleViewDeadline(deadline)} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="Ver">
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleStatusChange(deadline.id, 'pendente')} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition" title="Reabrir">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Paginação */}
+            {historyTotalPages > 1 && (
+              <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/40">
+                <p className="text-xs text-slate-400">
+                  {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}–{Math.min(historyPage * HISTORY_PAGE_SIZE, filteredHistory.length)} de {filteredHistory.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} disabled={historyPage === 1}
+                    className="h-7 px-3 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
+                    Anterior
+                  </button>
+                  <span className="text-xs text-slate-500 px-2">{historyPage} / {historyTotalPages}</span>
+                  <button onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))} disabled={historyPage === historyTotalPages}
+                    className="h-7 px-3 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
