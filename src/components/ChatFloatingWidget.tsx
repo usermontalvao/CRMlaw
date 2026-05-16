@@ -303,7 +303,7 @@ const MessageBody: React.FC<{ message: ChatMessage; onMediaLoaded?: () => void }
 
   return (
     <div className="min-w-0">
-      <div className="text-sm font-semibold truncate">{attachment.fileName}</div>
+      {isImage && <div className="text-sm font-semibold truncate">{attachment.fileName}</div>}
       <AttachmentSignedMedia attachment={attachment} kind={isImage ? 'image' : 'audio'} onMediaLoaded={onMediaLoaded} />
     </div>
   );
@@ -1336,6 +1336,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const avatarUrl = otherUser?.avatar_url;
   const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
   const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
+
+  // Sala não lida mais recente — usada para mostrar a foto persistente no launcher
+  const topUnreadRoom = useMemo(() => {
+    const unreadRooms = rooms.filter((r) => (roomUnreadCounts.get(r.id) ?? 0) > 0);
+    unreadRooms.sort((a, b) => {
+      const at = a.last_message_at ?? a.created_at;
+      const bt = b.last_message_at ?? b.created_at;
+      return bt.localeCompare(at);
+    });
+    return unreadRooms[0] ?? null;
+  }, [rooms, roomUnreadCounts]);
+  const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
+
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
   const headerVerified = getVerifiedVariant(otherUser);
 
@@ -1388,16 +1401,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       </span>
                     )}
                   </div>
-                  {otherUser && !selectedRoom?.is_public && (
-                    <button
-                      type="button"
-                      onClick={handleSendNudge}
-                      className="h-8 w-8 rounded-lg hover:bg-amber-500/20 text-amber-300 transition flex items-center justify-center shrink-0"
-                      title="Chamar atenção"
-                    >
-                      <span className="text-base leading-none">👋</span>
-                    </button>
-                  )}
                 </>
               ) : showNewChatModal ? (
                 <>
@@ -1522,7 +1525,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 ) : rooms.length === 0 ? (
                   <div className="p-4 text-sm text-white/70">Nenhuma conversa</div>
                 ) : (
-                  rooms.map((room) => {
+                  [...rooms].sort((a, b) => {
+                    const ua = roomUnreadCounts.get(a.id) ?? 0;
+                    const ub = roomUnreadCounts.get(b.id) ?? 0;
+                    if ((ua > 0) !== (ub > 0)) return ua > 0 ? -1 : 1;
+                    const at = a.last_message_at ?? a.created_at;
+                    const bt = b.last_message_at ?? b.created_at;
+                    return bt.localeCompare(at);
+                  }).map((room) => {
                   const otherUser = getOtherUserForRoom(room);
                   const displayName = otherUser?.name || room.name;
                   const avatarUrl = otherUser?.avatar_url;
@@ -1552,13 +1562,18 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                           return next;
                         });
                       }}
-                      className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/5 transition"
+                      className={`w-full px-4 py-3 flex items-center gap-3 text-left transition ${roomUnread > 0 ? 'bg-white/[0.06] hover:bg-white/10' : 'hover:bg-white/5'}`}
                     >
-                      <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
+                      <div className="relative">
+                        <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
+                        {roomUnread > 0 && (
+                          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 ring-2 ring-[#111827]" />
+                        )}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <div className="text-sm font-semibold truncate">{displayName}</div>
+                            <div className={`text-sm truncate ${roomUnread > 0 ? 'font-bold text-white' : 'font-semibold'}`}>{displayName}</div>
                             {verified && <VerifiedBadge variant={verified} />}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1593,9 +1608,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 }}
                 className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 min-h-[200px]"
               >
-                {loadingMessages ? (
+                {loadingMessages && messages.length === 0 ? (
                   <div className="text-sm text-white/70">Carregando mensagens...</div>
-                ) : messages.length === 0 ? (
+                ) : !loadingMessages && messages.length === 0 ? (
                   <div className="text-sm text-white/70">Nenhuma mensagem ainda</div>
                 ) : (
                   messages.map((msg) => {
@@ -1680,6 +1695,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   >
                     <Paperclip className="w-4 h-4" />
                   </button>
+
+                  {otherUser && !selectedRoom?.is_public && headerOnline && (
+                    <button
+                      type="button"
+                      onClick={handleSendNudge}
+                      className="h-9 w-9 rounded-xl hover:bg-amber-500/20 text-amber-300 transition flex items-center justify-center shrink-0"
+                      title="Chamar atenção"
+                    >
+                      <span className="text-base leading-none">👋</span>
+                    </button>
+                  )}
 
                   <input
                     ref={fileInputRef}
@@ -1778,6 +1804,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               setToast(null);
               setLastUnreadImageSender(null);
               ensureAudioContext();
+              // Abrir direto na conversa não lida mais recente
+              if (topUnreadRoom) setSelectedRoomId(topUnreadRoom.id);
             } else {
               setSelectedRoomId(null);
             }
@@ -1843,19 +1871,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             </>
           )}
 
-          {lastUnreadImageSender && badgeCount > 0 && (
+          {badgeCount > 0 && (topUnreadUser || lastUnreadImageSender) && (
             <div className="flex items-center pr-3 h-12">
-              {lastUnreadImageSender.avatarUrl ? (
-                <img
-                  src={lastUnreadImageSender.avatarUrl}
-                  alt={lastUnreadImageSender.name}
-                  className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-white/10 ring-1 ring-white/20 flex items-center justify-center text-[10px] font-bold">
-                  {lastUnreadImageSender.name.substring(0, 1).toUpperCase()}
-                </div>
-              )}
+              <div className="relative">
+                {(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) ? (
+                  <img
+                    src={(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) as string}
+                    alt={topUnreadUser?.name || lastUnreadImageSender?.name || ''}
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-red-500"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-white/10 ring-2 ring-red-500 flex items-center justify-center text-[11px] font-bold">
+                    {(topUnreadUser?.name || lastUnreadImageSender?.name || '?').substring(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-[#111827]">
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              </div>
             </div>
           )}
         </div>

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.094': { name: 'Café Widget Afiado', emoji: '🎯' },
   '1.10.093': { name: 'Café Chamou Atenção', emoji: '👋' },
   '1.10.092': { name: 'Café Som Top', emoji: '🎵' },
   '1.10.091': { name: 'Café Chat Polido', emoji: '✨' },
@@ -798,6 +799,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.094',
+    date: '16/05/2026',
+    summary: 'Widget de chat afiado: áudio sem título, nudge ao lado do anexo (só online), badge com foto persistente, abre na conversa não lida e troca fluida.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'improvement', title: 'Áudio sem nome de arquivo', description: 'Mensagens de áudio mostram só o player profissional, sem o "audio_xxxx.webm".' },
+          { type: 'improvement', title: 'Chamar atenção ao lado do anexo', description: 'O botão 👋 saiu do cabeçalho e foi para a barra de digitação, ao lado do clipe — e só aparece quando a pessoa está online.' },
+          { type: 'fix', title: 'Indicador de não lida persistente', description: 'O launcher mostra a foto de quem te mandou mensagem + a quantidade não lida, e o indicador não some mais junto com a notificação. Salas não lidas vão para o topo, em negrito e com bolinha vermelha.' },
+          { type: 'improvement', title: 'Abre na conversa não lida', description: 'Ao abrir o widget, ele já entra na conversa não lida mais recente.' },
+          { type: 'improvement', title: 'Atualização fluida', description: 'Ao trocar de tela/conversa não há mais o "Carregando..." grosseiro — as mensagens trocam de forma suave, sem flash.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.093',
     date: '16/05/2026',
