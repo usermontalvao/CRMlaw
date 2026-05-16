@@ -52,6 +52,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
@@ -348,6 +349,7 @@ interface DeadlinesModuleProps {
 const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData, calendarMonth: propCalendarMonth, calendarYear: propCalendarYear, onCalendarChange }) => {
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
+  const { navigateTo } = useNavigation();
   const { isAdmin, loading: permissionsLoading } = usePermissions();
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
@@ -1988,16 +1990,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, [processes, processSearchTerm, formData.client_id]);
 
   const filteredRequirements = useMemo(() => {
-    if (!requirementSearchTerm.trim()) return requirements.slice(0, 10);
+    const scopedRequirements = formData.client_id
+      ? requirements.filter((r) => r.client_id === formData.client_id)
+      : requirements;
+
+    if (!requirementSearchTerm.trim()) return scopedRequirements.slice(0, 10);
     const term = requirementSearchTerm.trim().toLowerCase();
-    return requirements
+    return scopedRequirements
       .filter((r) => {
         const protocol = (r.protocol ?? '').toLowerCase();
         const beneficiary = (r.beneficiary ?? '').toLowerCase();
         return protocol.includes(term) || beneficiary.includes(term);
       })
       .slice(0, 10);
-  }, [requirements, requirementSearchTerm]);
+  }, [requirements, requirementSearchTerm, formData.client_id]);
 
   const filteredClients = useMemo(() => {
     if (!clientSearchTerm.trim()) return clients.slice(0, 10);
@@ -2379,17 +2385,28 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
               {/* People row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
-                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <UserCircle className="w-5 h-5 text-blue-600" />
+                <button
+                  type="button"
+                  disabled={!d.client_id}
+                  onClick={() => {
+                    if (!d.client_id) return;
+                    handleCloseViewDeadlineModal();
+                    navigateTo('clientes', { mode: 'details', entityId: d.client_id } as any);
+                  }}
+                  className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
+                    d.client_id ? 'border-slate-200 hover:border-orange-300 hover:bg-orange-50 cursor-pointer group' : 'border-slate-200 cursor-default'
+                  }`}
+                >
+                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                    <UserCircle className="w-5 h-5 text-orange-600" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>
-                    <p className="text-sm font-semibold text-slate-800 truncate">
+                    <p className={`text-sm font-semibold truncate ${d.client_id ? 'text-slate-800 group-hover:text-orange-700 group-hover:underline' : 'text-slate-800'}`}>
                       {d.client_id ? clientMap.get(d.client_id)?.full_name || '—' : '—'}
                     </p>
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
                   <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
                     <UserCircle className="w-5 h-5 text-emerald-600" />
@@ -2683,9 +2700,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     {filteredProcesses.map((p) => <option key={p.id} value={p.id}>{p.process_code}</option>)}
                   </select>
                 ) : formData.type === 'requerimento' ? (
-                  <select value={formData.requirement_id} onChange={(e) => handleFormChange('requirement_id', e.target.value)} className={inputStyle}>
-                    <option value="">Selecione...</option>
-                    {filteredRequirements.map((r) => <option key={r.id} value={r.id}>{r.protocol}</option>)}
+                  <select value={formData.requirement_id} onChange={(e) => handleFormChange('requirement_id', e.target.value)} disabled={!formData.client_id} className={`${inputStyle} disabled:opacity-40 disabled:bg-slate-50`}>
+                    <option value="">{formData.client_id ? 'Selecione...' : 'Escolha o cliente primeiro'}</option>
+                    {filteredRequirements.map((r) => <option key={r.id} value={r.id}>{r.protocol}{r.beneficiary ? ` — ${r.beneficiary}` : ''}</option>)}
                   </select>
                 ) : (
                   <select disabled className={`${inputStyle} opacity-40 bg-slate-50`}><option>—</option></select>
@@ -2738,27 +2755,29 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     onClick={() => handleFormChange('responsible_id', member.id)}
                     className="relative group transition-transform hover:z-10 hover:scale-110"
                   >
-                    {(member as any).avatar_url ? (
-                      <img
-                        src={(member as any).avatar_url}
-                        alt={member.name}
-                        className={`w-11 h-11 rounded-full object-cover transition-all ${
-                          isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200 grayscale-[35%] group-hover:grayscale-0'
-                        }`}
-                      />
-                    ) : (
-                      <div
-                        className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                          isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
-                        }`}
-                        style={{
-                          background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '92%'})`,
-                          color: `hsl(${hue}, 45%, 30%)`,
-                        }}
-                      >
-                        {initials}
-                      </div>
-                    )}
+                    <div
+                      className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm overflow-hidden transition-all ${
+                        isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
+                      }`}
+                      style={{
+                        background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '92%'})`,
+                        color: `hsl(${hue}, 45%, 30%)`,
+                      }}
+                    >
+                      {initials}
+                      {(member as any).avatar_url && (
+                        <img
+                          src={(member as any).avatar_url}
+                          alt={member.name}
+                          loading="eager"
+                          decoding="async"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          className={`absolute inset-0 w-full h-full rounded-full object-cover transition-all ${
+                            isSelected ? '' : 'grayscale-[35%] group-hover:grayscale-0'
+                          }`}
+                        />
+                      )}
+                    </div>
                     {isSelected && (
                       <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
                         <Check className="w-2 h-2 text-white" strokeWidth={3} />

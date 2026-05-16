@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.078': { name: 'Café Vínculo Rápido', emoji: '🔗' },
   '1.10.077': { name: 'Café Cargo Certo', emoji: '🎖️' },
   '1.10.076': { name: 'Café Hierarquia', emoji: '🪜' },
   '1.10.075': { name: 'Café Tela Cheia', emoji: '🖥️' },
@@ -782,6 +783,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.078',
+    date: '15/05/2026',
+    summary: 'Avatares de responsável com carregamento instantâneo, requerimentos filtrados por cliente e nome do cliente clicável no modal.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Avatares de responsável carregam instantâneo', description: 'As iniciais coloridas aparecem na hora como fundo do avatar e a foto sobrepõe quando carrega, eliminando a sensação de demora e o círculo vazio.' },
+          { type: 'fix', title: 'Requerimento filtrado pelo cliente', description: 'O seletor de Requerimento agora mostra apenas os requerimentos vinculados ao cliente selecionado (antes listava todos). Campo desabilitado até escolher o cliente, igual ao Processo.' },
+          { type: 'feature', title: 'Nome do cliente clicável no modal', description: 'No modal de visualização do prazo, clicar no card do Cliente fecha o modal e abre a ficha completa do cliente.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.077',
     date: '15/05/2026',
