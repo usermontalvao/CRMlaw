@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.075': { name: 'Café Tela Cheia', emoji: '🖥️' },
   '1.10.074': { name: 'Café Advogado em Foco', emoji: '👨‍⚖️' },
   '1.10.073': { name: 'Café Formulário Premium', emoji: '📋' },
   '1.10.072': { name: 'Café Modal Refinado', emoji: '✨' },
@@ -779,6 +780,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.075',
+    date: '15/05/2026',
+    summary: 'Modal de prazo mais largo (max-w-6xl) em coluna única compacta, cabendo inteiro na tela sem rolagem, com advogados em faixa horizontal.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Modal mais largo e sem rolagem', description: 'Modal expandido para max-w-6xl em coluna única compacta. Seções de Identificação, Calculadora, Configurações e Responsável organizadas para caber inteiras na tela do computador sem scroll.' },
+          { type: 'improvement', title: 'Responsável em faixa horizontal', description: 'Advogados exibidos como faixa horizontal de fotos integradas dentro de card, na base do formulário, com nome do selecionado destacado em laranja.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.074',
     date: '15/05/2026',

@@ -2519,7 +2519,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const deadlineModal = isModalOpen ? createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center px-2 sm:px-4 py-3">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={handleCloseModal} />
-      <div className="relative w-full max-w-5xl max-h-[96vh] bg-white rounded-2xl shadow-2xl ring-1 ring-slate-900/5 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-6xl max-h-[94vh] bg-white rounded-2xl shadow-2xl ring-1 ring-slate-900/5 flex flex-col overflow-hidden">
 
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-100">
@@ -2537,242 +2537,234 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </button>
         </div>
 
-        {/* ── Body (two columns) ──────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto bg-slate-50">
-          <div className="flex flex-col lg:flex-row gap-0 lg:divide-x lg:divide-slate-200">
+        {/* ── Body — coluna única larga e compacta ────────────────── */}
+        <div className="flex-1 overflow-y-auto bg-slate-50 px-6 py-4 space-y-4">
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</div>
+          )}
 
-            {/* LEFT COLUMN: identification + calculator + description */}
-            <div className="flex-1 p-5 space-y-5">
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-              )}
-
-              {/* Título + Tipo */}
-              <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Identificação</p>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                    <div className="sm:col-span-3">
-                      <label className={labelStyle}>Título do Prazo <span className="text-red-400">*</span></label>
-                      <input
-                        value={formData.title}
-                        onChange={(e) => handleFormChange('title', e.target.value)}
-                        className={inputStyle}
-                        placeholder="Ex: Contestação Processo 00123..."
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Tipo</label>
-                      <select
-                        value={formData.type}
-                        onChange={(e) => {
-                          const t = e.target.value as DeadlineType;
-                          handleFormChange('type', t);
-                          if (t === 'processo') { handleFormChange('requirement_id', ''); setRequirementSearchTerm(''); }
-                          else if (t === 'requerimento') { handleFormChange('process_id', ''); setProcessSearchTerm(''); }
-                          else { handleFormChange('process_id', ''); handleFormChange('requirement_id', ''); setProcessSearchTerm(''); setRequirementSearchTerm(''); }
-                        }}
-                        className={inputStyle}
-                      >
-                        {TYPE_OPTIONS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <ClientSearchSelect
-                    value={formData.client_id}
-                    onChange={(clientId) => { handleFormChange('client_id', clientId); if (!clientId) { handleFormChange('process_id', ''); setProcessSearchTerm(''); } }}
-                    label="Cliente"
-                    placeholder="Buscar cliente..."
-                    required
-                    allowCreate={true}
-                  />
-                </div>
+          {/* Identificação */}
+          <section>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Identificação</p>
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-12 lg:col-span-5">
+                <label className={labelStyle}>Título do Prazo <span className="text-red-400">*</span></label>
+                <input
+                  value={formData.title}
+                  onChange={(e) => handleFormChange('title', e.target.value)}
+                  className={inputStyle}
+                  placeholder="Ex: Contestação Processo 00123..."
+                  required
+                />
               </div>
-
-              {/* Calculadora */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Calculadora de Prazo</p>
-                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">DJEN</span>
-                </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <label className={labelStyle}>Contagem</label>
-                      <select
-                        value={tipoPrazoCalculadora}
-                        onChange={(e) => {
-                          const v = e.target.value as TipoPrazo;
-                          setTipoPrazoCalculadora(v);
-                          if (dataPublicacao && diasPrazo) {
-                            const dias = Number(diasPrazo);
-                            if (!Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, v));
-                          }
-                        }}
-                        className={inputStyle}
-                      >
-                        <option value="processual">Dias úteis</option>
-                        <option value="material">Dias corridos</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Data publicação</label>
-                      <input
-                        type="date"
-                        value={dataPublicacao}
-                        onChange={(e) => {
-                          setDataPublicacao(e.target.value);
-                          if (e.target.value && diasPrazo) handleFormChange('due_date', calcularDataVencimento(e.target.value, parseInt(diasPrazo), tipoPrazoCalculadora));
-                        }}
-                        className={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Nº de dias</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number" min={1} value={diasPrazo} placeholder="0"
-                          onChange={(e) => {
-                            setDiasPrazo(e.target.value);
-                            const dias = Number(e.target.value);
-                            if (dataPublicacao && !Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora));
-                          }}
-                          className="w-14 h-10 px-2 rounded-lg text-sm text-center bg-white border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
-                        />
-                        {[5, 10, 15].map((d) => (
-                          <button key={d} type="button"
-                            onClick={() => { setDiasPrazo(String(d)); if (dataPublicacao) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, d, tipoPrazoCalculadora)); }}
-                            className={`h-10 px-2.5 text-xs rounded-lg font-semibold transition-all ${diasPrazo === String(d) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                          >{d}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Vencimento <span className="text-red-400">*</span></label>
-                      <input
-                        type="date" value={formData.due_date} required
-                        onChange={(e) => {
-                          const d = new Date(e.target.value + 'T12:00:00');
-                          if (d.getDay() === 0 || d.getDay() === 6) { alert('⚠️ Não é permitido cadastrar prazos em finais de semana.'); return; }
-                          setDataPublicacao(''); setDiasPrazo('');
-                          handleFormChange('due_date', e.target.value);
-                        }}
-                        className={inputStyle}
-                      />
-                    </div>
-                  </div>
-                </div>
+              <div className="col-span-6 lg:col-span-2">
+                <label className={labelStyle}>Tipo</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => {
+                    const t = e.target.value as DeadlineType;
+                    handleFormChange('type', t);
+                    if (t === 'processo') { handleFormChange('requirement_id', ''); setRequirementSearchTerm(''); }
+                    else if (t === 'requerimento') { handleFormChange('process_id', ''); setProcessSearchTerm(''); }
+                    else { handleFormChange('process_id', ''); handleFormChange('requirement_id', ''); setProcessSearchTerm(''); setRequirementSearchTerm(''); }
+                  }}
+                  className={inputStyle}
+                >
+                  {TYPE_OPTIONS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
               </div>
-
-              {/* Configurações */}
-              <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Configurações</p>
-                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <label className={labelStyle}>Prioridade</label>
-                      <select value={formData.priority} onChange={(e) => handleFormChange('priority', e.target.value as DeadlinePriority)} className={inputStyle}>
-                        {PRIORITY_OPTIONS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Status</label>
-                      <select value={formData.status} onChange={(e) => handleFormChange('status', e.target.value as DeadlineStatus)} className={inputStyle}>
-                        {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelStyle}>{formData.type === 'processo' ? 'Processo' : formData.type === 'requerimento' ? 'Requerimento' : 'Processo'}</label>
-                      {formData.type === 'processo' ? (
-                        <select value={formData.process_id} onChange={(e) => handleFormChange('process_id', e.target.value)} disabled={!formData.client_id} className={`${inputStyle} disabled:opacity-40 disabled:bg-slate-50`}>
-                          <option value="">Selecione...</option>
-                          {filteredProcesses.map((p) => <option key={p.id} value={p.id}>{p.process_code}</option>)}
-                        </select>
-                      ) : formData.type === 'requerimento' ? (
-                        <select value={formData.requirement_id} onChange={(e) => handleFormChange('requirement_id', e.target.value)} className={inputStyle}>
-                          <option value="">Selecione...</option>
-                          {filteredRequirements.map((r) => <option key={r.id} value={r.id}>{r.protocol}</option>)}
-                        </select>
-                      ) : (
-                        <select disabled className={`${inputStyle} opacity-40 bg-slate-50`}><option>—</option></select>
-                      )}
-                    </div>
-                    <div>
-                      <label className={labelStyle}>Notificar (dias antes)</label>
-                      <input type="number" min={0} max={30} value={formData.notify_days_before} onChange={(e) => handleFormChange('notify_days_before', e.target.value)} className={inputStyle} placeholder="2" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelStyle}>Descrição / Observações</label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => handleFormChange('description', e.target.value)}
-                      placeholder="Detalhes adicionais sobre o prazo..."
-                      className={`${inputStyle} h-24 resize-none`}
-                    />
-                  </div>
-                </div>
+              <div className="col-span-12 lg:col-span-5">
+                <ClientSearchSelect
+                  value={formData.client_id}
+                  onChange={(clientId) => { handleFormChange('client_id', clientId); if (!clientId) { handleFormChange('process_id', ''); setProcessSearchTerm(''); } }}
+                  label="Cliente"
+                  placeholder="Buscar cliente..."
+                  required
+                  allowCreate={true}
+                />
               </div>
             </div>
+          </section>
 
-            {/* RIGHT COLUMN: responsible picker — só fotos integradas */}
-            <div className="lg:w-64 p-5 bg-white flex-shrink-0">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Responsável <span className="text-red-400">*</span></p>
-              <p className="text-xs font-semibold mb-4 truncate h-4">
+          {/* Calculadora */}
+          <section>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Calculadora de Prazo</p>
+              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">DJEN</span>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className={labelStyle}>Contagem</label>
+                <select
+                  value={tipoPrazoCalculadora}
+                  onChange={(e) => {
+                    const v = e.target.value as TipoPrazo;
+                    setTipoPrazoCalculadora(v);
+                    if (dataPublicacao && diasPrazo) {
+                      const dias = Number(diasPrazo);
+                      if (!Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, v));
+                    }
+                  }}
+                  className={inputStyle}
+                >
+                  <option value="processual">Dias úteis</option>
+                  <option value="material">Dias corridos</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelStyle}>Data publicação</label>
+                <input
+                  type="date"
+                  value={dataPublicacao}
+                  onChange={(e) => {
+                    setDataPublicacao(e.target.value);
+                    if (e.target.value && diasPrazo) handleFormChange('due_date', calcularDataVencimento(e.target.value, parseInt(diasPrazo), tipoPrazoCalculadora));
+                  }}
+                  className={inputStyle}
+                />
+              </div>
+              <div>
+                <label className={labelStyle}>Nº de dias</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number" min={1} value={diasPrazo} placeholder="0"
+                    onChange={(e) => {
+                      setDiasPrazo(e.target.value);
+                      const dias = Number(e.target.value);
+                      if (dataPublicacao && !Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora));
+                    }}
+                    className="w-14 h-10 px-2 rounded-lg text-sm text-center bg-white border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                  />
+                  {[5, 10, 15].map((d) => (
+                    <button key={d} type="button"
+                      onClick={() => { setDiasPrazo(String(d)); if (dataPublicacao) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, d, tipoPrazoCalculadora)); }}
+                      className={`h-10 px-2.5 text-xs rounded-lg font-semibold transition-all ${diasPrazo === String(d) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >{d}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className={labelStyle}>Vencimento <span className="text-red-400">*</span></label>
+                <input
+                  type="date" value={formData.due_date} required
+                  onChange={(e) => {
+                    const d = new Date(e.target.value + 'T12:00:00');
+                    if (d.getDay() === 0 || d.getDay() === 6) { alert('⚠️ Não é permitido cadastrar prazos em finais de semana.'); return; }
+                    setDataPublicacao(''); setDiasPrazo('');
+                    handleFormChange('due_date', e.target.value);
+                  }}
+                  className={inputStyle}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Configurações */}
+          <section>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Configurações</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className={labelStyle}>Prioridade</label>
+                <select value={formData.priority} onChange={(e) => handleFormChange('priority', e.target.value as DeadlinePriority)} className={inputStyle}>
+                  {PRIORITY_OPTIONS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelStyle}>Status</label>
+                <select value={formData.status} onChange={(e) => handleFormChange('status', e.target.value as DeadlineStatus)} className={inputStyle}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelStyle}>{formData.type === 'processo' ? 'Processo' : formData.type === 'requerimento' ? 'Requerimento' : 'Processo'}</label>
+                {formData.type === 'processo' ? (
+                  <select value={formData.process_id} onChange={(e) => handleFormChange('process_id', e.target.value)} disabled={!formData.client_id} className={`${inputStyle} disabled:opacity-40 disabled:bg-slate-50`}>
+                    <option value="">Selecione...</option>
+                    {filteredProcesses.map((p) => <option key={p.id} value={p.id}>{p.process_code}</option>)}
+                  </select>
+                ) : formData.type === 'requerimento' ? (
+                  <select value={formData.requirement_id} onChange={(e) => handleFormChange('requirement_id', e.target.value)} className={inputStyle}>
+                    <option value="">Selecione...</option>
+                    {filteredRequirements.map((r) => <option key={r.id} value={r.id}>{r.protocol}</option>)}
+                  </select>
+                ) : (
+                  <select disabled className={`${inputStyle} opacity-40 bg-slate-50`}><option>—</option></select>
+                )}
+              </div>
+              <div>
+                <label className={labelStyle}>Notificar (dias antes)</label>
+                <input type="number" min={0} max={30} value={formData.notify_days_before} onChange={(e) => handleFormChange('notify_days_before', e.target.value)} className={inputStyle} placeholder="2" />
+              </div>
+              <div className="col-span-2 lg:col-span-4">
+                <label className={labelStyle}>Descrição / Observações</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => handleFormChange('description', e.target.value)}
+                  placeholder="Detalhes adicionais sobre o prazo..."
+                  className={`${inputStyle} h-16 resize-none`}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Responsável — faixa horizontal de fotos */}
+          <section>
+            <div className="flex items-baseline gap-3 mb-2">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Responsável <span className="text-red-400">*</span></p>
+              <p className="text-xs font-semibold truncate">
                 {formData.responsible_id
                   ? <span className="text-orange-600">{members.find(m => m.id === formData.responsible_id)?.name || ''}</span>
                   : <span className="text-slate-400 font-normal">Selecione um advogado</span>}
               </p>
-              <div className="flex flex-wrap gap-1 max-h-[540px] overflow-y-auto">
-                {members.map((member) => {
-                  const isSelected = formData.responsible_id === member.id;
-                  const hue = getMemberHue(member.name || '');
-                  const initials = getMemberInitials(member.name || '');
-                  return (
-                    <button
-                      key={member.id}
-                      type="button"
-                      title={member.name}
-                      onClick={() => handleFormChange('responsible_id', member.id)}
-                      className="relative group transition-transform hover:z-10 hover:scale-110"
-                    >
-                      {(member as any).avatar_url ? (
-                        <img
-                          src={(member as any).avatar_url}
-                          alt={member.name}
-                          className={`w-12 h-12 rounded-full object-cover transition-all ${
-                            isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200 grayscale-[35%] group-hover:grayscale-0'
-                          }`}
-                        />
-                      ) : (
-                        <div
-                          className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                            isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
-                          }`}
-                          style={{
-                            background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '92%'})`,
-                            color: `hsl(${hue}, 45%, 30%)`,
-                          }}
-                        >
-                          {initials}
-                        </div>
-                      )}
-                      {isSelected && (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
-                          <Check className="w-2 h-2 text-white" strokeWidth={3} />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-                {members.length === 0 && (
-                  <p className="text-sm text-slate-400 italic py-8">Nenhum membro encontrado.</p>
-                )}
-              </div>
-              <input type="text" required value={formData.responsible_id} onChange={() => {}} className="sr-only" tabIndex={-1} />
             </div>
-          </div>
+            <div className="flex flex-wrap gap-2 bg-white rounded-xl border border-slate-200 p-3">
+              {members.map((member) => {
+                const isSelected = formData.responsible_id === member.id;
+                const hue = getMemberHue(member.name || '');
+                const initials = getMemberInitials(member.name || '');
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    title={member.name}
+                    onClick={() => handleFormChange('responsible_id', member.id)}
+                    className="relative group transition-transform hover:z-10 hover:scale-110"
+                  >
+                    {(member as any).avatar_url ? (
+                      <img
+                        src={(member as any).avatar_url}
+                        alt={member.name}
+                        className={`w-11 h-11 rounded-full object-cover transition-all ${
+                          isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200 grayscale-[35%] group-hover:grayscale-0'
+                        }`}
+                      />
+                    ) : (
+                      <div
+                        className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                          isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
+                        }`}
+                        style={{
+                          background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '92%'})`,
+                          color: `hsl(${hue}, 45%, 30%)`,
+                        }}
+                      >
+                        {initials}
+                      </div>
+                    )}
+                    {isSelected && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
+                        <Check className="w-2 h-2 text-white" strokeWidth={3} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              {members.length === 0 && (
+                <p className="text-sm text-slate-400 italic py-4">Nenhum membro encontrado.</p>
+              )}
+            </div>
+            <input type="text" required value={formData.responsible_id} onChange={() => {}} className="sr-only" tabIndex={-1} />
+          </section>
         </div>
 
         {/* ── Footer ──────────────────────────────────────────────── */}
