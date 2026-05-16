@@ -175,9 +175,9 @@ async function sendMentionEmail(
   await smtpClient.send({
     from: `${SMTP_FROM_NAME} <${SMTP_FROM}>`,
     to: recipientEmail,
-    subject: `💬 ${authorName || 'Alguém'} mencionou você: ${deadline.title}`,
+    subject: 'Voce foi mencionado em um comentario - Jurius',
     html: emailHtml,
-    content: `${authorName || 'Alguém'} mencionou você em um comentário no prazo "${deadline.title}": ${commentText}`,
+    content: `${authorName || 'Alguem'} mencionou voce em um comentario no prazo "${deadline.title}": ${commentText}`,
   });
 
   await smtpClient.close();

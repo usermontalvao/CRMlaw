@@ -252,8 +252,10 @@ async function sendDeadlineEmail(
     priority: deadline.priority, type: deadline.type, clientName, processNumber, mode,
   });
 
-  const subjectPrefix = mode === 'reminder' ? '⏰ Lembrete' : '📌 Novo Prazo';
-  console.log(`🚀 Enviando email (${mode}) para ${recipientEmail}`);
+  const subjectLine = mode === 'reminder'
+    ? 'Lembrete de prazo - Jurius'
+    : 'Novo prazo cadastrado - Jurius';
+  console.log(`Enviando email (${mode}) para ${recipientEmail}`);
 
   const smtpClient = new SMTPClient({
     connection: { hostname: SMTP_HOST, port: SMTP_PORT, tls: true, auth: { username: SMTP_USER, password: SMTP_PASS } },
@@ -262,13 +264,13 @@ async function sendDeadlineEmail(
   await smtpClient.send({
     from: `${SMTP_FROM_NAME} <${SMTP_FROM}>`,
     to: recipientEmail,
-    subject: `${subjectPrefix}: ${deadline.title}`,
+    subject: subjectLine,
     html: emailHtml,
-    content: `${mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo atribuído'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
+    content: `${mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo cadastrado'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
   });
 
   await smtpClient.close();
-  console.log(`✅ Email (${mode}) enviado para ${recipientEmail}`);
+  console.log(`Email (${mode}) enviado para ${recipientEmail}`);
   return { success: true, message: `Enviado para ${recipientEmail}`, responsible_name: responsible.name };
 }
 

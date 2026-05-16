@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.085': { name: 'Café Assunto Limpo', emoji: '📧' },
   '1.10.084': { name: 'Café Instantâneo', emoji: '⚡' },
   '1.10.083': { name: 'Café Conversa', emoji: '🧵' },
   '1.10.082': { name: 'Café Menção Certeira', emoji: '🎯' },
@@ -789,6 +790,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.085',
+    date: '15/05/2026',
+    summary: 'Correção definitiva dos emails que apareciam como código cru: assunto agora é curto e ASCII, evitando o encoded-word inválido que quebrava o parsing do MIME.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Email não aparece mais como código', description: 'O assunto longo com emoji + acentos + título do prazo gerava um encoded-word RFC 2047 gigante que o servidor SMTP dobrava de forma inválida, fazendo clientes de email mostrarem o MIME cru. Assuntos agora são curtos e ASCII ("Voce foi mencionado em um comentario - Jurius" / "Novo prazo cadastrado - Jurius"), e o email renderiza corretamente.' },
+          { type: 'fix', title: 'Email auto-atribuído corrigido (deploy)', description: 'A correção da saudação redundante quando você cadastra prazo para si mesmo foi efetivada em produção.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.084',
     date: '15/05/2026',
