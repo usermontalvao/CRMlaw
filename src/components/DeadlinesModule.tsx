@@ -1585,9 +1585,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const handleViewDeadline = (deadline: Deadline) => {
     setSelectedDeadlineForView(deadline);
     setShowViewDeadlineModal(true);
-    setShowCommentsFor(deadline.id);
-    void loadComments(deadline.id);
   };
+
+  // Força o carregamento dos comentários sempre que o modal abre,
+  // independente de como foi aberto (clique, notificação, deep-link).
+  useEffect(() => {
+    const id = selectedDeadlineForView?.id;
+    if ((showViewDeadlineModal || viewMode === 'details') && id) {
+      setShowCommentsFor(id);
+      void loadComments(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showViewDeadlineModal, viewMode, selectedDeadlineForView?.id]);
 
   const handleCloseViewDeadlineModal = () => {
     setShowViewDeadlineModal(false);

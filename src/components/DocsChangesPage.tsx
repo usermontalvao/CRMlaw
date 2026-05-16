@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.086': { name: 'Café Sempre Carrega', emoji: '🔄' },
   '1.10.085': { name: 'Café Assunto Limpo', emoji: '📧' },
   '1.10.084': { name: 'Café Instantâneo', emoji: '⚡' },
   '1.10.083': { name: 'Café Conversa', emoji: '🧵' },
@@ -790,6 +791,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.086',
+    date: '15/05/2026',
+    summary: 'Comentários sempre carregam ao abrir o prazo, por qualquer caminho (clique, notificação, deep-link).',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Carregamento de comentários forçado', description: 'Um efeito dedicado agora dispara o carregamento dos comentários sempre que o modal do prazo abre — antes só carregava no clique direto, e abrir via notificação/deep-link mostrava "Nenhum comentário" mesmo havendo comentários.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.085',
     date: '15/05/2026',
