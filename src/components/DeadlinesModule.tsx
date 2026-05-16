@@ -2719,7 +2719,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
             <div className="flex flex-wrap gap-2 bg-white rounded-xl border border-slate-200 p-3">
               {[...members].sort((a, b) => {
-                const rank = (m: Profile) => m.badge === 'administrador' ? 0 : m.badge === 'advogado' ? 1 : 2;
+                const rank = (m: Profile) => {
+                  const r = (m.role || '').toLowerCase();
+                  if (r.includes('admin')) return 0;
+                  if (r.includes('advogad')) return 1;
+                  return 2;
+                };
                 return rank(a) - rank(b);
               }).map((member) => {
                 const isSelected = formData.responsible_id === member.id;

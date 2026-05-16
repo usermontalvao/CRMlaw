@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.077': { name: 'Café Cargo Certo', emoji: '🎖️' },
   '1.10.076': { name: 'Café Hierarquia', emoji: '🪜' },
   '1.10.075': { name: 'Café Tela Cheia', emoji: '🖥️' },
   '1.10.074': { name: 'Café Advogado em Foco', emoji: '👨‍⚖️' },
@@ -781,6 +782,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.077',
+    date: '15/05/2026',
+    summary: 'Correção da ordenação de responsáveis — agora usa o campo role real (Administrador, Advogado) ao invés do badge não preenchido.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Ordenação de responsáveis corrigida', description: 'O seletor agora ordena pelo campo role efetivo (Administrador primeiro, Advogado em seguida, demais depois). Antes usava o campo badge, que não estava preenchido, deixando assistentes na frente.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.076',
     date: '15/05/2026',
