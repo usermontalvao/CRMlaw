@@ -1465,6 +1465,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           ? ag.fee_value / ag.installments_count
           : ag.fee_value;
       };
+      // Valor total efetivamente pago pelo cliente (faturado)
+      const computePaid = (inst: any): number => inst.paid_value ?? inst.value ?? 0;
 
       const monthNames  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
       const monthShort  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -1474,26 +1476,33 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           if (!inst.payment_date) return false;
           return new Date(inst.payment_date + 'T12:00:00').getMonth() === i;
         });
+        const totalFaturado = insts.reduce((s, inst) => s + computePaid(inst), 0);
+        const totalFee      = insts.reduce((s, inst) => s + computeFee(inst), 0);
         return {
           index: i,
           name : monthNames[i],
           short: monthShort[i],
           count: insts.length,
-          total: insts.reduce((s, inst) => s + computeFee(inst), 0),
+          total: totalFee,
+          totalFaturado,
+          totalCliente: totalFaturado - totalFee,
           insts,
         };
       });
 
       const totalHonorarios = monthlyData.reduce((s, m) => s + m.total, 0);
+      const totalFaturadoAnual = monthlyData.reduce((s, m) => s + m.totalFaturado, 0);
+      const totalClienteAnual  = totalFaturadoAnual - totalHonorarios;
       const totalPayments   = allInstallmentsYear.length;
 
       // Mapa por cliente
-      const clientMap = new Map<string, { name: string; cpf: string; email: string; count: number; total: number }>();
+      const clientMap = new Map<string, { name: string; cpf: string; email: string; count: number; total: number; faturado: number; clienteParte: number }>();
       allInstallmentsYear.forEach(inst => {
         if (!inst.agreement) return;
         const cid    = inst.agreement.client_id;
         const client = clients.find(c => c.id === cid);
         const fee    = computeFee(inst);
+        const paid   = computePaid(inst);
         if (!clientMap.has(cid)) {
           clientMap.set(cid, {
             name : client?.full_name || (client as any)?.name || 'Desconhecido',
@@ -1501,11 +1510,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
             email: (client as any)?.email || '',
             count: 0,
             total: 0,
+            faturado: 0,
+            clienteParte: 0,
           });
         }
         const e = clientMap.get(cid)!;
         e.count++;
         e.total += fee;
+        e.faturado += paid;
+        e.clienteParte += paid - fee;
       });
 
       const lawyerName  = 'PEDRO RODRIGUES MONTALVAO NETO';
@@ -1722,8 +1735,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
               : '—';
             const rawMeth = (inst as any).payment_method;
             const methKey = (rawMeth && methodKeys.includes(rawMeth)) ? rawMeth : 'outros';
-            const fee  = computeFee(inst);
-            return `<tr data-method="${methKey}" data-value="${fee.toFixed(4)}">
+            const fee    = computeFee(inst);
+            const paid   = computePaid(inst);
+            const cliente = paid - fee;
+            return `<tr data-method="${methKey}" data-value="${fee.toFixed(4)}" data-paid="${paid.toFixed(4)}" data-cliente="${cliente.toFixed(4)}">
               <td style="color:#475569;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${dateStr}</td>
               <td style="font-weight:500;color:#0f172a;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${cName}</td>
               <td style="color:#475569;font-size:11px;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${cCpf}</td>
@@ -1733,7 +1748,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
                   ${methodLabelFn(rawMeth)}
                 </span>
               </td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;color:#475569;">${fmtR(paid)}</td>
               <td style="text-align:right;font-weight:600;color:#0e2a47;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:12px;">${fmtR(fee)}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;color:#64748b;">${fmtR(cliente)}</td>
             </tr>`;
           }).join('');
         return `
@@ -1752,14 +1769,18 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
                 <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
                 <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">CPF / CNPJ</th>
                 <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Forma de pagamento</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários (R$)</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Faturado (R$)</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários (R$)</th>
+                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Parte cliente (R$)</th>
               </tr>
             </thead>
             <tbody>${rowsHTML}</tbody>
             <tfoot>
               <tr>
                 <td colspan="4" style="text-align:right;font-size:10px;color:#475569;font-weight:600;padding:10px 14px;letter-spacing:.06em;text-transform:uppercase;">Subtotal</td>
+                <td data-month-subtotal-paid style="text-align:right;font-weight:600;color:#475569;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:12px;border-top:1px solid #0e2a47;">${fmtR(m.totalFaturado)}</td>
                 <td data-month-subtotal style="text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:13px;border-top:1px solid #0e2a47;">${fmtR(m.total)}</td>
+                <td data-month-subtotal-cliente style="text-align:right;font-weight:600;color:#64748b;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:12px;border-top:1px solid #0e2a47;">${fmtR(m.totalCliente)}</td>
               </tr>
             </tfoot>
           </table>
@@ -1768,12 +1789,14 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
       // ── Client summary rows ────────────────────────────────────────
       const clientRowsHTML = Array.from(clientMap.values())
-        .sort((a, b) => b.total - a.total)
+        .sort((a, b) => b.faturado - a.faturado)
         .map((e) => `<tr>
           <td style="padding:11px 16px;font-weight:500;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${e.name}</td>
           <td style="padding:11px 16px;font-size:11px;color:#475569;font-variant-numeric:tabular-nums;border-bottom:1px solid #f1f5f9;">${maskDoc(e.cpf)}</td>
           <td style="padding:11px 16px;text-align:center;color:#475569;font-size:12px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${e.count}</td>
-          <td style="padding:11px 16px;text-align:right;font-weight:600;color:#0e2a47;font-variant-numeric:tabular-nums;font-size:12.5px;border-bottom:1px solid #f1f5f9;">${fmtR(e.total)}</td>
+          <td style="padding:11px 16px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${fmtR(e.faturado)}</td>
+          <td style="padding:11px 16px;text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;font-size:12.5px;border-bottom:1px solid #f1f5f9;">${fmtR(e.total)}</td>
+          <td style="padding:11px 16px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:#64748b;border-bottom:1px solid #f1f5f9;">${fmtR(e.clienteParte)}</td>
         </tr>`).join('');
 
       const html = `<!DOCTYPE html>
@@ -1863,27 +1886,32 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     </div>
   </header>
 
-  <!-- ════════ KPI ROW (4 col) ════════ -->
-  <section style="margin:0 32px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
-    <div style="padding:22px 24px 22px 0;border-right:1px solid #e2e8f0;">
-      <div class="eyebrow" style="margin-bottom:8px;">Total de honorários · ${year}</div>
-      <div id="kpi-total" class="serif num" style="font-size:30px;font-weight:700;color:#0e2a47;letter-spacing:-.025em;line-height:1;">${fmtR(totalHonorarios)}</div>
-      <div style="margin-top:8px;font-size:10.5px;color:#64748b;line-height:1.4;font-style:italic;">${numberToWords(totalHonorarios)}</div>
+  <!-- ════════ KPI ROW (5 col) ════════ -->
+  <section style="margin:0 32px;display:grid;grid-template-columns:1.3fr 1.1fr 1.1fr 0.85fr 0.85fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+    <div style="padding:22px 20px 22px 0;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Total faturado · ${year}</div>
+      <div class="serif num" style="font-size:26px;font-weight:700;color:#0e2a47;letter-spacing:-.025em;line-height:1;">${fmtR(totalFaturadoAnual)}</div>
+      <div style="margin-top:6px;font-size:10px;color:#64748b;line-height:1.4;font-style:italic;">${numberToWords(totalFaturadoAnual)}</div>
     </div>
     <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Honorários (minha parte)</div>
+      <div id="kpi-total" class="serif num" style="font-size:22px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(totalHonorarios)}</div>
+      <div style="margin-top:6px;font-size:10px;color:#64748b;">${totalFaturadoAnual > 0 ? (totalHonorarios / totalFaturadoAnual * 100).toFixed(1) + '% do faturado' : '—'}</div>
+    </div>
+    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Parte do cliente</div>
+      <div class="serif num" style="font-size:22px;font-weight:700;color:#475569;letter-spacing:-.02em;line-height:1;">${fmtR(totalClienteAnual)}</div>
+      <div style="margin-top:6px;font-size:10px;color:#64748b;">${totalFaturadoAnual > 0 ? (totalClienteAnual / totalFaturadoAnual * 100).toFixed(1) + '% do faturado' : '—'}</div>
+    </div>
+    <div style="padding:22px 16px;border-right:1px solid #e2e8f0;">
       <div class="eyebrow" style="margin-bottom:8px;">Baixas</div>
       <div id="kpi-count" class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${totalPayments}</div>
       <div style="margin-top:6px;font-size:10.5px;color:#64748b;">pagamentos</div>
     </div>
-    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+    <div style="padding:22px 0 22px 16px;">
       <div class="eyebrow" style="margin-bottom:8px;">Ticket médio</div>
-      <div id="kpi-medio" class="serif num" style="font-size:20px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(ticketMedio)}</div>
+      <div id="kpi-medio" class="serif num" style="font-size:18px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(ticketMedio)}</div>
       <div style="margin-top:6px;font-size:10.5px;color:#64748b;">por baixa</div>
-    </div>
-    <div style="padding:22px 0 22px 20px;">
-      <div class="eyebrow" style="margin-bottom:8px;">Fontes pagadoras</div>
-      <div class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${clientMap.size}</div>
-      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">clientes distintos</div>
     </div>
   </section>
 
@@ -1988,7 +2016,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:left;">Cliente / Fonte pagadora</th>
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:left;">CPF / CNPJ</th>
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:center;">Baixas</th>
-          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;">Total (R$)</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;">Faturado (R$)</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;">Honorários (R$)</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;">Parte cliente (R$)</th>
         </tr>
       </thead>
       <tbody>${clientRowsHTML}</tbody>
@@ -1996,7 +2026,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         <tr>
           <td colspan="2" style="padding:14px 16px;font-weight:700;color:#0e2a47;font-size:12px;text-transform:uppercase;letter-spacing:.08em;border-top:2px solid #0e2a47;">Total geral</td>
           <td style="padding:14px 16px;text-align:center;font-weight:700;color:#0e2a47;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${totalPayments}</td>
+          <td class="num" style="padding:14px 16px;text-align:right;font-weight:600;color:#475569;font-size:13px;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${fmtR(totalFaturadoAnual)}</td>
           <td class="serif num" style="padding:14px 16px;text-align:right;font-weight:700;color:#0e2a47;font-size:15px;border-top:2px solid #0e2a47;letter-spacing:-.01em;">${fmtR(totalHonorarios)}</td>
+          <td class="num" style="padding:14px 16px;text-align:right;font-weight:600;color:#64748b;font-size:13px;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${fmtR(totalClienteAnual)}</td>
         </tr>
       </tfoot>
     </table>
@@ -2057,17 +2089,23 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     // Recalc por mês
     document.querySelectorAll('[data-month-block]').forEach(block => {
       const visible = Array.from(block.querySelectorAll('tr[data-method]')).filter(r => r.style.display !== 'none');
-      const subtotal = visible.reduce((s, r) => s + parseFloat(r.dataset.value || '0'), 0);
+      const subtotal        = visible.reduce((s, r) => s + parseFloat(r.dataset.value   || '0'), 0);
+      const subtotalPaid    = visible.reduce((s, r) => s + parseFloat(r.dataset.paid    || '0'), 0);
+      const subtotalCliente = visible.reduce((s, r) => s + parseFloat(r.dataset.cliente || '0'), 0);
       const count = visible.length;
-      const tEl = block.querySelector('[data-month-total]');
-      const cEl = block.querySelector('[data-month-count]');
-      const sEl = block.querySelector('[data-month-subtotal]');
-      if (tEl) tEl.textContent = fmtBRL(subtotal);
+      const tEl  = block.querySelector('[data-month-total]');
+      const cEl  = block.querySelector('[data-month-count]');
+      const sEl  = block.querySelector('[data-month-subtotal]');
+      const spEl = block.querySelector('[data-month-subtotal-paid]');
+      const scEl = block.querySelector('[data-month-subtotal-cliente]');
+      if (tEl)  tEl.textContent  = fmtBRL(subtotal);
       if (cEl) {
         const baseMonth = cEl.textContent.split('·')[0].trim();
         cEl.textContent = baseMonth + ' · ' + count + ' ' + (count === 1 ? 'baixa' : 'baixas');
       }
-      if (sEl) sEl.textContent = fmtBRL(subtotal);
+      if (sEl)  sEl.textContent  = fmtBRL(subtotal);
+      if (spEl) spEl.textContent = fmtBRL(subtotalPaid);
+      if (scEl) scEl.textContent = fmtBRL(subtotalCliente);
       block.style.display = count === 0 ? 'none' : '';
     });
 

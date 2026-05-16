@@ -801,6 +801,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.097',
+    date: '16/05/2026',
+    summary: 'Relatório de IR agora exibe Faturado, Honorários (minha parte) e Parte do cliente em todos os níveis.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          { type: 'improvement', title: 'Relatório IR — Faturado e Parte do cliente', description: 'O relatório agora mostra 3 valores em vez de 1: Faturado (total pago pelo cliente), Honorários (minha parte) e Parte do cliente (Faturado − Honorários). Os KPIs do topo, as tabelas mensais e o resumo por cliente foram atualizados.' },
+          { type: 'improvement', title: 'KPIs do IR ampliados', description: 'Barra de KPIs reorganizada em 5 colunas: Total faturado, Honorários, Parte do cliente, Baixas e Ticket médio — com percentual proporcional em cada coluna.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.096',
     date: '16/05/2026',
     summary: 'Módulo Chat nivelado ao widget com nudge, presença em tempo real e tiques de leitura; prazos cumpridos exibem situação correta sem contagem regressiva.',
