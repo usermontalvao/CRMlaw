@@ -2718,7 +2718,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </p>
             </div>
             <div className="flex flex-wrap gap-2 bg-white rounded-xl border border-slate-200 p-3">
-              {members.map((member) => {
+              {[...members].sort((a, b) => {
+                const rank = (m: Profile) => m.badge === 'administrador' ? 0 : m.badge === 'advogado' ? 1 : 2;
+                return rank(a) - rank(b);
+              }).map((member) => {
                 const isSelected = formData.responsible_id === member.id;
                 const hue = getMemberHue(member.name || '');
                 const initials = getMemberInitials(member.name || '');

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.076': { name: 'Café Hierarquia', emoji: '🪜' },
   '1.10.075': { name: 'Café Tela Cheia', emoji: '🖥️' },
   '1.10.074': { name: 'Café Advogado em Foco', emoji: '👨‍⚖️' },
   '1.10.073': { name: 'Café Formulário Premium', emoji: '📋' },
@@ -780,6 +781,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.076',
+    date: '15/05/2026',
+    summary: 'Lista de responsáveis ordenada por hierarquia: administrador, advogado e demais.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Responsáveis ordenados por hierarquia', description: 'No seletor de responsável, os advogados aparecem ordenados por cargo: administrador primeiro, depois advogado e por fim os demais.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.075',
     date: '15/05/2026',
