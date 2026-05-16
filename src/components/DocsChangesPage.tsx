@@ -801,6 +801,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.098',
+    date: '16/05/2026',
+    summary: 'Relatório IR corrigido: exibe Faturado vs Honorários sem coluna de parte do cliente.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          { type: 'fix', title: 'Relatório IR — Faturado × Honorários', description: 'Removida a coluna "Parte do cliente" das tabelas; o relatório agora mostra Faturado e Honorários lado a lado, permitindo comparação direta sem somatório indevido.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.097',
     date: '16/05/2026',
     summary: 'Relatório de IR agora exibe Faturado, Honorários (minha parte) e Parte do cliente em todos os níveis.',
