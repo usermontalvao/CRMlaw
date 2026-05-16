@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.095': { name: 'Café Áudio no Módulo', emoji: '🎧' },
   '1.10.094': { name: 'Café Widget Afiado', emoji: '🎯' },
   '1.10.093': { name: 'Café Chamou Atenção', emoji: '👋' },
   '1.10.092': { name: 'Café Som Top', emoji: '🎵' },
@@ -799,6 +800,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.095',
+    date: '16/05/2026',
+    summary: 'Player de áudio profissional também no módulo Chat (substitui o player nativo).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'improvement', title: 'Player de áudio no módulo Chat', description: 'O módulo Chat agora usa o mesmo player customizado do widget: play/pause, forma de onda com seek, tempo e velocidade 1x/1.5x/2x — substituindo o player nativo do navegador.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.094',
     date: '16/05/2026',

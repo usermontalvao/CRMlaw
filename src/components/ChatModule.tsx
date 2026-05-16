@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Bell, BellOff, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users, Reply, Pencil, Trash2, SmilePlus } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -171,6 +171,91 @@ const Avatar: React.FC<{
   );
 };
 
+const fmtAudioTime = (s: number) => {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+};
+
+const ProAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) void a.play(); else a.pause();
+  };
+  const cycleRate = () => {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = pct * duration;
+    setCurrent(a.currentTime);
+  };
+  const progress = duration > 0 ? (current / duration) * 100 : 0;
+  const bars = Array.from({ length: 32 }, (_, i) => 28 + ((i * 41) % 72));
+
+  return (
+    <div className="mt-2 flex items-center gap-3 rounded-xl bg-slate-100 dark:bg-zinc-800 px-3 py-2.5 w-[240px] sm:w-[300px]">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrent(0); }}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        className="shrink-0 w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow hover:bg-indigo-700 transition"
+        title={playing ? 'Pausar' : 'Reproduzir'}
+      >
+        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-end gap-[2px] h-6 cursor-pointer" onClick={seek}>
+          {bars.map((h, i) => {
+            const filled = (i / bars.length) * 100 <= progress;
+            return (
+              <div
+                key={i}
+                className={`flex-1 rounded-full transition-colors ${filled ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+                style={{ height: `${h}%` }}
+              />
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
+          <button
+            type="button"
+            onClick={cycleRate}
+            className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-zinc-700 rounded px-1.5 py-0.5 hover:bg-slate-300 dark:hover:bg-zinc-600 transition"
+            title="Velocidade"
+          >
+            {rate}x
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind: 'audio' | 'image' }> = ({ attachment, kind }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -244,16 +329,7 @@ const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind:
     );
   }
 
-  return (
-    <div className="mt-3">
-      <audio
-        src={signedUrl}
-        controls
-        className="w-full h-10 rounded-lg"
-        preload="metadata"
-      />
-    </div>
-  );
+  return <ProAudioPlayer src={signedUrl} />;
 };
 
 const ChatModule: React.FC = () => {
