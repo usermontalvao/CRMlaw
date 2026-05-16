@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.079': { name: 'Café Tudo Conectado', emoji: '🕸️' },
   '1.10.078': { name: 'Café Vínculo Rápido', emoji: '🔗' },
   '1.10.077': { name: 'Café Cargo Certo', emoji: '🎖️' },
   '1.10.076': { name: 'Café Hierarquia', emoji: '🪜' },
@@ -783,6 +784,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.079',
+    date: '15/05/2026',
+    summary: 'Correção do erro 400 nos comentários e navegação integrada: processo, requerimento e responsável clicáveis no modal do prazo.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Comentários funcionando (erro 400 corrigido)', description: 'A consulta de comentários não usa mais o embed profiles(name) — que falhava com 400 por não haver foreign key. Os nomes dos autores são resolvidos em consulta separada à tabela profiles.' },
+          { type: 'feature', title: 'Processo / Requerimento clicável', description: 'No modal do prazo, o card de Processo ou Requerimento vinculado abre o respectivo módulo na entidade correta.' },
+          { type: 'feature', title: 'Responsável clicável → perfil', description: 'O card do Responsável abre a página de perfil do advogado vinculado.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.078',
     date: '15/05/2026',

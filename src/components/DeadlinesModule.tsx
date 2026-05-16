@@ -589,29 +589,40 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
 
   // ── Comentários ───────────────────────────────────────────────────────────
+  const resolveUserNames = useCallback(async (userIds: string[]): Promise<Map<string, string>> => {
+    const ids = [...new Set(userIds.filter(Boolean))];
+    if (ids.length === 0) return new Map();
+    const { data } = await supabase
+      .from('profiles')
+      .select('user_id, name')
+      .in('user_id', ids);
+    return new Map((data || []).map((p: any) => [p.user_id, p.name]));
+  }, []);
+
   const loadComments = useCallback(async (deadlineId: string) => {
     setCommentsLoading(true);
     setComments([]);
     try {
       const { data, error: err } = await supabase
         .from('deadline_comments')
-        .select('id, content, created_at, profiles(name)')
+        .select('id, content, created_at, user_id')
         .eq('deadline_id', deadlineId)
         .order('created_at', { ascending: true });
       if (err) throw err;
-      setComments((data || []).map((c: any) => ({
+      const rows = data || [];
+      const nameMap = await resolveUserNames(rows.map((r: any) => r.user_id));
+      setComments(rows.map((c: any) => ({
         id: c.id,
         content: c.content,
-        user_name: c.profiles?.name || 'Usuário',
+        user_name: nameMap.get(c.user_id) || 'Usuário',
         created_at: c.created_at,
       })));
     } catch {
-      // Tabela pode não existir ainda — silencia o erro
       setComments([]);
     } finally {
       setCommentsLoading(false);
     }
-  }, []);
+  }, [resolveUserNames]);
 
   const handleAddComment = useCallback(async (deadlineId: string) => {
     if (!commentText.trim()) return;
@@ -620,13 +631,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       const { data, error: err } = await supabase
         .from('deadline_comments')
         .insert({ deadline_id: deadlineId, content: commentText.trim(), user_id: user?.id })
-        .select('id, content, created_at, profiles(name)')
+        .select('id, content, created_at, user_id')
         .single();
       if (err) throw err;
       setComments((prev) => [...prev, {
         id: data.id,
         content: data.content,
-        user_name: (data as any).profiles?.name || currentUser?.name || 'Você',
+        user_name: currentUser?.name || 'Você',
         created_at: data.created_at,
       }]);
       setCommentText('');
@@ -2407,36 +2418,58 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     </p>
                   </div>
                 </button>
-                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                <button
+                  type="button"
+                  disabled={!d.responsible_id || !memberMap.get(d.responsible_id || '')?.user_id}
+                  onClick={() => {
+                    const m = d.responsible_id ? memberMap.get(d.responsible_id) : null;
+                    if (!m?.user_id) return;
+                    handleCloseViewDeadlineModal();
+                    navigateTo('perfil', { userId: m.user_id } as any);
+                  }}
+                  className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
+                    d.responsible_id && memberMap.get(d.responsible_id || '')?.user_id
+                      ? 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 cursor-pointer group'
+                      : 'border-slate-200 cursor-default'
+                  }`}
+                >
                   <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
                     <UserCircle className="w-5 h-5 text-emerald-600" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
-                    <p className="text-sm font-semibold text-slate-800 truncate">
+                    <p className="text-sm font-semibold text-slate-800 truncate group-hover:text-emerald-700 group-hover:underline">
                       {d.responsible_id ? memberMap.get(d.responsible_id)?.name || '—' : '—'}
                     </p>
                   </div>
-                </div>
+                </button>
               </div>
 
               {/* Process/Requirement link */}
               {(d.process_id || d.requirement_id) && (
-                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-purple-100 bg-purple-50">
-                  <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCloseViewDeadlineModal();
+                    if (d.process_id) navigateTo('processos', { entityId: d.process_id } as any);
+                    else if (d.requirement_id) navigateTo('requerimentos', { entityId: d.requirement_id } as any);
+                  }}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-purple-100 bg-purple-50 text-left transition hover:border-purple-300 hover:bg-purple-100 cursor-pointer group"
+                >
+                  <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-200">
                     <FileText className="w-5 h-5 text-purple-600" />
                   </div>
                   <div>
                     <p className="text-[9px] font-bold uppercase tracking-wider text-purple-500">
                       {d.process_id ? 'Processo Vinculado' : 'Requerimento Vinculado'}
                     </p>
-                    <p className="text-sm font-bold text-purple-900 font-mono">
+                    <p className="text-sm font-bold text-purple-900 font-mono group-hover:underline">
                       {d.process_id
                         ? processes.find(p => p.id === d.process_id)?.process_code || '—'
                         : requirements.find(r => r.id === d.requirement_id)?.protocol || '—'}
                     </p>
                   </div>
-                </div>
+                </button>
               )}
 
               {/* Comments */}
