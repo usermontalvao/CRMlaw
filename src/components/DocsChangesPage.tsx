@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.074': { name: 'Café Advogado em Foco', emoji: '👨‍⚖️' },
   '1.10.073': { name: 'Café Formulário Premium', emoji: '📋' },
   '1.10.072': { name: 'Café Modal Refinado', emoji: '✨' },
   '1.10.071': { name: 'Café Barra Limpa', emoji: '🧹' },
@@ -778,6 +779,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.074',
+    date: '15/05/2026',
+    summary: 'Modal de prazo reformulado com layout duas colunas e seletor de advogado por foto integrada, mantendo a identidade laranja do sistema.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Modal largo com layout de duas colunas', description: 'Modal expandido para max-w-5xl com coluna esquerda (formulário completo) e coluna direita fixa para seleção de responsável. Espaço para todas as informações sem scroll excessivo.' },
+          { type: 'improvement', title: 'Seletor de advogado por foto integrada', description: 'Avatares dos advogados exibidos lado a lado de forma integrada (sem caixas nem nomes), com foto real do perfil (avatar_url) ou iniciais coloridas. Hover amplia e revela cor; selecionado recebe anel laranja e check.' },
+          { type: 'improvement', title: 'Identidade visual laranja preservada', description: 'Modal mantém a paleta laranja do sistema (botões, badges, foco de inputs, anel de seleção) ao invés de azul.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.073',
     date: '15/05/2026',
