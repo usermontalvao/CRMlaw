@@ -419,6 +419,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [comments, setComments] = useState<DeadlineComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [savingComment, setSavingComment] = useState(false);
   const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
 
@@ -625,12 +626,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, [resolveUserNames]);
 
   const handleAddComment = useCallback(async (deadlineId: string) => {
-    if (!commentText.trim()) return;
+    const text = commentText.trim();
+    if (!text) return;
     setSavingComment(true);
     try {
       const { data, error: err } = await supabase
         .from('deadline_comments')
-        .insert({ deadline_id: deadlineId, content: commentText.trim(), user_id: user?.id })
+        .insert({ deadline_id: deadlineId, content: text, user_id: user?.id })
         .select('id, content, created_at, user_id')
         .single();
       if (err) throw err;
@@ -641,12 +643,67 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         created_at: data.created_at,
       }]);
       setCommentText('');
+
+      // ── Processar @menções ──────────────────────────────────────────
+      const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+      const mentioned = new Set<string>();
+      let m: RegExpExecArray | null;
+      while ((m = mentionRegex.exec(text)) !== null) {
+        mentioned.add(m[1].toLowerCase().trim());
+      }
+      if (mentioned.size > 0) {
+        const authorName = currentUser?.name || 'Um colega';
+        const deadlineTitle = deadlines.find((d) => d.id === deadlineId)?.title || 'Prazo';
+        const targets = members.filter((mem) => {
+          if (!mem.user_id || mem.user_id === user?.id) return false;
+          const memName = (mem.name || '').toLowerCase().trim();
+          const memFirst = memName.split(/\s+/)[0];
+          return [...mentioned].some((q) => memName === q || memName.includes(q) || q.includes(memFirst));
+        });
+        for (const target of targets) {
+          userNotificationService.createNotification({
+            user_id: target.user_id,
+            type: 'mention',
+            title: `${authorName} mencionou você em um comentário`,
+            message: text.length > 120 ? text.slice(0, 120) + '...' : text,
+            deadline_id: deadlineId,
+            metadata: { deadline_id: deadlineId, comment_id: data.id, author_id: user?.id, author_name: authorName },
+          }).catch((e) => console.error('Erro ao notificar menção:', e));
+
+          supabase.functions.invoke('notify-comment-mention', {
+            body: {
+              deadline_id: deadlineId,
+              mentioned_profile_id: target.id,
+              author_name: authorName,
+              comment_text: text,
+            },
+          }).catch((e) => console.error('Erro ao enviar email de menção:', e));
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao salvar comentário.');
     } finally {
       setSavingComment(false);
     }
-  }, [commentText, user?.id, currentUser?.name]);
+  }, [commentText, user?.id, currentUser?.name, members, deadlines]);
+
+  const handleCommentChange = useCallback((value: string) => {
+    setCommentText(value);
+    const match = value.match(/@([\p{L}]*)$/u);
+    setMentionQuery(match ? match[1].toLowerCase() : null);
+  }, []);
+
+  const pickMention = useCallback((memberName: string) => {
+    setCommentText((prev) => prev.replace(/@[\p{L}]*$/u, `@${memberName} `));
+    setMentionQuery(null);
+  }, []);
+
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    return members
+      .filter((mem) => (mem.name || '').toLowerCase().includes(mentionQuery))
+      .slice(0, 6);
+  }, [mentionQuery, members]);
 
   const filteredDeadlines = useMemo(() => {
     let filtered = deadlines;
@@ -2503,19 +2560,49 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     ))}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-2 relative">
+                  {mentionSuggestions.length > 0 && (
+                    <div className="absolute bottom-12 left-0 right-12 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-10 max-h-52 overflow-y-auto">
+                      <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Mencionar</p>
+                      {mentionSuggestions.map((mem) => {
+                        const hue = getMemberHue(mem.name || '');
+                        return (
+                          <button
+                            key={mem.id}
+                            type="button"
+                            onClick={() => pickMention(mem.name || '')}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-orange-50 transition"
+                          >
+                            <div
+                              className="relative w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 overflow-hidden"
+                              style={{ background: `hsl(${hue}, 50%, 90%)`, color: `hsl(${hue}, 45%, 30%)` }}
+                            >
+                              {getMemberInitials(mem.name || '')}
+                              {(mem as any).avatar_url && (
+                                <img src={(mem as any).avatar_url} alt="" className="absolute w-7 h-7 rounded-full object-cover" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-800 truncate">{mem.name}</p>
+                              {mem.role && <p className="text-[10px] text-slate-400 truncate">{mem.role}</p>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   <input
                     type="text"
                     value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddComment(d.id); } }}
-                    placeholder="Escreva um comentário..."
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    onChange={(e) => handleCommentChange(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') setMentionQuery(null); }}
+                    placeholder="Escreva um comentário... use @ para mencionar"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
                   />
                   <button
                     onClick={() => void handleAddComment(d.id)}
                     disabled={savingComment || !commentText.trim()}
-                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-40"
+                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 text-white transition disabled:opacity-40"
                   >
                     {savingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>

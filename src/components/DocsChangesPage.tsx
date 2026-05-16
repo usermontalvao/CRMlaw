@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.080': { name: 'Café Te Marquei', emoji: '💬' },
   '1.10.079': { name: 'Café Tudo Conectado', emoji: '🕸️' },
   '1.10.078': { name: 'Café Vínculo Rápido', emoji: '🔗' },
   '1.10.077': { name: 'Café Cargo Certo', emoji: '🎖️' },
@@ -784,6 +785,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.080',
+    date: '15/05/2026',
+    summary: 'Menções em comentários de prazo: digite @ para marcar um colega, que recebe notificação no sistema e email com template Jurius.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'feature', title: 'Mencionar pessoas em comentários (@)', description: 'No campo de comentário do prazo, digite @ para abrir a lista de colegas com avatar. Ao selecionar, a pessoa é marcada no comentário.' },
+          { type: 'feature', title: 'Notificação in-app de menção', description: 'O mencionado recebe notificação no sino do sistema (tipo menção) vinculada ao prazo, com prévia do comentário.' },
+          { type: 'feature', title: 'Email de menção com template Jurius', description: 'O mencionado também recebe um email com a identidade visual Jurius (cabeçalho laranja, card do prazo e comentário destacado), enviado pelo SMTP Hostinger já configurado.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.079',
     date: '15/05/2026',
