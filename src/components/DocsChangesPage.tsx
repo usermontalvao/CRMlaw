@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.084': { name: 'Café Instantâneo', emoji: '⚡' },
   '1.10.083': { name: 'Café Conversa', emoji: '🧵' },
   '1.10.082': { name: 'Café Menção Certeira', emoji: '🎯' },
   '1.10.081': { name: 'Café Ordem Certa', emoji: '🩹' },
@@ -788,6 +789,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.084',
+    date: '15/05/2026',
+    summary: 'Comentário aparece instantaneamente (post otimista) e carregamento mais rápido reaproveitando membros já em memória.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Comentário aparece na hora', description: 'Post otimista: o comentário surge imediatamente ao enviar, sem esperar a resposta do servidor. Se falhar, é removido e o texto volta ao campo.' },
+          { type: 'improvement', title: 'Carregamento de comentários mais rápido', description: 'Os nomes dos autores são resolvidos pelos membros já carregados em memória; o banco só é consultado para autores desconhecidos, eliminando uma ida de rede.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.083',
     date: '15/05/2026',

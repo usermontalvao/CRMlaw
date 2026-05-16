@@ -613,11 +613,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         .order('created_at', { ascending: true });
       if (err) throw err;
       const rows = data || [];
-      const nameMap = await resolveUserNames(rows.map((r: any) => r.user_id));
+      // Resolve nomes primeiro pelos membros já em memória; só consulta o banco p/ os faltantes
+      const localMap = new Map(members.map((mem) => [mem.user_id, mem.name]));
+      const missing = rows
+        .map((r: any) => r.user_id)
+        .filter((uid: string) => uid && !localMap.has(uid));
+      const fetchedMap = missing.length > 0 ? await resolveUserNames(missing) : new Map();
+      const nameOf = (uid: string) => localMap.get(uid) || fetchedMap.get(uid) || 'Usuário';
       setComments(rows.map((c: any) => ({
         id: c.id,
         content: c.content,
-        user_name: nameMap.get(c.user_id) || 'Usuário',
+        user_name: nameOf(c.user_id),
         created_at: c.created_at,
         user_id: c.user_id,
         parent_id: c.parent_id ?? null,
@@ -627,13 +633,27 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     } finally {
       setCommentsLoading(false);
     }
-  }, [resolveUserNames]);
+  }, [resolveUserNames, members]);
 
   const handleAddComment = useCallback(async (deadlineId: string) => {
     const text = commentText.trim();
     if (!text) return;
     setSavingComment(true);
     const parentId = replyingTo?.id ?? null;
+    // ── Otimista: o comentário aparece na hora ───────────────────────
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: DeadlineComment = {
+      id: tempId,
+      content: text,
+      user_name: currentUser?.name || 'Você',
+      created_at: new Date().toISOString(),
+      user_id: user?.id ?? null,
+      parent_id: parentId,
+    };
+    setComments((prev) => [...prev, optimistic]);
+    setCommentText('');
+    setReplyingTo(null);
+    setMentionQuery(null);
     try {
       const { data, error: err } = await supabase
         .from('deadline_comments')
@@ -641,16 +661,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         .select('id, content, created_at, user_id, parent_id')
         .single();
       if (err) throw err;
-      setComments((prev) => [...prev, {
+      // Substitui o temporário pelo registro real
+      setComments((prev) => prev.map((c) => c.id === tempId ? {
         id: data.id,
         content: data.content,
         user_name: currentUser?.name || 'Você',
         created_at: data.created_at,
         user_id: data.user_id,
         parent_id: data.parent_id ?? null,
-      }]);
-      setCommentText('');
-      setReplyingTo(null);
+      } : c));
 
       // ── Processar @menções ──────────────────────────────────────────
       const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
@@ -689,6 +708,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         }
       }
     } catch (err: any) {
+      // Falhou: remove o comentário otimista e devolve o texto ao input
+      setComments((prev) => prev.filter((c) => c.id !== tempId));
+      setCommentText(text);
       setError(err.message || 'Erro ao salvar comentário.');
     } finally {
       setSavingComment(false);
