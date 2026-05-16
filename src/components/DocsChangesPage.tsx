@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.082': { name: 'Café Menção Certeira', emoji: '🎯' },
   '1.10.081': { name: 'Café Ordem Certa', emoji: '🩹' },
   '1.10.080': { name: 'Café Te Marquei', emoji: '💬' },
   '1.10.079': { name: 'Café Tudo Conectado', emoji: '🕸️' },
@@ -786,6 +787,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.082',
+    date: '15/05/2026',
+    summary: 'Menção em comentário agora abre o prazo (não o Feed), funciona mesmo para quem não é responsável, e o @nome aparece destacado no texto.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Notificação de menção abre o prazo', description: 'Antes a notificação de menção em comentário levava ao Feed. Agora, quando vinculada a um prazo, abre o prazo correto.' },
+          { type: 'fix', title: 'Mencionado vê o prazo mesmo sem ser responsável', description: 'Ao abrir a notificação, se o prazo não está na lista do usuário (ele não é o responsável), o sistema busca o prazo direto e exibe no modal.' },
+          { type: 'improvement', title: 'Menção destacada no comentário', description: 'O @nome do colega aparece destacado (laranja, fundo suave) no texto do comentário, em vez de texto comum.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.081',
     date: '15/05/2026',

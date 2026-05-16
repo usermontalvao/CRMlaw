@@ -423,6 +423,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     } else if (notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder') {
       console.log('➡️ Navegando para agenda');
       onNavigateToModule('agenda');
+    } else if (notification.type === 'mention' && (notification.deadline_id || notification.metadata?.deadline_id)) {
+      // Menção em comentário de prazo: abrir o prazo
+      const deadlineId = notification.deadline_id || notification.metadata?.deadline_id;
+      console.log('➡️ Navegando para prazos (menção em comentário):', deadlineId);
+      onNavigateToModule('prazos', { entityId: String(deadlineId) });
     } else if (notification.type === 'feed_like' || notification.type === 'feed_comment' || notification.type === 'mention' || notification.type === 'poll_invite') {
       // Notificação de feed: abrir modal do post específico
       const postId = notification.metadata?.post_id;

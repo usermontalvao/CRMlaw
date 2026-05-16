@@ -1302,16 +1302,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
   useEffect(() => {
-    if (entityId && deadlines.length > 0) {
-      const deadline = deadlines.find(d => d.id === entityId);
-      if (deadline) {
-        setSelectedDeadlineForView(deadline);
-        setShowViewDeadlineModal(true);
-        if (onParamConsumed) {
-          onParamConsumed();
-        }
-      }
+    if (!entityId) return;
+    const local = deadlines.find(d => d.id === entityId);
+    if (local) {
+      setSelectedDeadlineForView(local);
+      setShowViewDeadlineModal(true);
+      onParamConsumed?.();
+      return;
     }
+    // Não está na lista (ex.: usuário mencionado não é o responsável) — busca direto
+    let active = true;
+    (async () => {
+      const fetched = await deadlineService.getDeadlineById(entityId);
+      if (active && fetched) {
+        setSelectedDeadlineForView(fetched);
+        setShowViewDeadlineModal(true);
+        onParamConsumed?.();
+      }
+    })();
+    return () => { active = false; };
   }, [entityId, deadlines, onParamConsumed]);
 
   useEffect(() => {
@@ -2372,6 +2381,31 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     return Math.abs(h) % 360;
   };
 
+  const renderCommentText = (text: string): React.ReactNode => {
+    const names = members
+      .map((mem) => (mem.name || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    if (names.length === 0) return text;
+    const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const re = new RegExp(`@(${escaped.join('|')})`, 'gi');
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = re.exec(text)) !== null) {
+      if (match.index > last) parts.push(text.slice(last, match.index));
+      parts.push(
+        <span key={key++} className="font-semibold text-orange-600 bg-orange-50 rounded px-1 py-0.5">
+          @{match[1]}
+        </span>,
+      );
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    return parts.length > 0 ? parts : text;
+  };
+
   const viewDeadlineModal = showViewDeadlineModal && selectedDeadlineForView && createPortal(
     (() => {
       const d = selectedDeadlineForView;
@@ -2565,7 +2599,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
                             <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
                           </div>
-                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{c.content}</p>
+                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{renderCommentText(c.content)}</p>
                         </div>
                       </div>
                     ))}
@@ -3140,7 +3174,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
                           <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
                         </div>
-                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{c.content}</p>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{renderCommentText(c.content)}</p>
                       </div>
                     ))}
                   </div>
