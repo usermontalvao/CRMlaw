@@ -14,7 +14,8 @@ export type UserNotificationType =
   | 'poll_invite'
   | 'mention'
   | 'feed_like'
-  | 'feed_comment';
+  | 'feed_comment'
+  | 'chat_message';
 
 export interface UserNotification {
   id: string;

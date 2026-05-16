@@ -1,10 +1,88 @@
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
+import { userNotificationService } from './userNotification.service';
+
+const ATTACHMENT_PREFIX = '__anexo__:';
 
 class ChatService {
   private roomsTable = 'chat_rooms';
   private membersTable = 'chat_room_members';
   private messagesTable = 'chat_messages';
+
+  /** Cria notificações in-app para destinatários: DM sempre, sala só em @menção. */
+  private async notifyRecipients(message: ChatMessage): Promise<void> {
+    try {
+      const [{ data: room }, memberIds] = await Promise.all([
+        supabase.from(this.roomsTable).select('id, name, type').eq('id', message.room_id).single(),
+        this.getRoomMembers(message.room_id),
+      ]);
+      if (!room) return;
+
+      const recipients = memberIds.filter((uid) => uid && uid !== message.user_id);
+      if (recipients.length === 0) return;
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, name')
+        .in('user_id', [...recipients, message.user_id]);
+      const nameByUser = new Map((profiles ?? []).map((p: any) => [p.user_id, p.name as string]));
+      const senderName = nameByUser.get(message.user_id) || 'Alguém';
+
+      // Preview do conteúdo
+      let preview: string;
+      if (message.content.startsWith(ATTACHMENT_PREFIX)) {
+        try {
+          const meta = JSON.parse(message.content.slice(ATTACHMENT_PREFIX.length));
+          const mime = String(meta?.mimeType || '');
+          preview = mime.startsWith('image/') ? '📷 Enviou uma imagem'
+            : mime.startsWith('audio/') ? '🎤 Enviou um áudio'
+            : '📎 Enviou um anexo';
+        } catch { preview = '📎 Enviou um anexo'; }
+      } else {
+        preview = message.content.length > 120 ? message.content.slice(0, 120) + '…' : message.content;
+      }
+
+      // @menções: casa nome (ou primeiro nome) dos membros
+      const mentioned = new Set<string>();
+      const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+      const tokens: string[] = [];
+      let mm: RegExpExecArray | null;
+      while ((mm = mentionRegex.exec(message.content)) !== null) tokens.push(mm[1].toLowerCase().trim());
+      if (tokens.length > 0) {
+        for (const uid of recipients) {
+          const nm = (nameByUser.get(uid) || '').toLowerCase().trim();
+          if (!nm) continue;
+          const first = nm.split(/\s+/)[0];
+          if (tokens.some((t) => nm === t || nm.includes(t) || t.includes(first))) mentioned.add(uid);
+        }
+      }
+
+      const isDM = room.type === 'dm';
+      for (const uid of recipients) {
+        const isMention = mentioned.has(uid);
+        // Sala (team): só notifica no sino se houve @menção. DM: sempre.
+        if (!isDM && !isMention) continue;
+        const type = isMention ? 'mention' : 'chat_message';
+        const title = isMention
+          ? `${senderName} mencionou você no chat`
+          : `${senderName} te enviou uma mensagem`;
+        userNotificationService.createNotification({
+          user_id: uid,
+          type: type as any,
+          title,
+          message: preview,
+          metadata: {
+            chat_room_id: message.room_id,
+            room_name: room.name,
+            sender_id: message.user_id,
+            sender_name: senderName,
+          },
+        }).catch((e) => console.error('Erro notificação de chat:', e));
+      }
+    } catch (e) {
+      console.error('notifyRecipients falhou:', e);
+    }
+  }
 
   async createRoom(params: {
     name: string;
@@ -371,7 +449,9 @@ class ChatService {
       throw new Error(error.message);
     }
 
-    return data as ChatMessage;
+    const message = data as ChatMessage;
+    void this.notifyRecipients(message);
+    return message;
   }
 
   subscribeToRoomMessages(params: {

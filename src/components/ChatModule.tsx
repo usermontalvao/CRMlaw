@@ -263,6 +263,7 @@ const ChatModule: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [showMobileChat, setShowMobileChat] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialRoomId) return;
@@ -911,6 +912,26 @@ const ChatModule: React.FC = () => {
     }
   };
 
+  const handleMessageChange = (value: string) => {
+    setMessageText(value);
+    handleTypingStart();
+    const match = value.match(/@([\p{L}]*)$/u);
+    setMentionQuery(match ? match[1].toLowerCase() : null);
+  };
+
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    return members
+      .filter((mem) => mem.user_id !== user?.id && (mem.name || '').toLowerCase().includes(mentionQuery))
+      .slice(0, 6);
+  }, [mentionQuery, members, user?.id]);
+
+  const pickMention = (name: string) => {
+    setMessageText((prev) => prev.replace(/@[\p{L}]*$/u, `@${name} `));
+    setMentionQuery(null);
+    messageInputRef.current?.focus();
+  };
+
   const handleTypingStart = () => {
     if (!user || !selectedRoomId) return;
 
@@ -1315,19 +1336,48 @@ const ChatModule: React.FC = () => {
                     }}
                   />
                   <div className="flex-1 relative min-w-0">
+                    {mentionSuggestions.length > 0 && (
+                      <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden z-30 max-h-56 overflow-y-auto">
+                        <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Mencionar</p>
+                        {mentionSuggestions.map((mem) => {
+                          const initials = (mem.name || '?').trim().split(/\s+/).map((n) => n[0]).slice(0, 2).join('').toUpperCase();
+                          return (
+                            <button
+                              key={mem.id}
+                              type="button"
+                              onClick={() => pickMention(mem.name || '')}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-amber-50 dark:hover:bg-gray-700 transition"
+                            >
+                              {mem.avatar_url ? (
+                                <img src={mem.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold">{initials}</div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{mem.name}</p>
+                                {mem.role && <p className="text-[10px] text-gray-400 truncate">{mem.role}</p>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                     <input
                       ref={messageInputRef}
                       type="text"
                       value={messageText}
-                      onChange={(e) => {
-                        setMessageText(e.target.value);
-                        handleTypingStart();
-                      }}
-                      placeholder={selectedRoomId ? 'Digite uma mensagem...' : 'Selecione uma conversa...'}
+                      onChange={(e) => handleMessageChange(e.target.value)}
+                      placeholder={selectedRoomId ? 'Digite uma mensagem... use @ para mencionar' : 'Selecione uma conversa...'}
                       disabled={!selectedRoomId || isRecording}
                       className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#25d366] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
                       onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setMentionQuery(null); return; }
                         if (e.key === 'Enter' && !e.shiftKey) {
+                          if (mentionSuggestions.length > 0) {
+                            e.preventDefault();
+                            pickMention(mentionSuggestions[0].name || '');
+                            return;
+                          }
                           e.preventDefault();
                           handleSend();
                         }

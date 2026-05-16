@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.089': { name: 'Café Chat Notifica', emoji: '🔔' },
   '1.10.088': { name: 'Café Alerta no Acordo', emoji: '🚨' },
   '1.10.087': { name: 'Café Atraso à Vista', emoji: '🗓️' },
   '1.10.086': { name: 'Café Sempre Carrega', emoji: '🔄' },
@@ -793,6 +794,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.089',
+    date: '16/05/2026',
+    summary: 'Chat — Fase 1: notificações no sino do sistema para DM e @menção, com autocomplete de menção e clique que abre a conversa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'feature', title: 'Notificação de chat no sino', description: 'Mensagens diretas (DM) e @menções em salas agora criam notificação no sino do sistema, com prévia do conteúdo (texto, imagem, áudio ou anexo). Salas de equipe só notificam quando você é mencionado, evitando spam.' },
+          { type: 'feature', title: '@menção com autocomplete', description: 'Ao digitar @ no chat, abre uma lista de colegas com avatar para mencionar. A pessoa mencionada recebe notificação no sino.' },
+          { type: 'feature', title: 'Clique abre a conversa certa', description: 'Clicar na notificação de chat abre o módulo Chat já na sala/conversa correta.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.088',
     date: '16/05/2026',
