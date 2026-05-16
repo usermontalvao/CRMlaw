@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.091': { name: 'Café Chat Polido', emoji: '✨' },
   '1.10.090': { name: 'Café Chat Interativo', emoji: '💞' },
   '1.10.089': { name: 'Café Chat Notifica', emoji: '🔔' },
   '1.10.088': { name: 'Café Alerta no Acordo', emoji: '🚨' },
@@ -795,6 +796,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.091',
+    date: '16/05/2026',
+    summary: 'Chat — Fase 3: separadores de dia (Hoje/Ontem), links clicáveis, botão "ir para o fim" e animação suave na chegada das mensagens.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'improvement', title: 'Separadores de dia', description: 'As conversas agora agrupam mensagens por dia com etiquetas "Hoje", "Ontem", dia da semana ou data completa.' },
+          { type: 'improvement', title: 'Links clicáveis', description: 'URLs nas mensagens viram links clicáveis (abrem em nova aba) em vez de texto cru.' },
+          { type: 'improvement', title: 'Botão "Ir para o fim"', description: 'Ao rolar para cima no histórico, aparece um botão flutuante para voltar rapidamente à mensagem mais recente.' },
+          { type: 'improvement', title: 'Animação na chegada', description: 'Mensagens novas entram com uma animação suave de fade/slide, deixando o chat mais fluido.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.090',
     date: '16/05/2026',

@@ -68,6 +68,40 @@ const formatTime = (value: string) => {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
+const dayKey = (value: string) => new Date(value).toDateString();
+const formatDaySeparator = (value: string) => {
+  const d = new Date(value);
+  const now = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (diffDays === 0) return 'Hoje';
+  if (diffDays === 1) return 'Ontem';
+  if (diffDays < 7) return d.toLocaleDateString('pt-BR', { weekday: 'long' });
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+};
+
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+const renderTextWithLinks = (text: string): React.ReactNode => {
+  const parts = text.split(URL_RE);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="underline break-all text-current opacity-90 hover:opacity-100"
+      >
+        {part}
+      </a>
+    ) : (
+      <React.Fragment key={i}>{part}</React.Fragment>
+    ),
+  );
+};
+
 const formatLastSeen = (value: string) => {
   const date = new Date(value);
   const now = new Date();
@@ -269,6 +303,7 @@ const ChatModule: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   useEffect(() => {
     if (!initialRoomId) return;
@@ -607,6 +642,13 @@ const ChatModule: React.FC = () => {
   const scrollToBottom = () => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowJumpToLatest(distanceFromBottom > 240);
   };
 
   const loadMembers = async () => {
@@ -1285,7 +1327,8 @@ const ChatModule: React.FC = () => {
 
               <div
                 ref={scrollRef}
-                className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 custom-scrollbar"
+                onScroll={handleScroll}
+                className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 custom-scrollbar relative"
                 style={{
                   backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"536\" height=\"113\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cdefs%3E%3Cpattern id=\"whatsapp-pattern\" x=\"0\" y=\"0\" width=\"536\" height=\"113\" patternUnits=\"userSpaceOnUse\"%3E%3Cpath fill=\"%23ece5dd\" d=\"M0 0h536v113H0z\"/%3E%3Cpath fill=\"%23e9dfd9\" d=\"M0 0h536v113H0z\" opacity=\".5\"/%3E%3Cpath fill=\"%23e9dfd9\" d=\"M0 0h536v113H0z\" opacity=\".3\"/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\"100%25\" height=\"100%25\" fill=\"url(%23whatsapp-pattern)\"/%3E%3C/svg%3E')",
                   backgroundRepeat: 'repeat',
@@ -1311,7 +1354,16 @@ const ChatModule: React.FC = () => {
                 )}
 
                 <div>
-                  {messages.map((msg) => {
+                  {messages.map((msg, _idx) => {
+                    const prevMsg = messages[_idx - 1];
+                    const showDaySeparator = !prevMsg || dayKey(prevMsg.created_at) !== dayKey(msg.created_at);
+                    const daySeparator = showDaySeparator ? (
+                      <div key={`day-${msg.id}`} className="flex justify-center my-3">
+                        <span className="px-3 py-1 rounded-full bg-white/80 dark:bg-zinc-800/80 text-[11px] font-semibold text-slate-500 dark:text-slate-300 shadow-sm">
+                          {formatDaySeparator(msg.created_at)}
+                        </span>
+                      </div>
+                    ) : null;
                     const isMine = user?.id === msg.user_id;
                     const author = membersByUserId.get(msg.user_id);
                     const authorName = author?.name || 'Usuário';
@@ -1395,12 +1447,14 @@ const ChatModule: React.FC = () => {
                     ) : attachment ? (
                       <div className="text-sm">{renderAttachment(msg, isMine)}</div>
                     ) : (
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                      <p className="whitespace-pre-wrap break-words">{renderTextWithLinks(msg.content)}</p>
                     );
 
                     if (!isMine) {
                       return (
-                        <div key={msg.id} className="relative z-0 flex gap-2 mb-4 group">
+                        <React.Fragment key={msg.id}>
+                        {daySeparator}
+                        <div className="relative z-0 flex gap-2 mb-4 group animate-in fade-in slide-in-from-bottom-1 duration-200">
                           <Avatar src={author?.avatar_url} name={authorName} size="sm" className="self-end mb-1" imageClassName="object-cover shadow-sm" />
                           <div className="flex flex-col gap-1 max-w-[70%] relative">
                             <div className="relative bg-white dark:bg-[#2a3942] p-3 rounded-2xl rounded-bl-none border border-[#e9edef] dark:border-[#2a3942] text-sm text-gray-800 dark:text-gray-100">
@@ -1419,11 +1473,14 @@ const ChatModule: React.FC = () => {
                             {ReactionsRow}
                           </div>
                         </div>
+                        </React.Fragment>
                       );
                     }
 
                     return (
-                      <div key={msg.id} className="relative z-0 flex flex-col items-end gap-1 mb-2 group">
+                      <React.Fragment key={msg.id}>
+                      {daySeparator}
+                      <div className="relative z-0 flex flex-col items-end gap-1 mb-2 group animate-in fade-in slide-in-from-bottom-1 duration-200">
                         <div className="relative max-w-[70%]">
                           {attachment && !isEditing && !isDeleted ? (
                             <>
@@ -1451,9 +1508,22 @@ const ChatModule: React.FC = () => {
                           {ReactionsRow}
                         </div>
                       </div>
+                      </React.Fragment>
                     );
                   })}
 
+                  {showJumpToLatest && (
+                    <div className="sticky bottom-2 flex justify-end pr-1 pointer-events-none">
+                      <button
+                        type="button"
+                        onClick={() => { scrollToBottom(); setShowJumpToLatest(false); }}
+                        className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-lg text-xs font-semibold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-zinc-700 transition animate-in fade-in slide-in-from-bottom-2"
+                      >
+                        <ArrowLeft className="w-4 h-4 -rotate-90" />
+                        Ir para o fim
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
