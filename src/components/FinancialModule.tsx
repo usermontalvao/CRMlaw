@@ -88,6 +88,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   })();
+  // Mesma base de data usada pelo servidor em getFinancialStats (UTC),
+  // para a lista de parcelas vencidas bater com o contador do banner.
+  const serverToday = new Date().toISOString().split('T')[0];
   const parseLocalDate = (raw?: string | null) => {
     if (!raw) return null;
     const s = String(raw).trim();
@@ -3227,7 +3230,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           {showOverdueOnly && (
             <div className="divide-y divide-slate-100">
               {allInstallments
-                .filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus) && inst.due_date < today)
+                .filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus) && inst.due_date < serverToday)
                 .sort((a, b) => a.due_date.localeCompare(b.due_date))
                 .map(inst => {
                   const dueMidnight = parseLocalDate(inst.due_date);

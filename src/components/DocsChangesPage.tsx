@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.087': { name: 'Café Atraso à Vista', emoji: '🗓️' },
   '1.10.086': { name: 'Café Sempre Carrega', emoji: '🔄' },
   '1.10.085': { name: 'Café Assunto Limpo', emoji: '📧' },
   '1.10.084': { name: 'Café Instantâneo', emoji: '⚡' },
@@ -791,6 +792,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.087',
+    date: '15/05/2026',
+    summary: 'Financeiro: lista de parcelas em atraso agora bate com o contador do banner (corrigido descasamento de fuso horário).',
+    modules: [
+      {
+        moduleId: 'financial',
+        changes: [
+          { type: 'fix', title: 'Parcela em atraso agora aparece na lista', description: 'O banner contava atrasos com data UTC (servidor) e a lista expandida filtrava com data local — à noite no Brasil divergiam um dia, fazendo o banner mostrar "1 em atraso" mas a lista ficar vazia. A lista agora usa a mesma base de data do servidor e exibe corretamente qual parcela está atrasada.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.086',
     date: '15/05/2026',
