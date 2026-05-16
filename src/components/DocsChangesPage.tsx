@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.088': { name: 'Café Alerta no Acordo', emoji: '🚨' },
   '1.10.087': { name: 'Café Atraso à Vista', emoji: '🗓️' },
   '1.10.086': { name: 'Café Sempre Carrega', emoji: '🔄' },
   '1.10.085': { name: 'Café Assunto Limpo', emoji: '📧' },
@@ -792,6 +793,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.088',
+    date: '16/05/2026',
+    summary: 'Acordos com parcela atrasada agora exibem alerta (ATRAS./ponto vermelho) e o nome na lista de atrasos abre o modal do acordo.',
+    modules: [
+      {
+        moduleId: 'financial',
+        changes: [
+          { type: 'fix', title: 'Alerta de atraso no acordo (mesma régua do banner)', description: 'Os cálculos de parcelas vencidas nos cards/lista/tabela de acordos usavam data local e divergiam do banner (UTC). Agora usam serverToday — o acordo com parcela atrasada aparece em vermelho com "ATRAS." em vez de "PEND.".' },
+          { type: 'feature', title: 'Nome clicável na lista de atrasos', description: 'Na lista de parcelas em atraso, o nome do cliente agora é um link que abre o modal do acordo. Texto "0 dia atraso" trocado por "vence hoje".' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.087',
     date: '15/05/2026',

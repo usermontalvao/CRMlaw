@@ -3250,11 +3250,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           {inst.installment_number}º
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-900 truncate">{clientName}</p>
+                          <button
+                            type="button"
+                            onClick={() => { if (inst.agreement) handleOpenDetails(inst.agreement); }}
+                            disabled={!inst.agreement}
+                            className="text-sm font-semibold text-slate-900 truncate text-left hover:text-emerald-700 hover:underline transition disabled:no-underline disabled:cursor-default"
+                            title="Abrir acordo"
+                          >
+                            {clientName}
+                          </button>
                           <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <p className="text-xs text-slate-500 truncate">{inst.agreement?.title}</p>
                             <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                              {daysOverdue} dia{daysOverdue > 1 ? 's' : ''} atraso
+                              {daysOverdue <= 0 ? 'vence hoje' : `${daysOverdue} dia${daysOverdue > 1 ? 's' : ''} atraso`}
                             </span>
                           </div>
                         </div>
@@ -3352,7 +3360,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                     const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                     const pendingInstallments = agreementInstallments.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
-                    const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < today);
+                    const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < serverToday);
                     const isFullyPaid = agreementInstallments.length > 0 && pendingInstallments.length === 0;
                     const progress = agreementInstallments.length ? (paidInstallments.length / agreementInstallments.length) * 100 : 0;
                     const futurePending = pendingInstallments
@@ -3553,7 +3561,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                               const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                               const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                               const pendingInstallments = agreementInstallments.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
-                              const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < today);
+                              const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < serverToday);
                               const isFullyPaid = agreementInstallments.length > 0 && pendingInstallments.length === 0;
                               const futurePending = pendingInstallments
                                 .filter(inst => inst.due_date >= today)
@@ -3621,7 +3629,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                   const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                                   const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                                   const pendingInstallments = agreementInstallments.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
-                                  const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < today);
+                                  const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < serverToday);
                                   const isFullyPaid = agreementInstallments.length > 0 && pendingInstallments.length === 0;
                                   const progress = agreementInstallments.length ? (paidInstallments.length / agreementInstallments.length) * 100 : 0;
                                   const futurePending = pendingInstallments
@@ -4718,7 +4726,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         {installments.filter(i => i.status !== 'pago').length === 0 && <div />}
                         {installments.filter(i => i.status !== 'pago').map((installment, index) => {
                           const _ = index; // suppress unused var
-                          const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < today;
+                          const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < serverToday;
                           const isPaid = installment.status === 'pago';
                           const dueMidnight = parseLocalDate(installment.due_date);
                           const now = new Date();
