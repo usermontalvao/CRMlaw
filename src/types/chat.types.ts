@@ -26,4 +26,14 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   edited_at: string | null;
+  reply_to: string | null;
+  deleted_at: string | null;
+}
+
+export interface ChatReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
 }

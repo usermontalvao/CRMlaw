@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase';
-import type { ChatMessage, ChatRoom } from '../types/chat.types';
+import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
 import { userNotificationService } from './userNotification.service';
 
 const ATTACHMENT_PREFIX = '__anexo__:';
@@ -428,7 +428,7 @@ class ChatService {
     return rows.slice().reverse();
   }
 
-  async sendMessage(params: { roomId: string; userId: string; content: string }): Promise<ChatMessage> {
+  async sendMessage(params: { roomId: string; userId: string; content: string; replyTo?: string | null }): Promise<ChatMessage> {
     const trimmed = params.content.trim();
     if (!trimmed) {
       throw new Error('Mensagem vazia');
@@ -440,6 +440,7 @@ class ChatService {
         room_id: params.roomId,
         user_id: params.userId,
         content: trimmed,
+        reply_to: params.replyTo ?? null,
       })
       .select()
       .single();
@@ -452,6 +453,95 @@ class ChatService {
     const message = data as ChatMessage;
     void this.notifyRecipients(message);
     return message;
+  }
+
+  async editMessage(params: { messageId: string; content: string }): Promise<ChatMessage> {
+    const trimmed = params.content.trim();
+    if (!trimmed) throw new Error('Mensagem vazia');
+    const { data, error } = await supabase
+      .from(this.messagesTable)
+      .update({ content: trimmed, edited_at: new Date().toISOString() })
+      .eq('id', params.messageId)
+      .select()
+      .single();
+    if (error) {
+      console.error('Erro ao editar mensagem:', error);
+      throw new Error(error.message);
+    }
+    return data as ChatMessage;
+  }
+
+  async deleteMessage(params: { messageId: string }): Promise<void> {
+    const { error } = await supabase
+      .from(this.messagesTable)
+      .update({ deleted_at: new Date().toISOString(), content: '' })
+      .eq('id', params.messageId);
+    if (error) {
+      console.error('Erro ao excluir mensagem:', error);
+      throw new Error(error.message);
+    }
+  }
+
+  async listReactions(roomId: string): Promise<ChatReaction[]> {
+    const { data: msgs } = await supabase
+      .from(this.messagesTable)
+      .select('id')
+      .eq('room_id', roomId);
+    const ids = (msgs ?? []).map((m: any) => m.id);
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase
+      .from('chat_message_reactions')
+      .select('*')
+      .in('message_id', ids);
+    if (error) {
+      console.error('Erro ao listar reações:', error);
+      return [];
+    }
+    return (data ?? []) as ChatReaction[];
+  }
+
+  async toggleReaction(params: { messageId: string; userId: string; emoji: string }): Promise<void> {
+    const { data: existing } = await supabase
+      .from('chat_message_reactions')
+      .select('id')
+      .eq('message_id', params.messageId)
+      .eq('user_id', params.userId)
+      .eq('emoji', params.emoji)
+      .maybeSingle();
+    if (existing?.id) {
+      await supabase.from('chat_message_reactions').delete().eq('id', existing.id);
+    } else {
+      await supabase.from('chat_message_reactions').insert({
+        message_id: params.messageId,
+        user_id: params.userId,
+        emoji: params.emoji,
+      });
+    }
+  }
+
+  subscribeToRoomReactions(params: { roomId: string; onChange: () => void }): () => void {
+    const channel = supabase.channel(`chat_reactions_${params.roomId}`);
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'chat_message_reactions' },
+      () => params.onChange(),
+    );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }
+
+  subscribeToRoomMessageUpdates(params: {
+    roomId: string;
+    onUpdate: (message: ChatMessage) => void;
+  }): () => void {
+    const channel = supabase.channel(`chat_room_upd_${params.roomId}`);
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: this.messagesTable, filter: `room_id=eq.${params.roomId}` },
+      (payload) => params.onUpdate(payload.new as ChatMessage),
+    );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
   }
 
   subscribeToRoomMessages(params: {

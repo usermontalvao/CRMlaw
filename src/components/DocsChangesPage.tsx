@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.090': { name: 'Café Chat Interativo', emoji: '💞' },
   '1.10.089': { name: 'Café Chat Notifica', emoji: '🔔' },
   '1.10.088': { name: 'Café Alerta no Acordo', emoji: '🚨' },
   '1.10.087': { name: 'Café Atraso à Vista', emoji: '🗓️' },
@@ -794,6 +795,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.090',
+    date: '16/05/2026',
+    summary: 'Chat — Fase 2: reações com emoji, responder/citar mensagem, editar e excluir (autor ou admin), tudo em tempo real.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'feature', title: 'Reações com emoji', description: 'Passe o mouse na mensagem e clique em reagir para escolher 👍❤️😂😮😢🙏🔥✅. As reações aparecem como chips contáveis e sincronizam em tempo real entre todos.' },
+          { type: 'feature', title: 'Responder / citar mensagem', description: 'Botão Responder cita a mensagem original; a citação aparece no topo do balão e uma barra "Respondendo a…" surge acima do campo de digitação.' },
+          { type: 'feature', title: 'Editar e excluir mensagem', description: 'O autor pode editar (marca "editada") e excluir a própria mensagem; administradores podem excluir qualquer uma. Mensagem excluída vira "🚫 mensagem apagada". Mudanças refletem em tempo real.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.089',
     date: '16/05/2026',
