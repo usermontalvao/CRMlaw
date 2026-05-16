@@ -74,12 +74,15 @@ function buildDeadlineEmailHtml(data: {
   else { daysText = `Faltam ${dd} dias`; daysColor = '#16a34a'; }
 
   const isReminder = data.mode === 'reminder';
+  const selfAssigned = data.assignedByName === data.responsibleName;
   const headerTitle = isReminder ? 'Lembrete de Prazo' : 'Novo Prazo Atribuído';
   const headerSub = isReminder ? 'Você tem um prazo se aproximando' : 'Você recebeu uma nova responsabilidade';
   const headerIcon = isReminder ? '⏰' : '📅';
   const greeting = isReminder
     ? `Olá, <b>${data.responsibleName}</b>! Este é um lembrete sobre o prazo:`
-    : `Olá, <b>${data.responsibleName}</b>!<br><b>${data.assignedByName}</b> atribuiu um novo prazo para você:`;
+    : selfAssigned
+      ? `Olá, <b>${data.responsibleName}</b>! Um novo prazo foi cadastrado para você:`
+      : `Olá, <b>${data.responsibleName}</b>!<br><b>${data.assignedByName}</b> atribuiu um novo prazo para você:`;
 
   const descHtml = data.description
     ? `<tr><td style="padding:0 20px 14px;"><p style="margin:0;font-size:13px;color:${s600};line-height:1.5;border-left:3px solid ${s200};padding-left:10px;">${data.description}</p></td></tr>`

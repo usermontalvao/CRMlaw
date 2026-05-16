@@ -415,12 +415,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // Estados para comentários
-  type DeadlineComment = { id: string; content: string; user_name: string; created_at: string };
+  type DeadlineComment = { id: string; content: string; user_name: string; created_at: string; user_id: string | null; parent_id: string | null };
   const [comments, setComments] = useState<DeadlineComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [savingComment, setSavingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
 
   // Estados do histórico
@@ -606,7 +608,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     try {
       const { data, error: err } = await supabase
         .from('deadline_comments')
-        .select('id, content, created_at, user_id')
+        .select('id, content, created_at, user_id, parent_id')
         .eq('deadline_id', deadlineId)
         .order('created_at', { ascending: true });
       if (err) throw err;
@@ -617,6 +619,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         content: c.content,
         user_name: nameMap.get(c.user_id) || 'Usuário',
         created_at: c.created_at,
+        user_id: c.user_id,
+        parent_id: c.parent_id ?? null,
       })));
     } catch {
       setComments([]);
@@ -629,11 +633,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     const text = commentText.trim();
     if (!text) return;
     setSavingComment(true);
+    const parentId = replyingTo?.id ?? null;
     try {
       const { data, error: err } = await supabase
         .from('deadline_comments')
-        .insert({ deadline_id: deadlineId, content: text, user_id: user?.id })
-        .select('id, content, created_at, user_id')
+        .insert({ deadline_id: deadlineId, content: text, user_id: user?.id, parent_id: parentId })
+        .select('id, content, created_at, user_id, parent_id')
         .single();
       if (err) throw err;
       setComments((prev) => [...prev, {
@@ -641,8 +646,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         content: data.content,
         user_name: currentUser?.name || 'Você',
         created_at: data.created_at,
+        user_id: data.user_id,
+        parent_id: data.parent_id ?? null,
       }]);
       setCommentText('');
+      setReplyingTo(null);
 
       // ── Processar @menções ──────────────────────────────────────────
       const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
@@ -685,7 +693,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     } finally {
       setSavingComment(false);
     }
-  }, [commentText, user?.id, currentUser?.name, members, deadlines]);
+  }, [commentText, user?.id, currentUser?.name, members, deadlines, replyingTo]);
+
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    setDeletingCommentId(commentId);
+    try {
+      const { error: err } = await supabase.from('deadline_comments').delete().eq('id', commentId);
+      if (err) throw err;
+      setComments((prev) => prev.filter((c) => c.id !== commentId && c.parent_id !== commentId));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao excluir comentário.');
+    } finally {
+      setDeletingCommentId(null);
+    }
+  }, []);
 
   const handleCommentChange = useCallback((value: string) => {
     setCommentText(value);
@@ -2395,15 +2416,82 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     let key = 0;
     while ((match = re.exec(text)) !== null) {
       if (match.index > last) parts.push(text.slice(last, match.index));
+      const matchedName = match[1];
+      const mentionedMember = members.find(
+        (mem) => (mem.name || '').trim().toLowerCase() === matchedName.toLowerCase(),
+      );
       parts.push(
-        <span key={key++} className="font-semibold text-orange-600 bg-orange-50 rounded px-1 py-0.5">
-          @{match[1]}
-        </span>,
+        <button
+          key={key++}
+          type="button"
+          disabled={!mentionedMember?.user_id}
+          onClick={() => {
+            if (!mentionedMember?.user_id) return;
+            handleCloseViewDeadlineModal();
+            navigateTo('perfil', { userId: mentionedMember.user_id } as any);
+          }}
+          className={`font-semibold text-orange-600 bg-orange-50 rounded px-1 py-0.5 ${
+            mentionedMember?.user_id ? 'hover:bg-orange-100 hover:underline cursor-pointer' : 'cursor-default'
+          }`}
+        >
+          @{matchedName}
+        </button>,
       );
       last = match.index + match[0].length;
     }
     if (last < text.length) parts.push(text.slice(last));
     return parts.length > 0 ? parts : text;
+  };
+
+  const renderComment = (c: DeadlineComment, isReply: boolean) => {
+    const hue = getMemberHue(c.user_name || '?');
+    const canDelete = isAdmin || (!!c.user_id && c.user_id === user?.id);
+    return (
+      <div key={c.id} className="flex gap-2.5 group">
+        <div
+          className="rounded-full flex items-center justify-center font-bold flex-shrink-0"
+          style={{
+            width: isReply ? 24 : 28,
+            height: isReply ? 24 : 28,
+            fontSize: isReply ? 10 : 11,
+            background: `hsl(${hue}, 50%, 90%)`,
+            color: `hsl(${hue}, 45%, 30%)`,
+          }}
+        >
+          {(c.user_name[0] || '?').toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="bg-slate-50 rounded-xl px-3 py-2">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
+              <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
+            </div>
+            <p className="text-sm text-slate-800 whitespace-pre-wrap break-words">{renderCommentText(c.content)}</p>
+          </div>
+          <div className="flex items-center gap-3 mt-1 ml-1">
+            {!isReply && (
+              <button
+                type="button"
+                onClick={() => setReplyingTo({ id: c.id, name: c.user_name })}
+                className="text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition"
+              >
+                Responder
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => void handleDeleteComment(c.id)}
+                disabled={deletingCommentId === c.id}
+                className="text-[11px] font-semibold text-slate-400 hover:text-red-600 transition opacity-0 group-hover:opacity-100 disabled:opacity-40"
+              >
+                {deletingCommentId === c.id ? 'Excluindo...' : 'Excluir'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const viewDeadlineModal = showViewDeadlineModal && selectedDeadlineForView && createPortal(
@@ -2589,20 +2677,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   <p className="text-sm text-slate-400 italic mb-3">Nenhum comentário ainda.</p>
                 ) : (
                   <div className="space-y-2 max-h-44 overflow-y-auto mb-3 pr-1">
-                    {comments.map((c) => (
-                      <div key={c.id} className="flex gap-2.5 p-3 bg-slate-50 rounded-xl">
-                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-blue-700">
-                          {(c.user_name[0] || '?').toUpperCase()}
+                    {comments.filter((c) => !c.parent_id).map((c) => {
+                      const replies = comments.filter((r) => r.parent_id === c.id);
+                      return (
+                        <div key={c.id} className="space-y-2">
+                          {renderComment(c, false)}
+                          {replies.length > 0 && (
+                            <div className="ml-6 pl-3 border-l-2 border-slate-100 space-y-2">
+                              {replies.map((r) => renderComment(r, true))}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
-                            <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
-                          </div>
-                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{renderCommentText(c.content)}</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
+                  </div>
+                )}
+                {replyingTo && (
+                  <div className="flex items-center justify-between gap-2 mb-2 px-3 py-1.5 bg-orange-50 border border-orange-100 rounded-lg">
+                    <span className="text-xs text-orange-700">
+                      Respondendo a <b>{replyingTo.name}</b>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="text-orange-500 hover:text-orange-700"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
                 <div className="flex gap-2 relative">
@@ -2640,8 +2741,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     type="text"
                     value={commentText}
                     onChange={(e) => handleCommentChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') setMentionQuery(null); }}
-                    placeholder="Escreva um comentário... use @ para mencionar"
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') { setMentionQuery(null); setReplyingTo(null); } }}
+                    placeholder={replyingTo ? `Responder a ${replyingTo.name}...` : 'Escreva um comentário... use @ para mencionar'}
                     className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
                   />
                   <button

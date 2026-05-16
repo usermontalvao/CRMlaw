@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.083': { name: 'Café Conversa', emoji: '🧵' },
   '1.10.082': { name: 'Café Menção Certeira', emoji: '🎯' },
   '1.10.081': { name: 'Café Ordem Certa', emoji: '🩹' },
   '1.10.080': { name: 'Café Te Marquei', emoji: '💬' },
@@ -787,6 +788,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.083',
+    date: '15/05/2026',
+    summary: 'Comentários evoluídos: responder (threads), administrador/autor pode excluir, @menção clicável abre o perfil, e correção do email auto-atribuído.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'feature', title: 'Responder comentários (threads)', description: 'Botão Responder em cada comentário abre uma resposta aninhada, estilo Instagram/Facebook. Respostas aparecem indentadas sob o comentário original.' },
+          { type: 'feature', title: 'Excluir comentário (admin ou autor)', description: 'O autor pode excluir o próprio comentário e o administrador pode excluir qualquer um. Política de exclusão de admin adicionada no Supabase (sem apagar dados existentes).' },
+          { type: 'feature', title: '@menção clicável', description: 'O @nome destacado agora é clicável e abre o perfil do colega mencionado.' },
+          { type: 'fix', title: 'Email de prazo auto-atribuído corrigido', description: 'Quando você cadastra um prazo para si mesmo, o email não repete mais "Fulano atribuiu para você" — passa a dizer "Um novo prazo foi cadastrado para você".' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.082',
     date: '15/05/2026',
