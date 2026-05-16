@@ -1467,6 +1467,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       };
       // Valor total efetivamente pago pelo cliente (faturado)
       const computePaid = (inst: any): number => inst.paid_value ?? inst.value ?? 0;
+      // Taxa de honorários do acordo (0-1)
+      const computeFeeRate = (inst: any): number => {
+        const ag = inst?.agreement;
+        if (!ag) return 0;
+        if (ag.total_value > 0 && ag.fee_value > 0) return ag.fee_value / ag.total_value;
+        const paid = computePaid(inst);
+        const fee  = computeFee(inst);
+        return paid > 0 ? fee / paid : 0;
+      };
 
       const monthNames  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
       const monthShort  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -1490,13 +1499,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         };
       });
 
-      const totalHonorarios = monthlyData.reduce((s, m) => s + m.total, 0);
+      const totalHonorarios    = monthlyData.reduce((s, m) => s + m.total, 0);
       const totalFaturadoAnual = monthlyData.reduce((s, m) => s + m.totalFaturado, 0);
       const totalClienteAnual  = totalFaturadoAnual - totalHonorarios;
-      const totalPayments   = allInstallmentsYear.length;
+      const totalPayments      = allInstallmentsYear.length;
+      const avgFeeRate         = totalFaturadoAnual > 0 ? totalHonorarios / totalFaturadoAnual : 0;
+      const fmtPct = (v: number) => (v * 100).toFixed(1) + '%';
 
       // Mapa por cliente
-      const clientMap = new Map<string, { name: string; cpf: string; email: string; count: number; total: number; faturado: number; clienteParte: number }>();
+      const clientMap = new Map<string, { name: string; cpf: string; email: string; count: number; total: number; faturado: number; clienteParte: number; feeRatePct: number }>();
       allInstallmentsYear.forEach(inst => {
         if (!inst.agreement) return;
         const cid    = inst.agreement.client_id;
@@ -1512,6 +1523,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
             total: 0,
             faturado: 0,
             clienteParte: 0,
+            feeRatePct: 0,
           });
         }
         const e = clientMap.get(cid)!;
@@ -1520,6 +1532,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         e.faturado += paid;
         e.clienteParte += paid - fee;
       });
+      // Calcular taxa % final por cliente (após acumulação)
+      clientMap.forEach(e => { e.feeRatePct = e.faturado > 0 ? e.total / e.faturado * 100 : 0; });
 
       const lawyerName  = 'PEDRO RODRIGUES MONTALVAO NETO';
       const lawyerOab   = '30.021';
@@ -1735,49 +1749,64 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
               : '—';
             const rawMeth = (inst as any).payment_method;
             const methKey = (rawMeth && methodKeys.includes(rawMeth)) ? rawMeth : 'outros';
-            const fee    = computeFee(inst);
-            const paid   = computePaid(inst);
-            const cliente = paid - fee;
-            return `<tr data-method="${methKey}" data-value="${fee.toFixed(4)}" data-paid="${paid.toFixed(4)}" data-cliente="${cliente.toFixed(4)}">
-              <td style="color:#475569;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${dateStr}</td>
-              <td style="font-weight:500;color:#0f172a;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${cName}</td>
-              <td style="color:#475569;font-size:11px;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${cCpf}</td>
-              <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:11px;">
-                <span style="display:inline-flex;align-items:center;gap:6px;">
-                  <span style="display:inline-block;width:6px;height:6px;background:${methodPalette[methKey] ?? '#94a3b8'};"></span>
+            const fee      = computeFee(inst);
+            const paid     = computePaid(inst);
+            const rate     = computeFeeRate(inst);
+            const cliente  = paid - fee;
+            const agTitle  = inst.agreement?.title || '—';
+            const rowIdx   = m.insts.indexOf(inst);
+            const zebraStyle = rowIdx % 2 === 1 ? 'background:#f8fafc;' : '';
+            return `<tr data-method="${methKey}" data-value="${fee.toFixed(4)}" data-paid="${paid.toFixed(4)}" data-cliente="${cliente.toFixed(4)}" style="${zebraStyle}">
+              <td style="color:#475569;font-variant-numeric:tabular-nums;white-space:nowrap;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;">${dateStr}</td>
+              <td style="font-weight:500;color:#0f172a;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">${cName}</td>
+              <td style="color:#64748b;font-size:10.5px;white-space:nowrap;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${cCpf}</td>
+              <td style="color:#475569;font-size:10.5px;padding:9px 12px;border-bottom:1px solid #f1f5f9;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${agTitle}">${agTitle}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:10.5px;">
+                <span style="display:inline-flex;align-items:center;gap:5px;">
+                  <span style="display:inline-block;width:6px;height:6px;flex-shrink:0;background:${methodPalette[methKey] ?? '#94a3b8'};"></span>
                   ${methodLabelFn(rawMeth)}
                 </span>
               </td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:11.5px;color:#475569;">${fmtR(paid)}</td>
-              <td style="text-align:right;font-weight:600;color:#0e2a47;font-variant-numeric:tabular-nums;white-space:nowrap;padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:12px;">${fmtR(fee)}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:11.5px;color:#475569;">${fmtR(paid)}</td>
+              <td style="text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;white-space:nowrap;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;">${fmtR(fee)}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;">
+                <span style="display:inline-block;background:${rate >= 0.3 ? '#0e2a47' : rate >= 0.2 ? '#3b5b7d' : '#94a3b8'};color:#fff;padding:2px 7px;font-size:10px;font-weight:700;letter-spacing:.03em;">${fmtPct(rate)}</span>
+              </td>
             </tr>`;
           }).join('');
         return `
         <div data-month-block style="margin-bottom:24px;page-break-inside:avoid;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 0 8px;border-bottom:2px solid #0e2a47;margin-bottom:0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0e2a47;margin-bottom:0;">
             <div style="display:flex;align-items:baseline;gap:14px;">
-              <span style="font-size:14px;font-weight:700;color:#0e2a47;letter-spacing:-.01em;">${m.name}</span>
-              <span data-month-count style="font-size:10px;color:#94a3b8;font-weight:500;letter-spacing:.08em;text-transform:uppercase;">${year} · ${m.count} ${m.count === 1 ? 'baixa' : 'baixas'}</span>
+              <span style="font-size:13px;font-weight:700;color:#fff;letter-spacing:-.01em;">${m.name} ${year}</span>
+              <span data-month-count style="font-size:9.5px;color:#94a3b8;font-weight:500;letter-spacing:.1em;text-transform:uppercase;">${m.count} ${m.count === 1 ? 'baixa' : 'baixas'}</span>
             </div>
-            <span data-month-total style="font-size:15px;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;letter-spacing:-.01em;">${fmtR(m.total)}</span>
+            <div style="display:flex;align-items:baseline;gap:16px;">
+              <span style="font-size:10px;color:#94a3b8;">Faturado <strong data-month-faturado-label style="color:#cbd5e1;font-variant-numeric:tabular-nums;">${fmtR(m.totalFaturado)}</strong></span>
+              <span style="font-size:10px;color:#94a3b8;">Hon. <strong data-month-total style="color:#d4a857;font-variant-numeric:tabular-nums;">${fmtR(m.total)}</strong></span>
+              <span style="font-size:10px;color:#94a3b8;">Taxa <strong data-month-rate style="color:#d4a857;">${m.totalFaturado > 0 ? fmtPct(m.total / m.totalFaturado) : '—'}</strong></span>
+            </div>
           </div>
           <table style="width:100%;border-collapse:collapse;margin-top:0;">
             <thead>
-              <tr>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Data</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">CPF / CNPJ</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Forma de pagamento</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Faturado (R$)</th>
-                <th style="padding:10px 14px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários (R$)</th>
+              <tr style="background:#f8fafc;">
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Data</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">CPF / CNPJ</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Acordo / Processo</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Pagamento</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Faturado</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#d4a857;text-align:right;border-bottom:1px solid #e2e8f0;">Taxa %</th>
               </tr>
             </thead>
             <tbody>${rowsHTML}</tbody>
             <tfoot>
-              <tr>
-                <td colspan="4" style="text-align:right;font-size:10px;color:#475569;font-weight:600;padding:10px 14px;letter-spacing:.06em;text-transform:uppercase;">Subtotal</td>
-                <td data-month-subtotal-paid style="text-align:right;font-weight:600;color:#475569;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:12px;border-top:1px solid #0e2a47;">${fmtR(m.totalFaturado)}</td>
-                <td data-month-subtotal style="text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;padding:10px 14px;font-size:13px;border-top:1px solid #0e2a47;">${fmtR(m.total)}</td>
+              <tr style="background:#f1f5f9;">
+                <td colspan="5" style="text-align:right;font-size:9.5px;color:#475569;font-weight:700;padding:10px 12px;letter-spacing:.08em;text-transform:uppercase;border-top:2px solid #0e2a47;">Subtotal do mês</td>
+                <td data-month-subtotal-paid style="text-align:right;font-weight:600;color:#475569;font-variant-numeric:tabular-nums;padding:10px 12px;font-size:12px;border-top:2px solid #0e2a47;">${fmtR(m.totalFaturado)}</td>
+                <td data-month-subtotal style="text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;padding:10px 12px;font-size:13px;border-top:2px solid #0e2a47;">${fmtR(m.total)}</td>
+                <td data-month-subtotal-rate style="text-align:right;font-weight:700;color:#d4a857;padding:10px 12px;font-size:12px;border-top:2px solid #0e2a47;">${m.totalFaturado > 0 ? fmtPct(m.total / m.totalFaturado) : '—'}</td>
               </tr>
             </tfoot>
           </table>
@@ -1787,13 +1816,19 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       // ── Client summary rows ────────────────────────────────────────
       const clientRowsHTML = Array.from(clientMap.values())
         .sort((a, b) => b.faturado - a.faturado)
-        .map((e) => `<tr>
-          <td style="padding:11px 16px;font-weight:500;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${e.name}</td>
+        .map((e, idx) => {
+          const zebraStyle = idx % 2 === 1 ? 'background:#f8fafc;' : '';
+          return `<tr style="${zebraStyle}">
+          <td style="padding:11px 16px;font-weight:600;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${e.name}</td>
           <td style="padding:11px 16px;font-size:11px;color:#475569;font-variant-numeric:tabular-nums;border-bottom:1px solid #f1f5f9;">${maskDoc(e.cpf)}</td>
           <td style="padding:11px 16px;text-align:center;color:#475569;font-size:12px;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums;">${e.count}</td>
           <td style="padding:11px 16px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${fmtR(e.faturado)}</td>
           <td style="padding:11px 16px;text-align:right;font-weight:700;color:#0e2a47;font-variant-numeric:tabular-nums;font-size:12.5px;border-bottom:1px solid #f1f5f9;">${fmtR(e.total)}</td>
-        </tr>`).join('');
+          <td style="padding:11px 16px;text-align:right;border-bottom:1px solid #f1f5f9;">
+            <span style="display:inline-block;background:#0e2a47;color:#d4a857;padding:2px 8px;font-size:10.5px;font-weight:700;letter-spacing:.03em;font-variant-numeric:tabular-nums;">${e.feeRatePct.toFixed(1)}%</span>
+          </td>
+        </tr>`;
+        }).join('');
 
       const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -1882,26 +1917,62 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     </div>
   </header>
 
-  <!-- ════════ KPI ROW (4 col) ════════ -->
-  <section style="margin:0 32px;display:grid;grid-template-columns:1.4fr 1.2fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
-    <div style="padding:22px 24px 22px 0;border-right:1px solid #e2e8f0;">
+  <!-- ════════ EXECUTIVE SUMMARY ════════ -->
+  <section style="margin:0 32px 0;padding:18px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-bottom:none;">
+    <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <div class="eyebrow" style="margin-bottom:6px;color:#0e2a47;">Resumo do exercício</div>
+        <p style="font-size:11.5px;color:#475569;line-height:1.7;margin:0;">
+          No exercício de <strong style="color:#0e2a47;">${year}</strong>, o escritório registrou
+          <strong style="color:#0e2a47;">${totalPayments} ${totalPayments === 1 ? 'recebimento' : 'recebimentos'}</strong> de honorários,
+          totalizando <strong style="color:#0e2a47;">${fmtR(totalFaturadoAnual)}</strong> faturados
+          e <strong style="color:#0e2a47;">${fmtR(totalHonorarios)}</strong> de honorários líquidos,
+          com taxa média de <strong style="color:#d4a857;">${fmtPct(avgFeeRate)}</strong> sobre o valor faturado.
+          ${activeMonths.length > 0 ? `O mês de maior receita foi <strong style="color:#0e2a47;">${monthlyData[maxMonthIdx].name}</strong> com ${fmtR(monthlyData[maxMonthIdx].total)} em honorários.` : ''}
+        </p>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div style="text-align:center;padding:12px 18px;background:#fff;border:1px solid #e2e8f0;min-width:100px;">
+          <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-bottom:4px;">Clientes distintos</div>
+          <div class="serif" style="font-size:20px;font-weight:700;color:#0e2a47;">${clientMap.size}</div>
+        </div>
+        <div style="text-align:center;padding:12px 18px;background:#fff;border:1px solid #e2e8f0;min-width:100px;">
+          <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-bottom:4px;">Meses ativos</div>
+          <div class="serif" style="font-size:20px;font-weight:700;color:#0e2a47;">${activeMonths.length}</div>
+        </div>
+        <div style="text-align:center;padding:12px 18px;background:#0e2a47;border:1px solid #0e2a47;min-width:100px;">
+          <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-bottom:4px;">Taxa média</div>
+          <div class="serif" style="font-size:20px;font-weight:700;color:#d4a857;">${fmtPct(avgFeeRate)}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ KPI ROW (5 col) ════════ -->
+  <section style="margin:0 32px;display:grid;grid-template-columns:1.5fr 1.2fr 0.8fr 0.9fr 0.9fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+    <div style="padding:22px 20px 22px 0;border-right:1px solid #e2e8f0;">
       <div class="eyebrow" style="margin-bottom:8px;">Total faturado · ${year}</div>
       <div class="serif num" style="font-size:28px;font-weight:700;color:#0e2a47;letter-spacing:-.025em;line-height:1;">${fmtR(totalFaturadoAnual)}</div>
       <div style="margin-top:8px;font-size:10.5px;color:#64748b;line-height:1.4;font-style:italic;">${numberToWords(totalFaturadoAnual)}</div>
     </div>
-    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
-      <div class="eyebrow" style="margin-bottom:8px;">Honorários · ${year}</div>
-      <div id="kpi-total" class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(totalHonorarios)}</div>
-      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">${totalFaturadoAnual > 0 ? (totalHonorarios / totalFaturadoAnual * 100).toFixed(1) + '% do faturado' : '—'}</div>
+    <div style="padding:22px 18px;border-right:1px solid #e2e8f0;">
+      <div class="eyebrow" style="margin-bottom:8px;">Honorários recebidos</div>
+      <div id="kpi-total" class="serif num" style="font-size:22px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(totalHonorarios)}</div>
+      <div style="margin-top:6px;font-size:10.5px;color:#64748b;">${fmtPct(avgFeeRate)} do faturado</div>
     </div>
-    <div style="padding:22px 20px;border-right:1px solid #e2e8f0;">
+    <div style="padding:22px 16px;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;justify-content:center;">
+      <div class="eyebrow" style="margin-bottom:8px;">Taxa média</div>
+      <div class="serif num" style="font-size:28px;font-weight:700;color:#d4a857;letter-spacing:-.02em;line-height:1;">${fmtPct(avgFeeRate)}</div>
+      <div style="margin-top:6px;font-size:10px;color:#64748b;">de honorários</div>
+    </div>
+    <div style="padding:22px 16px;border-right:1px solid #e2e8f0;">
       <div class="eyebrow" style="margin-bottom:8px;">Baixas</div>
       <div id="kpi-count" class="serif num" style="font-size:24px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${totalPayments}</div>
       <div style="margin-top:6px;font-size:10.5px;color:#64748b;">pagamentos</div>
     </div>
-    <div style="padding:22px 0 22px 20px;">
+    <div style="padding:22px 0 22px 16px;">
       <div class="eyebrow" style="margin-bottom:8px;">Ticket médio</div>
-      <div id="kpi-medio" class="serif num" style="font-size:20px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(ticketMedio)}</div>
+      <div id="kpi-medio" class="serif num" style="font-size:19px;font-weight:700;color:#0e2a47;letter-spacing:-.02em;line-height:1;">${fmtR(ticketMedio)}</div>
       <div style="margin-top:6px;font-size:10.5px;color:#64748b;">por baixa</div>
     </div>
   </section>
@@ -2009,15 +2080,17 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:center;">Baixas</th>
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;">Faturado (R$)</th>
           <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;">Honorários (R$)</th>
+          <th style="padding:11px 16px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#d4a857;text-align:right;">Taxa %</th>
         </tr>
       </thead>
       <tbody>${clientRowsHTML}</tbody>
       <tfoot>
-        <tr>
-          <td colspan="2" style="padding:14px 16px;font-weight:700;color:#0e2a47;font-size:12px;text-transform:uppercase;letter-spacing:.08em;border-top:2px solid #0e2a47;">Total geral</td>
-          <td style="padding:14px 16px;text-align:center;font-weight:700;color:#0e2a47;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${totalPayments}</td>
-          <td class="num" style="padding:14px 16px;text-align:right;font-weight:600;color:#475569;font-size:13px;border-top:2px solid #0e2a47;font-variant-numeric:tabular-nums;">${fmtR(totalFaturadoAnual)}</td>
-          <td class="serif num" style="padding:14px 16px;text-align:right;font-weight:700;color:#0e2a47;font-size:15px;border-top:2px solid #0e2a47;letter-spacing:-.01em;">${fmtR(totalHonorarios)}</td>
+        <tr style="background:#0e2a47;">
+          <td colspan="2" style="padding:14px 16px;font-weight:700;color:#fff;font-size:12px;text-transform:uppercase;letter-spacing:.08em;">Total geral</td>
+          <td style="padding:14px 16px;text-align:center;font-weight:700;color:#94a3b8;font-variant-numeric:tabular-nums;">${totalPayments}</td>
+          <td class="num" style="padding:14px 16px;text-align:right;font-weight:600;color:#cbd5e1;font-size:13px;font-variant-numeric:tabular-nums;">${fmtR(totalFaturadoAnual)}</td>
+          <td class="serif num" style="padding:14px 16px;text-align:right;font-weight:700;color:#fff;font-size:15px;letter-spacing:-.01em;">${fmtR(totalHonorarios)}</td>
+          <td style="padding:14px 16px;text-align:right;font-weight:700;color:#d4a857;font-size:14px;">${fmtPct(avgFeeRate)}</td>
         </tr>
       </tfoot>
     </table>

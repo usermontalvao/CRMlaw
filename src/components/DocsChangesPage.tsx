@@ -801,6 +801,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.099',
+    date: '16/05/2026',
+    summary: 'Relatório IR com taxa % de honorários por linha, resumo executivo, zebra rows e cabeçalho mensal redesenhado.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          { type: 'improvement', title: '% Honorários em todas as camadas', description: 'Taxa de honorários exibida por baixa (badge colorido), subtotal mensal, por cliente na tabela resumo e como KPI "Taxa média" no topo — calculada a partir do acordo de cada parcela.' },
+          { type: 'improvement', title: 'Resumo executivo no topo', description: 'Novo bloco de texto após o cabeçalho resume o exercício: total de recebimentos, honorários, taxa média e mês de maior receita.' },
+          { type: 'improvement', title: 'Coluna Acordo / Processo', description: 'Tabela mensal detalhada agora mostra o nome do acordo ou processo vinculado à parcela.' },
+          { type: 'improvement', title: 'Cabeçalho mensal redesenhado', description: 'Fundo escuro com Faturado, Honorários e Taxa % destacados em âmbar — visual mais profissional e fácil de escanear.' },
+          { type: 'improvement', title: 'Zebra rows e rodapé por cliente', description: 'Linhas alternadas nas tabelas; rodapé da tabela de clientes com fundo escuro e taxa média geral em âmbar.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.098',
     date: '16/05/2026',
     summary: 'Relatório IR corrigido: exibe Faturado vs Honorários sem coluna de parte do cliente.',
