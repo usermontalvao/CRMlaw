@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.093': { name: 'Café Chamou Atenção', emoji: '👋' },
   '1.10.092': { name: 'Café Som Top', emoji: '🎵' },
   '1.10.091': { name: 'Café Chat Polido', emoji: '✨' },
   '1.10.090': { name: 'Café Chat Interativo', emoji: '💞' },
@@ -797,6 +798,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.093',
+    date: '16/05/2026',
+    summary: 'Chat — "Chamar atenção" estilo MSN (tela treme + abre a conversa), risquinho de visualização e status online/visto por último.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'feature', title: 'Chamar atenção (nudge MSN)', description: 'Botão 👋 no cabeçalho da conversa direta: o widget do destinatário abre na conversa, treme a tela e toca um buzz vibrante. Em tempo real via broadcast.' },
+          { type: 'feature', title: 'Risquinho de visualização', description: 'Suas mensagens mostram ✓ (enviada) e ✓✓ azul (visualizada), com base no horário de leitura do destinatário.' },
+          { type: 'feature', title: 'Online / visto por último', description: 'O cabeçalho da conversa direta mostra "Online" em verde quando o contato está online, ou "visto há X" usando o último acesso.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.092',
     date: '16/05/2026',

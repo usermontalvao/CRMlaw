@@ -422,6 +422,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [searchMember, setSearchMember] = useState('');
+  const [readStates, setReadStates] = useState<Map<string, string>>(new Map());
+  const [shaking, setShaking] = useState(false);
+  const [nudgeFlash, setNudgeFlash] = useState<string | null>(null);
 
   const openRef = useRef(open);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
@@ -648,6 +651,73 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       // ignore
     }
   }, [ensureAudioContext]);
+
+  const playNudgeSound = useCallback(async () => {
+    await ensureAudioContext();
+    const ctx = audioContextRef.current;
+    if (!ctx || ctx.state !== 'running') return;
+    try {
+      const t0 = ctx.currentTime;
+      // Buzz vibrante (3 pulsos graves) estilo MSN
+      for (let i = 0; i < 3; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 196;
+        const s = t0 + i * 0.16;
+        gain.gain.setValueAtTime(0.0001, s);
+        gain.gain.exponentialRampToValueAtTime(0.3, s + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.13);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(s);
+        osc.stop(s + 0.14);
+      }
+    } catch {
+      // ignore
+    }
+  }, [ensureAudioContext]);
+
+  const triggerShake = useCallback((fromName?: string) => {
+    setShaking(true);
+    if (fromName) setNudgeFlash(fromName);
+    void playNudgeSound();
+    window.setTimeout(() => setShaking(false), 850);
+    window.setTimeout(() => setNudgeFlash(null), 2500);
+  }, [playNudgeSound]);
+
+  const handleSendNudge = useCallback(async () => {
+    if (!user || !selectedRoomId) return;
+    const memberIds = roomMembers.get(selectedRoomId) || [];
+    const targetId = memberIds.find((id) => id !== user.id);
+    if (!targetId) return;
+    const me = membersByUserIdRef.current.get(user.id);
+    try {
+      await chatService.sendNudge({
+        toUserId: targetId,
+        fromUserId: user.id,
+        fromName: me?.name || 'Alguém',
+        roomId: selectedRoomId,
+      });
+      triggerShake();
+    } catch (e) {
+      console.error('Erro ao chamar atenção:', e);
+    }
+  }, [user, selectedRoomId, roomMembers, triggerShake]);
+
+  // Recebe "chamar atenção"
+  useEffect(() => {
+    if (!user) return;
+    const unsub = chatService.subscribeToNudges({
+      userId: user.id,
+      onNudge: ({ fromName, roomId }) => {
+        setOpen(true);
+        setSelectedRoomId(roomId);
+        triggerShake(fromName);
+      },
+    });
+    return () => unsub();
+  }, [user, triggerShake]);
 
   useEffect(() => {
     try {
@@ -1069,6 +1139,13 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       return next;
     });
 
+    const roomId = selectedRoomId;
+    const refreshReads = () => {
+      chatService.getRoomReadStates(roomId).then(setReadStates).catch(() => {});
+    };
+    refreshReads();
+    const readPoll = window.setInterval(refreshReads, 8000);
+
     const unsubscribe = chatService.subscribeToRoomMessages({
       roomId: selectedRoomId,
       onInsert: (msg) => {
@@ -1080,6 +1157,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         if (msg.user_id !== user?.id) {
           markRoomAsRead(selectedRoomId);
         }
+        refreshReads();
 
         if (pinnedToBottomRef.current || msg.user_id === user?.id) {
           pinnedToBottomRef.current = true;
@@ -1088,7 +1166,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       },
     });
 
-    return () => unsubscribe();
+    return () => { unsubscribe(); window.clearInterval(readPoll); };
   }, [selectedRoomId, loadMessages, scrollToBottom, user?.id, markRoomAsRead]);
 
   useEffect(() => {
@@ -1265,8 +1343,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   return createPortal(
     <div className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
+      <style>{`@keyframes chatShake{0%,100%{transform:translate(0,0) rotate(0)}10%{transform:translate(-6px,4px) rotate(-2deg)}20%{transform:translate(6px,-4px) rotate(2deg)}30%{transform:translate(-6px,-4px) rotate(-2deg)}40%{transform:translate(6px,4px) rotate(2deg)}50%{transform:translate(-4px,2px) rotate(-1deg)}60%{transform:translate(4px,-2px) rotate(1deg)}70%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}90%{transform:translate(-1px,0)}}`}</style>
       {open && (
-        <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]">
+        <div
+          className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]"
+          style={shaking ? { animation: 'chatShake 0.8s cubic-bezier(.36,.07,.19,.97) both' } : undefined}
+        >
+          {nudgeFlash && (
+            <div className="px-4 py-2 bg-amber-500 text-white text-xs font-bold text-center shrink-0 animate-in fade-in">
+              👋 {nudgeFlash} está te chamando!
+            </div>
+          )}
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {selectedRoomId ? (
@@ -1286,10 +1373,31 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       online={selectedRoom?.is_public ? undefined : headerOnline}
                     />
                   )}
-                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                    <span className="text-sm font-bold truncate max-w-[180px]">{displayName}</span>
-                    {headerVerified && <VerifiedBadge variant={headerVerified} />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold truncate max-w-[160px]">{displayName}</span>
+                      {headerVerified && <VerifiedBadge variant={headerVerified} />}
+                    </div>
+                    {otherUser && !selectedRoom?.is_public && (
+                      <span className={`block text-[11px] truncate ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
+                        {headerOnline
+                          ? 'Online'
+                          : otherUser.last_seen_at
+                            ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
+                            : 'offline'}
+                      </span>
+                    )}
                   </div>
+                  {otherUser && !selectedRoom?.is_public && (
+                    <button
+                      type="button"
+                      onClick={handleSendNudge}
+                      className="h-8 w-8 rounded-lg hover:bg-amber-500/20 text-amber-300 transition flex items-center justify-center shrink-0"
+                      title="Chamar atenção"
+                    >
+                      <span className="text-base leading-none">👋</span>
+                    </button>
+                  )}
                 </>
               ) : showNewChatModal ? (
                 <>
@@ -1494,6 +1602,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     const isMine = msg.user_id === user?.id;
                     const sender = members.find((m) => m.user_id === msg.user_id);
                     const senderName = isMine ? 'Você' : sender?.name || 'Usuário';
+                    const otherReads = Array.from(readStates.entries())
+                      .filter(([uid]) => uid !== user?.id)
+                      .map(([, ts]) => ts)
+                      .sort();
+                    const otherReadAt = otherReads.length ? otherReads[otherReads.length - 1] : null;
+                    const seen = isMine && otherReadAt != null && otherReadAt >= msg.created_at;
 
                     return (
                       <div
@@ -1510,8 +1624,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         >
                           <MessageBody message={msg} onMediaLoaded={handleMediaLoaded} />
                         </div>
-                        <div className="text-[10px] text-white/30 mt-1">
+                        <div className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
                           {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          {isMine && (
+                            <span
+                              className={seen ? 'text-sky-400 font-bold' : 'text-white/40 font-bold'}
+                              title={seen ? 'Visualizada' : 'Enviada'}
+                            >
+                              {seen ? '✓✓' : '✓'}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

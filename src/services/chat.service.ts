@@ -284,6 +284,42 @@ class ChatService {
     }
   }
 
+  async getRoomReadStates(roomId: string): Promise<Map<string, string>> {
+    const { data, error } = await supabase
+      .from(this.membersTable)
+      .select('user_id, last_read_at')
+      .eq('room_id', roomId);
+    if (error) {
+      console.error('Erro ao buscar leitura da sala:', error);
+      return new Map();
+    }
+    return new Map((data ?? []).filter((r: any) => r.last_read_at).map((r: any) => [r.user_id, r.last_read_at]));
+  }
+
+  /** Envia "chamar atenção" (nudge MSN) para um usuário via broadcast. */
+  async sendNudge(params: { toUserId: string; fromUserId: string; fromName: string; roomId: string }): Promise<void> {
+    const channel = supabase.channel(`chat_nudge_${params.toUserId}`);
+    await channel.subscribe();
+    await channel.send({
+      type: 'broadcast',
+      event: 'nudge',
+      payload: { fromUserId: params.fromUserId, fromName: params.fromName, roomId: params.roomId },
+    });
+    setTimeout(() => supabase.removeChannel(channel), 1500);
+  }
+
+  subscribeToNudges(params: {
+    userId: string;
+    onNudge: (data: { fromUserId: string; fromName: string; roomId: string }) => void;
+  }): () => void {
+    const channel = supabase.channel(`chat_nudge_${params.userId}`);
+    channel.on('broadcast', { event: 'nudge' }, (msg) => {
+      params.onNudge(msg.payload as { fromUserId: string; fromName: string; roomId: string });
+    });
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }
+
   async getUnreadCount(userId: string): Promise<number> {
     const { data, error } = await supabase
       .from(this.membersTable)
