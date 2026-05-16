@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.081': { name: 'Café Ordem Certa', emoji: '🩹' },
   '1.10.080': { name: 'Café Te Marquei', emoji: '💬' },
   '1.10.079': { name: 'Café Tudo Conectado', emoji: '🕸️' },
   '1.10.078': { name: 'Café Vínculo Rápido', emoji: '🔗' },
@@ -785,6 +786,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.081',
+    date: '15/05/2026',
+    summary: 'Correção de crash no módulo de prazos (TDZ): funções de avatar declaradas antes do modal que as utiliza.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Crash ao abrir prazos corrigido', description: 'Erro "Cannot access getMemberHue before initialization" — as funções de avatar (iniciais/cor) eram declaradas depois do modal de visualização que as referencia. Movidas para antes, eliminando o crash.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.080',
     date: '15/05/2026',

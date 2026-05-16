@@ -2361,6 +2361,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     document.body
   );
 
+  const getMemberInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+  const getMemberHue = (name: string) => {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) { h = (h << 5) - h + name.charCodeAt(i); h |= 0; }
+    return Math.abs(h) % 360;
+  };
+
   const viewDeadlineModal = showViewDeadlineModal && selectedDeadlineForView && createPortal(
     (() => {
       const d = selectedDeadlineForView;
@@ -2641,17 +2652,6 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const inputStyle = 'w-full h-10 px-3 py-2 rounded-lg text-sm bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors';
   const labelStyle = 'block text-xs font-semibold text-slate-500 mb-1.5';
-
-  const getMemberInitials = (name: string) => {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
-  const getMemberHue = (name: string) => {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) { h = (h << 5) - h + name.charCodeAt(i); h |= 0; }
-    return Math.abs(h) % 360;
-  };
 
   const deadlineModal = isModalOpen ? createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center px-2 sm:px-4 py-3">
