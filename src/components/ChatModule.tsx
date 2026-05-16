@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Bell, BellOff, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause, Phone, Video, Info } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -7,6 +7,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const DEFAULT_ROOM_NAME = 'Geral';
 
@@ -110,7 +111,7 @@ const formatLastSeen = (value: string) => {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'Online';
+  if (diffMins < 1) return 'agora';
   if (diffMins < 60) return `${diffMins} min`;
   if (diffHours < 24) return `${diffHours}h`;
   if (diffDays === 1) return 'Ontem';
@@ -222,7 +223,7 @@ const ProAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
       <button
         type="button"
         onClick={toggle}
-        className="shrink-0 w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow hover:bg-indigo-700 transition"
+        className="shrink-0 w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center shadow hover:bg-indigo-700 transition"
         title={playing ? 'Pausar' : 'Reproduzir'}
       >
         {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
@@ -380,6 +381,11 @@ const ChatModule: React.FC = () => {
   const [editText, setEditText] = useState('');
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [readStates, setReadStates] = useState<Map<string, string>>(new Map());
+  const [shaking, setShaking] = useState(false);
+  const [nudgeFlash, setNudgeFlash] = useState<string | null>(null);
+  const [nudgeCooldown, setNudgeCooldown] = useState(false);
+  const [unreadThreshold, setUnreadThreshold] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialRoomId) return;
@@ -395,6 +401,13 @@ const ChatModule: React.FC = () => {
   const typingChannelRef = useRef<any | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
+  const stableModuleRef = useRef({
+    membersByUserId: new Map<string, Profile>(),
+    playSound: () => {},
+    scrollToBottom: () => {},
+    markRead: (_roomId: string) => Promise.resolve(),
+  });
 
   const insertTextAtCursor = (text: string) => {
     const el = messageInputRef.current;
@@ -827,7 +840,12 @@ const ChatModule: React.FC = () => {
   const loadMessages = async (roomId: string) => {
     setLoadingMessages(true);
     try {
-      const list = await chatService.listMessages({ roomId, limit: 200 });
+      const [list, prevReadStates] = await Promise.all([
+        chatService.listMessages({ roomId, limit: 200 }),
+        user ? chatService.getRoomReadStates(roomId) : Promise.resolve(new Map<string, string>()),
+      ]);
+      const myPrevReadAt = user ? (prevReadStates.get(user.id) ?? null) : null;
+      setUnreadThreshold(myPrevReadAt);
       setMessages(list);
       requestAnimationFrame(scrollToBottom);
 
@@ -847,35 +865,63 @@ const ChatModule: React.FC = () => {
     loadRooms();
   }, [user]);
 
+  // Keep selectedRoomIdRef in sync so the single subscription can read it without rebuilding
+  useEffect(() => { selectedRoomIdRef.current = selectedRoomId; }, [selectedRoomId]);
+
+  // Single global subscription — handles both room-preview updates and in-room message insertion
   useEffect(() => {
     if (!user) return;
+    const myUserId = user.id;
 
     const unsubscribe = chatService.subscribeToAllMessages({
       onInsert: (msg) => {
+        // Always update room preview / sort
         setRooms((prev) => {
           if (!prev.some((r) => r.id === msg.room_id)) return prev;
-
           const updated = prev.map((r) =>
             r.id === msg.room_id
-              ? {
-                  ...r,
-                  last_message_at: msg.created_at,
-                  last_message_preview: getMessagePreview(msg.content),
-                }
+              ? { ...r, last_message_at: msg.created_at, last_message_preview: getMessagePreview(msg.content) }
               : r
           );
-
           return updated.sort((a, b) => {
             const aTime = a.last_message_at ?? a.created_at;
             const bTime = b.last_message_at ?? b.created_at;
             return bTime.localeCompare(aTime);
           });
         });
+
+        const isMine = msg.user_id === myUserId;
+        const isInCurrentRoom = msg.room_id === selectedRoomIdRef.current;
+
+        if (isInCurrentRoom) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          stableModuleRef.current.scrollToBottom();
+          if (!isMine) {
+            stableModuleRef.current.markRead(msg.room_id);
+          }
+          return;
+        }
+
+        if (!isMine) {
+          stableModuleRef.current.playSound();
+          setUnreadCount((prev) => prev + 1);
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const author = stableModuleRef.current.membersByUserId.get(msg.user_id);
+            const preview = getMessagePreview(msg.content);
+            new Notification('Nova mensagem', {
+              body: `${author?.name || 'Usuário'}: ${preview}`,
+              icon: '/favicon.ico',
+            });
+          }
+        }
       },
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user]); // never rebuilds on callback changes
 
   useEffect(() => {
     if (!selectedRoomId) return;
@@ -894,91 +940,79 @@ const ChatModule: React.FC = () => {
       roomId: selectedRoomId,
       onUpdate: (m) => setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))),
     });
-    return () => { unsubReactions(); unsubUpdates(); };
+    const rid = selectedRoomId;
+    const refreshReads = () => chatService.getRoomReadStates(rid).then(setReadStates).catch(() => {});
+    refreshReads();
+    const readPoll = window.setInterval(refreshReads, 8000);
+    return () => { unsubReactions(); unsubUpdates(); window.clearInterval(readPoll); };
   }, [selectedRoomId]);
+
+  const triggerShake = useCallback((fromName?: string) => {
+    setShaking(true);
+    if (fromName) setNudgeFlash(fromName);
+    playNotificationSound();
+    window.setTimeout(() => setShaking(false), 850);
+    window.setTimeout(() => setNudgeFlash(null), 2500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = chatService.subscribeToNudges({
+      userId: user.id,
+      onNudge: ({ fromName, roomId }) => {
+        setSelectedRoomId(roomId);
+        triggerShake(fromName);
+      },
+    });
+    return () => unsub();
+  }, [user, triggerShake]);
+
+  const handleSendNudgeModule = useCallback(async () => {
+    if (!user || !selectedRoomId || nudgeCooldown) return;
+    const memberIds = roomMembers.get(selectedRoomId) || [];
+    const targetId = memberIds.find((id) => id !== user.id);
+    if (!targetId) return;
+    const me = membersByUserId.get(user.id);
+    setNudgeCooldown(true);
+    try {
+      await chatService.sendNudge({ toUserId: targetId, fromUserId: user.id, fromName: me?.name || 'Alguém', roomId: selectedRoomId });
+      triggerShake();
+    } catch (e) { console.error('Erro ao chamar atenção:', e); }
+    window.setTimeout(() => setNudgeCooldown(false), 8000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, selectedRoomId, roomMembers, membersByUserId, triggerShake, nudgeCooldown]);
 
   useEffect(() => {
     if (!selectedRoomId) return;
     loadMessages(selectedRoomId);
-
-    const unsubscribe = chatService.subscribeToRoomMessages({
-      roomId: selectedRoomId,
-      onInsert: (msg) => {
-        const isMine = user?.id === msg.user_id;
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-        setRooms((prev) => {
-          return prev
-            .map((r) => (r.id === msg.room_id ? { 
-                ...r, 
-                last_message_at: msg.created_at,
-                last_message_preview: getMessagePreview(msg.content)
-              } : r))
-            .sort((a, b) => {
-              const aTime = a.last_message_at ?? a.created_at;
-              const bTime = b.last_message_at ?? b.created_at;
-              return bTime.localeCompare(aTime);
-            });
-        });
-
-        if (!isMine && user) {
-          playNotificationSound();
-          setUnreadCount(prev => prev + 1);
-
-          if ('Notification' in window && Notification.permission === 'granted') {
-            const author = membersByUserId.get(msg.user_id);
-            const preview = getMessagePreview(msg.content);
-            new Notification('Nova mensagem', {
-              body: `${author?.name || 'Usuário'}: ${preview}`,
-              icon: '/favicon.ico',
-            });
-          }
-        }
-        requestAnimationFrame(scrollToBottom);
-      },
-    });
-
-    return () => unsubscribe();
-  }, [selectedRoomId, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomId]);
 
   const myProfile = useMemo(() => membersByUserId.get(user?.id || ''), [membersByUserId, user]);
 
+  // Update stable ref every render so the single subscription sees current values without rebuilding
+  stableModuleRef.current.membersByUserId = membersByUserId;
+  stableModuleRef.current.playSound = playNotificationSound;
+  stableModuleRef.current.scrollToBottom = () => {
+    if (scrollRef.current) requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; });
+  };
+  stableModuleRef.current.markRead = (roomId: string) =>
+    user ? chatService.markAsRead({ roomId, userId: user.id }).catch(() => {}) : Promise.resolve();
+
+  // Recebe presença do widget via evento — sem criar canal Supabase próprio (evita conflito)
   useEffect(() => {
-    if (!user) return;
-
-    const channel = supabase.channel('presence');
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const presenceMap = new Map<string, 'online' | 'offline'>();
-        Object.values(state).flat().forEach((p: any) => {
-          if (p.user_id) {
-            presenceMap.set(p.user_id, p.status || 'offline');
-          }
-        });
-        setMembers((prev) =>
-          prev.map((member) => ({
-            ...member,
-            presence_status: presenceMap.get(member.id) || 'offline',
-          }))
-        );
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: user.id,
-            name: myProfile?.name || user.email || 'Usuário',
-            status: 'online',
-          });
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user, myProfile]);
+    const unsub = events.on(SYSTEM_EVENTS.PRESENCE_UPDATED, (onlineIds: string[]) => {
+      const set = new Set(onlineIds);
+      setMembers((prev) =>
+        prev.map((member) => ({
+          ...member,
+          presence_status: set.has(member.user_id) ? 'online' : 'offline',
+        }))
+      );
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -1263,7 +1297,7 @@ const ChatModule: React.FC = () => {
                   setNewChatSearch('');
                   setShowNewChatModal(true);
                 }}
-                className="p-2.5 bg-[#25d366] hover:bg-[#128c7e] text-white rounded-full shadow-md transition-all active:scale-95 flex items-center justify-center"
+                className="p-2.5 bg-[#f97316] hover:bg-[#ea580c] text-white rounded-full shadow-md transition-all active:scale-95 flex items-center justify-center"
                 title="Nova conversa"
               >
                 <Plus className="w-5 h-5" />
@@ -1277,7 +1311,7 @@ const ChatModule: React.FC = () => {
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-[#f0f2f5] dark:bg-[#2a3942] border border-transparent rounded-lg text-sm focus:ring-2 focus:ring-[#25d366]/25 focus:border-[#25d366] outline-none transition-all placeholder:text-gray-400"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#f0f2f5] dark:bg-[#2a3942] border border-transparent rounded-lg text-sm focus:ring-2 focus:ring-[#f97316]/25 focus:border-[#f97316] outline-none transition-all placeholder:text-gray-400"
                 placeholder="Buscar conversa..."
                 type="text"
               />
@@ -1322,13 +1356,13 @@ const ChatModule: React.FC = () => {
                   }}
                   className={`flex items-center gap-3 p-3 cursor-pointer transition ${
                     isActive
-                      ? 'bg-[#e9edef] dark:bg-[#2a3942] border-l-4 border-[#25d366]'
+                      ? 'bg-[#e9edef] dark:bg-[#2a3942] border-l-4 border-[#f97316]'
                       : 'hover:bg-[#f0f2f5] dark:hover:bg-[#2a3942] border-b border-[#e9edef]/60 dark:border-[#2a3942]/60 border-l-4 border-transparent'
                   }`}
                 >
                   <div className="relative flex-shrink-0">
                     {room.is_public ? (
-                      <div className="w-12 h-12 rounded-full bg-[#25d366] flex items-center justify-center text-white text-lg font-bold shadow-sm">
+                      <div className="w-12 h-12 rounded-full bg-[#f97316] flex items-center justify-center text-white text-lg font-bold shadow-sm">
                         {getInitials(room.name).slice(0, 1) || 'G'}
                       </div>
                     ) : (
@@ -1343,19 +1377,28 @@ const ChatModule: React.FC = () => {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline mb-1">
-                      <h3 className="text-sm font-semibold truncate dark:text-gray-100">{displayName}</h3>
-                      <span className={`text-xs ${isActive ? 'text-indigo-600 font-medium' : 'text-gray-400'}`}>{lastTime}</span>
+                    <div className="flex justify-between items-baseline mb-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h3 className="text-sm font-semibold truncate dark:text-gray-100">{displayName}</h3>
+                        {!room.is_public && isOnline && (
+                          <span className="shrink-0 w-2 h-2 rounded-full bg-emerald-500 inline-block" title="Online agora" />
+                        )}
+                      </div>
+                      <span className={`text-xs shrink-0 ml-1 ${isActive ? 'text-[#f97316] font-medium' : 'text-gray-400'}`}>{lastTime}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {room.is_public && (
-                        <span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-medium dark:bg-slate-700 dark:text-slate-300">GRUPO</span>
+                        <span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-medium dark:bg-slate-700 dark:text-slate-300 shrink-0">GRUPO</span>
                       )}
-                      <p className={`text-xs truncate ${isActive ? 'text-indigo-600' : 'text-gray-500 dark:text-gray-400'}`}>{preview}</p>
+                      <p className={`text-xs truncate ${isActive ? 'text-[#f97316]' : isOnline && !room.is_public ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {!room.is_public && !isOnline && otherUser?.last_seen_at
+                          ? `visto ${formatLastSeen(otherUser.last_seen_at)}`
+                          : preview}
+                      </p>
                     </div>
                   </div>
                   {roomUnreadCount > 0 && (
-                    <div className="w-5 h-5 bg-[#25d366] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <div className="w-5 h-5 bg-[#f97316] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                       {roomUnreadCount}
                     </div>
                   )}
@@ -1365,7 +1408,7 @@ const ChatModule: React.FC = () => {
           </div>
         </aside>
 
-        <section className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 flex-col bg-[#f0f2f5] dark:bg-[#0b141a] relative`}>
+        <section className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 flex-col bg-[#f0f2f5] dark:bg-[#0b141a] relative${shaking ? ' animate-shake' : ''}`}>
           {selectedRoom ? (
             <>
               <header className="h-[64px] px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#e9edef] dark:border-[#2a3942] flex items-center justify-between z-10 shadow-sm">
@@ -1384,7 +1427,7 @@ const ChatModule: React.FC = () => {
                     title="Ver informações"
                   >
                   {selectedRoom.is_public ? (
-                    <div className="w-10 h-10 rounded-full bg-[#25d366] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                    <div className="w-10 h-10 rounded-full bg-[#f97316] flex items-center justify-center text-white text-sm font-bold shadow-sm">
                       {getInitials(selectedRoom.name).slice(0, 1) || 'G'}
                     </div>
                   ) : (
@@ -1403,18 +1446,71 @@ const ChatModule: React.FC = () => {
                         <span className="bg-slate-100 text-slate-700 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide uppercase dark:bg-slate-700 dark:text-slate-300">Grupo</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className={`text-xs ${
+                      !selectedRoom.is_public && selectedRoomMember?.presence_status === 'online' && typingUsers.size === 0
+                        ? 'text-emerald-500 font-semibold'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
                       {typingUsers.size > 0
                         ? `${Array.from(typingUsers.values()).map((t) => t.name).join(', ')} ${typingUsers.size === 1 ? 'está' : 'estão'} digitando...`
                         : selectedRoom.is_public
                           ? `${(roomMembers.get(selectedRoom.id)?.length ?? 0)} membros`
                           : selectedRoomMember?.presence_status === 'online'
-                            ? selectedRoomMember?.role || ''
+                            ? 'Online agora'
                             : selectedRoomMember?.last_seen_at
-                              ? formatLastSeen(selectedRoomMember.last_seen_at)
+                              ? `visto ${formatLastSeen(selectedRoomMember.last_seen_at)}`
                               : 'Offline'}
                     </p>
                   </div>
+                </button>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {selectedRoom && !selectedRoom.is_public && (
+                  <button
+                    type="button"
+                    onClick={handleSendNudgeModule}
+                    disabled={nudgeCooldown || selectedRoomMember?.presence_status !== 'online'}
+                    className={`p-2 rounded-full transition ${
+                      selectedRoomMember?.presence_status !== 'online'
+                        ? 'opacity-30 cursor-not-allowed text-gray-400'
+                        : nudgeCooldown
+                          ? 'opacity-40 cursor-not-allowed text-gray-400'
+                          : 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-600'
+                    }`}
+                    title={
+                      selectedRoomMember?.presence_status !== 'online'
+                        ? 'Usuário offline'
+                        : nudgeCooldown
+                          ? 'Aguarde antes de chamar atenção novamente'
+                          : 'Chamar atenção'
+                    }
+                  >
+                    <span className="text-base leading-none">👋</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled
+                  className="p-2 rounded-full text-gray-400 opacity-50 cursor-not-allowed hidden md:flex"
+                  title="Ligação (em breve)"
+                >
+                  <Phone className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="p-2 rounded-full text-gray-400 opacity-50 cursor-not-allowed hidden md:flex"
+                  title="Videochamada (em breve)"
+                >
+                  <Video className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowContactInfo(true)}
+                  className="p-2 rounded-full text-gray-500 hover:text-[#f97316] hover:bg-orange-50 dark:hover:bg-orange-500/10 transition"
+                  title="Informações do contato"
+                >
+                  <Info className="w-5 h-5" />
                 </button>
               </div>
             </header>
@@ -1431,20 +1527,21 @@ const ChatModule: React.FC = () => {
                 }}
               >
 
+                {nudgeFlash && (
+                  <div className="sticky top-0 z-10 flex justify-center mb-2 pointer-events-none">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400 text-white font-semibold text-sm rounded-full shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
+                      <span className="text-base">👋</span>
+                      <span>{nudgeFlash} chamou sua atenção!</span>
+                    </div>
+                  </div>
+                )}
+
                 {loadingMessages && (
                   <div className="text-sm text-gray-500 dark:text-gray-400 text-center">Carregando mensagens...</div>
                 )}
 
                 {!loadingMessages && selectedRoomId && messages.length === 0 && (
                   <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">Nenhuma mensagem ainda</div>
-                )}
-
-                {messages.length > 0 && (
-                  <div className="flex justify-center mb-6">
-                    <span className="bg-white dark:bg-[#2a3942] text-gray-500 dark:text-gray-300 text-xs py-1 px-3 rounded-lg shadow-sm border border-[#e9edef] dark:border-[#2a3942]">
-                      Hoje
-                    </span>
-                  </div>
                 )}
 
                 <div>
@@ -1461,6 +1558,17 @@ const ChatModule: React.FC = () => {
                     const isMine = user?.id === msg.user_id;
                     const author = membersByUserId.get(msg.user_id);
                     const authorName = author?.name || 'Usuário';
+                    const otherReads = Array.from(readStates.entries())
+                      .filter(([uid]) => uid !== user?.id)
+                      .map(([, ts]) => ts)
+                      .sort();
+                    const otherReadAt = otherReads.length ? otherReads[otherReads.length - 1] : null;
+                    // delivered = other user has been in this chat at least once (has a read entry)
+                    const delivered = otherReadAt != null;
+                    // seen = other user's last read timestamp covers this message
+                    const seen = isMine && delivered && otherReadAt >= msg.created_at;
+                    // isUnread = message I haven't read yet (arrived after my previous read timestamp)
+                    const isUnread = !isMine && unreadThreshold !== null && msg.created_at > unreadThreshold;
                     const isDeleted = !!msg.deleted_at;
                     const attachment = isDeleted ? null : parseAttachment(msg.content);
                     const replied = msg.reply_to ? messagesById.get(msg.reply_to) : null;
@@ -1551,7 +1659,7 @@ const ChatModule: React.FC = () => {
                         <div className="relative z-0 flex gap-2 mb-4 group animate-in fade-in slide-in-from-bottom-1 duration-200">
                           <Avatar src={author?.avatar_url} name={authorName} size="sm" className="self-end mb-1" imageClassName="object-cover shadow-sm" />
                           <div className="flex flex-col gap-1 max-w-[70%] relative">
-                            <div className="relative bg-white dark:bg-[#2a3942] p-3 rounded-2xl rounded-bl-none border border-[#e9edef] dark:border-[#2a3942] text-sm text-gray-800 dark:text-gray-100">
+                            <div className={`relative p-3 rounded-2xl rounded-bl-none text-sm text-gray-800 dark:text-gray-100 ${isUnread ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 shadow-sm' : 'bg-white dark:bg-[#2a3942] border border-[#e9edef] dark:border-[#2a3942]'}`}>
                               {selectedRoom.is_public && !isDeleted && (
                                 <span className="block font-bold text-xs text-indigo-600 mb-1">{authorName}</span>
                               )}
@@ -1581,19 +1689,27 @@ const ChatModule: React.FC = () => {
                               {renderAttachment(msg, true)}
                               <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
                                 <span className="text-[10px] text-slate-200">{formatTime(msg.created_at)}</span>
-                                <CheckCheck className="w-3 h-3 text-slate-200" />
+                                {seen
+                                  ? <CheckCheck className="w-3 h-3 text-sky-300" />
+                                  : delivered
+                                    ? <CheckCheck className="w-3 h-3 text-slate-200" />
+                                    : <Check className="w-3 h-3 text-slate-200" />}
                               </div>
                               {Actions}
                               {ReactionPicker}
                             </>
                           ) : (
-                            <div className="relative bg-[#dcf8c6] dark:bg-[#005c4b] p-3 rounded-2xl rounded-br-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-gray-800 dark:text-white">
+                            <div className="relative bg-orange-100 dark:bg-orange-900/40 p-3 rounded-2xl rounded-br-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-gray-800 dark:text-white">
                               {ReplyQuote}
                               {Body}
                               <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
                                 {msg.edited_at && !isDeleted && <span className="text-[9px] italic">editada</span>}
                                 <span className="text-[10px]">{formatTime(msg.created_at)}</span>
-                                <CheckCheck className="w-3 h-3" />
+                                {seen
+                                  ? <CheckCheck className="w-3 h-3 text-sky-500" />
+                                  : delivered
+                                    ? <CheckCheck className="w-3 h-3 opacity-60" />
+                                    : <Check className="w-3 h-3 opacity-60" />}
                               </div>
                               {Actions}
                               {ReactionPicker}
@@ -1672,6 +1788,29 @@ const ChatModule: React.FC = () => {
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
+                  {selectedRoom && !selectedRoom.is_public && (
+                    <button
+                      type="button"
+                      onClick={handleSendNudgeModule}
+                      disabled={nudgeCooldown || selectedRoomMember?.presence_status !== 'online'}
+                      className={`p-2 md:p-2 transition rounded-full shrink-0 ${
+                        selectedRoomMember?.presence_status !== 'online'
+                          ? 'opacity-30 cursor-not-allowed text-gray-400'
+                          : nudgeCooldown
+                            ? 'opacity-40 cursor-not-allowed text-gray-400'
+                            : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                      }`}
+                      title={
+                        selectedRoomMember?.presence_status !== 'online'
+                          ? 'Usuário offline'
+                          : nudgeCooldown
+                            ? 'Aguarde antes de chamar atenção novamente'
+                            : 'Chamar atenção'
+                      }
+                    >
+                      <span className="text-lg leading-none">👋</span>
+                    </button>
+                  )}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1716,7 +1855,7 @@ const ChatModule: React.FC = () => {
                       onChange={(e) => handleMessageChange(e.target.value)}
                       placeholder={selectedRoomId ? 'Digite uma mensagem... use @ para mencionar' : 'Selecione uma conversa...'}
                       disabled={!selectedRoomId || isRecording}
-                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#25d366] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
+                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#f97316] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') { setMentionQuery(null); return; }
                         if (e.key === 'Enter' && !e.shiftKey) {
@@ -1745,7 +1884,7 @@ const ChatModule: React.FC = () => {
                       type="button"
                       onClick={handleToggleRecording}
                       disabled={!selectedRoomId}
-                      className="p-2.5 md:p-3 bg-[#7289da] hover:bg-[#5f6dcf] disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                      className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                       title="Gravar áudio"
                     >
                       <Mic className="w-5 h-5" />
@@ -1760,7 +1899,7 @@ const ChatModule: React.FC = () => {
                     type="button"
                     onClick={handleSend}
                     disabled={!selectedRoomId || !messageText.trim() || isRecording}
-                    className="p-2.5 md:p-3 bg-[#25d366] hover:bg-[#128c7e] disabled:opacity-50 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                    className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:opacity-50 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                     title="Enviar"
                   >
                     <Send className="w-5 h-5" />
@@ -1788,7 +1927,7 @@ const ChatModule: React.FC = () => {
             aria-hidden="true"
           />
           <div className="relative w-full max-w-lg max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-indigo-600" />
+            <div className="h-2 w-full bg-orange-500" />
 
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
@@ -1886,7 +2025,7 @@ const ChatModule: React.FC = () => {
                                 Online
                               </span>
                             )}
-                            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 group-hover:bg-indigo-600 flex items-center justify-center transition-all">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 group-hover:bg-orange-500 flex items-center justify-center transition-all">
                               <MessageCircle className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
                             </div>
                           </div>
@@ -1922,7 +2061,7 @@ const ChatModule: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowContactInfo(false)}
-                className="h-10 w-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition shadow-sm"
+                className="h-10 w-10 rounded-xl bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition shadow-sm"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1957,8 +2096,13 @@ const ChatModule: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between gap-4">
                       <span className="text-sm text-slate-600 dark:text-slate-300">Status</span>
-                      <span className={`text-sm font-medium ${selectedRoomMember.presence_status === 'online' ? 'text-green-600' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {selectedRoomMember.presence_status === 'online' ? 'Online' : 'Offline'}
+                      <span className={`text-sm font-medium flex items-center gap-1.5 ${selectedRoomMember.presence_status === 'online' ? 'text-emerald-600' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <span className={`w-2 h-2 rounded-full ${selectedRoomMember.presence_status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                        {selectedRoomMember.presence_status === 'online'
+                          ? 'Online agora'
+                          : selectedRoomMember.last_seen_at
+                            ? `visto ${formatLastSeen(selectedRoomMember.last_seen_at)}`
+                            : 'Offline'}
                       </span>
                     </div>
                   </div>

@@ -2529,14 +2529,34 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     (() => {
       const d = selectedDeadlineForView;
       const daysLeft = getDaysUntilDue(d.due_date);
-      const isOverdue = daysLeft < 0;
-      const isUrgent = daysLeft >= 0 && daysLeft <= 3;
+      const isCumprido = d.status === 'cumprido';
+      const isOverdue = !isCumprido && daysLeft < 0;
+      const isUrgent = !isCumprido && daysLeft >= 0 && daysLeft <= 3;
       const accentColor =
         d.priority === 'urgente' ? 'bg-red-500' :
         d.priority === 'alta' ? 'bg-orange-500' :
         d.priority === 'media' ? 'bg-amber-400' : 'bg-blue-500';
-      const countdownBg = isOverdue ? 'bg-red-50 border-red-200' : isUrgent ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200';
-      const countdownColor = isOverdue ? 'text-red-600' : isUrgent ? 'text-orange-600' : 'text-slate-800';
+
+      // Para prazos cumpridos, calcula se foi dentro ou fora do prazo com base no completed_at
+      const completedOnTime = (() => {
+        if (!isCumprido) return false;
+        const due = parseDateOnly(d.due_date);
+        if (!due) return daysLeft >= 0;
+        const completed = d.completed_at ? parseDateOnly(d.completed_at) : null;
+        if (!completed) return daysLeft >= 0;
+        return completed.getTime() <= due.getTime();
+      })();
+
+      const countdownBg = isCumprido
+        ? completedOnTime ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
+        : isOverdue ? 'bg-red-50 border-red-200'
+        : isUrgent ? 'bg-orange-50 border-orange-200'
+        : 'bg-slate-50 border-slate-200';
+      const countdownColor = isCumprido
+        ? completedOnTime ? 'text-emerald-600' : 'text-amber-600'
+        : isOverdue ? 'text-red-600'
+        : isUrgent ? 'text-orange-600'
+        : 'text-slate-800';
       const countdownLabel = isOverdue ? 'dias atrasado' : daysLeft === 0 ? 'vence hoje' : 'dias restantes';
 
       return (
@@ -2591,8 +2611,24 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {/* Countdown card */}
                 <div className={`flex flex-col items-center justify-center rounded-xl p-3 border ${countdownBg}`}>
-                  <span className={`text-3xl font-black leading-none ${countdownColor}`}>{Math.abs(daysLeft)}</span>
-                  <span className={`text-[10px] font-semibold mt-1 text-center ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>{countdownLabel}</span>
+                  {isCumprido ? (
+                    <>
+                      <span className={`text-2xl font-black leading-none ${countdownColor}`}>✓</span>
+                      <span className={`text-[10px] font-semibold mt-1 text-center ${completedOnTime ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {completedOnTime ? 'dentro do prazo' : 'fora do prazo'}
+                      </span>
+                      {d.completed_at && (
+                        <span className={`text-[9px] mt-0.5 text-center ${completedOnTime ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {new Date(d.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className={`text-3xl font-black leading-none ${countdownColor}`}>{Math.abs(daysLeft)}</span>
+                      <span className={`text-[10px] font-semibold mt-1 text-center ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>{countdownLabel}</span>
+                    </>
+                  )}
                 </div>
                 {/* Due date */}
                 <div className="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 border border-slate-200">
@@ -3146,7 +3182,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Data de Vencimento</label>
               <p className="text-base text-slate-900 mt-1">{formatDate(selectedDeadlineForView.due_date)}</p>
-              {daysUntil >= 0 ? (
+              {selectedDeadlineForView.status === 'cumprido' ? (
+                (() => {
+                  const onTime = (() => {
+                    const due = parseDateOnly(selectedDeadlineForView.due_date);
+                    const completed = selectedDeadlineForView.completed_at ? parseDateOnly(selectedDeadlineForView.completed_at) : null;
+                    if (!due) return daysUntil >= 0;
+                    return completed ? completed.getTime() <= due.getTime() : daysUntil >= 0;
+                  })();
+                  return onTime
+                    ? <p className="text-xs text-emerald-600 mt-1 font-semibold">✓ Cumprido dentro do prazo</p>
+                    : <p className="text-xs text-amber-600 mt-1 font-semibold">✓ Cumprido fora do prazo</p>;
+                })()
+              ) : daysUntil >= 0 ? (
                 <p className="text-xs text-slate-500 mt-1">Faltam {daysUntil} dia(s)</p>
               ) : (
                 <p className="text-xs text-red-600 mt-1 font-semibold">Vencido há {Math.abs(daysUntil)} dia(s)</p>
@@ -3799,7 +3847,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         {/* Data e dias */}
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                           <span className="text-[10px] text-slate-400">{formatDate(deadline.due_date)}</span>
-                          {daysUntil >= 0 ? (
+                          {deadline.status === 'cumprido' ? (
+                            (() => {
+                              const onTime = (() => { const due = parseDateOnly(deadline.due_date); const comp = deadline.completed_at ? parseDateOnly(deadline.completed_at) : null; if (!due) return daysUntil >= 0; return comp ? comp.getTime() <= due.getTime() : daysUntil >= 0; })();
+                              return (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                  {onTime ? '✓ no prazo' : '✓ com atraso'}
+                                </span>
+                              );
+                            })()
+                          ) : daysUntil >= 0 ? (
                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                               dueSoon ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                             }`}>
@@ -3983,9 +4040,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                               </div>
                               <div className="flex flex-col items-end gap-1 text-xs">
                                 <span className="text-slate-500">{formatDate(deadline.due_date)}</span>
-                                <span className={`flex items-center gap-1 font-semibold ${dueSoon ? 'text-red-600' : 'text-slate-600'}`}>
-                                  {dueSoon && <Siren className="w-3 h-3" />}
-                                  {deadline.daysUntil >= 0 ? `${deadline.daysUntil} dia(s)` : 'Vencido'}
+                                <span className={`flex items-center gap-1 font-semibold ${
+                                  deadline.status === 'cumprido' ? 'text-emerald-600' : dueSoon ? 'text-red-600' : 'text-slate-600'
+                                }`}>
+                                  {dueSoon && deadline.status !== 'cumprido' && <Siren className="w-3 h-3" />}
+                                  {deadline.status === 'cumprido'
+                                    ? '✓ Cumprido'
+                                    : deadline.daysUntil >= 0 ? `${deadline.daysUntil} dia(s)` : 'Vencido'}
                                 </span>
                               </div>
                             </div>
@@ -4044,8 +4105,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       <p className="font-medium text-gray-900">{formatDate(deadline.due_date)}</p>
                     </div>
                     <div>
-                      <span className="text-slate-500">Dias:</span>
-                      {daysUntil >= 0 ? (
+                      <span className="text-slate-500">Situação:</span>
+                      {deadline.status === 'cumprido' ? (
+                        (() => {
+                          const onTime = (() => {
+                            const due = parseDateOnly(deadline.due_date);
+                            const completed = deadline.completed_at ? parseDateOnly(deadline.completed_at) : null;
+                            if (!due || !completed) return daysUntil >= 0;
+                            return completed.getTime() <= due.getTime();
+                          })();
+                          return <p className={`font-medium ${onTime ? 'text-emerald-600' : 'text-amber-600'}`}>{onTime ? '✓ No prazo' : '✓ Com atraso'}</p>;
+                        })()
+                      ) : daysUntil >= 0 ? (
                         <p className={`font-medium ${dueSoon ? 'text-red-600' : 'text-gray-900'}`}>
                           {daysUntil} dia(s)
                         </p>
@@ -4197,7 +4268,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       
                       {/* Coluna DIAS */}
                       <td className="px-4 py-3">
-                        {daysUntil >= 0 ? (
+                        {deadline.status === 'cumprido' ? (
+                          (() => {
+                            const onTime = (() => {
+                              const due = parseDateOnly(deadline.due_date);
+                              const completed = deadline.completed_at ? parseDateOnly(deadline.completed_at) : null;
+                              if (!due || !completed) return daysUntil >= 0;
+                              return completed.getTime() <= due.getTime();
+                            })();
+                            return (
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {onTime ? '✓ No prazo' : '✓ Com atraso'}
+                              </span>
+                            );
+                          })()
+                        ) : daysUntil >= 0 ? (
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
                             dueSoon ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
                           }`}>

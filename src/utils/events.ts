@@ -68,4 +68,6 @@ export const SYSTEM_EVENTS = {
   BLOCK_MODAL_CLOSE: 'block_modal_close',
   // Cross-module navigation
   NAVIGATE_REQUEST: 'navigate_request',
+  // Presence: widget broadcasts online user IDs so other components can read them
+  PRESENCE_UPDATED: 'presence_updated',
 };

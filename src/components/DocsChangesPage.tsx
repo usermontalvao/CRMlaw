@@ -801,6 +801,30 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.096',
+    date: '16/05/2026',
+    summary: 'Módulo Chat nivelado ao widget com nudge, presença em tempo real e tiques de leitura; prazos cumpridos exibem situação correta sem contagem regressiva.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'improvement', title: 'Chamar atenção no módulo', description: 'O botão 👋 de chamar atenção está disponível no módulo Chat: treme a tela do destinatário e exibe banner, igual ao widget.' },
+          { type: 'improvement', title: 'Presença em tempo real', description: 'O módulo lê o canal de presença do widget via eventos internos — sem canal Supabase duplicado — e mostra "Online agora" / "Visto há X min" corretamente.' },
+          { type: 'fix', title: 'Mensagens chegando de forma confiável', description: 'Subscricão unificada num único canal; o widget pausa quando o módulo está ativo, eliminando o conflito de canais que fazia mensagens não aparecerem.' },
+          { type: 'fix', title: 'Online some ao minimizar aba', description: 'Ao restaurar uma aba minimizada ou ao ganhar foco, o sistema re-registra a presença automaticamente.' },
+          { type: 'improvement', title: 'Tiques de leitura', description: '1 tique = enviado; 2 cinza = entregue; 2 azul = lido. Mensagens novas não lidas são destacadas em âmbar ao abrir a conversa.' },
+        ],
+      },
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'fix', title: 'Cumpridos não mostram mais contagem regressiva', description: 'Prazos com status "Cumprido" exibem "dentro do prazo" ou "fora do prazo" em vez de "X dias atrasado".' },
+          { type: 'fix', title: 'Cálculo de pontualidade corrigido', description: 'A comparação usa parseDateOnly() para extrair a data independente do formato armazenado (YYYY-MM-DD ou ISO timestamp), eliminando falsos "fora do prazo".' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.095',
     date: '16/05/2026',
     summary: 'Player de áudio profissional também no módulo Chat (substitui o player nativo).',

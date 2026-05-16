@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Send, Smile, Square, X, Play, Pause } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Send, Smile, Square, X, Zap, Play, Pause } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -372,6 +372,22 @@ const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean }> 
   );
 };
 
+const formatDateSeparator = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = Math.round((today.getTime() - msgDay.getTime()) / 86400000);
+  if (diff === 0) return 'Hoje';
+  if (diff === 1) return 'Ontem';
+  return date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'short' });
+};
+
+const getDayKey = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
 interface ChatFloatingWidgetProps {
   hidden?: boolean;
 }
@@ -425,19 +441,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [readStates, setReadStates] = useState<Map<string, string>>(new Map());
   const [shaking, setShaking] = useState(false);
   const [nudgeFlash, setNudgeFlash] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [nudgeCooldown, setNudgeCooldown] = useState(false);
+  const [newMessageIds, setNewMessageIds] = useState<Set<string>>(() => new Set());
 
   const openRef = useRef(open);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
 
   const audioContextRef = useRef<AudioContext | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
+  // stableCallbacksRef — atualizado a cada render para evitar deps instáveis na subscription
+  const stableCallbacksRef = useRef({
+    loadRooms: (() => {}) as () => void,
+    loadUnread: (() => {}) as () => void,
+    playSound: (() => Promise.resolve()) as () => Promise<void>,
+    markRead: ((_roomId: string) => Promise.resolve()) as (roomId: string) => Promise<void>,
+    scrollBottom: ((_b?: ScrollBehavior) => {}) as (behavior?: ScrollBehavior) => void,
+  });
 
   const membersByUserIdRef = useRef<Map<string, Profile>>(new Map());
+  const toastTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<number | null>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
+  const nudgeCooldownTimerRef = useRef<number | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const pinnedToBottomRef = useRef(true);
@@ -486,6 +519,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     insertTextAtCursor(emoji);
     setShowEmojiPicker(false);
   }, [insertTextAtCursor]);
+
+  const broadcastTyping = useCallback((typing: boolean) => {
+    const channel = typingChannelRef.current;
+    if (!channel || !user) return;
+    const me = membersByUserIdRef.current.get(user.id);
+    void channel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { user_id: user.id, name: me?.name || 'Alguém', action: typing ? 'start' : 'stop' },
+    });
+  }, [user]);
 
   const handleAttachClick = useCallback(() => {
     if (!selectedRoomId || uploadingAttachment) return;
@@ -687,11 +731,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   }, [playNudgeSound]);
 
   const handleSendNudge = useCallback(async () => {
-    if (!user || !selectedRoomId) return;
+    if (!user || !selectedRoomId || nudgeCooldown) return;
     const memberIds = roomMembers.get(selectedRoomId) || [];
     const targetId = memberIds.find((id) => id !== user.id);
     if (!targetId) return;
     const me = membersByUserIdRef.current.get(user.id);
+    setNudgeCooldown(true);
+    if (nudgeCooldownTimerRef.current) window.clearTimeout(nudgeCooldownTimerRef.current);
+    nudgeCooldownTimerRef.current = window.setTimeout(() => setNudgeCooldown(false), 30000);
     try {
       await chatService.sendNudge({
         toUserId: targetId,
@@ -703,7 +750,32 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     } catch (e) {
       console.error('Erro ao chamar atenção:', e);
     }
-  }, [user, selectedRoomId, roomMembers, triggerShake]);
+  }, [user, selectedRoomId, roomMembers, triggerShake, nudgeCooldown]);
+
+  // Typing indicator — canal por sala
+  useEffect(() => {
+    if (!selectedRoomId || !user) {
+      setTypingUsers([]);
+      return;
+    }
+    const channel = supabase
+      .channel(`typing:${selectedRoomId}`)
+      .on('broadcast', { event: 'typing' }, ({ payload }: any) => {
+        const { user_id, name, action } = payload ?? {};
+        if (!user_id || user_id === user.id) return;
+        setTypingUsers((prev) => {
+          if (action === 'start') return prev.includes(name) ? prev : [...prev, name];
+          return prev.filter((n) => n !== name);
+        });
+      })
+      .subscribe();
+    typingChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      typingChannelRef.current = null;
+      setTypingUsers([]);
+    };
+  }, [selectedRoomId, user]);
 
   // Recebe "chamar atenção"
   useEffect(() => {
@@ -823,6 +895,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   useEffect(() => {
     if (!user) return;
 
+    const doTrack = async () => {
+      if (channel.state !== 'joined') return;
+      const me = membersByUserIdRef.current.get(user.id);
+      await channel.track({
+        user_id: user.id,
+        name: me?.name || user.email || 'Usuário',
+        status: 'online',
+      });
+    };
+
     const channel = supabase.channel('presence_widget');
     channel
       .on('presence', { event: 'sync' }, () => {
@@ -834,18 +916,26 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             if (p?.user_id) set.add(String(p.user_id));
           });
         setOnlineUserIds(set);
+        events.emit(SYSTEM_EVENTS.PRESENCE_UPDATED, Array.from(set));
       })
       .subscribe(async (status) => {
         if (status !== 'SUBSCRIBED') return;
-        const me = membersByUserIdRef.current.get(user.id);
-        await channel.track({
-          user_id: user.id,
-          name: me?.name || user.email || 'Usuário',
-          status: 'online',
-        });
+        await doTrack();
       });
 
+    // Re-track when tab becomes visible again (browsers throttle WS heartbeats when hidden)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void doTrack();
+    };
+    // Re-track on window focus as well (covers minimized window restore)
+    const onFocus = () => void doTrack();
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -956,11 +1046,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     (data ?? []).forEach((row: any) => {
       dbMap.set(String(row.room_id), Number(row.unread_count ?? 0));
     });
-    setRoomUnreadCounts(dbMap);
-
-    // Após carregar do banco, zerar notifyCount para evitar que o valor
-    // persistido no localStorage (de sessão anterior) continue inflando o badge.
-    setNotifyCount(0);
+    // Preserva notifyCount de sessão: usa MAX para não apagar badges locais
+    // que ainda não foram confirmados pelo banco (lag de trigger).
+    setRoomUnreadCounts((prev) => {
+      const merged = new Map<string, number>();
+      dbMap.forEach((v, k) => merged.set(k, Math.max(v, prev.get(k) ?? 0)));
+      // salas que existiam localmente mas não vieram do banco ficam com o valor local
+      prev.forEach((v, k) => { if (!merged.has(k)) merged.set(k, v); });
+      return merged;
+    });
   }, [user]);
 
   const loadMembers = useCallback(async () => {
@@ -987,19 +1081,26 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   const handleSendMessage = useCallback(async () => {
     if (!user || !selectedRoomId || !messageText.trim() || sendingMessage) return;
+    broadcastTyping(false);
+    if (typingTimeoutRef.current) { window.clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     setSendingMessage(true);
+    const pendingReplyTo = replyTo;
     try {
-      await chatService.sendMessage({ roomId: selectedRoomId, userId: user.id, content: messageText.trim() });
+      await chatService.sendMessage({
+        roomId: selectedRoomId,
+        userId: user.id,
+        content: messageText.trim(),
+        replyTo: pendingReplyTo?.id ?? null,
+      });
       setMessageText('');
+      setReplyTo(null);
       pinnedToBottomRef.current = true;
       scrollToBottom('smooth');
-      requestAnimationFrame(() => {
-        messageInputRef.current?.focus();
-      });
+      requestAnimationFrame(() => { messageInputRef.current?.focus(); });
     } finally {
       setSendingMessage(false);
     }
-  }, [user, selectedRoomId, messageText, sendingMessage, scrollToBottom]);
+  }, [user, selectedRoomId, messageText, sendingMessage, scrollToBottom, replyTo, broadcastTyping]);
 
   const markRoomAsRead = useCallback(
     async (roomId: string) => {
@@ -1062,6 +1163,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     loadRooms();
     loadUnread();
     loadRoomUnreadCounts();
+    // Atualiza membros e salas periodicamente para manter last_seen_at e presença frescos
+    const refreshTimer = window.setInterval(() => {
+      loadMembers();
+      loadRoomUnreadCounts();
+    }, 30000);
+    return () => window.clearInterval(refreshTimer);
   }, [user, loadMembers, loadRooms, loadUnread, loadRoomUnreadCounts]);
 
   useEffect(() => {
@@ -1121,21 +1228,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     };
   }, [user]);
 
+  // Carrega mensagens + poll de leitura ao selecionar sala (SEM subscription própria)
   useEffect(() => {
     if (!selectedRoomId) {
       setMessages([]);
+      setReadStates(new Map());
       return;
     }
     loadMessages(selectedRoomId);
     markRoomAsRead(selectedRoomId);
-    
-    // 🔥 Zerar contador de notificações ao visualizar conversa
-    console.log(`👁️ Visualizando sala ${selectedRoomId.substring(0, 8)}, zerando contadores`);
     setNotifyCount(0);
     setRoomUnreadCounts((prev) => {
       const next = new Map(prev);
       next.set(selectedRoomId, 0);
-      console.log(`🔢 Contadores zerados: notifyCount=0, roomUnread[${selectedRoomId.substring(0, 8)}]=0`);
       return next;
     });
 
@@ -1144,30 +1249,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       chatService.getRoomReadStates(roomId).then(setReadStates).catch(() => {});
     };
     refreshReads();
-    const readPoll = window.setInterval(refreshReads, 8000);
-
-    const unsubscribe = chatService.subscribeToRoomMessages({
-      roomId: selectedRoomId,
-      onInsert: (msg) => {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-
-        if (msg.user_id !== user?.id) {
-          markRoomAsRead(selectedRoomId);
-        }
-        refreshReads();
-
-        if (pinnedToBottomRef.current || msg.user_id === user?.id) {
-          pinnedToBottomRef.current = true;
-          scrollToBottom('smooth');
-        }
-      },
-    });
-
-    return () => { unsubscribe(); window.clearInterval(readPoll); };
-  }, [selectedRoomId, loadMessages, scrollToBottom, user?.id, markRoomAsRead]);
+    const readPoll = window.setInterval(refreshReads, 3000);
+    return () => window.clearInterval(readPoll);
+    // Intencionalmente omitindo markRoomAsRead das deps para não recriar o poll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomId]);
 
   useEffect(() => {
     if (!selectedRoomId) return;
@@ -1175,22 +1261,56 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     scrollToBottom('auto');
   }, [selectedRoomId, messages.length, scrollToBottom]);
 
+  // Canal único para TODAS as mensagens: notificações + atualização em-sala
+  // Não usa subscribeToRoomMessages — evita interferência de canais múltiplos no Supabase
+  // Quando o módulo de chat está ativo, o módulo gerencia o canal — widget pausa para evitar conflito
   useEffect(() => {
     if (!user) return;
-
+    if (currentModule === 'chat') return;
     const myUserId = user.id;
-    const unsubscribe = chatService.subscribeToAllMessages({
-      onInsert: (msg) => {
-        const isMine = msg.user_id === myUserId;
-        if (!isMine) {
-          loadUnread();
+    let unsubFn: (() => void) | null = null;
+    let retryTimer: number | null = null;
 
-          const isWidgetOpen = openRef.current;
+    const subscribe = () => {
+      unsubFn = chatService.subscribeToAllMessages({
+        onInsert: (msg) => {
+          const isMine = msg.user_id === myUserId;
           const currentRoom = selectedRoomIdRef.current;
-          const inCurrentOpenRoom = isWidgetOpen && !!currentRoom && msg.room_id === currentRoom;
-          if (!inCurrentOpenRoom) {
-            setNotifyCount((prev) => prev + 1);
+          const isInThisRoom = msg.room_id === currentRoom;
 
+          // ── Mensagem é da sala aberta no momento ──────────────────────────
+          if (isInThisRoom) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev;
+              return [...prev, msg];
+            });
+            if (!isMine) {
+              void stableCallbacksRef.current.markRead(msg.room_id);
+            }
+            if (pinnedToBottomRef.current || isMine) {
+              pinnedToBottomRef.current = true;
+              stableCallbacksRef.current.scrollBottom('smooth');
+            }
+            // Atualiza preview da sala sem notificar
+            setRooms((prev) => prev
+              .map((r) => r.id === msg.room_id ? { ...r, last_message_at: msg.created_at, last_message_preview: getPreview(msg.content) } : r)
+              .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at))
+            );
+            return;
+          }
+
+          // ── Mensagem de outra sala ────────────────────────────────────────
+          if (!isMine) {
+            // Animação de nova mensagem (destaque verde)
+            setNewMessageIds((prev) => {
+              const next = new Set(prev);
+              next.add(msg.id);
+              window.setTimeout(() => setNewMessageIds((s) => { const n = new Set(s); n.delete(msg.id); return n; }), 4000);
+              return next;
+            });
+
+            stableCallbacksRef.current.loadUnread();
+            setNotifyCount((prev) => prev + 1);
             setRoomUnreadCounts((prev) => {
               const next = new Map(prev);
               next.set(msg.room_id, (next.get(msg.room_id) ?? 0) + 1);
@@ -1204,19 +1324,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             const attachment = parseAttachment(msg.content);
             const isImageAttachment = !!attachment && String(attachment.mimeType || '').startsWith('image/');
 
-            if (isImageAttachment) {
-              setLastUnreadImageSender({ name: senderName, avatarUrl });
-            }
-            setToast({
-              id: msg.id,
-              roomId: msg.room_id,
-              senderUserId: msg.user_id,
-              senderName,
-              avatarUrl,
-              senderRole: profile?.role,
-              senderOab: profile?.oab,
-              preview,
-            });
+            if (isImageAttachment) setLastUnreadImageSender({ name: senderName, avatarUrl });
+
+            // Toast: auto-dismiss em 6s, cancelado se o usuário interagir antes
+            setToast({ id: msg.id, roomId: msg.room_id, senderUserId: msg.user_id, senderName, avatarUrl, senderRole: profile?.role, senderOab: profile?.oab, preview });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 6000);
 
             if (!profile) {
               void profileService.getProfile(msg.user_id).then((p) => {
@@ -1224,62 +1337,48 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 membersByUserIdRef.current.set(msg.user_id, p);
                 setToast((prev) => {
                   if (!prev || prev.id !== msg.id) return prev;
-                  return {
-                    ...prev,
-                    senderName: p.name || prev.senderName,
-                    avatarUrl: p.avatar_url,
-                    senderRole: p.role,
-                    senderOab: p.oab,
-                  };
+                  return { ...prev, senderName: p.name || prev.senderName, avatarUrl: p.avatar_url, senderRole: p.role, senderOab: p.oab };
                 });
-
-                if (isImageAttachment) {
-                  setLastUnreadImageSender({ name: p.name || senderName, avatarUrl: p.avatar_url });
-                }
+                if (isImageAttachment) setLastUnreadImageSender({ name: p.name || senderName, avatarUrl: p.avatar_url });
               });
             }
 
-            void playNotificationSound();
-
-            if (toastTimerRef.current) {
-              window.clearTimeout(toastTimerRef.current);
-            }
-            toastTimerRef.current = window.setTimeout(() => {
-              setToast(null);
-            }, 4500);
-          }
-        }
-
-        setRooms((prev) => {
-          const exists = prev.some((r) => r.id === msg.room_id);
-          if (!exists) {
-            loadRooms();
-            return prev;
+            void stableCallbacksRef.current.playSound();
           }
 
-          const updated = prev
-            .map((r) =>
-              r.id === msg.room_id
-                ? {
-                    ...r,
-                    last_message_at: msg.created_at,
-                    last_message_preview: getPreview(msg.content),
-                  }
-                : r
-            )
-            .sort((a, b) => {
-              const aTime = a.last_message_at ?? a.created_at;
-              const bTime = b.last_message_at ?? b.created_at;
-              return bTime.localeCompare(aTime);
-            });
+          // Atualiza lista de salas (preview + ordenação)
+          setRooms((prev) => {
+            const exists = prev.some((r) => r.id === msg.room_id);
+            if (!exists) { stableCallbacksRef.current.loadRooms(); return prev; }
+            return prev
+              .map((r) => r.id === msg.room_id ? { ...r, last_message_at: msg.created_at, last_message_preview: getPreview(msg.content) } : r)
+              .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at));
+          });
+        },
+      });
+    };
 
-          return updated;
-        });
-      },
-    });
+    subscribe();
 
-    return () => unsubscribe();
-  }, [user, loadRooms, loadUnread, playNotificationSound]);
+    // Reconecta quando a rede volta (garante que mensagens perdidas sejam recuperadas)
+    const onOnline = () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(() => {
+        unsubFn?.();
+        subscribe();
+        stableCallbacksRef.current.loadUnread();
+        stableCallbacksRef.current.loadRooms();
+      }, 1500);
+    };
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      unsubFn?.();
+      if (retryTimer) window.clearTimeout(retryTimer);
+      window.removeEventListener('online', onOnline);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, currentModule]);
 
   useEffect(() => {
     const readEditorState = () => {
@@ -1314,6 +1413,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     };
   }, []);
 
+  // Mantém refs estáveis — atualizado em todo render, sem causar rebuild das subscriptions
+  stableCallbacksRef.current = {
+    loadRooms,
+    loadUnread,
+    playSound: playNotificationSound,
+    markRead: markRoomAsRead,
+    scrollBottom: scrollToBottom,
+  };
+
   const totalUnreadFromRooms = useMemo(() => {
     let total = 0;
     roomUnreadCounts.forEach((v) => {
@@ -1327,16 +1435,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return getVerifiedVariant({ role: toast.senderRole || '', oab: toast.senderOab ?? null });
   }, [toast]);
 
-  const visible = !!user && currentModule !== 'chat';
-  if (!visible) return null;
-
-  const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
-  const otherUser = selectedRoom ? getOtherUserForRoom(selectedRoom) : null;
-  const displayName = otherUser?.name || selectedRoom?.name || '';
-  const avatarUrl = otherUser?.avatar_url;
-  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
-  const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
-
   // Sala não lida mais recente — usada para mostrar a foto persistente no launcher
   const topUnreadRoom = useMemo(() => {
     const unreadRooms = rooms.filter((r) => (roomUnreadCounts.get(r.id) ?? 0) > 0);
@@ -1347,6 +1445,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     });
     return unreadRooms[0] ?? null;
   }, [rooms, roomUnreadCounts]);
+
+  const visible = !!user && currentModule !== 'chat';
+  if (!visible) return null;
+
+  const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
+  const otherUser = selectedRoom ? getOtherUserForRoom(selectedRoom) : null;
+  const displayName = otherUser?.name || selectedRoom?.name || '';
+  const avatarUrl = otherUser?.avatar_url;
+  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
+  const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
 
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
@@ -1363,8 +1471,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           style={shaking ? { animation: 'chatShake 0.8s cubic-bezier(.36,.07,.19,.97) both' } : undefined}
         >
           {nudgeFlash && (
-            <div className="px-4 py-2 bg-amber-500 text-white text-xs font-bold text-center shrink-0 animate-in fade-in">
-              👋 {nudgeFlash} está te chamando!
+            <div className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold text-center shrink-0 flex items-center justify-center gap-2">
+              <Zap className="w-3.5 h-3.5 animate-pulse" />
+              <span>{nudgeFlash} está te chamando!</span>
+              <Zap className="w-3.5 h-3.5 animate-pulse" />
             </div>
           )}
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
@@ -1392,12 +1502,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       {headerVerified && <VerifiedBadge variant={headerVerified} />}
                     </div>
                     {otherUser && !selectedRoom?.is_public && (
-                      <span className={`block text-[11px] truncate ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
+                      <span className={`flex items-center gap-1 text-[11px] ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
                         {headerOnline
-                          ? 'Online'
+                          ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Online agora</>
                           : otherUser.last_seen_at
                             ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
-                            : 'offline'}
+                            : 'Offline'}
                       </span>
                     )}
                   </div>
@@ -1540,12 +1650,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   const verified = getVerifiedVariant(otherUser);
                   const roomUnread = roomUnreadCounts.get(room.id) ?? 0;
                   const subtitle = room.is_public
-                    ? `${room.type === 'team' ? 'Grupo' : 'Sala'}`
+                    ? `${room.type === 'team' ? 'Grupo' : 'Sala'} · ${(roomMembers.get(room.id) ?? []).length || ''} membros`
                     : online
-                      ? 'Online'
+                      ? '● Online agora'
                       : otherUser?.last_seen_at
-                        ? formatLastSeen(otherUser.last_seen_at)
-                        : 'Offline';
+                        ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
+                        : '● Offline';
 
                   const preview = getPreview((room as any).last_message_preview);
 
@@ -1587,8 +1697,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             </div>
                           </div>
                         </div>
-                        <div className="text-xs text-white/60 truncate">{subtitle}</div>
-                        <div className="text-xs text-white/70 truncate mt-0.5">{preview}</div>
+                        <div className={`text-xs truncate ${online && !room.is_public ? 'text-emerald-400' : 'text-white/50'}`}>{subtitle}</div>
+                        <div className={`text-xs truncate mt-0.5 ${roomUnread > 0 ? 'text-white font-medium' : 'text-white/50'}`}>{preview}</div>
                       </div>
                     </button>
                   );
@@ -1597,7 +1707,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               </div>
             )
           ) : (
-            <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex flex-col flex-1 overflow-hidden relative">
               <div
                 ref={messagesContainerRef}
                 onScroll={() => {
@@ -1605,58 +1715,201 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   if (!el) return;
                   const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
                   pinnedToBottomRef.current = distance < 80;
+                  setShowScrollBottom(distance > 200);
                 }}
-                className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 min-h-[200px]"
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && selectedRoomId) handleUploadAttachment(file);
+                }}
+                className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-1 min-h-[200px] relative"
               >
+                {/* Overlay drag & drop */}
+                {isDragging && (
+                  <div className="absolute inset-0 z-10 bg-indigo-600/20 border-2 border-dashed border-indigo-400 rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none">
+                    <Paperclip className="w-8 h-8 text-indigo-300" />
+                    <span className="text-sm font-semibold text-indigo-200">Solte para enviar</span>
+                  </div>
+                )}
+
                 {loadingMessages && messages.length === 0 ? (
-                  <div className="text-sm text-white/70">Carregando mensagens...</div>
+                  <div className="flex items-center gap-2 text-sm text-white/50 py-6 justify-center">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white/80 rounded-full animate-spin" />
+                    Carregando mensagens...
+                  </div>
                 ) : !loadingMessages && messages.length === 0 ? (
-                  <div className="text-sm text-white/70">Nenhuma mensagem ainda</div>
-                ) : (
-                  messages.map((msg) => {
+                  <div className="flex flex-col items-center gap-3 py-8 text-white/40">
+                    <MessageCircle className="w-10 h-10 opacity-30" />
+                    <span className="text-sm">Nenhuma mensagem ainda</span>
+                    <span className="text-xs text-white/30">Seja o primeiro a escrever 👋</span>
+                  </div>
+                ) : (() => {
+                  const otherReads = Array.from(readStates.entries())
+                    .filter(([uid]) => uid !== user?.id)
+                    .map(([, ts]) => ts)
+                    .sort();
+                  const otherReadAt = otherReads.length ? otherReads[otherReads.length - 1] : null;
+                  let lastDayKey = '';
+
+                  return messages.map((msg) => {
                     const isMine = msg.user_id === user?.id;
-                    const sender = members.find((m) => m.user_id === msg.user_id);
+                    const isDeleted = !!msg.deleted_at;
+                    const sender = membersByUserIdRef.current.get(msg.user_id) || members.find((m) => m.user_id === msg.user_id);
                     const senderName = isMine ? 'Você' : sender?.name || 'Usuário';
-                    const otherReads = Array.from(readStates.entries())
-                      .filter(([uid]) => uid !== user?.id)
-                      .map(([, ts]) => ts)
-                      .sort();
-                    const otherReadAt = otherReads.length ? otherReads[otherReads.length - 1] : null;
                     const seen = isMine && otherReadAt != null && otherReadAt >= msg.created_at;
+                    const dayKey = getDayKey(msg.created_at);
+                    const showSeparator = dayKey !== lastDayKey;
+                    if (showSeparator) lastDayKey = dayKey;
+
+                    const replyMsg = msg.reply_to ? messages.find((m) => m.id === msg.reply_to) : null;
+                    const replySender = replyMsg ? (membersByUserIdRef.current.get(replyMsg.user_id) || members.find((m) => m.user_id === replyMsg.user_id)) : null;
+
+                    const isNew = newMessageIds.has(msg.id) && !isMine;
 
                     return (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col min-w-0 ${isMine ? 'items-end' : 'items-start'}`}
-                      >
-                        <div className="text-[10px] text-white/40 mb-1">{senderName}</div>
-                        <div
-                          className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                            isMine
-                              ? 'bg-indigo-600 text-white rounded-br-md'
-                              : 'bg-white/10 text-white rounded-bl-md'
-                          } overflow-hidden`}
-                        >
-                          <MessageBody message={msg} onMediaLoaded={handleMediaLoaded} />
-                        </div>
-                        <div className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
-                          {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                          {isMine && (
-                            <span
-                              className={seen ? 'text-sky-400 font-bold' : 'text-white/40 font-bold'}
-                              title={seen ? 'Visualizada' : 'Enviada'}
-                            >
-                              {seen ? '✓✓' : '✓'}
+                      <React.Fragment key={msg.id}>
+                        {showSeparator && (
+                          <div className="flex items-center gap-3 py-2 my-1">
+                            <div className="flex-1 h-px bg-white/10" />
+                            <span className="text-[10px] text-white/40 font-medium px-2 shrink-0">
+                              {formatDateSeparator(msg.created_at)}
                             </span>
+                            <div className="flex-1 h-px bg-white/10" />
+                          </div>
+                        )}
+                        <div
+                          className={`group flex flex-col min-w-0 mb-1 ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in slide-in-from-left-2 fade-in duration-300' : ''}`}
+                        >
+                          {!isMine && (
+                            <div className="text-[10px] text-white/40 mb-0.5 ml-1">{senderName}</div>
                           )}
+
+                          {/* Reply preview */}
+                          {replyMsg && !isDeleted && (
+                            <div className={`mb-1 px-2 py-1 rounded-lg border-l-2 border-indigo-400 bg-white/5 max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
+                              <div className="text-[10px] text-indigo-300 font-semibold truncate">
+                                {replySender?.name || 'Usuário'}
+                              </div>
+                              <div className="text-[11px] text-white/50 truncate">
+                                {replyMsg.deleted_at ? '🗑️ Mensagem apagada' : getPreview(replyMsg.content)}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-end gap-1">
+                            {!isMine && (
+                              <button
+                                type="button"
+                                onClick={() => setReplyTo(msg)}
+                                className="opacity-0 group-hover:opacity-100 transition h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0 mb-1"
+                                title="Responder"
+                              >
+                                <Reply className="w-3 h-3 text-white/50" />
+                              </button>
+                            )}
+                            <div
+                              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm transition-all ${
+                                isDeleted
+                                  ? 'bg-white/5 text-white/30 italic rounded-bl-md rounded-br-md'
+                                  : isMine
+                                    ? 'bg-indigo-600 text-white rounded-br-sm'
+                                    : isNew
+                                      ? 'bg-emerald-600/90 text-white rounded-bl-sm ring-1 ring-emerald-400/40'
+                                      : 'bg-white/10 text-white rounded-bl-sm'
+                              } overflow-hidden`}
+                            >
+                              {isDeleted
+                                ? <span className="flex items-center gap-1.5 text-xs"><span>🗑️</span> Mensagem apagada</span>
+                                : <MessageBody message={msg} onMediaLoaded={handleMediaLoaded} />
+                              }
+                            </div>
+                            {isMine && (
+                              <button
+                                type="button"
+                                onClick={() => setReplyTo(msg)}
+                                className="opacity-0 group-hover:opacity-100 transition h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0 mb-1"
+                                title="Responder"
+                              >
+                                <Reply className="w-3 h-3 text-white/50" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className={`text-[10px] text-white/30 mt-0.5 flex items-center gap-1 ${isMine ? 'mr-8' : 'ml-8'}`}>
+                            {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {msg.edited_at && !isDeleted && <span className="text-white/20">(editada)</span>}
+                            {isMine && !isDeleted && (
+                              <span
+                                className={seen ? 'text-sky-400' : 'text-white/30'}
+                                title={seen ? 'Visualizada' : 'Enviada'}
+                              >
+                                {seen ? '✓✓' : '✓'}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
-                  })
+                  });
+                })()}
+
+                {/* Typing indicator */}
+                {typingUsers.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1 pb-2">
+                    <div className="flex gap-[3px] items-center bg-white/10 rounded-2xl px-3 py-2">
+                      <span className="text-xs text-white/60 mr-1">
+                        {typingUsers.length === 1 ? `${typingUsers[0]} está digitando` : 'Várias pessoas digitando'}
+                      </span>
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="block w-1.5 h-1.5 bg-white/50 rounded-full animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 
-              <div className="p-3 border-t border-white/10 shrink-0">
+              {/* Scroll to bottom button */}
+              {showScrollBottom && (
+                <div className="absolute bottom-[72px] right-3 z-10">
+                  <button
+                    type="button"
+                    onClick={() => { pinnedToBottomRef.current = true; scrollToBottom('smooth'); }}
+                    className="h-8 w-8 rounded-full bg-indigo-600 hover:bg-indigo-500 shadow-lg flex items-center justify-center transition"
+                    title="Ir para o fim"
+                  >
+                    <ChevronDown className="w-4 h-4 text-white" />
+                  </button>
+                </div>
+              )}
+
+              <div className="shrink-0">
+                {/* Reply preview bar */}
+                {replyTo && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border-t border-white/10">
+                    <div className="flex-1 min-w-0 border-l-2 border-indigo-400 pl-2">
+                      <div className="text-[10px] text-indigo-300 font-semibold">
+                        Respondendo a {replyTo.user_id === user?.id ? 'você mesmo' : (membersByUserIdRef.current.get(replyTo.user_id)?.name || 'Usuário')}
+                      </div>
+                      <div className="text-[11px] text-white/50 truncate">{getPreview(replyTo.content)}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyTo(null)}
+                      className="h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0"
+                    >
+                      <X className="w-3 h-3 text-white/50" />
+                    </button>
+                  </div>
+                )}
+
+              <div className="p-3 border-t border-white/10">
                 <div className="relative flex items-center gap-2">
                   {showEmojiPicker && (
                     <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-white/10 bg-[#0b1220]/95 shadow-xl p-3">
@@ -1696,14 +1949,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     <Paperclip className="w-4 h-4" />
                   </button>
 
-                  {otherUser && !selectedRoom?.is_public && headerOnline && (
+                  {/* Nudge — sempre visível em DM, com cooldown */}
+                  {otherUser && !selectedRoom?.is_public && (
                     <button
                       type="button"
                       onClick={handleSendNudge}
-                      className="h-9 w-9 rounded-xl hover:bg-amber-500/20 text-amber-300 transition flex items-center justify-center shrink-0"
-                      title="Chamar atenção"
+                      disabled={nudgeCooldown}
+                      className={`h-9 w-9 rounded-xl transition flex items-center justify-center shrink-0 ${
+                        nudgeCooldown
+                          ? 'opacity-30 cursor-not-allowed'
+                          : 'hover:bg-amber-500/20 text-amber-300'
+                      }`}
+                      title={nudgeCooldown ? 'Aguarde antes de chamar novamente' : 'Chamar atenção'}
                     >
-                      <span className="text-base leading-none">👋</span>
+                      <Zap className="w-4 h-4" />
                     </button>
                   )}
 
@@ -1722,14 +1981,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     ref={messageInputRef}
                     type="text"
                     value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
+                    onChange={(e) => {
+                      setMessageText(e.target.value);
+                      if (e.target.value.trim()) {
+                        broadcastTyping(true);
+                        if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+                        typingTimeoutRef.current = window.setTimeout(() => broadcastTyping(false), 3000);
+                      } else {
+                        broadcastTyping(false);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         if (!isRecording) handleSendMessage();
                       }
+                      if (e.key === 'Escape' && replyTo) setReplyTo(null);
                     }}
-                    placeholder="Digite uma mensagem..."
+                    placeholder={replyTo ? 'Escreva sua resposta...' : 'Digite uma mensagem...'}
                     className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-indigo-500/50"
                     disabled={sendingMessage || uploadingAttachment || isRecording}
                   />
@@ -1763,34 +2032,63 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </button>
                 </div>
               </div>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {showToast && (
-        <button
-          type="button"
-          onClick={async () => {
-            setToast(null);
-            setNotifyCount(0);
-            await ensureAudioContext();
-            setOpen(true);
-            setSelectedRoomId(toast!.roomId);
-          }}
-          className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#0b1220]/95 text-white shadow-[0_25px_70px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden"
-        >
+      {showToast && toast && (
+        <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#0b1220]/95 text-white shadow-[0_25px_70px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden">
+          {/* Barra de destaque colorida */}
+          <div className="h-[3px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
           <div className="px-4 py-3 flex items-center gap-3">
-            <Avatar src={toast!.avatarUrl} name={toast!.senderName} />
-            <div className="min-w-0 flex-1 text-left">
+            <button
+              type="button"
+              className="shrink-0"
+              onClick={async () => {
+                if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+                setToast(null);
+                setNotifyCount(0);
+                await ensureAudioContext();
+                setOpen(true);
+                setSelectedRoomId(toast.roomId);
+              }}
+            >
+              <Avatar src={toast.avatarUrl} name={toast.senderName} />
+            </button>
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={async () => {
+                if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+                setToast(null);
+                setNotifyCount(0);
+                await ensureAudioContext();
+                setOpen(true);
+                setSelectedRoomId(toast.roomId);
+              }}
+            >
               <div className="flex items-center gap-1.5 min-w-0">
-                <div className="text-sm font-semibold truncate">{toast!.senderName}</div>
+                <div className="text-sm font-semibold truncate">{toast.senderName}</div>
                 {toastVerified && <VerifiedBadge variant={toastVerified} />}
               </div>
-              <div className="text-xs text-white/70 truncate">{toast!.preview}</div>
-            </div>
+              <div className="text-xs text-white/60 truncate mt-0.5">{toast.preview}</div>
+            </button>
+            {/* Botão fechar — cancela o timer e remove o toast */}
+            <button
+              type="button"
+              onClick={() => {
+                if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+                setToast(null);
+              }}
+              className="shrink-0 h-7 w-7 rounded-full hover:bg-white/10 flex items-center justify-center transition"
+              title="Fechar"
+            >
+              <X className="w-3.5 h-3.5 text-white/50" />
+            </button>
           </div>
-        </button>
+        </div>
       )}
 
       <button
@@ -1804,7 +2102,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               setToast(null);
               setLastUnreadImageSender(null);
               ensureAudioContext();
-              // Abrir direto na conversa não lida mais recente
               if (topUnreadRoom) setSelectedRoomId(topUnreadRoom.id);
             } else {
               setSelectedRoomId(null);
@@ -1812,7 +2109,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             return next;
           });
         }}
-        className="rounded-full overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
+        className={`rounded-full overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 transition ${
+          badgeCount > 0 && !open ? 'ring-amber-400/60 shadow-amber-900/30' : 'ring-white/10'
+        }`}
         title="Mensagens / Editor"
       >
         <div className="sm:hidden flex items-center justify-center h-12 w-12 bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
