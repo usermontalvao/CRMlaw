@@ -572,16 +572,34 @@ const ChatModule: React.FC = () => {
         audioContextRef.current = new AudioContext();
       }
       const ctx = audioContextRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.value = 0.08;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const now = ctx.currentTime;
-      osc.start(now);
-      osc.stop(now + 0.12);
+      const t0 = ctx.currentTime;
+      const notes = [
+        { freq: 1318.51, start: 0.0, dur: 0.18 },
+        { freq: 1975.53, start: 0.10, dur: 0.28 },
+      ];
+      const master = ctx.createGain();
+      master.gain.value = 0.9;
+      master.connect(ctx.destination);
+      for (const n of notes) {
+        const osc = ctx.createOscillator();
+        const sub = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        sub.type = 'triangle';
+        osc.frequency.value = n.freq;
+        sub.frequency.value = n.freq / 2;
+        const s = t0 + n.start;
+        gain.gain.setValueAtTime(0.0001, s);
+        gain.gain.exponentialRampToValueAtTime(0.22, s + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, s + n.dur);
+        osc.connect(gain);
+        sub.connect(gain);
+        gain.connect(master);
+        osc.start(s);
+        sub.start(s);
+        osc.stop(s + n.dur + 0.02);
+        sub.stop(s + n.dur + 0.02);
+      }
     } catch {}
   };
 

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.092': { name: 'Café Som Top', emoji: '🎵' },
   '1.10.091': { name: 'Café Chat Polido', emoji: '✨' },
   '1.10.090': { name: 'Café Chat Interativo', emoji: '💞' },
   '1.10.089': { name: 'Café Chat Notifica', emoji: '🔔' },
@@ -796,6 +797,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.092',
+    date: '16/05/2026',
+    summary: 'Chat — notificação só no widget, novo som de notificação e player de áudio profissional.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          { type: 'improvement', title: 'Notificação só no widget', description: 'Mensagens de chat não geram mais notificação no sino global — ficam apenas no widget (toast + som + badge), como solicitado.' },
+          { type: 'improvement', title: 'Novo som de notificação', description: 'Som substituído por um chime moderno de duas notas ascendentes, mais agradável e profissional. Aplicado no widget e no módulo.' },
+          { type: 'improvement', title: 'Player de áudio profissional', description: 'Mensagens de áudio no widget agora têm player customizado: botão play/pause, forma de onda com seek por clique, tempo decorrido/total e controle de velocidade (1x/1.5x/2x).' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.091',
     date: '16/05/2026',

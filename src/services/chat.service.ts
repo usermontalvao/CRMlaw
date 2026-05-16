@@ -451,7 +451,9 @@ class ChatService {
     }
 
     const message = data as ChatMessage;
-    void this.notifyRecipients(message);
+    // Notificação de chat fica SOMENTE no widget (toast + som + badge).
+    // Sino global desativado a pedido — não cria user_notifications para chat.
+    void message;
     return message;
   }
 

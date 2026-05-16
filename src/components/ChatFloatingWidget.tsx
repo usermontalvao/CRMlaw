@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Send, Smile, Square, X } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Send, Smile, Square, X, Play, Pause } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -115,6 +115,95 @@ const parseAttachment = (content: string | null | undefined): ChatAttachmentPayl
   }
 };
 
+const fmtAudioTime = (s: number) => {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+};
+
+const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, onReady }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) { void a.play(); } else { a.pause(); }
+  };
+
+  const cycleRate = () => {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = pct * duration;
+    setCurrent(a.currentTime);
+  };
+
+  const progress = duration > 0 ? (current / duration) * 100 : 0;
+  // Pseudo-waveform estável por barra
+  const bars = Array.from({ length: 28 }, (_, i) => 30 + ((i * 37) % 70));
+
+  return (
+    <div className="mt-2 flex items-center gap-3 rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration || 0); onReady?.(); }}
+        onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrent(0); }}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        className="shrink-0 w-9 h-9 rounded-full bg-white text-indigo-600 flex items-center justify-center shadow hover:scale-105 transition"
+        title={playing ? 'Pausar' : 'Reproduzir'}
+      >
+        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-end gap-[2px] h-7 cursor-pointer" onClick={seek}>
+          {bars.map((h, i) => {
+            const filled = (i / bars.length) * 100 <= progress;
+            return (
+              <div
+                key={i}
+                className={`flex-1 rounded-full transition-colors ${filled ? 'bg-white' : 'bg-white/30'}`}
+                style={{ height: `${h}%` }}
+              />
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-[10px] text-white/70 tabular-nums">{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
+          <button
+            type="button"
+            onClick={cycleRate}
+            className="text-[10px] font-bold text-white/80 bg-white/15 rounded px-1.5 py-0.5 hover:bg-white/25 transition"
+            title="Velocidade"
+          >
+            {rate}x
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AttachmentSignedMedia: React.FC<{
   attachment: ChatAttachmentPayload;
   kind: 'audio' | 'image';
@@ -191,19 +280,7 @@ const AttachmentSignedMedia: React.FC<{
     );
   }
 
-  return (
-    <div className="mt-2">
-      <audio
-        src={signedUrl}
-        controls
-        className="w-full h-10 rounded-lg"
-        preload="metadata"
-        onLoadedMetadata={() => {
-          onMediaLoaded?.();
-        }}
-      />
-    </div>
-  );
+  return <ProAudioPlayer src={signedUrl} onReady={onMediaLoaded} />;
 };
 
 const MessageBody: React.FC<{ message: ChatMessage; onMediaLoaded?: () => void }> = ({ message, onMediaLoaded }) => {
@@ -538,17 +615,35 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     const ctx = audioContextRef.current;
     if (!ctx || ctx.state !== 'running') return;
     try {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.26);
+      const t0 = ctx.currentTime;
+      // Chime moderno: duas notas ascendentes (E6 -> B6) com leve brilho
+      const notes = [
+        { freq: 1318.51, start: 0.0, dur: 0.18 },
+        { freq: 1975.53, start: 0.10, dur: 0.28 },
+      ];
+      const master = ctx.createGain();
+      master.gain.value = 0.9;
+      master.connect(ctx.destination);
+      for (const n of notes) {
+        const osc = ctx.createOscillator();
+        const sub = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        sub.type = 'triangle';
+        osc.frequency.value = n.freq;
+        sub.frequency.value = n.freq / 2;
+        const s = t0 + n.start;
+        gain.gain.setValueAtTime(0.0001, s);
+        gain.gain.exponentialRampToValueAtTime(0.22, s + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, s + n.dur);
+        osc.connect(gain);
+        sub.connect(gain);
+        gain.connect(master);
+        osc.start(s);
+        sub.start(s);
+        osc.stop(s + n.dur + 0.02);
+        sub.stop(s + n.dur + 0.02);
+      }
     } catch {
       // ignore
     }
