@@ -34,6 +34,7 @@ import { representativeService } from '../services/representative.service';
 import { calendarService } from '../services/calendar.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
+import { profileService, type Profile } from '../services/profile.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import type {
@@ -107,6 +108,8 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [appointmentResponsibleId, setAppointmentResponsibleId] = useState('');
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -210,6 +213,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
   useEffect(() => {
     loadData();
+    profileService.listMembers().then(setMembers).catch(() => {});
   }, [loadData]);
 
   // Filtrar prepostos
@@ -400,6 +404,8 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     if (apt) {
       setEditingAppointment(apt);
       setRepresentativeModalSearchTerm(apt.representative?.full_name || '');
+      const linkedEvent = calendarEvents.find((e) => e.id === apt.calendar_event_id);
+      setAppointmentResponsibleId(linkedEvent?.user_id || '');
       setAppointmentForm({
         representative_id: apt.representative_id,
         calendar_event_id: apt.calendar_event_id,
@@ -414,6 +420,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     } else {
       setEditingAppointment(null);
       setRepresentativeModalSearchTerm('');
+      setAppointmentResponsibleId('');
       setAppointmentForm({
         representative_id: '',
         calendar_event_id: preSelectedEventId || '',
@@ -432,6 +439,10 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   const handleSaveAppointment = async () => {
     if (!appointmentForm.representative_id || !appointmentForm.calendar_event_id || !appointmentForm.service_date) {
       toast.error('Erro', 'Correspondente, compromisso e data são obrigatórios');
+      return;
+    }
+    if (appointmentForm.calendar_event_id.startsWith('process-hearing:') && !appointmentResponsibleId) {
+      toast.error('Erro', 'Selecione o responsável pelo compromisso na agenda');
       return;
     }
 
@@ -464,6 +475,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
             start_at: hearingInfo.dateTime,
             process_id: process.id,
             client_id: process.client_id || null,
+            user_id: appointmentResponsibleId || null,
           });
 
           calendarEventId = createdEvent.id;
@@ -1538,6 +1550,42 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     />
                     <p className="mt-1 text-xs text-slate-500">Informe o endereço, fórum, sala ou ponto de atendimento da diligência.</p>
                   </div>
+
+                  {members.length > 0 && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Responsável pelo compromisso na agenda <span className="text-red-500">*</span></label>
+                      <div className="flex flex-wrap gap-2">
+                        {members.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setAppointmentResponsibleId(appointmentResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                            className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                              appointmentResponsibleId === (m.user_id || m.id)
+                                ? 'ring-2 ring-offset-2 ring-amber-500'
+                                : 'ring-1 ring-transparent hover:ring-slate-300'
+                            }`}
+                            title={m.name || m.email || ''}
+                          >
+                            {m.avatar_url ? (
+                              <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                                {(m.name || m.email || '?')[0].toUpperCase()}
+                              </div>
+                            )}
+                            {appointmentResponsibleId === (m.user_id || m.id) && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M2 6l3 3 5-5"/>
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">Valor do Serviço *</label>

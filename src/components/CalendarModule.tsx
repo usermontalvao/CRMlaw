@@ -7,15 +7,17 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { profileService, type Profile } from '../services/profile.service';
 import { representativeService } from '../services/representative.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import ClientForm from './ClientForm';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,7 +37,7 @@ declare global {
   }
 }
 
-type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia';
+type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia' | 'personal';
 
 const EVENT_TYPE_LABELS: Record<EventType, string> = {
   deadline: 'Prazo',
@@ -44,6 +46,7 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   payment: 'Pagamento',
   meeting: 'Reunião',
   pericia: 'Perícia',
+  personal: 'Pessoal',
 };
 
 type DeletionLogEntry = {
@@ -97,12 +100,15 @@ type NewEventForm = {
   type: EventType;
   description: string;
   client_id: string;
+  client_name: string;
   responsible_id: string;
+  is_private: boolean;
+  shared_with_ids: string[];
 };
 
 interface CalendarModuleProps {
   userName?: string;
-  onNavigateToModule?: (params: { module: string; entityId?: string }) => void;
+  onNavigateToModule?: (params: { module: string; entityId?: string; extra?: Record<string, unknown> }) => void;
   onEditSystemEntity?: (payload: { module: string; entityId: string; data?: any }) => void;
   prefillData?: {
     title?: string;
@@ -164,12 +170,25 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       case 'requirement':
       case 'pericia':
         return canView('requerimentos');
+      case 'personal':
+        return true;
       case 'meeting':
       case 'task':
       default:
         return canView('agenda');
     }
   }, [permissionsLoading, isAdmin, canView]);
+
+  const getMemberInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+  const getMemberHue = (name: string) => {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) { h = (h << 5) - h + name.charCodeAt(i); h |= 0; }
+    return Math.abs(h) % 360;
+  };
 
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
@@ -190,6 +209,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     payment: true,
     meeting: true,
     pericia: true,
+    personal: true,
   });
   const [newEventForm, setNewEventForm] = useState<NewEventForm>({
     title: '',
@@ -198,12 +218,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     type: 'meeting',
     description: '',
     client_id: '',
+    client_name: '',
     responsible_id: '',
+    is_private: false,
+    shared_with_ids: [],
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string; persistent?: boolean } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDeletionLogOpen, setIsDeletionLogOpen] = useState(false);
   const [deletionLog, setDeletionLog] = useState<DeletionLogEntry[]>([]);
@@ -215,6 +238,26 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [calendarTitle, setCalendarTitle] = useState('');
   const [calendarView, setCalendarView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay' | 'listWeek'>('dayGridMonth');
   const [isRepresentativesPanelOpen, setIsRepresentativesPanelOpen] = useState(false);
+
+  // ── Cronograma ───────────────────────────────────────────────────
+  const [showCronograma, setShowCronograma] = useState(false);
+  const [calendarResponsibleFilter, setCalendarResponsibleFilter] = useState<'todos' | 'mim' | string>('todos');
+  const [showResponsiblePicker, setShowResponsiblePicker] = useState(false);
+  const [responsiblePickerPos, setResponsiblePickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const responsiblePickerRef = useRef<HTMLDivElement>(null);
+  const responsibleBtnRef = useRef<HTMLButtonElement>(null);
+  const responsibleDropdownRef = useRef<HTMLDivElement>(null);
+  const [cronogramaPeriod, setCronogramaPeriod] = useState<'semana' | 'proxima' | 'mes' | 'custom'>('semana');
+  const [cronogramaOnlyMine, setCronogramaOnlyMine] = useState(false);
+  const [cronogramaStart, setCronogramaStart] = useState('');
+  const [cronogramaEnd, setCronogramaEnd] = useState('');
+  const [members, setMembers] = useState<Profile[]>([]);
+  const defaultFilterSet = useRef(false);
+  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [clientSearchResults, setClientSearchResults] = useState<Client[]>([]);
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const clientSearchRef = useRef<HTMLDivElement>(null);
+  const [isClientFormOpen, setIsClientFormOpen] = useState(false);
   const linkedClient = useMemo(
     () => clients.find((client) => client.id === newEventForm.client_id) || null,
     [clients, newEventForm.client_id],
@@ -242,6 +285,39 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   }, [clients]);
 
   const focusEventConsumedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!showResponsiblePicker) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (responsiblePickerRef.current?.contains(t)) return;
+      if (responsibleDropdownRef.current?.contains(t)) return;
+      setShowResponsiblePicker(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showResponsiblePicker]);
+
+  // Busca de clientes no campo unificado
+  useEffect(() => {
+    const term = clientSearchTerm.trim().toLowerCase();
+    if (term.length < 1) { setClientSearchResults([]); return; }
+    const results = clients.filter(c =>
+      c.full_name?.toLowerCase().includes(term) || c.cpf_cnpj?.includes(term)
+    ).slice(0, 6);
+    setClientSearchResults(results);
+  }, [clientSearchTerm, clients]);
+
+  useEffect(() => {
+    if (!clientSearchOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!clientSearchRef.current?.contains(e.target as Node)) {
+        setClientSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [clientSearchOpen]);
 
   useEffect(() => {
     if (!focusEventId) return;
@@ -287,6 +363,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         moduleLink,
         clientName: event.client_id ? clientMap.get(event.client_id)?.full_name : undefined,
         clientPhone: event.client_id ? (clientMap.get(event.client_id)?.mobile || clientMap.get(event.client_id)?.phone) : undefined,
+        clientId: event.client_id ?? undefined,
         calendarEventId: event.id,
         representativeAppointments: representativeAppointmentsMap.get(event.id) || [],
       },
@@ -300,7 +377,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   }, [calendarTitle]);
 
   useEffect(() => {
-    if (!feedback) return;
+    if (!feedback || feedback.persistent) return;
     const timeout = window.setTimeout(() => setFeedback(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [feedback]);
@@ -381,7 +458,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         type: 'meeting',
         description: '',
         client_id: '',
+        client_name: '',
         responsible_id: '',
+        is_private: false,
+        shared_with_ids: [],
         ...initialValues,
       };
 
@@ -609,9 +689,37 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     : 'Editar';
 
   useEffect(() => {
+    const channel = supabase
+      .channel('calendar-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, () => {
+        calendarService.listEvents().then(setCalendarEventsData).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deadlines' }, () => {
+        deadlineService.listDeadlines().then(setDeadlines).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'representative_appointments' }, () => {
+        representativeService.listAppointments().then(setRepresentativeAppointments).catch(() => {});
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => {
     loadData();
     loadClients();
+    profileService.listMembers().then(setMembers).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (defaultFilterSet.current || !user?.id || members.length === 0) return;
+    defaultFilterSet.current = true;
+    const myProfile = members.find(m => m.user_id === user.id);
+    const isAdmin = (myProfile?.role || '').toLowerCase().includes('admin');
+    if (!isAdmin) {
+      setCalendarResponsibleFilter('mim');
+    }
+  }, [members, user]);
 
   useEffect(() => {
     if (forceCreate && !isCreateModalOpen) {
@@ -725,6 +833,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             moduleLink: 'prazos',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
+            clientId: deadline.client_id ?? undefined,
             entityId: deadline.id,
           },
         });
@@ -755,6 +864,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             moduleLink: 'processos',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
+            clientId: process.client_id ?? undefined,
             entityId: process.id,
           },
         });
@@ -795,7 +905,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
   // Eventos personalizados vindos da tabela calendar_events
   const customEvents = useMemo(() => {
-    const dedupedEvents = calendarEventsData.reduce<CalendarEvent[]>((acc, item) => {
+    const visibleEvents = calendarEventsData.filter(item => {
+      if (!item.is_private) return true;
+      if (!user?.id) return false;
+      if (item.user_id === user.id) return true;
+      if (item.shared_with_ids && item.shared_with_ids.includes(user.id)) return true;
+      return false;
+    });
+    const dedupedEvents = visibleEvents.reduce<CalendarEvent[]>((acc, item) => {
       const dedupKey = getPersistedHearingDedupKey(item);
 
       if (!dedupKey) {
@@ -827,8 +944,16 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return dedupedEvents.map((item) => {
       const relatedClient = item.client_id ? clientMap.get(item.client_id) : null;
       const classNames = ['calendar-event', `calendar-chip--${item.event_type}`];
-      const hasTime = item.start_at.includes('T') && !item.start_at.endsWith('T00:00:00.000Z') && !item.start_at.endsWith('T00:00:00+00:00');
+      let hasTime: boolean;
+      if (!item.start_at.includes('T')) {
+        hasTime = false; // string apenas com data, sem hora
+      } else {
+        const sd = new Date(item.start_at);
+        hasTime = isNaN(sd.getTime()) ? false : !(sd.getHours() === 0 && sd.getMinutes() === 0);
+      }
       const linkedRepresentativeAppointments = representativeAppointmentsMap.get(item.id) || [];
+      // Nome do cliente: cadastrado > nome livre digitado
+      const resolvedClientName = relatedClient?.full_name || item.client_name || undefined;
 
       return {
         id: `calendar-${item.id}`,
@@ -849,25 +974,273 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               : item.event_type === 'requirement'
               ? 'requerimentos'
               : undefined,
-          clientName: relatedClient?.full_name,
+          clientName: resolvedClientName,
           clientPhone: relatedClient?.mobile || relatedClient?.phone,
+          clientId: item.client_id ?? undefined,
           calendarEventId: item.id,
           representativeAppointments: linkedRepresentativeAppointments,
         },
       } as EventInput;
     });
-  }, [calendarEventsData, clientMap, representativeAppointmentsMap]);
+  }, [calendarEventsData, clientMap, representativeAppointmentsMap, user]);
+
+  // memberMap: user_id → name (usado em filtros e cronograma)
+  const memberMap = useMemo(() => {
+    const m = new Map<string, string>();
+    members.forEach(p => { if (p.user_id) m.set(p.user_id, p.name || p.email || ''); });
+    return m;
+  }, [members]);
+
+  // userIdToProfileId: user_id → profile.id
+  // Necessário porque deadline.responsible_id armazena profile.id, não user_id
+  const userIdToProfileId = useMemo(() => {
+    const m = new Map<string, string>();
+    members.forEach(p => { if (p.user_id) m.set(p.user_id, p.id); });
+    return m;
+  }, [members]);
+
+  // profileIdToName: profile.id → name (para prazos que usam profile.id em responsible_id)
+  const profileIdToName = useMemo(() => {
+    const m = new Map<string, string>();
+    members.forEach(p => { m.set(p.id, p.name || p.email || ''); });
+    return m;
+  }, [members]);
 
   const allEvents = useMemo(() => {
     const combined = [...systemEvents, ...customEvents];
-    return combined.filter((event) => {
-      const eventType = event.extendedProps?.type as EventType | undefined;
-      if (!eventType) return true;
-      // Filtrar por permissão do módulo de origem
-      if (!canViewEventType(eventType)) return false;
-      return viewFilters[eventType] ?? true;
+    return combined
+      .filter((event) => {
+        const eventType = event.extendedProps?.type as EventType | undefined;
+        if (!eventType) return true;
+        if (!canViewEventType(eventType)) return false;
+        if (!(viewFilters[eventType] ?? true)) return false;
+        // Filtro de responsável
+        if (calendarResponsibleFilter !== 'todos') {
+          const targetId = calendarResponsibleFilter === 'mim' ? user?.id : calendarResponsibleFilter;
+          if (targetId) {
+            const raw = event.extendedProps?.data as any;
+            // targetProfileId: profile.id do usuário alvo (prazos usam profile.id em responsible_id)
+            const targetProfileId = userIdToProfileId.get(targetId) || '';
+            const byId =
+              (raw?.responsible_id && (raw.responsible_id === targetId || raw.responsible_id === targetProfileId)) ||
+              (raw?.user_id && raw.user_id === targetId);
+            const targetName = memberMap.get(targetId) || '';
+            const byName = targetName && raw?.responsible_lawyer &&
+              (raw.responsible_lawyer as string).toLowerCase().includes(targetName.split(' ')[0].toLowerCase());
+            if (!byId && !byName) return false;
+          }
+        }
+        return true;
+      })
+      .map((event) => ({
+        ...event,
+        extendedProps: { ...(event.extendedProps as any), _hasTime: event.allDay !== true },
+      }));
+  }, [systemEvents, customEvents, viewFilters, canViewEventType, calendarResponsibleFilter, user, memberMap, userIdToProfileId]);
+
+  // ── Cronograma: faixa de datas ──────────────────────────────────
+  const cronogramaRange = useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=dom, 1=seg...
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+
+    if (cronogramaPeriod === 'semana') {
+      const end = new Date(monday);
+      end.setDate(monday.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      return { start: monday, end };
+    }
+    if (cronogramaPeriod === 'proxima') {
+      const start = new Date(monday);
+      start.setDate(monday.getDate() + 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    if (cronogramaPeriod === 'mes') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+    // custom
+    const start = cronogramaStart ? new Date(cronogramaStart + 'T00:00:00') : monday;
+    const end   = cronogramaEnd   ? new Date(cronogramaEnd   + 'T23:59:59') : new Date(monday.getTime() + 6 * 86400000);
+    return { start, end };
+  }, [cronogramaPeriod, cronogramaStart, cronogramaEnd]);
+
+
+  const getResponsavel = useCallback((event: EventInput): string => {
+    const d = event.extendedProps?.data as any;
+    if (!d) return '';
+    // Processo/audiência
+    if (d.responsible_lawyer) return d.responsible_lawyer;
+    // Deadline: responsible_id é profile.id; tenta profileIdToName primeiro, depois memberMap
+    if (d.responsible_id) {
+      return profileIdToName.get(d.responsible_id) || memberMap.get(d.responsible_id) || '';
+    }
+    // Evento manual: user_id é auth user_id
+    if (d.user_id) return memberMap.get(d.user_id) || '';
+    return '';
+  }, [memberMap, profileIdToName]);
+
+  // ── Cronograma: eventos filtrados e agrupados por dia ───────────
+  const cronogramaByDay = useMemo(() => {
+    const { start, end } = cronogramaRange;
+
+    const filtered = allEvents.filter(ev => {
+      const startStr = typeof ev.start === 'string' ? ev.start : '';
+      if (!startStr) return false;
+      const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+      if (d < start || d > end) return false;
+      // Respeita os filtros de tipo do calendário
+      const evType = (ev.extendedProps?.type as EventType) || 'meeting';
+      if (!(viewFilters[evType] ?? true)) return false;
+      if (cronogramaOnlyMine && user) {
+        const raw = ev.extendedProps?.data as any;
+        const isResponsible =
+          (raw?.responsible_id && raw.responsible_id === user.id) ||
+          (raw?.user_id && raw.user_id === user.id);
+        const myName = members.find(m => m.user_id === user.id)?.name || '';
+        const byName = myName && raw?.responsible_lawyer && raw.responsible_lawyer.toLowerCase().includes(myName.split(' ')[0].toLowerCase());
+        if (!isResponsible && !byName) return false;
+      }
+      return true;
     });
-  }, [systemEvents, customEvents, viewFilters, canViewEventType]);
+
+    // Ordenar por data/hora
+    filtered.sort((a, b) => {
+      const aStr = (typeof a.start === 'string' ? a.start : '') || '';
+      const bStr = (typeof b.start === 'string' ? b.start : '') || '';
+      return aStr.localeCompare(bStr);
+    });
+
+    // Agrupar por dia
+    const groups = new Map<string, EventInput[]>();
+    filtered.forEach(ev => {
+      const startStr = typeof ev.start === 'string' ? ev.start : '';
+      const dayKey = startStr.slice(0, 10);
+      if (!groups.has(dayKey)) groups.set(dayKey, []);
+      groups.get(dayKey)!.push(ev);
+    });
+
+    // Ordena dentro de cada dia: com hora primeiro (por horário), sem hora depois
+    groups.forEach((evs) => {
+      evs.sort((a, b) => {
+        const aHasTime = (a.extendedProps as any)?._hasTime === true;
+        const bHasTime = (b.extendedProps as any)?._hasTime === true;
+        if (aHasTime && !bHasTime) return -1;
+        if (!aHasTime && bHasTime) return 1;
+        const aStr = typeof a.start === 'string' ? a.start : '';
+        const bStr = typeof b.start === 'string' ? b.start : '';
+        return aStr.localeCompare(bStr);
+      });
+    });
+
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [allEvents, cronogramaRange, cronogramaOnlyMine, viewFilters, user, members]);
+
+  // ── Cronograma: imprimir ─────────────────────────────────────────
+  const handlePrintCronograma = useCallback(() => {
+    const TYPE_LABELS: Record<string, string> = {
+      deadline: 'Prazo', hearing: 'Audiência', requirement: 'Exigência',
+      payment: 'Recebimento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
+    };
+    const TYPE_COLORS: Record<string, string> = {
+      deadline: '#4f46e5', hearing: '#dc2626', requirement: '#d97706',
+      payment: '#0284c7', meeting: '#059669', pericia: '#7c3aed', personal: '#a21caf',
+    };
+    const fmtDay = (key: string) => new Date(key + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    const fmtTime = (ev: EventInput) => {
+      if ((ev.extendedProps as any)?._hasTime !== true) return '—';
+      const startStr = typeof ev.start === 'string' ? ev.start : '';
+      const t = new Date(startStr);
+      return isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const { start, end } = cronogramaRange;
+    const periodLabel = `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`;
+    const issuedAt = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const daysHTML = cronogramaByDay.map(([dayKey, evs]) => {
+      const rowsHTML = evs.map(ev => {
+        const type  = ev.extendedProps?.type as string || 'meeting';
+        const color = TYPE_COLORS[type] || '#64748b';
+        const label = TYPE_LABELS[type] || type;
+        const time  = fmtTime(ev);
+        const client = ev.extendedProps?.clientName as string || '';
+        const resp  = getResponsavel(ev);
+        return `<tr>
+          <td style="padding:9px 12px;white-space:nowrap;color:#475569;font-size:12px;font-variant-numeric:tabular-nums;border-bottom:1px solid #f1f5f9;">${time}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;">
+            <span style="display:inline-block;background:${color};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.06em;text-transform:uppercase;">${label}</span>
+          </td>
+          <td style="padding:9px 12px;font-weight:600;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${ev.title || ''}</td>
+          <td style="padding:9px 12px;color:#475569;font-size:11.5px;border-bottom:1px solid #f1f5f9;">${client}</td>
+          <td style="padding:9px 12px;color:#64748b;font-size:11.5px;border-bottom:1px solid #f1f5f9;">${resp}</td>
+        </tr>`;
+      }).join('');
+      return `<div style="margin-bottom:28px;page-break-inside:avoid;">
+        <div style="background:#0e2a47;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
+          <span style="font-size:13px;font-weight:700;text-transform:capitalize;">${fmtDay(dayKey)}</span>
+          <span style="font-size:10px;color:#94a3b8;">${evs.length} ${evs.length === 1 ? 'compromisso' : 'compromissos'}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Horário</th>
+              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Tipo</th>
+              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Compromisso</th>
+              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
+              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Responsável</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+      </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head>
+      <meta charset="UTF-8"/>
+      <title>Cronograma — ${periodLabel}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+      <style>
+        @page{size:A4 portrait;margin:20mm 16mm;}
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:'Inter',system-ui,sans-serif;background:#fff;color:#0f172a;font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .no-print{display:block;}
+        @media print{.no-print{display:none!important;}}
+      </style>
+    </head><body>
+      <div class="no-print" style="max-width:860px;margin:16px auto 0;text-align:right;">
+        <button onclick="window.print()" style="background:#0e2a47;color:#fff;border:none;padding:9px 22px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;">Imprimir / PDF</button>
+      </div>
+      <div style="max-width:860px;margin:16px auto;">
+        <div style="background:#0a1828;color:#fff;padding:20px 24px 16px;border-bottom:3px solid #d4a857;margin-bottom:0;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+            <div>
+              <div style="font-size:10px;letter-spacing:.25em;color:#d4a857;text-transform:uppercase;margin-bottom:4px;">JURIUS · Sistema Jurídico</div>
+              <div style="font-size:22px;font-weight:700;letter-spacing:-.01em;">Cronograma de Compromissos</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${periodLabel}${cronogramaOnlyMine ? ' · Apenas os meus' : ' · Escritório'}</div>
+            </div>
+            <div style="text-align:right;font-size:10px;color:#64748b;">
+              <div>Emitido em ${issuedAt}</div>
+              <div style="margin-top:2px;">${cronogramaByDay.reduce((s,[,evs])=>s+evs.length,0)} compromissos · ${cronogramaByDay.length} dias</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:24px;">
+          ${daysHTML || '<div style="text-align:center;color:#94a3b8;padding:48px 0;font-size:13px;">Nenhum compromisso no período.</div>'}
+        </div>
+      </div>
+    </body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  }, [cronogramaByDay, cronogramaRange, cronogramaOnlyMine, getResponsavel]);
 
   const handleEventClick = useCallback(
     (info: any) => {
@@ -909,6 +1282,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     setEditingEventId(null);
     setSelectedEvent(null);
     setCreateFormInitialClientName('');
+    setClientSearchTerm('');
+    setClientSearchOpen(false);
   }, []);
 
   const handleSubmitEvent = async () => {
@@ -919,6 +1294,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     try {
       setSavingEvent(true);
+      // Eventos pessoais são sempre privados do criador
+      const isPersonal = newEventForm.type === 'personal';
       const basePayload = {
         title: newEventForm.title.trim(),
         description: newEventForm.description.trim() || null,
@@ -926,6 +1303,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         start_at: computeStartAt(newEventForm.date, newEventForm.time),
         notify_minutes_before: null as number | null,
         client_id: newEventForm.client_id || null,
+        client_name: !newEventForm.client_id && newEventForm.client_name.trim()
+          ? newEventForm.client_name.trim()
+          : null,
+        user_id: isPersonal ? (user?.id || null) : (newEventForm.responsible_id || null),
+        is_private: isPersonal ? true : newEventForm.is_private,
+        shared_with_ids: (isPersonal || newEventForm.is_private) ? newEventForm.shared_with_ids : [],
       };
 
       const isAllDay = !newEventForm.time;
@@ -956,14 +1339,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         });
         setCalendarEventsData((prev) => [...prev, createdEvent]);
 
-        const api = calendarRef.current?.getApi();
-        api?.addEvent({
-          id: `calendar-${createdEvent.id}`,
-          title: createdEvent.title,
-          start: createdEvent.start_at,
-          allDay: isAllDay,
-        });
-        
         // 🔔 Criar notificação para novo compromisso
         if (user?.id && createdEvent && newEventForm.responsible_id && newEventForm.responsible_id !== user.id) {
           try {
@@ -987,10 +1362,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" criado com sucesso!` });
       }
 
-      await loadData();
       handleCloseCreateModal();
     } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Erro ao salvar compromisso.' });
+      const msg = String(err?.message || '');
+      const isNetworkError =
+        !navigator.onLine ||
+        /failed to fetch|networkerror|network error|fetch|conex|connection|timeout|net::|err_/i.test(msg);
+      if (isNetworkError) {
+        setFeedback({
+          type: 'error',
+          persistent: true,
+          message: 'Sem conexão com o servidor — o compromisso NÃO foi salvo. Verifique sua internet e clique em salvar novamente. Os dados do formulário foram mantidos.',
+        });
+      } else {
+        setFeedback({ type: 'error', message: msg || 'Erro ao salvar compromisso.' });
+      }
     } finally {
       setSavingEvent(false);
     }
@@ -1035,11 +1421,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   };
 
   const handleNavigateToModule = useCallback(
-    (moduleLink?: string, entityId?: string) => {
+    (moduleLink?: string, entityId?: string, extra?: Record<string, unknown>) => {
       if (!moduleLink) return;
       setSelectedEvent(null);
       if (onNavigateToModule) {
-        onNavigateToModule({ module: moduleLink, entityId });
+        onNavigateToModule({ module: moduleLink, entityId, extra });
       }
     },
     [onNavigateToModule]
@@ -1067,9 +1453,16 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           type: (existing.event_type as EventType) || 'meeting',
           description: existing.description ?? '',
           client_id: existing.client_id ?? '',
+          client_name: existing.client_name ?? '',
+          responsible_id: existing.user_id ?? '',
+          is_private: existing.is_private ?? false,
+          shared_with_ids: existing.shared_with_ids ?? [],
         },
         calendarEventId,
       );
+      if (!existing.client_id && existing.client_name) {
+        setClientSearchTerm(existing.client_name);
+      }
       setSelectedEvent(null);
       return;
     }
@@ -1579,11 +1972,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const type = (rawType ? (rawType as EventType) : 'meeting');
     const linkedRepresentativeAppointments = (extendedProps?.representativeAppointments as RepresentativeAppointment[] | undefined) || [];
 
-    const displayTime = timeText && timeText.trim().length > 0 ? timeText : '00';
+    const hasRealTime = Boolean(timeText && timeText.trim().length > 0);
 
     return (
       <div className={`calendar-chip calendar-chip--${type}`}>
-        <span className="calendar-chip__time">{displayTime}</span>
+        {hasRealTime && <span className="calendar-chip__time">{timeText}</span>}
         <span className="calendar-chip__title" title={event.title}>
           {event.title}
         </span>
@@ -1642,134 +2035,138 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     <div className="calendar-page space-y-0">
       {feedback && (
         <div
-          className={`fixed bottom-6 right-6 z-[9999] max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform ${
+          className={`fixed bottom-6 right-6 z-[9999] max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform flex items-start gap-3 ${
             feedback.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
               : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
-          {feedback.message}
+          <span className="flex-1 text-sm leading-snug">{feedback.message}</span>
+          {feedback.persistent && (
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="flex-shrink-0 -mr-1 -mt-0.5 rounded p-0.5 hover:bg-red-100 transition"
+              aria-label="Fechar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
 
-      {/* Barra de Controles - única linha (com scroll horizontal no mobile) */}
-      <div className="bg-white border border-slate-200 rounded-t-xl px-2 py-2 sm:p-4 shadow-sm">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
-          {/* Navegação */}
-          <div className="flex items-center gap-1">
-            <div className="flex bg-slate-100 rounded-lg p-0.5 sm:p-1">
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().prev()}
-                className="p-1 hover:bg-white rounded shadow-sm text-slate-600 transition"
-                aria-label="Anterior"
-              >
-                <span className="text-base sm:text-lg font-bold">‹</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().today()}
-                className="px-2 sm:px-3 text-xs sm:text-sm font-medium text-slate-700"
-              >
-                Hoje
-              </button>
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().next()}
-                className="p-1 hover:bg-white rounded shadow-sm text-slate-600 transition"
-                aria-label="Próximo"
-              >
-                <span className="text-base sm:text-lg font-bold">›</span>
-              </button>
-            </div>
-            <h2 className="text-sm sm:text-lg font-bold text-slate-800 capitalize">{currentMonthName}</h2>
-          </div>
+      {/* Toolbar — linha única */}
+      <div className="bg-white border border-slate-200 rounded-t-xl shadow-sm">
+        <div className="flex items-center gap-2 px-3 py-2">
 
-          <div className="h-8 w-px bg-slate-200 mx-1" />
+          {/* Navegação */}
+          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 shrink-0">
+            <button type="button" onClick={() => calendarRef.current?.getApi().prev()} className="p-1 hover:bg-white rounded-md text-slate-600 transition" aria-label="Anterior">
+              <span className="text-sm font-bold leading-none">‹</span>
+            </button>
+            <button type="button" onClick={() => calendarRef.current?.getApi().today()} className="px-2 text-xs font-medium text-slate-700">Hoje</button>
+            <button type="button" onClick={() => calendarRef.current?.getApi().next()} className="p-1 hover:bg-white rounded-md text-slate-600 transition" aria-label="Próximo">
+              <span className="text-sm font-bold leading-none">›</span>
+            </button>
+          </div>
+          <h2 className="text-sm font-bold text-slate-800 capitalize shrink-0 w-28 truncate">{currentMonthName}</h2>
+
+          <div className="h-5 w-px bg-slate-200 shrink-0" />
 
           {/* Views */}
-          <div className="flex bg-slate-100 p-0.5 sm:p-1 rounded-lg">
+          <div className="flex bg-slate-100 p-0.5 rounded-lg shrink-0">
             {([
-              { label: 'Mês', shortLabel: 'M', view: 'dayGridMonth' },
-              { label: 'Semana', shortLabel: 'S', view: 'timeGridWeek' },
-              { label: 'Dia', shortLabel: 'D', view: 'timeGridDay' },
-            ] as const).map(({ label, shortLabel, view }) => {
-              const isActive = calendarView === view;
-              return (
-                <button
-                  key={view}
-                  type="button"
-                  onClick={() => handleChangeView(view)}
-                  className={`px-2 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all ${
-                    isActive
-                      ? 'bg-white text-blue-600 shadow'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  aria-label={label}
-                >
-                  <span className="hidden sm:inline">{label}</span>
-                  <span className="sm:hidden">{shortLabel}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="h-8 w-px bg-slate-200 mx-1" />
-
-          {/* Ações */}
-          <div className="flex items-center gap-2">
+              { label: 'Mês', view: 'dayGridMonth' },
+              { label: 'Semana', view: 'timeGridWeek' },
+              { label: 'Dia', view: 'timeGridDay' },
+            ] as const).map(({ label, view }) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => { setShowCronograma(false); handleChangeView(view); }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  !showCronograma && calendarView === view ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >{label}</button>
+            ))}
             <button
               type="button"
-              onClick={() => setLegendExpanded((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
-              title="Filtros"
+              onClick={() => setShowCronograma(v => !v)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all inline-flex items-center gap-1 ${showCronograma ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              <Filter className="w-4 h-4" />
-              <span className="hidden sm:inline">Filtros</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsDeletionLogOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
-              title="Log de exclusões"
-            >
-              <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Log</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOpenExportModal('excel')}
-              className="inline-flex items-center justify-center w-9 h-9 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-slate-200 transition-colors"
-              title="Exportar Excel"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOpenExportModal('pdf')}
-              className="inline-flex items-center justify-center w-9 h-9 text-red-600 hover:bg-red-50 rounded-lg border border-slate-200 transition-colors"
-              title="Exportar PDF"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsRepresentativesPanelOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
-              title="Gerenciar Correspondentes"
-            >
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Correspondentes</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openEventForm()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Novo</span>
+              <LayoutList className="w-3 h-3" />Cronograma
             </button>
           </div>
+
+          <div className="h-5 w-px bg-slate-200 shrink-0" />
+
+          {/* Filtro responsável */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium shrink-0">
+            {(['todos', 'mim'] as const).map(opt => (
+              <button key={opt} type="button"
+                onClick={() => { setCalendarResponsibleFilter(opt); setShowResponsiblePicker(false); }}
+                className={`px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter === opt ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+              >{opt === 'todos' ? 'Todos' : 'A mim'}</button>
+            ))}
+            <div ref={responsiblePickerRef}>
+              <button ref={responsibleBtnRef} type="button"
+                onClick={() => {
+                  const rect = responsibleBtnRef.current?.getBoundingClientRect();
+                  if (rect) setResponsiblePickerPos({ top: rect.bottom + 6, left: rect.left });
+                  setShowResponsiblePicker(v => !v);
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                {calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? (() => {
+                  const m = members.find(m => (m.user_id || m.id) === calendarResponsibleFilter);
+                  const hue = getMemberHue(m?.name || '');
+                  return (<>
+                    <div className="w-3.5 h-3.5 rounded-full overflow-hidden flex items-center justify-center text-[7px] font-bold shrink-0"
+                      style={{ background: `hsl(${hue},50%,85%)`, color: `hsl(${hue},45%,30%)` }}>
+                      {(m as any)?.avatar_url ? <img src={(m as any).avatar_url} className="w-full h-full object-cover" alt="" /> : getMemberInitials(m?.name || '')}
+                    </div>
+                    <span className="max-w-[52px] truncate">{m?.name?.split(' ')[0]}</span>
+                  </>);
+                })() : <span>Pessoa</span>}
+                <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+              </button>
+            </div>
+          </div>
+
+          <div className="h-5 w-px bg-slate-200 shrink-0" />
+
+          {/* Ações secundárias */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button type="button" onClick={() => setLegendExpanded(v => !v)}
+              className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 hover:bg-slate-100 border-slate-200'}`}>
+              <Filter className="w-3.5 h-3.5" />Filtros
+            </button>
+            <button type="button" onClick={() => setIsDeletionLogOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors">
+              <History className="w-3.5 h-3.5" />Log
+            </button>
+            <button type="button" onClick={() => handleOpenExportModal('excel')}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-emerald-600 hover:bg-emerald-50 transition-colors">
+              <FileSpreadsheet className="w-3.5 h-3.5" />Excel
+            </button>
+            <button type="button" onClick={() => handleOpenExportModal('pdf')}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-red-500 hover:bg-red-50 transition-colors">
+              <FileText className="w-3.5 h-3.5" />PDF
+            </button>
+            <button type="button" onClick={() => setIsRepresentativesPanelOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors">
+              <Users className="w-3.5 h-3.5" />Corresp.
+            </button>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Novo */}
+          <button type="button" onClick={() => openEventForm()}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-sm transition-colors">
+            <Plus className="w-3.5 h-3.5" />Novo
+          </button>
         </div>
       </div>
 
@@ -1844,12 +2241,274 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 Reuniões
               </span>
             </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.personal}
+                onChange={() => setViewFilters((prev) => ({ ...prev, personal: !prev.personal }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-fuchsia-700 bg-fuchsia-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-fuchsia-500">
+                Pessoal
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Dropdown "Determinado" via portal */}
+      {showResponsiblePicker && createPortal(
+        <div
+          ref={responsibleDropdownRef}
+          className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[200px]"
+          style={{ top: responsiblePickerPos.top, left: responsiblePickerPos.left }}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Selecionar pessoa</p>
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {[...members].sort((a, b) => {
+              const rank = (m: Profile) => {
+                const r = (m.role || '').toLowerCase();
+                if (r.includes('admin')) return 0;
+                if (r.includes('advogad')) return 1;
+                return 2;
+              };
+              return rank(a) - rank(b);
+            }).map(member => {
+              const memberId = member.user_id || member.id;
+              const isSelected = calendarResponsibleFilter === memberId;
+              const hue = getMemberHue(member.name || '');
+              const initials = getMemberInitials(member.name || '');
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => { setCalendarResponsibleFilter(memberId); setShowResponsiblePicker(false); }}
+                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm transition-all ${
+                    isSelected ? 'bg-amber-50 text-amber-700' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0 relative"
+                    style={{ background: `hsl(${hue},50%,88%)`, color: `hsl(${hue},45%,30%)` }}
+                  >
+                    {initials}
+                    {(member as any).avatar_url && (
+                      <img src={(member as any).avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover rounded-full" />
+                    )}
+                  </div>
+                  <span className="truncate font-medium">{member.name}</span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-amber-500 ml-auto flex-shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ═══ CRONOGRAMA VIEW ═══ */}
+      {showCronograma && (
+        <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden">
+          {/* Controles do cronograma */}
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
+            {/* Período */}
+            <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 text-xs font-medium">
+              {([
+                { key: 'semana',  label: 'Esta semana' },
+                { key: 'proxima', label: 'Próx. semana' },
+                { key: 'mes',     label: 'Este mês' },
+                { key: 'custom',  label: 'Período' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setCronogramaPeriod(key)}
+                  className={`px-3 py-1.5 rounded-md transition-all ${
+                    cronogramaPeriod === key
+                      ? 'bg-amber-500 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Datas customizadas */}
+            {cronogramaPeriod === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={cronogramaStart}
+                  onChange={e => setCronogramaStart(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                />
+                <span className="text-slate-400 text-xs">até</span>
+                <input
+                  type="date"
+                  value={cronogramaEnd}
+                  onChange={e => setCronogramaEnd(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                />
+              </div>
+            )}
+
+            <div className="h-5 w-px bg-slate-200 mx-1" />
+
+            {/* Apenas meus */}
+            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-600 select-none">
+              <input
+                type="checkbox"
+                checked={cronogramaOnlyMine}
+                onChange={e => setCronogramaOnlyMine(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
+              />
+              Apenas os meus
+            </label>
+
+            {/* Contador */}
+            <span className="ml-auto text-xs text-slate-400">
+              {cronogramaByDay.reduce((s, [, evs]) => s + evs.length, 0)} compromisso(s) · {cronogramaByDay.length} dia(s)
+            </span>
+
+            {/* Imprimir */}
+            <button
+              type="button"
+              onClick={handlePrintCronograma}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-700 hover:bg-slate-800 rounded-lg transition"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Imprimir
+            </button>
+          </div>
+
+          {/* Lista de dias */}
+          <div className="divide-y divide-slate-100">
+            {cronogramaByDay.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                <LayoutList className="w-10 h-10 mb-3 opacity-30" />
+                <p className="text-sm font-medium">Nenhum compromisso no período</p>
+                <p className="text-xs mt-1">Ajuste o período ou os filtros de tipo</p>
+              </div>
+            ) : cronogramaByDay.map(([dayKey, evs]) => {
+              const dayDate = new Date(dayKey + 'T12:00:00');
+              const isToday = dayKey === new Date().toISOString().slice(0, 10);
+              const dayLabel = dayDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+
+              const TYPE_COLORS: Record<string, string> = {
+                deadline: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                hearing:  'bg-red-100 text-red-700 border-red-200',
+                requirement: 'bg-orange-100 text-orange-700 border-orange-200',
+                payment:  'bg-sky-100 text-sky-700 border-sky-200',
+                meeting:  'bg-emerald-100 text-emerald-700 border-emerald-200',
+                pericia:  'bg-purple-100 text-purple-700 border-purple-200',
+                personal: 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+              };
+              const TYPE_BORDER: Record<string, string> = {
+                deadline: 'border-l-indigo-500',
+                hearing:  'border-l-red-500',
+                requirement: 'border-l-orange-500',
+                payment:  'border-l-sky-500',
+                meeting:  'border-l-emerald-500',
+                pericia:  'border-l-purple-500',
+                personal: 'border-l-fuchsia-500',
+              };
+              const TYPE_LABELS_LOCAL: Record<string, string> = {
+                deadline: 'Prazo', hearing: 'Audiência', requirement: 'Exigência',
+                payment: 'Recebimento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
+              };
+
+              return (
+                <div key={dayKey}>
+                  {/* Cabeçalho do dia */}
+                  <div className={`flex items-center gap-3 px-4 py-2.5 ${isToday ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-slate-50 border-l-4 border-l-transparent'}`}>
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${isToday ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                      {dayDate.getDate()}
+                    </div>
+                    <div>
+                      <span className={`text-sm font-semibold capitalize ${isToday ? 'text-blue-700' : 'text-slate-700'}`}>{dayLabel}</span>
+                      {isToday && <span className="ml-2 text-xs font-semibold text-blue-500 uppercase tracking-wider">Hoje</span>}
+                    </div>
+                    <span className="ml-auto text-xs text-slate-400">{evs.length} compromisso{evs.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {/* Eventos do dia */}
+                  <div className="px-4 py-2 space-y-2">
+                    {evs.map((ev, idx) => {
+                      const type = (ev.extendedProps?.type as string) || 'meeting';
+                      const startStr = typeof ev.start === 'string' ? ev.start : '';
+                      const hasTime = (ev.extendedProps as any)?._hasTime === true;
+                      const timeStr = hasTime
+                        ? new Date(startStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                        : null;
+                      const client = ev.extendedProps?.clientName as string | undefined;
+                      const resp   = getResponsavel(ev);
+                      const typeColor  = TYPE_COLORS[type]  || 'bg-slate-100 text-slate-600 border-slate-200';
+                      const borderColor = TYPE_BORDER[type] || 'border-l-slate-400';
+                      const typeLabel  = TYPE_LABELS_LOCAL[type] || type;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex items-start gap-3 p-3 rounded-lg border border-slate-100 border-l-4 ${borderColor} bg-white hover:bg-slate-50 transition-colors cursor-pointer`}
+                          onClick={() => {
+                            // abre o detalhe do evento existente no calendário
+                            const d = ev.extendedProps?.data as any;
+                            if (d) {
+                              setSelectedEvent({
+                                title: ev.title as string || '',
+                                start: startStr,
+                                allDay: !hasTime,
+                                extendedProps: ev.extendedProps as any,
+                              });
+                            }
+                          }}
+                        >
+                          {/* Hora */}
+                          <div className="flex-shrink-0 w-12 text-right">
+                            {timeStr
+                              ? <span className="text-sm font-semibold text-slate-700 tabular-nums">{timeStr}</span>
+                              : <span className="text-xs text-slate-400 font-medium">Dia todo</span>
+                            }
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${typeColor}`}>
+                                {typeLabel}
+                              </span>
+                              <span className="text-sm font-semibold text-slate-800 truncate">{ev.title}</span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {client && (
+                                <span className="flex items-center gap-1 text-xs text-slate-500">
+                                  <User className="w-3 h-3" />
+                                  {client}
+                                </span>
+                              )}
+                              {resp && (
+                                <span className="flex items-center gap-1 text-xs text-slate-400">
+                                  <Briefcase className="w-3 h-3" />
+                                  {resp}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0 mt-0.5" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Calendário */}
-      <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden">
+      <div className={`bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden${showCronograma ? ' hidden' : ''}`}>
         <div className="calendar-container">
           <FullCalendar
               ref={calendarRef}
@@ -1894,7 +2553,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               editable={false}
               selectable={true}
               selectMirror={true}
-              dayMaxEvents={3}
+              dayMaxEvents={false}
+              eventOrder={(a: any, b: any) => {
+                const aHasTime = a._hasTime === true;
+                const bHasTime = b._hasTime === true;
+                if (aHasTime && !bHasTime) return -1;
+                if (!aHasTime && bHasTime) return 1;
+                return (a.start ?? 0) - (b.start ?? 0);
+              }}
               weekends={true}
               firstDay={1}
               slotMinTime="08:00:00"
@@ -1921,198 +2587,266 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Modal de Detalhes do Evento */}
       {selectedEvent && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4"
           onClick={() => setSelectedEvent(null)}
         >
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" aria-hidden="true" />
           <div
-            className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10"
+            className="relative w-full sm:max-w-lg max-h-[96vh] sm:max-h-[90vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Faixa de cor por tipo */}
+            {(() => {
+              const t = selectedEvent.extendedProps.type as string;
+              const barColor =
+                t === 'deadline'    ? 'from-indigo-400 to-indigo-500' :
+                t === 'hearing'     ? 'from-red-400 to-red-500' :
+                t === 'requirement' ? 'from-orange-400 to-amber-500' :
+                t === 'payment'     ? 'from-sky-400 to-sky-500' :
+                t === 'meeting'     ? 'from-emerald-400 to-emerald-500' :
+                t === 'pericia'     ? 'from-purple-400 to-purple-500' :
+                t === 'personal'    ? 'from-fuchsia-400 to-fuchsia-500' :
+                'from-orange-400 to-amber-500';
+              return <div className={`h-1 w-full bg-gradient-to-r ${barColor} flex-shrink-0`} />;
+            })()}
+
             {/* Header */}
-            <div className="border-b border-slate-200 px-5 py-4 bg-white">
-              <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 bg-white">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <CalendarIcon className="w-4 h-4 text-amber-500" />
+                </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-lg font-semibold text-slate-900">{selectedEvent.title}</h2>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    {selectedEventModuleLabel && (
-                      <span className="inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-                        {selectedEventModuleLabel}
-                      </span>
-                    )}
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Compromisso</p>
+                  <h2 className="text-base font-bold text-slate-800 leading-snug break-words">{selectedEvent.title}</h2>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     {selectedEvent.extendedProps.type && (
-                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                        selectedEvent.extendedProps.type === 'deadline'    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                        selectedEvent.extendedProps.type === 'hearing'     ? 'bg-red-50 text-red-700 border-red-200' :
+                        selectedEvent.extendedProps.type === 'requirement' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                        selectedEvent.extendedProps.type === 'payment'     ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                        selectedEvent.extendedProps.type === 'meeting'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        selectedEvent.extendedProps.type === 'pericia'     ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                        selectedEvent.extendedProps.type === 'personal'    ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' :
+                        'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
                         {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
                       </span>
                     )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEvent(null)}
-                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                  aria-label="Fechar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="max-h-[60vh] space-y-4 overflow-y-auto bg-white px-5 py-4">
-              {/* Data e Hora */}
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
-                  <CalendarIcon className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Data e hora</p>
-                  <p className="text-sm font-medium text-slate-900">
-                    {selectedEvent.start
-                      ? formatDateTime(new Date(selectedEvent.start).toISOString())
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Prioridade e Status */}
-              {(selectedEvent.extendedProps.priority || selectedEvent.extendedProps.status) && (
-                <div className="flex items-center gap-4">
-                  {selectedEvent.extendedProps.priority && (
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${
-                        selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
-                        selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
-                        'bg-slate-400'
-                      }`} />
-                      <span className="text-sm capitalize text-slate-600">{selectedEvent.extendedProps.priority}</span>
-                    </div>
-                  )}
-                  {selectedEvent.extendedProps.status && (
-                    <span className="rounded-md bg-slate-100 px-2 py-1 text-xs capitalize text-slate-600">
-                      {selectedEvent.extendedProps.status}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Cliente */}
-              {selectedEvent.extendedProps.clientName && (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
-                    <User className="w-4 h-4 text-violet-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-slate-500">Cliente</p>
-                    <p className="truncate text-sm font-medium text-slate-900">{selectedEvent.extendedProps.clientName}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Telefone do Cliente */}
-              {selectedEvent.extendedProps.clientPhone && (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-                    <Phone className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Telefone</p>
-                    <p className="text-sm font-medium text-slate-900">{selectedEvent.extendedProps.clientPhone}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Correspondente Vinculado */}
-              {selectedEventRepresentativeAppointments.length > 0 && (
-                <div className="pt-2">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Correspondente</p>
-                  {selectedEventRepresentativeAppointments.map((appointment) => {
-                    const representative = appointment.representative;
-                    const whatsappUrl = buildWhatsAppUrl(representative?.phone);
-                    const representativeName = representative?.full_name || 'Não encontrado';
-
-                    return (
-                      <div key={appointment.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                              {representativeName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-slate-900">{representativeName}</p>
-                              <p className="text-xs text-slate-500">{representative?.oab_number || 'OAB não informada'}</p>
-                            </div>
-                          </div>
-                          {whatsappUrl ? (
-                            <a
-                              href={whatsappUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              WhatsApp
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400">Sem telefone</span>
-                          )}
-                        </div>
-                        {appointment.diligence_location && (
-                          <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span className="truncate">{appointment.diligence_location}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Descrição */}
-              {selectedEvent.extendedProps.description && (
-                <div className="pt-2">
-                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Descrição</p>
-                  <p className="whitespace-pre-wrap text-sm text-slate-700">{selectedEvent.extendedProps.description}</p>
-                </div>
-              )}
-
-              {/* Detalhes extras */}
-              {selectedEventDataDetails.length > 0 && (
-                <div className="pt-2 space-y-1">
-                  {selectedEventDataDetails.map((detail) => (
-                    <div key={`${detail.label}-${detail.value}`} className="flex justify-between gap-3 text-xs">
-                      <span className="shrink-0 text-slate-500">{detail.label}</span>
-                      <span className="text-right">
-                        <span className="block font-medium text-slate-700">{detail.value}</span>
-                        {detail.secondaryValue && (
-                          <span className="mt-0.5 block text-[11px] text-slate-500">{detail.secondaryValue}</span>
-                        )}
+                    {selectedEvent.extendedProps.status && (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                        selectedEvent.extendedProps.status === 'concluido' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        selectedEvent.extendedProps.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200' :
+                        'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {selectedEvent.extendedProps.status === 'concluido' ? 'Concluído' :
+                         selectedEvent.extendedProps.status === 'cancelado' ? 'Cancelado' : 'Pendente'}
                       </span>
-                    </div>
-                  ))}
+                    )}
+                    {selectedEventModuleLabel && (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                        {selectedEventModuleLabel}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+              </div>
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="px-3 py-1.5 text-sm text-slate-600 transition hover:text-slate-900"
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0"
+                aria-label="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto bg-white">
+              <div className="px-5 py-4 space-y-3">
+
+                {/* Data e Hora */}
+                <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                    <CalendarIcon className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Data e hora</p>
+                    <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                      {selectedEvent.start ? formatDateTime(new Date(selectedEvent.start).toISOString()) : '—'}
+                    </p>
+                    {selectedEvent.end && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        até {formatDateTime(new Date(selectedEvent.end).toISOString())}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prioridade */}
+                {selectedEvent.extendedProps.priority && (
+                  <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+                    <span className={`w-3 h-3 rounded-full shrink-0 ${
+                      selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
+                      selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
+                      'bg-slate-400'
+                    }`} />
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Prioridade</p>
+                      <p className="text-sm font-semibold text-slate-800 mt-0.5 capitalize">{selectedEvent.extendedProps.priority}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cliente + Telefone */}
+                {selectedEvent.extendedProps.clientName && (
+                  <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                      <User className="w-4 h-4 text-violet-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cliente</p>
+                      {selectedEvent.extendedProps.clientId ? (
+                        <button
+                          type="button"
+                          onClick={() => handleNavigateToModule('clientes', selectedEvent.extendedProps.clientId)}
+                          className="text-sm font-semibold text-amber-600 hover:text-amber-700 hover:underline mt-0.5 truncate text-left transition"
+                        >
+                          {selectedEvent.extendedProps.clientName}
+                        </button>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800 mt-0.5 truncate">{selectedEvent.extendedProps.clientName}</p>
+                      )}
+                      {selectedEvent.extendedProps.clientPhone && (
+                        <p className="text-xs text-slate-500 mt-0.5">{selectedEvent.extendedProps.clientPhone}</p>
+                      )}
+                    </div>
+                    {selectedEvent.extendedProps.clientPhone && (
+                      <a
+                        href={`tel:${selectedEvent.extendedProps.clientPhone}`}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0"
+                        title="Ligar"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* Correspondente */}
+                {selectedEventRepresentativeAppointments.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">Correspondente</p>
+                    {selectedEventRepresentativeAppointments.map((appointment) => {
+                      const representative = appointment.representative;
+                      const whatsappUrl = buildWhatsAppUrl(representative?.phone);
+                      const representativeName = representative?.full_name || 'Não encontrado';
+                      return (
+                        <div key={appointment.id} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                                {representativeName.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-800">{representativeName}</p>
+                                <p className="text-xs text-slate-500">{representative?.oab_number || 'OAB não informada'}</p>
+                              </div>
+                            </div>
+                            {whatsappUrl ? (
+                              <a
+                                href={whatsappUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition shrink-0"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                WhatsApp
+                              </a>
+                            ) : (
+                              <span className="text-xs text-slate-400">Sem telefone</span>
+                            )}
+                          </div>
+                          {appointment.diligence_location && (
+                            <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                              <MapPin className="w-3.5 h-3.5" />
+                              <span className="truncate">{appointment.diligence_location}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Descrição */}
+                {selectedEvent.extendedProps.description && (
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Descrição</p>
+                    <p className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+                      {(selectedEvent.extendedProps.description as string)
+                        .replace(/\[agreement_id:[^\]]+\]/g, '')
+                        .replace(/\[installment:\d+\]/g, '')
+                        .replace(/\[inadimplencia\]/g, '')
+                        .split('\n')
+                        .filter(line => !/Valor:\s*R\$\s*(NaN|undefined|null|--)/.test(line))
+                        .join('\n')
+                        .trim()}
+                    </p>
+                  </div>
+                )}
+
+                {/* Botão Registrar Pagamento — visível apenas em eventos do tipo payment com parcela vinculada */}
+                {(() => {
+                  const desc = selectedEvent.extendedProps.description as string | undefined;
+                  if (!desc) return null;
+                  const agreementMatch = desc.match(/\[agreement_id:([^\]]+)\]/);
+                  const installmentMatch = desc.match(/\[installment:(\d+)\]/);
+                  if (!agreementMatch || !installmentMatch) return null;
+                  const agreementId = agreementMatch[1];
+                  const instNum = parseInt(installmentMatch[1], 10);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateToModule('financeiro', agreementId, { installmentNumber: instNum })}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      Registrar Pagamento
+                    </button>
+                  );
+                })()}
+
+                {/* Detalhes extras */}
+                {selectedEventDataDetails.length > 0 && (
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Detalhes</p>
+                    {selectedEventDataDetails.map((detail) => (
+                      <div key={`${detail.label}-${detail.value}`} className="flex justify-between gap-3">
+                        <span className="shrink-0 text-xs text-slate-500">{detail.label}</span>
+                        <span className="text-right">
+                          <span className="block text-xs font-semibold text-slate-700">{detail.value}</span>
+                          {detail.secondaryValue && (
+                            <span className="mt-0.5 block text-[11px] text-slate-500">{detail.secondaryValue}</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition"
               >
                 Fechar
               </button>
-              {showEditButton && (
-                <button
-                  type="button"
-                  onClick={handleEditSelectedEvent}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition"
-                >
-                  {editButtonLabel}
-                </button>
-              )}
               {canCreateLinkedEvent && (
                 <button
                   type="button"
@@ -2129,9 +2863,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     });
                     setSelectedEvent(null);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition"
                 >
-                  Criar
+                  <Plus className="w-3.5 h-3.5" />
+                  Criar na agenda
                 </button>
               )}
               {selectedEvent.extendedProps.moduleLink && (
@@ -2141,9 +2876,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     selectedEvent.extendedProps.moduleLink,
                     selectedEvent.extendedProps.entityId
                   )}
-                  className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition"
                 >
-                  Ir para Módulo
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  Ir para módulo
+                </button>
+              )}
+              {showEditButton && (
+                <button
+                  type="button"
+                  onClick={handleEditSelectedEvent}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  {editButtonLabel}
                 </button>
               )}
             </div>
@@ -2153,139 +2899,486 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
       {/* Modal de Criação/Edição de Compromisso */}
       {isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4">
           <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={handleCloseCreateModal}
             aria-hidden="true"
           />
-          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                  Formulário
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                  {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
-                </h2>
+          <div className="relative w-full sm:max-w-2xl max-h-[96vh] sm:max-h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Faixa laranja */}
+            <div className="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-500 flex-shrink-0" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <CalendarIcon className="w-4 h-4 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Agenda</p>
+                  <h2 className="text-base font-bold text-slate-800 leading-tight">
+                    {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
+                  </h2>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={handleCloseCreateModal}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                aria-label="Fechar"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-4 sm:p-8 space-y-3 sm:space-y-4">
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Título *</label>
-                <input
-                  value={newEventForm.title}
-                  onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                  placeholder="Ex: Reunião com cliente"
-                  autoFocus
-                />
-              </div>
+            {/* Body — 2 colunas */}
+            <div className="flex-1 overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-5 px-6 py-5">
 
-              <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                {/* Título — coluna inteira */}
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    Título <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    value={newEventForm.title}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    placeholder="Ex: Reunião com cliente"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Data */}
                 <div>
-                  <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Data *</label>
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    Data <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="date"
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
-                    className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                     required
                   />
                 </div>
+
+                {/* Horário */}
                 <div>
-                  <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Horário</label>
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    Horário
+                  </label>
                   <input
                     type="time"
                     value={newEventForm.time}
                     onChange={(e) => setNewEventForm({ ...newEventForm, time: e.target.value })}
-                    className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Tipo de Compromisso</label>
-                <select
-                  value={newEventForm.type}
-                  onChange={(e) => setNewEventForm({ ...newEventForm, type: e.target.value as EventType })}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                >
-                  <option value="meeting">Reunião</option>
-                  <option value="deadline">Prazo</option>
-                  <option value="hearing">Audiência</option>
-                  <option value="pericia">Perícia</option>
-                  <option value="payment">Recebimento</option>
-                  <option value="requirement">Exigência</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Cliente (Opcional)</label>
-                <ClientSearchSelect
-                  value={newEventForm.client_id}
-                  initialClientName={createFormInitialClientName}
-                  onChange={(clientId, clientName) => {
-                    setNewEventForm((prev) => ({ ...prev, client_id: clientId }));
-                    setCreateFormInitialClientName(clientName);
-                  }}
-                  label=""
-                  placeholder="Buscar cliente..."
-                  required={false}
-                  allowCreate={true}
-                />
-                {linkedClient && (
-                  <div className="mt-2 sm:mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-600 flex flex-col gap-0.5 sm:gap-1">
-                    <div className="font-semibold text-slate-800">{linkedClient.full_name}</div>
-                    {linkedClient.mobile || linkedClient.phone ? (
-                      <span>Telefone: {linkedClient.mobile || linkedClient.phone}</span>
-                    ) : (
-                      <span>Telefone não informado.</span>
-                    )}
-                    {linkedClient.email && <span>Email: {linkedClient.email}</span>}
+                {/* Tipo — coluna inteira */}
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    Tipo
+                  </label>
+                  <div className="grid grid-cols-7 gap-2">
+                    {([
+                      { value: 'meeting',     label: 'Reunião',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400 hover:text-emerald-600' },
+                      { value: 'deadline',    label: 'Prazo',       active: 'bg-indigo-500 text-white border-indigo-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400 hover:text-indigo-600' },
+                      { value: 'hearing',     label: 'Audiência',   active: 'bg-red-500 text-white border-red-500',           idle: 'bg-white text-slate-600 border-slate-200 hover:border-red-400 hover:text-red-600' },
+                      { value: 'pericia',     label: 'Perícia',     active: 'bg-purple-500 text-white border-purple-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-purple-400 hover:text-purple-600' },
+                      { value: 'payment',     label: 'Recebimento', active: 'bg-sky-500 text-white border-sky-500',           idle: 'bg-white text-slate-600 border-slate-200 hover:border-sky-400 hover:text-sky-600' },
+                      { value: 'requirement', label: 'Exigência',   active: 'bg-orange-500 text-white border-orange-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-orange-400 hover:text-orange-600' },
+                      { value: 'personal',    label: 'Pessoal',     active: 'bg-fuchsia-500 text-white border-fuchsia-500',   idle: 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-400 hover:text-fuchsia-600' },
+                    ] as const).map(({ value, label, active, idle }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setNewEventForm(prev => ({ ...prev, type: value }))}
+                        className={`py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                          newEventForm.type === value ? active : idle
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Descrição</label>
-                <textarea
-                  value={newEventForm.description}
-                  onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all"
-                  placeholder="Detalhes adicionais sobre o compromisso"
-                />
-              </div>
+                {/* Cliente + Responsável — linha dividida */}
+                <div className="col-span-2 grid grid-cols-2 gap-5 pt-1 border-t border-slate-100">
+
+                  {/* Cliente — campo unificado (livre ou vinculado) */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                      Cliente <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                    </label>
+                    <div ref={clientSearchRef} className="relative">
+                      {newEventForm.client_id ? (
+                        /* Cliente cadastrado vinculado — badge verde */
+                        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 border border-emerald-300 rounded-xl">
+                          <Link className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="flex-1 text-sm font-semibold text-emerald-800 truncate">
+                            {linkedClient?.full_name || createFormInitialClientName}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
+                            Cliente
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewEventForm(prev => ({ ...prev, client_id: '', client_name: '' }));
+                              setCreateFormInitialClientName('');
+                              setClientSearchTerm('');
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-emerald-500 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        /* Input livre com busca */
+                        <>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={clientSearchTerm || newEventForm.client_name}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setClientSearchTerm(v);
+                                setNewEventForm(prev => ({ ...prev, client_name: v }));
+                                setClientSearchOpen(true);
+                              }}
+                              onFocus={() => { if (clientSearchTerm.trim()) setClientSearchOpen(true); }}
+                              placeholder="Nome ou buscar cliente cadastrado..."
+                              className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                            />
+                          </div>
+                          {clientSearchOpen && (clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 1) && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                              {clientSearchResults.length > 0 && (
+                                <>
+                                  <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes cadastrados</p>
+                                  {clientSearchResults.map(c => (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        setNewEventForm(prev => ({ ...prev, client_id: c.id, client_name: '' }));
+                                        setCreateFormInitialClientName(c.full_name);
+                                        setClientSearchTerm('');
+                                        setClientSearchOpen(false);
+                                      }}
+                                      className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-amber-50 text-left transition"
+                                    >
+                                      <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
+                                        {c.full_name?.charAt(0)?.toUpperCase() || '?'}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-medium text-slate-800 truncate">{c.full_name}</p>
+                                        {c.cpf_cnpj && <p className="text-xs text-slate-400">{c.cpf_cnpj}</p>}
+                                      </div>
+                                      <Link className="w-3 h-3 text-emerald-500 ml-auto shrink-0" />
+                                    </button>
+                                  ))}
+                                  <div className="border-t border-slate-100" />
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setClientSearchOpen(false);
+                                  setIsClientFormOpen(true);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-emerald-50 text-left transition text-emerald-700"
+                              >
+                                <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                  <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                                </div>
+                                <span className="text-sm font-medium">Cadastrar novo cliente</span>
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Responsável — oculto para eventos pessoais */}
+                  {newEventForm.type !== 'personal' && <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        Responsável <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                      </label>
+                      {newEventForm.responsible_id && (
+                        <span className="text-[11px] font-semibold text-orange-500 truncate max-w-[120px]">
+                          {(members.find(m => m.id === newEventForm.responsible_id || m.user_id === newEventForm.responsible_id)?.name || '').split(' ')[0]}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2.5 min-h-[46px] items-center">
+                      {[...members].sort((a, b) => {
+                        const rank = (m: Profile) => {
+                          const r = (m.role || '').toLowerCase();
+                          if (r.includes('admin')) return 0;
+                          if (r.includes('advogad')) return 1;
+                          return 2;
+                        };
+                        return rank(a) - rank(b);
+                      }).map((member) => {
+                        const memberId = member.user_id || member.id;
+                        const isSelected = newEventForm.responsible_id === memberId;
+                        const hue = getMemberHue(member.name || '');
+                        const initials = getMemberInitials(member.name || '');
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            title={member.name}
+                            onClick={() => setNewEventForm(prev => ({
+                              ...prev,
+                              responsible_id: isSelected ? '' : memberId,
+                            }))}
+                            className="relative group transition-transform hover:z-10 hover:scale-110 focus:outline-none"
+                          >
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
+                                isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
+                              }`}
+                              style={{
+                                background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '93%'})`,
+                                color: `hsl(${hue}, 45%, 30%)`,
+                              }}
+                            >
+                              {initials}
+                              {(member as any).avatar_url && (
+                                <img
+                                  src={(member as any).avatar_url}
+                                  alt={member.name}
+                                  loading="eager"
+                                  decoding="async"
+                                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                  className={`absolute inset-0 w-full h-full rounded-full object-cover transition-all ${
+                                    isSelected ? '' : 'grayscale-[40%] group-hover:grayscale-0'
+                                  }`}
+                                />
+                              )}
+                            </div>
+                            {isSelected && (
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
+                                <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {members.length === 0 && (
+                        <p className="text-xs text-slate-400 italic">Nenhum membro.</p>
+                      )}
+                    </div>
+                  </div>}
+
+                </div>
+
+                {/* Privacidade / Compartilhamento — coluna inteira */}
+                <div className="col-span-2 border-t border-slate-100 pt-4">
+                  {newEventForm.type === 'personal' ? (
+                    /* Pessoal: sempre privado, pergunta só quem compartilhar */
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-5 h-5 rounded-full bg-fuchsia-100 flex items-center justify-center shrink-0">
+                          <Users className="w-3 h-3 text-fuchsia-600" />
+                        </div>
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                          Compartilhar com alguém?
+                        </p>
+                        {newEventForm.shared_with_ids.length > 0 && (
+                          <span className="text-[10px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded-full">
+                            {newEventForm.shared_with_ids.length} pessoa(s)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[...members]
+                          .filter(m => (m.user_id || m.id) !== (user?.id))
+                          .sort((a, b) => {
+                            const rank = (m: Profile) => {
+                              const r = (m.role || '').toLowerCase();
+                              if (r.includes('admin')) return 0;
+                              if (r.includes('advogad')) return 1;
+                              return 2;
+                            };
+                            return rank(a) - rank(b);
+                          })
+                          .map(member => {
+                            const memberId = member.user_id || member.id;
+                            const isShared = newEventForm.shared_with_ids.includes(memberId);
+                            const hue = getMemberHue(member.name || '');
+                            const initials = getMemberInitials(member.name || '');
+                            return (
+                              <button
+                                key={member.id}
+                                type="button"
+                                title={member.name}
+                                onClick={() => setNewEventForm(prev => ({
+                                  ...prev,
+                                  shared_with_ids: isShared
+                                    ? prev.shared_with_ids.filter(id => id !== memberId)
+                                    : [...prev.shared_with_ids, memberId],
+                                }))}
+                                className="relative group transition-transform hover:scale-110 focus:outline-none"
+                              >
+                                <div
+                                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
+                                    isShared ? 'ring-[3px] ring-fuchsia-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'
+                                  }`}
+                                  style={{
+                                    background: `hsl(${hue}, 50%, ${isShared ? '85%' : '93%'})`,
+                                    color: `hsl(${hue}, 45%, 30%)`,
+                                  }}
+                                >
+                                  {initials}
+                                  {(member as any).avatar_url && (
+                                    <img src={(member as any).avatar_url} alt={member.name} loading="eager" decoding="async"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                      className="absolute inset-0 w-full h-full rounded-full object-cover"
+                                    />
+                                  )}
+                                </div>
+                                {isShared && (
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-fuchsia-500 border-2 border-white flex items-center justify-center">
+                                    <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Outros tipos: toggle público/privado */
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Visibilidade</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {newEventForm.is_private
+                              ? newEventForm.shared_with_ids.length > 0
+                                ? `Privado · visível para ${newEventForm.shared_with_ids.length} pessoa(s)`
+                                : 'Privado · só você'
+                              : 'Público · todos do escritório'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setNewEventForm(prev => ({ ...prev, is_private: !prev.is_private, shared_with_ids: [] }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${newEventForm.is_private ? 'bg-amber-500' : 'bg-slate-200'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${newEventForm.is_private ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                      {newEventForm.is_private && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Dar visibilidade a</p>
+                          <div className="flex flex-wrap gap-2">
+                            {[...members]
+                              .filter(m => (m.user_id || m.id) !== (user?.id))
+                              .sort((a, b) => {
+                                const rank = (m: Profile) => {
+                                  const r = (m.role || '').toLowerCase();
+                                  if (r.includes('admin')) return 0;
+                                  if (r.includes('advogad')) return 1;
+                                  return 2;
+                                };
+                                return rank(a) - rank(b);
+                              })
+                              .map(member => {
+                                const memberId = member.user_id || member.id;
+                                const isShared = newEventForm.shared_with_ids.includes(memberId);
+                                const hue = getMemberHue(member.name || '');
+                                const initials = getMemberInitials(member.name || '');
+                                return (
+                                  <button
+                                    key={member.id}
+                                    type="button"
+                                    title={member.name}
+                                    onClick={() => setNewEventForm(prev => ({
+                                      ...prev,
+                                      shared_with_ids: isShared
+                                        ? prev.shared_with_ids.filter(id => id !== memberId)
+                                        : [...prev.shared_with_ids, memberId],
+                                    }))}
+                                    className="relative group transition-transform hover:scale-110 focus:outline-none"
+                                  >
+                                    <div
+                                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
+                                        isShared ? 'ring-[3px] ring-amber-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'
+                                      }`}
+                                      style={{ background: `hsl(${hue}, 50%, ${isShared ? '85%' : '93%'})`, color: `hsl(${hue}, 45%, 30%)` }}
+                                    >
+                                      {initials}
+                                      {(member as any).avatar_url && (
+                                        <img src={(member as any).avatar_url} alt={member.name} loading="eager" decoding="async"
+                                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                          className="absolute inset-0 w-full h-full rounded-full object-cover"
+                                        />
+                                      )}
+                                    </div>
+                                    {isShared && (
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white flex items-center justify-center">
+                                        <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
+                                      </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Observações — coluna inteira */}
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    Observações <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                  </label>
+                  <textarea
+                    value={newEventForm.description}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
+                    rows={2}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
+                    placeholder="Anotações, detalhes adicionais..."
+                  />
+                </div>
+
+              </div>{/* fim grid */}
             </div>
 
-            <div className="flex-shrink-0 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 sm:px-6 py-3 sm:py-4">
-              <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
+            {/* Footer */}
+            <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50 px-5 py-4 flex items-center justify-between gap-3">
+              <div>
                 {editingEventId && (
                   <button
                     type="button"
                     onClick={handleDeleteEvent}
-                    className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
+                    className="px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
                     disabled={savingEvent}
                   >
                     Excluir
                   </button>
                 )}
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleCloseCreateModal}
-                  className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition"
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
                   disabled={savingEvent}
                 >
                   Cancelar
@@ -2293,13 +3386,59 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={handleSubmitEvent}
-                  className="inline-flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60 shadow-sm"
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition disabled:opacity-60 shadow-sm shadow-orange-200"
                   disabled={savingEvent}
                 >
-                  {savingEvent && <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />}
-                  {editingEventId ? 'Salvar' : 'Criar'}
+                  {savingEvent && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingEventId ? 'Salvar alterações' : 'Criar compromisso'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Modal de cadastro de novo cliente */}
+      {isClientFormOpen && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsClientFormOpen(false)} />
+          <div className="relative w-full sm:max-w-4xl max-h-[96vh] sm:max-h-[92vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Faixa verde — identidade de cliente */}
+            <div className="h-1 w-full bg-gradient-to-r from-emerald-400 to-teal-500 flex-shrink-0" />
+            {/* Header premium */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                  <User className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes</p>
+                  <h2 className="text-base font-bold text-slate-800 leading-tight">Novo Cliente</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClientFormOpen(false)}
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Corpo do ClientForm */}
+            <div className="flex-1 overflow-y-auto">
+              <ClientForm
+                client={null}
+                prefill={clientSearchTerm.trim() ? { full_name: clientSearchTerm.trim() } : null}
+                variant="modal"
+                onBack={() => setIsClientFormOpen(false)}
+                onSave={(savedClient) => {
+                  setClients(prev => [savedClient, ...prev]);
+                  setNewEventForm(prev => ({ ...prev, client_id: savedClient.id, client_name: '' }));
+                  setCreateFormInitialClientName(savedClient.full_name);
+                  setClientSearchTerm('');
+                  setIsClientFormOpen(false);
+                }}
+              />
             </div>
           </div>
         </div>
@@ -2437,26 +3576,39 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .dark .calendar-container .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
           color: #60a5fa;
         }
+        .calendar-container .fc-daygrid-event-harness {
+          margin-bottom: 3px;
+        }
         .calendar-chip {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
-          border-radius: 4px;
-          padding: 0.4rem 0.5rem;
+          gap: 0.4rem;
+          border-radius: 6px;
+          padding: 0.3rem 0.5rem 0.3rem 0.45rem;
           font-size: 0.7rem;
           font-weight: 500;
           width: 100%;
           box-sizing: border-box;
-          border-left: 4px solid;
-          transition: opacity 0.15s;
+          border-left: 3px solid;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+          transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
         .calendar-chip:hover {
-          opacity: 0.85;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.13);
         }
         .calendar-chip__time {
-          font-size: 0.65rem;
+          font-size: 0.62rem;
           font-weight: 700;
-          margin-right: 0.25rem;
+          letter-spacing: 0.01em;
+          font-variant-numeric: tabular-nums;
+          padding: 0.05rem 0.3rem;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.55);
+          flex-shrink: 0;
+        }
+        .dark .calendar-chip__time {
+          background: rgba(255, 255, 255, 0.12);
         }
         .calendar-chip__title {
           flex: 1;
@@ -2464,6 +3616,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          font-weight: 600;
         }
         .calendar-chip--deadline {
           background: #e0e7ff;
@@ -2514,6 +3667,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           background: #ffedd5;
           color: #c2410c;
           border-color: #f97316;
+        }
+        .calendar-chip--personal {
+          background: #fae8ff;
+          color: #a21caf;
+          border-color: #d946ef;
         }
 
         /* Dark mode styles for calendar chips */
@@ -2567,6 +3725,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           color: #fed7aa;
           border-color: #f97316;
         }
+        .dark .calendar-chip--personal {
+          background: #4a044e;
+          color: #f0abfc;
+          border-color: #d946ef;
+        }
         .calendar-container .fc-list-event-title {
           font-weight: 600;
         }
@@ -2615,6 +3778,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         }
         .calendar-legend-chip--meeting {
           background: linear-gradient(135deg, #34d399, #059669);
+        }
+        .calendar-legend-chip--personal {
+          background: linear-gradient(135deg, #e879f9, #a21caf);
         }
         .export-filter {
           display: inline-flex;

@@ -46,6 +46,7 @@ import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
+import { profileService, type Profile } from '../services/profile.service';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import { ClientSearchSelect } from './ClientSearchSelect';
@@ -64,10 +65,11 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 interface FinancialModuleProps {
   entityId?: string;
   mode?: string;
+  installmentNumber?: number;
   onParamConsumed?: () => void;
 }
 
-const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onParamConsumed }) => {
+const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, installmentNumber, onParamConsumed }) => {
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
@@ -75,6 +77,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const [stats, setStats] = useState<FinancialStats | null>(null);
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [calendarResponsibleId, setCalendarResponsibleId] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
@@ -113,6 +117,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   };
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
+  const [isBulkPaymentOpen, setIsBulkPaymentOpen] = useState(false);
+  const [bulkPaymentData, setBulkPaymentData] = useState({ paymentDate: today, paymentMethod: 'pix' as 'dinheiro' | 'pix' | 'transferencia' | 'cheque' | 'cartao_credito' | 'cartao_debito' });
+  const [bulkPaymentLoading, setBulkPaymentLoading] = useState(false);
   const [paymentData, setPaymentData] = useState({
     paymentDate: today,
     paymentMethod: 'pix' as 'dinheiro' | 'pix' | 'transferencia' | 'cheque' | 'cartao_credito' | 'cartao_debito',
@@ -265,6 +272,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   };
 
   const focusAgreementConsumedRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    profileService.listMembers().then(setMembers).catch(() => {});
+  }, []);
 
   const loadData = useCallback(async (month?: string) => {
     try {
@@ -750,6 +761,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     setIsModalOpen(false);
     setFormError(null);
     setFormLoading(false);
+    setCalendarResponsibleId('');
     setFormData((prev) => ({
       ...prev,
       clientId: '',
@@ -803,6 +815,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   const validateForm = () => {
     if (!formData.clientId) return 'Selecione um cliente';
     if (!formData.title.trim()) return 'Informe o título do acordo';
+    if (!calendarResponsibleId) return 'Selecione o responsável pelos compromissos da agenda';
     if (!formData.totalValue || parseCurrencyToNumber(formData.totalValue) <= 0) return 'Informe um valor total válido';
     if (formData.feeType === 'percentage') {
       if (!formData.feePercentage || Number(formData.feePercentage) <= 0) return 'Informe o percentual de honorários';
@@ -858,7 +871,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
       const schedule = buildScheduleFromForm();
       if (schedule.length) {
-        await createCalendarEventsForInstallments(createdAgreement, schedule);
+        await createCalendarEventsForInstallments(createdAgreement, schedule, calendarResponsibleId || null);
       }
 
       toast.success('Acordo criado', 'Os dados foram registrados com sucesso');
@@ -899,7 +912,17 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
     focusAgreementConsumedRef.current = entityId;
     const agreement = agreements.find((a) => a.id === entityId) || null;
     if (agreement) {
-      void handleOpenDetails(agreement);
+      if (installmentNumber) {
+        // Abre detalhes e depois o modal de pagamento da parcela específica
+        handleOpenDetails(agreement).then(() => {
+          financialService.listInstallments(agreement.id).then((insts) => {
+            const inst = insts.find((i) => i.installment_number === installmentNumber && i.status !== 'pago');
+            if (inst) handleOpenPaymentModal(inst);
+          }).catch(() => {});
+        });
+      } else {
+        void handleOpenDetails(agreement);
+      }
     }
 
     if (onParamConsumed) {
@@ -928,6 +951,32 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
       paidValue: '',
       notes: '',
     });
+  };
+
+  const handleBulkPayment = async () => {
+    if (!selectedAgreement) return;
+    const pending = installments.filter(i => i.status !== 'pago' && i.status !== 'cancelado');
+    if (pending.length === 0) return;
+    setBulkPaymentLoading(true);
+    try {
+      await Promise.all(
+        pending.map(inst =>
+          financialService.payInstallment(inst.id, {
+            payment_date: bulkPaymentData.paymentDate,
+            payment_method: bulkPaymentData.paymentMethod,
+            paid_value: inst.value,
+          })
+        )
+      );
+      toast.success('Quitação realizada', `${pending.length} parcela${pending.length > 1 ? 's' : ''} quitada${pending.length > 1 ? 's' : ''} com sucesso`);
+      setIsBulkPaymentOpen(false);
+      const updatedInstallments = await financialService.listInstallments(selectedAgreement.id);
+      setInstallments(updatedInstallments);
+    } catch (err: any) {
+      toast.error('Erro', err.message || 'Falha ao quitar parcelas');
+    } finally {
+      setBulkPaymentLoading(false);
+    }
   };
 
   const handleConfirmPayment = async () => {
@@ -2267,7 +2316,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
 
   const createCalendarEventsForInstallments = async (
     agreement: Agreement,
-    schedule: { number: number; dueDate: string; value: number }[]
+    schedule: { number: number; dueDate: string; value: number }[],
+    responsibleUserId?: string | null
   ) => {
     if (!schedule.length) return;
     const clientName = getClientName(agreement.client_id);
@@ -2277,12 +2327,13 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         schedule.map((item) =>
           calendarService.createEvent({
             title: `Recebimento ${clientName} - Parcela ${item.number}`,
-            description: `Acordo: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
+            description: `Acordo: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
             event_type: 'payment',
             start_at: `${item.dueDate}T00:00:00`,
             notify_minutes_before: 60,
             client_id: agreement.client_id,
             process_id: agreement.process_id ?? undefined,
+            user_id: responsibleUserId || null,
           })
         )
       );
@@ -2394,7 +2445,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
             return sum + (i.paid_value ?? i.value ?? 0) * feeRatio;
           }, 0)
       : 0;
-    const amount = options?.totalPaid ?? (installment ? actualPaid : (totalPaidFees || agreement.fee_value));
+    if (!installment && !options?.totalPaid && totalPaidFees === 0) {
+      toast.info('Recibo', 'Nenhuma parcela foi paga. Não há valor recebido para gerar o recibo.');
+      return;
+    }
+    const amount = options?.totalPaid ?? (installment ? actualPaid : totalPaidFees);
     const amountInWords = numberToWords(amount || 0);
     const receiptNumber = `REC-${issueDate.getFullYear()}-${String(issueDate.getMonth() + 1).padStart(2, '0')}-${String(issueDate.getDate()).padStart(2, '0')}-${String(issueDate.getHours()).padStart(2, '0')}${String(issueDate.getMinutes()).padStart(2, '0')}${String(issueDate.getSeconds()).padStart(2, '0')}`;
     
@@ -2439,6 +2494,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
         : `Honorários advocatícios referente ao acordo "${agreement.title}".`);
     
     const serviceDescription = agreement.description || 'Serviços advocatícios prestados conforme contrato de honorários.';
+    const paidInstallmentsAsc = [...paidInstallmentsForAgreement].sort((a, b) => (a.installment_number ?? 0) - (b.installment_number ?? 0));
+    const feeRatio = agreement.total_value > 0 ? agreement.fee_value / agreement.total_value : 1;
 
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -2488,6 +2545,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 .footer-note{font-size:.65rem;color:#999;line-height:1.5}
 .btn-print{display:inline-flex;align-items:center;gap:.4rem;background:#1a2744;color:#fff;border:none;padding:.4rem 1rem;font-size:.72rem;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:.03em}
 .btn-print:hover{background:#243660}
+/* Installments breakdown */
+.inst-section{padding:0 2.5rem 1.25rem}
+.inst-title{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:.6rem}
+.inst-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.inst-table th{font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:#999;font-weight:700;text-align:left;padding:.35rem .5rem;border-bottom:1.5px solid #e0e0e0}
+.inst-table th:last-child,.inst-table td:last-child{text-align:right}
+.inst-table td{padding:.38rem .5rem;border-bottom:1px dotted #ebebeb;color:#1a1a1a;font-variant-numeric:tabular-nums}
+.inst-table tr:last-child td{border-bottom:none}
+.inst-table .inst-num{font-weight:600;color:#1a2744}
+.inst-table .inst-total{font-weight:700;color:#1a2744;border-top:1.5px solid #e0e0e0}
 /* Watermark */
 .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-family:'EB Garamond',Georgia,serif;font-size:5rem;font-weight:700;color:rgba(26,39,68,.04);pointer-events:none;white-space:nowrap;z-index:0;letter-spacing:.1em}
 .content{position:relative;z-index:1}
@@ -2532,6 +2599,36 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       Dou plena, geral e irrevogável quitação pelo valor acima descrito.
     </p>
   </div>
+
+  ${!installment && paidInstallmentsForAgreement.length > 1 ? `
+  <div class="inst-section">
+    <div class="inst-title">Detalhamento das Parcelas Recebidas</div>
+    <table class="inst-table">
+      <thead>
+        <tr>
+          <th>Parcela</th>
+          <th>Vencimento</th>
+          <th>Recebido em</th>
+          <th>Forma</th>
+          <th>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paidInstallmentsAsc.map(i => `
+        <tr>
+          <td class="inst-num">${i.installment_number}/${agreement.installments_count}</td>
+          <td>${i.due_date ? (parseLocalDate(i.due_date) ?? new Date(i.due_date)).toLocaleDateString('pt-BR') : '—'}</td>
+          <td>${i.payment_date ? new Date(i.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+          <td>${i.payment_method ? getPaymentMethodLabel(i.payment_method) : '—'}</td>
+          <td>${formatCurrency((i.paid_value ?? i.value ?? 0) * feeRatio)}</td>
+        </tr>`).join('')}
+        <tr>
+          <td colspan="4" class="inst-total" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em">Total Recebido</td>
+          <td class="inst-total">${formatCurrency(amount)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
 
   <div class="details">
     <div class="details-title">Dados do Pagamento</div>
@@ -4090,7 +4187,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       {isModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseModal} aria-hidden="true" />
-          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-1 w-full bg-emerald-500" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
@@ -4107,7 +4204,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               </button>
             </div>
             <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-5 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
+              <div className="flex flex-col p-4 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
 
                 {formError && (
                   <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
@@ -4116,14 +4213,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 )}
 
                 {/* Seção 1 — Identificação */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
-                  <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
+                  <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100 dark:border-zinc-800">
                     <div className="w-5 h-5 rounded bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
                       <User className="w-3 h-3 text-slate-500 dark:text-slate-400" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Identificação</span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                  <div className="grid grid-cols-4 gap-x-4 gap-y-3">
                   <div className="flex flex-col w-full">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></p>
                     <ClientSearchSelect
@@ -4196,7 +4293,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
                     />
                   </div>
-                  <div className="flex flex-col w-full md:col-span-2">
+                  <div className="flex flex-col w-full col-span-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
                       Objeto / Descrição
                       <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
@@ -4205,21 +4302,61 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
                       value={formData.description}
                       onChange={(e) => handleChange('description', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
                     />
                   </div>
+                  {members.length > 0 && (
+                    <div className="flex flex-col w-full col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Responsável pelos recebimentos na agenda <span className="text-red-400">*</span></p>
+                      <div className="flex flex-wrap gap-2">
+                        {members.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setCalendarResponsibleId(calendarResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                            className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                              calendarResponsibleId === (m.user_id || m.id)
+                                ? 'ring-2 ring-offset-2 ring-amber-500'
+                                : 'ring-1 ring-transparent hover:ring-slate-300'
+                            }`}
+                            title={m.name || m.email || ''}
+                          >
+                            {m.avatar_url ? (
+                              <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                                {(m.name || m.email || '?')[0].toUpperCase()}
+                              </div>
+                            )}
+                            {calendarResponsibleId === (m.user_id || m.id) && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M2 6l3 3 5-5"/>
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      {calendarResponsibleId && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          ✓ {members.find(m => (m.user_id || m.id) === calendarResponsibleId)?.name || 'Responsável selecionado'}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   </div>
                 </div>
 
                 {/* Seção 2 — Financeiro */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
-                  <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 dark:border-zinc-800">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
+                  <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100 dark:border-zinc-800">
                     <div className="w-5 h-5 rounded bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
                       <DollarSign className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Financeiro</span>
                   </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-3">
                   <div className="flex flex-col w-full md:col-span-1">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></p>
                     <div className="relative">
@@ -4487,13 +4624,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       </div>
                     </div>
                   )}
-                  <div className="flex flex-col w-full md:col-span-4">
+                  <div className="flex flex-col w-full col-span-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Notas internas <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span></p>
                     <textarea
                       placeholder="Observações internas sobre este lançamento…"
                       value={formData.notes}
                       onChange={(e) => handleChange('notes', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[4rem] placeholder:text-slate-400 px-4 py-3 text-sm resize-none transition"
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
                     />
                   </div>
                 </div>
@@ -4556,7 +4693,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       </>
                     ) : (
                       <>
-                        <PlusCircle className="w-4 h-4" /> Criar Acordo
+                        <PlusCircle className="w-4 h-4" /> Criar Lançamento
                       </>
                     )}
                   </button>
@@ -4626,6 +4763,84 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           <span className="font-semibold text-slate-900 dark:text-white tabular-nums">{formatCurrency(agreementSummary?.netValue || selectedAgreement.net_value)}</span>
                         </div>
                       )}
+                      {(() => {
+                        const totalReceived = installments.filter(i => i.status === 'pago').reduce((s, i) => s + (i.paid_value ?? i.value ?? 0), 0);
+                        const remaining = (selectedAgreement.total_value ?? 0) - totalReceived;
+                        const pendingInstallments = installments.filter(i => i.status !== 'pago' && i.status !== 'cancelado');
+                        return (
+                          <>
+                            <div className="flex justify-between items-center py-2.5">
+                              <span className="text-slate-500 dark:text-slate-400">Já Recebido</span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(totalReceived)}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2.5">
+                              <span className="text-slate-500 dark:text-slate-400">Faltante</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-semibold tabular-nums ${remaining <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{formatCurrency(Math.max(remaining, 0))}</span>
+                                {pendingInstallments.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setBulkPaymentData({ paymentDate: today, paymentMethod: 'pix' }); setIsBulkPaymentOpen(true); }}
+                                    className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-400 transition"
+                                  >
+                                    Quitar
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {isBulkPaymentOpen && pendingInstallments.length > 0 && (
+                              <div className="mt-1 mb-1 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-3 space-y-3">
+                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                  Quitar {pendingInstallments.length} parcela{pendingInstallments.length > 1 ? 's' : ''} · {formatCurrency(pendingInstallments.reduce((s, i) => s + i.value, 0))}
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Data</label>
+                                    <input
+                                      type="date"
+                                      value={bulkPaymentData.paymentDate}
+                                      onChange={e => setBulkPaymentData(p => ({ ...p, paymentDate: e.target.value }))}
+                                      className="w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white text-xs py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Forma</label>
+                                    <select
+                                      value={bulkPaymentData.paymentMethod}
+                                      onChange={e => setBulkPaymentData(p => ({ ...p, paymentMethod: e.target.value as any }))}
+                                      className="w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white text-xs py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    >
+                                      <option value="pix">PIX</option>
+                                      <option value="transferencia">Transferência</option>
+                                      <option value="dinheiro">Dinheiro</option>
+                                      <option value="cartao_credito">Crédito</option>
+                                      <option value="cartao_debito">Débito</option>
+                                      <option value="cheque">Cheque</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={handleBulkPayment}
+                                    disabled={bulkPaymentLoading}
+                                    className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-60"
+                                  >
+                                    {bulkPaymentLoading ? 'Processando...' : 'Confirmar Quitação'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsBulkPaymentOpen(false)}
+                                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-600 dark:text-slate-300 text-xs font-semibold transition"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                       <div className="flex justify-between items-center py-2.5">
                         <span className="text-slate-500 dark:text-slate-400">Data do Acordo</span>
                         <span className="font-semibold text-slate-900 dark:text-white">{new Date(selectedAgreement.agreement_date).toLocaleDateString('pt-BR')}</span>

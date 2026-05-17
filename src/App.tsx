@@ -1712,9 +1712,12 @@ useEffect(() => {
             {activeModule === 'agenda' && (
               <CalendarModule 
                 userName={profile.name}
-                onNavigateToModule={({ module, entityId }) => {
+                onNavigateToModule={({ module, entityId, extra }) => {
                   if (entityId) {
-                    navigateTo(module as any, { entityId });
+                    const params = module === 'clientes'
+                      ? { mode: 'details', entityId }
+                      : { entityId, ...extra };
+                    navigateTo(module as any, params);
                   } else {
                     navigateTo(module as any);
                   }
@@ -1741,6 +1744,7 @@ useEffect(() => {
               <FinancialModule
                 entityId={financeiroParams?.entityId}
                 mode={financeiroParams?.mode}
+                installmentNumber={financeiroParams?.installmentNumber}
                 onParamConsumed={() => clearModuleParams('financeiro')}
               />
             )}

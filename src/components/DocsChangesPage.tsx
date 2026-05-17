@@ -801,6 +801,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.100',
+    date: '17/05/2026',
+    summary: 'Melhorias gerais — Agenda, Intimações, Processos, Financeiro, Prazos, Requerimentos, Feed, tipos e serviços.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          { type: 'improvement', title: 'Modal de evento enriquecido', description: 'Modal da agenda exibe link clicável para ficha do cliente, descrição limpa (sem tags internas) e botão Registrar Pagamento quando vinculado a parcela.' },
+        ],
+      },
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          { type: 'improvement', title: 'Melhorias no módulo de Intimações', description: 'Ajustes de layout, filtros e exibição de detalhes das comunicações DJEN.' },
+        ],
+      },
+      {
+        moduleId: 'processos',
+        changes: [
+          { type: 'improvement', title: 'Melhorias no módulo de Processos', description: 'Correções e melhorias visuais na listagem e detalhes de processos.' },
+        ],
+      },
+      {
+        moduleId: 'financeiro',
+        changes: [
+          { type: 'improvement', title: 'Melhorias no módulo Financeiro', description: 'Aprimoramentos na exibição de parcelas, acordos e navegação interna.' },
+        ],
+      },
+      {
+        moduleId: 'prazos',
+        changes: [
+          { type: 'improvement', title: 'Melhorias no módulo de Prazos', description: 'Ajustes de filtros, ordenação e exibição de responsáveis.' },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          { type: 'improvement', title: 'Melhorias no módulo de Requerimentos', description: 'Correções de layout e tipagem interna.' },
+        ],
+      },
+      {
+        moduleId: 'geral',
+        changes: [
+          { type: 'improvement', title: 'react-grid-layout instalado', description: 'Dependência adicionada para suporte a widgets arrastáveis e redimensionáveis no dashboard.' },
+          { type: 'fix', title: 'Tipos de calendar e deadline', description: 'Refinamentos nos tipos TypeScript de CalendarEvent e Deadline para maior consistência.' },
+          { type: 'fix', title: 'Profile service', description: 'Correção menor no serviço de perfil.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.099',
     date: '16/05/2026',
     summary: 'Relatório IR com taxa % de honorários por linha, resumo executivo, zebra rows e cabeçalho mensal redesenhado.',

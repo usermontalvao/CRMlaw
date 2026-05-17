@@ -4,7 +4,8 @@ export type CalendarEventType =
   | 'requirement'
   | 'payment'
   | 'meeting'
-  | 'pericia';
+  | 'pericia'
+  | 'personal';
 
 export type CalendarEventStatus = 'pendente' | 'concluido' | 'cancelado';
 
@@ -21,6 +22,10 @@ export interface CalendarEvent {
   requirement_id?: string | null;
   process_id?: string | null;
   client_id?: string | null;
+  client_name?: string | null;
+  user_id?: string | null;
+  is_private?: boolean;
+  shared_with_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +42,10 @@ export interface CreateCalendarEventDTO {
   requirement_id?: string | null;
   process_id?: string | null;
   client_id?: string | null;
+  client_name?: string | null;
+  user_id?: string | null;
+  is_private?: boolean;
+  shared_with_ids?: string[];
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}

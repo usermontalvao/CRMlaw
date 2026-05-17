@@ -3031,15 +3031,13 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   });
 
   // Removido: clientSearchTerm e showClientSuggestions (agora usa ClientSearchSelect no modal de prazo)
-  const [responsibleSearchTerm, setResponsibleSearchTerm] = useState('');
-  const [showResponsibleSuggestions, setShowResponsibleSuggestions] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.due_date || !formData.responsible_id) {
       setError('Data de vencimento e responsável são obrigatórios');
       return;
@@ -3099,7 +3097,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
         <div className="h-2 w-full bg-orange-500" />
         <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
           <div>
@@ -3204,50 +3202,43 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
 
           {/* Responsável */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
+            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
               Responsável *
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={responsibleSearchTerm}
-                onChange={(e) => {
-                  setResponsibleSearchTerm(e.target.value);
-                  if (!e.target.value.trim()) {
-                    setFormData({ ...formData, responsible_id: '' });
-                  }
-                }}
-                onFocus={() => setShowResponsibleSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowResponsibleSuggestions(false), 200)}
-                placeholder="Digite para buscar responsável..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-              />
-              {showResponsibleSuggestions && responsibleSearchTerm && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {members
-                    .filter((member) => matchesNormalizedSearch(responsibleSearchTerm, [member.name]))
-                    .slice(0, 5)
-                    .map((member) => (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setFormData({ ...formData, responsible_id: member.id });
-                          setResponsibleSearchTerm(member.name);
-                          setShowResponsibleSuggestions(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 transition"
-                      >
-                        <div className="font-semibold text-slate-900">{member.name}</div>
-                        <div className="text-xs text-slate-500">{member.email}</div>
-                      </button>
-                    ))}
-                </div>
-              )}
+            <div className="flex flex-wrap gap-2">
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, responsible_id: formData.responsible_id === (m.user_id || m.id) ? '' : (m.user_id || m.id) })}
+                  className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                    formData.responsible_id === (m.user_id || m.id)
+                      ? 'ring-2 ring-offset-2 ring-amber-500'
+                      : 'ring-1 ring-transparent hover:ring-slate-300'
+                  }`}
+                  title={m.name || m.email || ''}
+                >
+                  {m.avatar_url ? (
+                    <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                      {(m.name || m.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
+                  {formData.responsible_id === (m.user_id || m.id) && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 6l3 3 5-5"/>
+                      </svg>
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
             {formData.responsible_id && (
-              <p className="text-xs text-emerald-600 mt-1">✓ Responsável selecionado</p>
+              <p className="text-xs text-amber-600 mt-2">
+                ✓ {members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Responsável selecionado'}
+              </p>
             )}
           </div>
 
@@ -3377,8 +3368,6 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
   });
 
   // Removido: clientSearchTerm e showClientSuggestions (agora usa ClientSearchSelect no modal de compromisso)
-  const [responsibleSearchTerm, setResponsibleSearchTerm] = useState('');
-  const [showResponsibleSuggestions, setShowResponsibleSuggestions] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3405,6 +3394,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         start_at: startAt,
         client_id: formData.client_id || null,
         process_id: intimation.process_id || null,
+        user_id: formData.responsible_id || null,
       };
 
       const createdAppointment = await calendarService.createEvent(payload);
@@ -3441,7 +3431,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
         <div className="h-2 w-full bg-orange-500" />
         <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
           <div>
@@ -3556,50 +3546,43 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
 
           {/* Responsável */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
+            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
               Responsável *
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={responsibleSearchTerm}
-                onChange={(e) => {
-                  setResponsibleSearchTerm(e.target.value);
-                  if (!e.target.value.trim()) {
-                    setFormData({ ...formData, responsible_id: '' });
-                  }
-                }}
-                onFocus={() => setShowResponsibleSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowResponsibleSuggestions(false), 200)}
-                placeholder="Digite para buscar responsável..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              {showResponsibleSuggestions && responsibleSearchTerm && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {members
-                    .filter((member) => matchesNormalizedSearch(responsibleSearchTerm, [member.name]))
-                    .slice(0, 5)
-                    .map((member) => (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setFormData({ ...formData, responsible_id: member.id });
-                          setResponsibleSearchTerm(member.name);
-                          setShowResponsibleSuggestions(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 transition"
-                      >
-                        <div className="font-semibold text-slate-900">{member.name}</div>
-                        <div className="text-xs text-slate-500">{member.email}</div>
-                      </button>
-                    ))}
-                </div>
-              )}
+            <div className="flex flex-wrap gap-2">
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, responsible_id: formData.responsible_id === (m.user_id || m.id) ? '' : (m.user_id || m.id) })}
+                  className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                    formData.responsible_id === (m.user_id || m.id)
+                      ? 'ring-2 ring-offset-2 ring-amber-500'
+                      : 'ring-1 ring-transparent hover:ring-slate-300'
+                  }`}
+                  title={m.name || m.email || ''}
+                >
+                  {m.avatar_url ? (
+                    <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                      {(m.name || m.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
+                  {formData.responsible_id === (m.user_id || m.id) && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 6l3 3 5-5"/>
+                      </svg>
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
             {formData.responsible_id && (
-              <p className="text-xs text-emerald-600 mt-1">✓ Responsável selecionado</p>
+              <p className="text-xs text-amber-600 mt-2">
+                ✓ {members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Responsável selecionado'}
+              </p>
             )}
           </div>
 

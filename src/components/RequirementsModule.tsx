@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -635,6 +635,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     socialTime: '',
     notifyDaysBefore: '1',
   });
+  const [periciaResponsibleId, setPericiaResponsibleId] = useState('');
   const [periciaSaving, setPericiaSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
@@ -1326,7 +1327,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
   const handleGenerateMsPdfFromHeader = () => {
     if (viewMode !== 'details' || !selectedRequirementForView) {
-      toast.error('Abra um requerimento em “Detalhes” para gerar o MS em Word.');
+      toast.error('Abra um requerimento em "Detalhes" para gerar o MS em Word.');
       return;
     }
     void handleGenerateMsPdf();
@@ -2229,6 +2230,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       return;
     }
 
+    if (!periciaResponsibleId) {
+      toast.error('Selecione o responsável pelo agendamento.');
+      return;
+    }
+
     try {
       setPericiaSaving(true);
 
@@ -2261,6 +2267,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           requirement_id: requirement.id,
           client_id: requirement.client_id ?? null,
           process_id: null,
+          user_id: periciaResponsibleId || null,
         };
 
         periciaEvents.push(calendarService.createEvent(payloadEvent));
@@ -2278,6 +2285,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           requirement_id: requirement.id,
           client_id: requirement.client_id ?? null,
           process_id: null,
+          user_id: periciaResponsibleId || null,
         };
 
         periciaEvents.push(calendarService.createEvent(payloadEvent));
@@ -3136,8 +3144,46 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </div>
 
           <p className="text-xs text-slate-600">
-            Após passar a data da última perícia (médica/social), o requerimento será movido automaticamente para “Em análise”.
+            Após passar a data da última perícia (médica/social), o requerimento será movido automaticamente para "Em análise".
           </p>
+
+          {members.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-slate-700 dark:text-zinc-300 block mb-2">
+                Responsável <span className="text-red-500">*</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {members.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setPericiaResponsibleId(periciaResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                    className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                      periciaResponsibleId === (m.user_id || m.id)
+                        ? 'ring-2 ring-offset-2 ring-amber-500'
+                        : 'ring-1 ring-transparent hover:ring-slate-300'
+                    }`}
+                    title={m.name || m.email || ''}
+                  >
+                    {m.avatar_url ? (
+                      <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                        {(m.name || m.email || '?')[0].toUpperCase()}
+                      </div>
+                    )}
+                    {periciaResponsibleId === (m.user_id || m.id) && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2 6l3 3 5-5"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">

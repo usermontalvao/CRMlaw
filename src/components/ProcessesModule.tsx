@@ -409,10 +409,12 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   // Prescrição execução sobrestada
   const [stayBaseDate, setStayBaseDate] = useState('');
   const [stayReason, setStayReason] = useState<'prescricao' | 'acordo_pagamento' | 'outro'>('prescricao');
+  const [stayResponsibleId, setStayResponsibleId] = useState('');
   const [staySectionExpanded, setStaySectionExpanded] = useState(false);
   const [schedulingStay, setSchedulingStay] = useState(false);
   const [stayScheduleError, setStayScheduleError] = useState<string | null>(null);
   const [stayScheduleSuccess, setStayScheduleSuccess] = useState<string | null>(null);
+  const [hearingResponsibleId, setHearingResponsibleId] = useState('');
 
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [timelineProcessCode, setTimelineProcessCode] = useState<string | null>(null);
@@ -1070,6 +1072,11 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         }
       }
 
+      if (!selectedProcess && formData.hearing_scheduled === 'sim' && !hearingResponsibleId) {
+        setError('Selecione o responsável pela audiência.');
+        return;
+      }
+
       // Validar data da audiência não seja anterior a hoje
       if (formData.hearing_scheduled === 'sim' && formData.hearing_date) {
         const hearingDate = new Date(formData.hearing_date);
@@ -1174,6 +1181,24 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           } catch {}
         }
 
+        if (newProcess && formData.hearing_scheduled === 'sim' && formData.hearing_date) {
+          try {
+            const hearingMode = formData.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL';
+            await calendarService.createEvent({
+              title: `AUDIÊNCIA ${hearingMode} - ${newProcess.process_code || 'PROCESSO'}`,
+              description: formData.court ? `Audiência do processo ${newProcess.process_code || ''} • ${formData.court}` : undefined,
+              event_type: 'hearing',
+              status: 'pendente',
+              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`,
+              process_id: newProcess.id,
+              client_id: (newProcess as any).client_id || null,
+              user_id: hearingResponsibleId || null,
+            });
+          } catch (err) {
+            console.error('Erro ao criar evento de audiência:', err);
+          }
+        }
+
         if (newProcess && trimmedProcessCode) {
           processDjenSyncService
             .syncProcessWithDjen(newProcess as Process)
@@ -1193,6 +1218,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       }
       setFormData(emptyForm);
       setClientSearchTerm('');
+      setHearingResponsibleId('');
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o processo.');
     } finally {
@@ -1276,6 +1302,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       notify_minutes_before: null,
       process_id: process.id,
       client_id: process.client_id || null,
+      user_id: stayResponsibleId || null,
     });
   };
 
@@ -1290,6 +1317,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     const trimmed = stayBaseDate.trim();
     if (!trimmed) {
       setStayScheduleError('Informe a data-base do sobrestamento.');
+      return;
+    }
+    if (!stayResponsibleId) {
+      setStayScheduleError('Selecione o responsável pelo compromisso.');
       return;
     }
     try {
@@ -1311,6 +1342,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     if (!selectedProcessForView) return;
     setStayScheduleSuccess(null);
     setStayScheduleError(null);
+    if (!stayResponsibleId) {
+      setStayScheduleError('Selecione o responsável pelo compromisso.');
+      return;
+    }
     try {
       setSchedulingStay(true);
       if (!selectedProcessForView.process_code) {
@@ -2196,6 +2231,46 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                   </select>
                 </div>
               )}
+              {formData.hearing_scheduled === 'sim' && (
+                <div className="md:col-span-2">
+                  <label className={`${labelStyle} mb-2`}>Responsável pela audiência *</label>
+                  <div className="flex flex-wrap gap-2">
+                    {members.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setHearingResponsibleId(hearingResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                        className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                          hearingResponsibleId === (m.user_id || m.id)
+                            ? 'ring-2 ring-offset-2 ring-amber-500'
+                            : 'ring-1 ring-transparent hover:ring-slate-300'
+                        }`}
+                        title={m.name || m.email || ''}
+                      >
+                        {m.avatar_url ? (
+                          <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                            {(m.name || m.email || '?')[0].toUpperCase()}
+                          </div>
+                        )}
+                        {hearingResponsibleId === (m.user_id || m.id) && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M2 6l3 3 5-5"/>
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {hearingResponsibleId && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      ✓ {members.find(m => (m.user_id || m.id) === hearingResponsibleId)?.name || 'Responsável selecionado'}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -2426,6 +2501,42 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                       </button>
                     </div>
                   </div>
+
+                  {members.length > 0 && (
+                    <div className="mt-3">
+                      <label className="text-xs font-semibold text-slate-500 uppercase block mb-2">Responsável pelo compromisso <span className="text-red-500">*</span></label>
+                      <div className="flex flex-wrap gap-2">
+                        {members.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setStayResponsibleId(stayResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                            className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                              stayResponsibleId === (m.user_id || m.id)
+                                ? 'ring-2 ring-offset-2 ring-amber-500'
+                                : 'ring-1 ring-transparent hover:ring-slate-300'
+                            }`}
+                            title={m.name || m.email || ''}
+                          >
+                            {m.avatar_url ? (
+                              <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                                {(m.name || m.email || '?')[0].toUpperCase()}
+                              </div>
+                            )}
+                            {stayResponsibleId === (m.user_id || m.id) && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M2 6l3 3 5-5"/>
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {(stayScheduleError || stayScheduleSuccess) && (
                     <div

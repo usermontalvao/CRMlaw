@@ -893,6 +893,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
+  const [eventResponsibleId, setEventResponsibleId] = useState('');
 
   // Article creator state
   const [showArticleCreator, setShowArticleCreator] = useState(false);
@@ -1840,6 +1841,10 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           alert('Informe a data do evento.');
           return;
         }
+        if (!eventResponsibleId) {
+          alert('Selecione o responsável pelo evento.');
+          return;
+        }
 
         const descriptionParts: string[] = [];
         if (eventDescription.trim()) descriptionParts.push(eventDescription.trim());
@@ -1851,6 +1856,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           event_type: 'meeting',
           status: 'pendente',
           start_at: startAt,
+          user_id: eventResponsibleId || null,
         });
 
         createdCalendarEventId = createdEvent.id;
@@ -4654,6 +4660,40 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         placeholder="Ex: Escritório / Online"
                         className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all placeholder:text-slate-400"
                       />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Responsável <span className="text-red-500">*</span></label>
+                      <div className="flex flex-wrap gap-2">
+                        {allProfiles.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setEventResponsibleId(eventResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
+                            className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                              eventResponsibleId === (m.user_id || m.id)
+                                ? 'ring-2 ring-offset-2 ring-amber-500'
+                                : 'ring-1 ring-transparent hover:ring-slate-300'
+                            }`}
+                            title={m.name || m.email || ''}
+                          >
+                            {m.avatar_url ? (
+                              <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                                {(m.name || m.email || '?')[0].toUpperCase()}
+                              </div>
+                            )}
+                            {eventResponsibleId === (m.user_id || m.id) && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M2 6l3 3 5-5"/>
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="sm:col-span-2">

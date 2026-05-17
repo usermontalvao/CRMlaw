@@ -19,10 +19,15 @@ export interface Deadline {
   client_id?: string | null;
   responsible_id?: string | null;
 
+  // Calculadora de prazo (inputs que geraram o due_date)
+  publication_date?: string | null;
+  deadline_days?: number | null;
+  counting_type?: string | null;
+
   // Notificações
   notify_days_before?: number | null;
   notified_at?: string | null;
-  
+
   // Metadados
   created_at: string;
   updated_at: string;
@@ -42,6 +47,9 @@ export interface CreateDeadlineDTO {
   client_id?: string | null;
   responsible_id?: string | null;
   notify_days_before?: number | null;
+  publication_date?: string | null;
+  deadline_days?: number | null;
+  counting_type?: string | null;
 }
 
 export interface UpdateDeadlineDTO extends Partial<CreateDeadlineDTO> {

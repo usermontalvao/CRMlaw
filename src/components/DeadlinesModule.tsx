@@ -1420,15 +1420,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           setRequirementSearchTerm(requirement.protocol ?? '');
         }
       }
+      setDataPublicacao(deadline.publication_date ? toDateInputValue(deadline.publication_date) : '');
+      setDiasPrazo(deadline.deadline_days != null ? String(deadline.deadline_days) : '');
+      setTipoPrazoCalculadora((deadline.counting_type as TipoPrazo) || 'processual');
     } else {
       setSelectedDeadline(null);
       setFormData(emptyForm);
       setProcessSearchTerm('');
       setRequirementSearchTerm('');
+      setDataPublicacao('');
+      setDiasPrazo('');
+      setTipoPrazoCalculadora('processual');
     }
 
-    setDataPublicacao('');
-    setDiasPrazo('');
     setIsModalOpen(true);
   };
 
@@ -1488,6 +1492,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         client_id: formData.client_id || null,
         responsible_id: formData.responsible_id || null,
         notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : 2,
+        publication_date: dataPublicacao || null,
+        deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,
+        counting_type: tipoPrazoCalculadora || null,
       };
 
       const editingDeadline = selectedDeadline;
