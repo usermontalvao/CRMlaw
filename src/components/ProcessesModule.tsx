@@ -28,6 +28,7 @@ import {
   Check,
   Zap,
   Bell,
+  Users,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
@@ -345,10 +346,11 @@ interface ProcessesModuleProps {
     responsible_lawyer_id?: string;
   };
   initialStatusFilter?: ProcessStatus | 'todos';
+  initialSearchQuery?: string;
   onParamConsumed?: () => void;
 }
 
-const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusFilter, onParamConsumed }) => {
+const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusFilter, initialSearchQuery, onParamConsumed }) => {
   const { user } = useAuth();
   const { confirmDelete } = useDeleteConfirm();
   
@@ -381,6 +383,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   // #8 — Resumo IA do processo
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [loadingAiSummary, setLoadingAiSummary] = useState(false);
+  // Partes do processo (polo_ativo / polo_passivo das intimações)
+  const [processParties, setProcessParties] = useState<{ polo_ativo: string | null; polo_passivo: string | null } | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -551,6 +555,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setStatusFilter(initialStatusFilter);
     onParamConsumed?.();
   }, [initialStatusFilter, onParamConsumed]);
+
+  const appliedInitialSearchRef = useRef(false);
+  useEffect(() => {
+    if (!initialSearchQuery) return;
+    if (appliedInitialSearchRef.current) return;
+    appliedInitialSearchRef.current = true;
+    setSearchTerm(initialSearchQuery);
+    onParamConsumed?.();
+  }, [initialSearchQuery, onParamConsumed]);
 
   useEffect(() => {
     const fetchProcesses = async () => {
@@ -1305,6 +1318,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setViewMode('details');
     setNoteDraft('');
     setNoteError(null);
+    setAiSummary(null);
+    setProcessParties(null);
+    // Carregar partes do processo a partir das intimações vinculadas
+    try {
+      const comuns = await djenLocalService.listComunicacoes({ process_id: process.id });
+      const withParties = comuns.find(c => c.polo_ativo);
+      if (withParties) {
+        setProcessParties({ polo_ativo: withParties.polo_ativo ?? null, polo_passivo: withParties.polo_passivo ?? null });
+      }
+    } catch {
+      // silently fail
+    }
   };
 
   const handleOpenTimeline = (process: Process) => {
@@ -2507,6 +2532,30 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </div>
               </div>
             </div>
+
+            {/* Partes do processo */}
+            {processParties && (
+              <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+                  <Users className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Partes do Processo</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {processParties.polo_ativo && (
+                    <div className="px-4 py-3 flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex-shrink-0">Polo Ativo</span>
+                      <span className="text-sm text-slate-800 font-medium leading-snug">{processParties.polo_ativo}</span>
+                    </div>
+                  )}
+                  {processParties.polo_passivo && (
+                    <div className="px-4 py-3 flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-600 border border-slate-300 flex-shrink-0">Polo Passivo</span>
+                      <span className="text-sm text-slate-800 font-medium leading-snug">{processParties.polo_passivo}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* #8 — Resumo IA do processo */}
             <div className="mb-6">

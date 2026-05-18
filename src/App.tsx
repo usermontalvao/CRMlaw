@@ -1698,11 +1698,12 @@ useEffect(() => {
             )}
             {activeModule === 'cloud' && <CloudModule onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'processos' && (
-              <ProcessesModule 
+              <ProcessesModule
                 forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
                 entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
                 prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
                 initialStatusFilter={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).statusFilter : undefined}
+                initialSearchQuery={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).searchQuery : undefined}
                 onParamConsumed={() => clearModuleParams('processos')}
               />
             )}

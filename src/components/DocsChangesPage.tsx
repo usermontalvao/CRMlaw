@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.120': { name: 'Café Partes Identificadas', emoji: '👥' },
   '1.10.119': { name: 'Café Busca Global', emoji: '🔍' },
   '1.10.118': { name: 'Café Cron Inteligente', emoji: '🤖' },
   '1.10.117': { name: 'Café Comarca Limpa', emoji: '📍' },
@@ -819,6 +820,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.120',
+    date: '18/05/2026',
+    summary: 'Partes do processo identificadas automaticamente; busca global corrigida (navegação sem tela branca); busca por processo pré-filtra a listagem.',
+    modules: [
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'feature', title: 'Partes do processo (Polo Ativo / Polo Passivo)', description: 'Ao abrir o card de detalhes de um processo, o sistema busca automaticamente as partes nas intimações DJEN vinculadas e as exibe em badges "Polo Ativo" e "Polo Passivo" — sem nenhuma ação manual.' },
+          { type: 'improvement', title: 'Busca global pré-filtra processos', description: 'Clicar em um resultado de processo na busca global (⌘K) agora navega para o módulo Processos já com o número do processo preenchido no campo de busca.' },
+        ],
+      },
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'fix', title: 'Busca global — tela branca corrigida', description: 'Os módulos eram referenciados com nomes em inglês (processes, clients) que não existem no NavigationContext. Corrigido para português (processos, clientes, intimacoes). A navegação por ⌘K agora funciona corretamente.' },
+          { type: 'improvement', title: 'Busca global — cross-search por nome de pessoa', description: 'Pesquisar o nome de uma pessoa agora retorna tanto o cliente quanto todos os processos vinculados a ele, e intimações onde o nome aparece no polo. Resultados de processo via cliente recebem o badge "Processo" com subtítulo "Cliente: …".' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.119',
     date: '18/05/2026',
