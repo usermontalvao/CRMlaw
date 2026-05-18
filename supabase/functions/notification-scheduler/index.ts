@@ -92,13 +92,16 @@ async function checkDeadlineReminders() {
 
   console.log(`📋 ${deadlines?.length || 0} prazos encontrados`);
 
-  // Buscar todos os usuários para notificar
-  const { data: users } = await supabase
+  // Buscar mapa profile.id → user_id para resolver o responsável
+  const { data: profiles } = await supabase
     .from("profiles")
-    .select("user_id")
+    .select("id, user_id")
     .eq("is_active", true);
 
-  if (!users || users.length === 0) return;
+  const profileToUserId = new Map<string, string>();
+  for (const p of profiles || []) {
+    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
+  }
 
   for (const deadline of deadlines || []) {
     const dueDate = new Date(deadline.due_date);
@@ -115,8 +118,13 @@ async function checkDeadlineReminders() {
     if (notifyDaysBefore === null || notifyDaysBefore < 0) continue;
     if (daysUntilDue > notifyDaysBefore) continue;
 
+    // Notificar apenas o responsável; sem responsável → pula
+    if (!deadline.responsible_id) continue;
+    const responsibleUserId = profileToUserId.get(deadline.responsible_id);
+    if (!responsibleUserId) continue;
+
     const title =
-      daysUntilDue <= 0
+      daysUntilDue === 0
         ? "🚨 Prazo Vence HOJE!"
         : daysUntilDue === 1
           ? "🚨 Prazo Vence AMANHÃ!"
@@ -126,70 +134,61 @@ async function checkDeadlineReminders() {
     const message = `${deadline.title}${clientName ? ` • ${clientName}` : ""} • Vence ${dueDate.toLocaleDateString("pt-BR")}`;
     const dedupeKey = `deadline_reminder_${deadline.id}_${daysUntilDue}`;
 
-    for (const user of users) {
-      await createNotification({
-        user_id: user.user_id,
-        title,
-        message,
-        type: "deadline_reminder",
-        deadline_id: deadline.id,
-        process_id: deadline.process_id ?? undefined,
-        requirement_id: deadline.requirement_id ?? undefined,
-        metadata: {
-          days_until_due: daysUntilDue,
-          notify_days_before: notifyDaysBefore,
-          priority: deadline.priority,
-          dedupe_key: dedupeKey,
-        },
-      });
-    }
+    await createNotification({
+      user_id: responsibleUserId,
+      title,
+      message,
+      type: "deadline_reminder",
+      deadline_id: deadline.id,
+      process_id: deadline.process_id ?? undefined,
+      requirement_id: deadline.requirement_id ?? undefined,
+      metadata: {
+        days_until_due: daysUntilDue,
+        notify_days_before: notifyDaysBefore,
+        priority: deadline.priority,
+        dedupe_key: dedupeKey,
+      },
+    });
 
-    // 📧 Enviar email lembrete ao responsável (1 email por prazo por dia, deduplicado)
-    if (deadline.responsible_id) {
-      const emailDedupeKey = `email_deadline_reminder_${deadline.id}_${daysUntilDue}`;
-      const { data: alreadySent } = await supabase
-        .from("user_notifications")
-        .select("id")
-        .eq("type", "deadline_email_reminder")
-        .eq("deadline_id", deadline.id)
-        .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
-        .limit(1);
+    // 📧 Email lembrete ao responsável (1 por prazo por janela, deduplicado)
+    const emailDedupeKey = `email_deadline_reminder_${deadline.id}_${daysUntilDue}`;
+    const { data: alreadySent } = await supabase
+      .from("user_notifications")
+      .select("id")
+      .eq("type", "deadline_email_reminder")
+      .eq("deadline_id", deadline.id)
+      .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
+      .limit(1);
 
-      if (!alreadySent || alreadySent.length === 0) {
-        try {
-          const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
-          const resp = await fetch(fnUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({
-              deadline_id: deadline.id,
-              assigned_by_id: null,
-              mode: "reminder",
-            }),
+    if (!alreadySent || alreadySent.length === 0) {
+      try {
+        const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
+        const resp = await fetch(fnUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ deadline_id: deadline.id, assigned_by_id: null, mode: "reminder" }),
+        });
+        const result = await resp.json();
+        if (result.success) {
+          console.log(`📧 Email lembrete enviado: ${deadline.title}`);
+          await supabase.from("user_notifications").insert({
+            user_id: responsibleUserId,
+            title: `📧 Email lembrete enviado`,
+            message: `${deadline.title} - ${daysUntilDue} dia(s)`,
+            type: "deadline_email_reminder",
+            deadline_id: deadline.id,
+            read: true,
+            metadata: { dedupe_key: emailDedupeKey, days_until_due: daysUntilDue },
+            created_at: new Date().toISOString(),
           });
-          const result = await resp.json();
-          if (result.success) {
-            console.log(`📧 Email lembrete enviado: ${deadline.title}`);
-            // Registrar envio para deduplicação
-            await supabase.from("user_notifications").insert({
-              user_id: users[0].user_id,
-              title: `📧 Email lembrete enviado`,
-              message: `${deadline.title} - ${daysUntilDue} dia(s)`,
-              type: "deadline_email_reminder",
-              deadline_id: deadline.id,
-              read: true,
-              metadata: { dedupe_key: emailDedupeKey, days_until_due: daysUntilDue },
-              created_at: new Date().toISOString(),
-            });
-          } else {
-            console.error(`❌ Falha email lembrete: ${result.error}`);
-          }
-        } catch (emailErr: any) {
-          console.error(`❌ Erro ao enviar email lembrete: ${emailErr?.message}`);
+        } else {
+          console.error(`❌ Falha email lembrete: ${result.error}`);
         }
+      } catch (emailErr: any) {
+        console.error(`❌ Erro ao enviar email lembrete: ${emailErr?.message}`);
       }
     }
   }
@@ -204,7 +203,7 @@ async function checkAppointmentReminders() {
 
   const { data: appointments, error } = await supabase
     .from("calendar_events")
-    .select("id, title, event_type, start_at, status, notify_minutes_before, process_id, requirement_id, clients(full_name)")
+    .select("id, title, event_type, start_at, status, notify_minutes_before, user_id, process_id, requirement_id, clients(full_name)")
     .eq("status", "pendente")
     .gte("start_at", now.toISOString())
     .lte("start_at", windowEnd.toISOString());
@@ -216,14 +215,10 @@ async function checkAppointmentReminders() {
 
   console.log(`📋 ${appointments?.length || 0} compromissos encontrados`);
 
-  const { data: users } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("is_active", true);
-
-  if (!users || users.length === 0) return;
-
   for (const appointment of appointments || []) {
+    // Notificar apenas o dono do compromisso; sem user_id → pula
+    if (!appointment.user_id) continue;
+
     const startAt = new Date(appointment.start_at);
     const minutesUntilStart = Math.ceil((startAt.getTime() - now.getTime()) / 60000);
     const notifyMinutesBeforeRaw = appointment.notify_minutes_before;
@@ -245,24 +240,22 @@ async function checkAppointmentReminders() {
     const message = `${appointment.title} • ${formattedDate} ${formattedTime}${clientName ? ` • ${clientName}` : ""}`;
     const dedupeKey = `appointment_reminder_${appointment.id}_${notifyMinutesBefore}`;
 
-    for (const user of users) {
-      await createNotification({
-        user_id: user.user_id,
-        title,
-        message,
-        type: "appointment_reminder",
-        appointment_id: appointment.id,
-        process_id: appointment.process_id ?? undefined,
-        requirement_id: appointment.requirement_id ?? undefined,
-        metadata: {
-          start_at: appointment.start_at,
-          event_type: appointment.event_type,
-          notify_minutes_before: notifyMinutesBefore,
-          minutes_until_start: minutesUntilStart,
-          dedupe_key: dedupeKey,
-        },
-      });
-    }
+    await createNotification({
+      user_id: appointment.user_id,
+      title,
+      message,
+      type: "appointment_reminder",
+      appointment_id: appointment.id,
+      process_id: appointment.process_id ?? undefined,
+      requirement_id: appointment.requirement_id ?? undefined,
+      metadata: {
+        start_at: appointment.start_at,
+        event_type: appointment.event_type,
+        notify_minutes_before: notifyMinutesBefore,
+        minutes_until_start: minutesUntilStart,
+        dedupe_key: dedupeKey,
+      },
+    });
   }
 }
 

@@ -246,11 +246,13 @@ async function sendDeadlineEmail(
     if (p) processNumber = p.process_number;
   }
 
-  const emailHtml = buildDeadlineEmailHtml({
+  const rawHtml = buildDeadlineEmailHtml({
     responsibleName: responsible.name, assignedByName, title: deadline.title,
     description: deadline.description || '', dueDate: deadline.due_date,
     priority: deadline.priority, type: deadline.type, clientName, processNumber, mode,
   });
+  // Remove trailing spaces per line to prevent quoted-printable =20 artifacts
+  const emailHtml = rawHtml.split('\n').map((l: string) => l.trimEnd()).join('\n');
 
   const subjectLine = mode === 'reminder'
     ? 'Lembrete de prazo - Jurius'

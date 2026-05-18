@@ -1027,7 +1027,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             const targetName = memberMap.get(targetId) || '';
             const byName = targetName && raw?.responsible_lawyer &&
               (raw.responsible_lawyer as string).toLowerCase().includes(targetName.split(' ')[0].toLowerCase());
-            if (!byId && !byName) return false;
+            const byShared = Array.isArray(raw?.shared_with_ids) && raw.shared_with_ids.includes(targetId);
+            if (!byId && !byName && !byShared) return false;
           }
         }
         return true;
@@ -1331,6 +1332,43 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             allDay: isAllDay,
           });
         }
+        // 🔔 Notificações da edição
+        if (user?.id && updatedEvent) {
+          const oldEvent = calendarEventsData.find(e => e.id === editingEventId);
+          const eventDate = new Date(updatedEvent.start_at);
+          const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          const notifyBase = { appointment_id: updatedEvent.id, metadata: { event_type: updatedEvent.event_type, start_at: updatedEvent.start_at } };
+          const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
+          const typeLabel = EVENT_TYPE_LABELS[updatedEvent.event_type as EventType] || 'Compromisso';
+          const typeEmojis: Record<string, string> = { hearing: '⚖️', meeting: '🤝', payment: '💰', pericia: '🔬', personal: '👤', requirement: '📋', deadline: '📅' };
+          const typeEmoji = typeEmojis[updatedEvent.event_type] || '📅';
+
+          // Responsável mudou
+          const newResp = basePayload.user_id;
+          if (newResp && newResp !== user.id && newResp !== oldEvent?.user_id) {
+            try {
+              await userNotificationService.createNotification({
+                title: `${typeEmoji} ${typeLabel} Atribuída`, type: 'appointment_assigned',
+                message: `${assignerName} atribuiu uma ${typeLabel} a você\n"${updatedEvent.title}" • ${formattedDate}`,
+                user_id: newResp, ...notifyBase,
+              });
+            } catch {}
+          }
+
+          // Novos na visibilidade
+          const oldShared = oldEvent?.shared_with_ids ?? [];
+          const newlyShared = (basePayload.shared_with_ids ?? []).filter(id => !oldShared.includes(id) && id !== user.id);
+          for (const uid of newlyShared) {
+            try {
+              await userNotificationService.createNotification({
+                title: `👁️ ${typeLabel} Compartilhada`, type: 'appointment_assigned',
+                message: `${assignerName} deu visibilidade de uma ${typeLabel} a você\n"${updatedEvent.title}" • ${formattedDate}`,
+                user_id: uid, ...notifyBase,
+              });
+            } catch {}
+          }
+        }
+
         setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" atualizado com sucesso!` });
       } else {
         const createdEvent = await calendarService.createEvent({
@@ -1339,24 +1377,38 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         });
         setCalendarEventsData((prev) => [...prev, createdEvent]);
 
-        // 🔔 Criar notificação para novo compromisso
-        if (user?.id && createdEvent && newEventForm.responsible_id && newEventForm.responsible_id !== user.id) {
-          try {
-            const eventDate = new Date(createdEvent.start_at);
-            const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-            
-            await userNotificationService.createNotification({
-              title: '📅 Novo Compromisso',
-              message: `${createdEvent.title} • ${formattedDate}`,
-              type: 'appointment_assigned',
-              user_id: newEventForm.responsible_id,
-              appointment_id: createdEvent.id,
-              metadata: {
-                event_type: newEventForm.type,
-                start_at: createdEvent.start_at,
-              },
-            });
-          } catch {}
+        // 🔔 Notificações do novo compromisso
+        if (user?.id && createdEvent) {
+          const eventDate = new Date(createdEvent.start_at);
+          const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          const notifyBase = { appointment_id: createdEvent.id, metadata: { event_type: newEventForm.type, start_at: createdEvent.start_at } };
+          const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
+          const typeLabel = EVENT_TYPE_LABELS[newEventForm.type as EventType] || 'Compromisso';
+          const typeEmojis: Record<string, string> = { hearing: '⚖️', meeting: '🤝', payment: '💰', pericia: '🔬', personal: '👤', requirement: '📋', deadline: '📅' };
+          const typeEmoji = typeEmojis[newEventForm.type] || '📅';
+
+          // Responsável atribuído (quando diferente do criador)
+          if (newEventForm.responsible_id && newEventForm.responsible_id !== user.id) {
+            try {
+              await userNotificationService.createNotification({
+                title: `${typeEmoji} Nova ${typeLabel}`, type: 'appointment_assigned',
+                message: `${assignerName} atribuiu uma ${typeLabel} a você\n"${createdEvent.title}" • ${formattedDate}`,
+                user_id: newEventForm.responsible_id, ...notifyBase,
+              });
+            } catch {}
+          }
+
+          // Pessoas que receberam visibilidade (shared_with_ids)
+          const sharedToNotify = (newEventForm.shared_with_ids ?? []).filter(id => id !== user.id && id !== newEventForm.responsible_id);
+          for (const uid of sharedToNotify) {
+            try {
+              await userNotificationService.createNotification({
+                title: `👁️ ${typeLabel} Compartilhada`, type: 'appointment_assigned',
+                message: `${assignerName} deu visibilidade de uma ${typeLabel} a você\n"${createdEvent.title}" • ${formattedDate}`,
+                user_id: uid, ...notifyBase,
+              });
+            } catch {}
+          }
         }
         
         setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" criado com sucesso!` });

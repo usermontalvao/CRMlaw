@@ -418,11 +418,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       console.log('➡️ Navegando para intimacoes');
       onNavigateToModule('intimacoes');
     } else if (notification.type === 'deadline_assigned' || notification.type === 'deadline_reminder') {
-      console.log('➡️ Navegando para prazos');
-      onNavigateToModule('prazos');
+      console.log('➡️ Navegando para prazos, deadlineId:', notification.deadline_id);
+      onNavigateToModule('prazos', notification.deadline_id ? { entityId: notification.deadline_id } : undefined);
     } else if (notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder') {
-      console.log('➡️ Navegando para agenda');
-      onNavigateToModule('agenda');
+      console.log('➡️ Navegando para agenda, appointmentId:', notification.appointment_id);
+      onNavigateToModule('agenda', notification.appointment_id ? { entityId: notification.appointment_id } : undefined);
     } else if (notification.type === 'chat_message' || notification.metadata?.chat_room_id) {
       const roomId = notification.metadata?.chat_room_id;
       console.log('➡️ Navegando para chat, sala:', roomId);

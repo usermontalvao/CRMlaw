@@ -950,11 +950,26 @@ div[class*="z-[60]"] span[class*="text-sky"] {
 
 /* ===== LIGHT MODE - MODAIS ===== */
 
-/* Container do modal em light mode */
+/* Container do modal em light mode (cobre z-50, z-[60], z-[70] etc.) */
 :not(.dark) div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
-:not(.dark) div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"] {
+:not(.dark) div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"],
+:not(.dark) div[class*="fixed"][class*="z-"] > div[class*="w-full"][class*="max-w-"],
+:not(.dark) div[class*="fixed"][class*="z-"] > div[class*="bg-white"],
+:not(.dark) div[class*="fixed"][class*="z-"] div[class*="rounded-2xl"][class*="bg-white"] {
   background: #ffffff !important;
-  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Textos em light mode dentro de modais */
+:not(.dark) div[class*="fixed"][class*="z-"] h2,
+:not(.dark) div[class*="fixed"][class*="z-"] h3 {
+  color: #1d1d1f !important;
+}
+
+:not(.dark) div[class*="fixed"][class*="z-"] p[class*="text-slate"],
+:not(.dark) div[class*="fixed"][class*="z-"] p[class*="text-gray"] {
+  color: #424245 !important;
 }
 
 :not(.dark) div[class*="fixed"][class*="z-50"] input,

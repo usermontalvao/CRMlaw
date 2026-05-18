@@ -32,7 +32,14 @@ import {
   Eye,
   Sparkles,
   User,
+  GripVertical,
+  RotateCcw,
 } from 'lucide-react';
+import { ResponsiveGridLayout, verticalCompactor } from 'react-grid-layout';
+import { useContainerWidth } from 'react-grid-layout/react';
+import type { ResponsiveLayouts, LayoutItem } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
@@ -42,6 +49,7 @@ import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
+import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
@@ -61,54 +69,6 @@ interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
   params?: any;
 }
-
-type StatCardProps = {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  trend?: { value: string; isPositive: boolean };
-  color: 'blue' | 'green' | 'amber' | 'red' | 'purple';
-  onClick?: () => void;
-};
-
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, color, onClick }) => {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600 border-blue-200',
-    green: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-    amber: 'bg-amber-50 text-amber-600 border-amber-200',
-    red: 'bg-red-50 text-red-600 border-red-200',
-    purple: 'bg-purple-50 text-purple-600 border-purple-200',
-  };
-
-  return (
-    <div
-      className={`rounded-xl border-2 ${colorClasses[color]} p-6 transition hover:shadow-lg ${
-        onClick ? 'cursor-pointer' : ''
-      }`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium opacity-80">{title}</p>
-          <p className="mt-2 text-3xl font-bold">{value}</p>
-          {trend && (
-            <div className="mt-2 flex items-center gap-1 text-sm">
-              {trend.isPositive ? (
-                <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <ArrowDownRight className="h-4 w-4 text-red-600" />
-              )}
-              <span className={trend.isPositive ? 'text-emerald-600' : 'text-red-600'}>
-                {trend.value}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="rounded-lg bg-white/50 p-3">{icon}</div>
-      </div>
-    </div>
-  );
-};
 
 type QuickActionProps = {
   title: string;
@@ -148,11 +108,149 @@ interface ModuleShortcut {
   accent: NonNullable<QuickActionProps['accent']>;
 }
 
-// Cache keys e configuração
+// Cache
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
 const DASHBOARD_CACHE_VERSION = 2;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos (mais frequente para agenda)
-const REQUEST_TIMEOUT_MS = 15000; // 15s por requisição pesada
+const CACHE_DURATION = 5 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15000;
+
+// Grid layout
+const LAYOUT_STORAGE_KEY = 'crm-dashboard-grid-v5';
+const ROW_HEIGHT = 36;
+
+type RLayouts = ResponsiveLayouts<string>;
+
+// Ordem preferêncial dos widgets (mantida no auto-fit)
+const WIDGET_ORDER = ['agenda', 'acoes', 'financeiro', 'prazos', 'tarefas', 'intimacoes', 'processos', 'requerimentos'] as const;
+
+// Alturas padrão por widget (em rows)
+const WIDGET_HEIGHT: Record<string, number> = {
+  agenda: 14,
+  acoes: 4,
+  financeiro: 6,
+  prazos: 6,
+  tarefas: 7,
+  intimacoes: 7,
+  processos: 7,
+  requerimentos: 7,
+};
+
+/**
+ * Gera um layout auto-ajustado redistribuindo apenas os widgets visíveis,
+ * preenchendo toda a largura disponível sem deixar espaços vazios.
+ */
+function buildAutoFitLayout(visibleKeys: Set<string>, bp: string): LayoutItem[] {
+  const cols = bp === 'lg' || bp === 'md' ? 12 : bp === 'sm' ? 6 : bp === 'xs' ? 4 : 2;
+  const visible = WIDGET_ORDER.filter(k => visibleKeys.has(k));
+  if (visible.length === 0) return [];
+
+  const isMobile = bp === 'sm' || bp === 'xs' || bp === 'xxs';
+
+  // Mobile: empilhar verticalmente em largura total
+  if (isMobile) {
+    let y = 0;
+    return visible.map(k => {
+      const h = WIDGET_HEIGHT[k] ?? 7;
+      const item: LayoutItem = { i: k, x: 0, y, w: cols, h };
+      y += h;
+      return item;
+    });
+  }
+
+  // lg/md (12 cols): distribuir uniformemente
+  const n = visible.length;
+  let perRow: number;
+  if (n === 1) perRow = 1;
+  else if (n === 2) perRow = 2;
+  else if (n === 3) perRow = 3;
+  else if (n === 4) perRow = 2;
+  else if (n <= 6) perRow = 3;
+  else perRow = 4;
+
+  const baseW = Math.floor(cols / perRow);
+  const remainder = cols - baseW * perRow;
+
+  const result: LayoutItem[] = [];
+  let col = 0;
+  let rowStartY = 0;
+  let rowMaxH = 0;
+
+  visible.forEach(k => {
+    const h = WIDGET_HEIGHT[k] ?? 7;
+    const w = col < remainder ? baseW + 1 : baseW;
+    const x = col < remainder
+      ? col * (baseW + 1)
+      : remainder * (baseW + 1) + (col - remainder) * baseW;
+
+    result.push({ i: k, x, y: rowStartY, w, h, minW: 2, minH: 3 });
+    rowMaxH = Math.max(rowMaxH, h);
+    col += 1;
+    if (col >= perRow) {
+      col = 0;
+      rowStartY += rowMaxH;
+      rowMaxH = 0;
+    }
+  });
+
+  return result;
+}
+
+const DEFAULT_LAYOUTS: RLayouts = {
+  // ≥ 1100px — 12 cols — 2 rows
+  lg: [
+    { i: 'agenda',        x: 0, y: 0,  w: 7, h: 14, minW: 4, minH: 5 },
+    { i: 'acoes',         x: 7, y: 0,  w: 5, h: 4,  minW: 3, minH: 3 },
+    { i: 'financeiro',    x: 7, y: 4,  w: 5, h: 5,  minW: 3, minH: 4 },
+    { i: 'prazos',        x: 7, y: 9,  w: 5, h: 5,  minW: 3, minH: 3 },
+    { i: 'tarefas',       x: 0, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
+    { i: 'intimacoes',    x: 4, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
+    { i: 'processos',     x: 8, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
+    { i: 'requerimentos', x: 0, y: 21, w: 4, h: 7,  minW: 2, minH: 3 },
+  ],
+  // 768–1099px — 12 cols
+  md: [
+    { i: 'agenda',        x: 0, y: 0,  w: 7, h: 14 },
+    { i: 'acoes',         x: 7, y: 0,  w: 5, h: 4  },
+    { i: 'financeiro',    x: 7, y: 4,  w: 5, h: 5  },
+    { i: 'prazos',        x: 7, y: 9,  w: 5, h: 5  },
+    { i: 'tarefas',       x: 0, y: 14, w: 4, h: 7  },
+    { i: 'intimacoes',    x: 4, y: 14, w: 4, h: 7  },
+    { i: 'processos',     x: 8, y: 14, w: 4, h: 7  },
+    { i: 'requerimentos', x: 0, y: 21, w: 4, h: 7  },
+  ],
+  // 480–767px — 6 cols, stacked
+  sm: [
+    { i: 'agenda',        x: 0, y: 0,  w: 6, h: 14 },
+    { i: 'acoes',         x: 0, y: 14, w: 6, h: 4  },
+    { i: 'financeiro',    x: 0, y: 18, w: 6, h: 7  },
+    { i: 'prazos',        x: 0, y: 25, w: 6, h: 5  },
+    { i: 'tarefas',       x: 0, y: 30, w: 6, h: 7  },
+    { i: 'intimacoes',    x: 0, y: 37, w: 6, h: 7  },
+    { i: 'processos',     x: 0, y: 44, w: 6, h: 7  },
+    { i: 'requerimentos', x: 0, y: 51, w: 6, h: 7  },
+  ],
+  // < 480px — 4 cols, stacked
+  xs: [
+    { i: 'agenda',        x: 0, y: 0,  w: 4, h: 12 },
+    { i: 'acoes',         x: 0, y: 12, w: 4, h: 4  },
+    { i: 'financeiro',    x: 0, y: 16, w: 4, h: 7  },
+    { i: 'prazos',        x: 0, y: 23, w: 4, h: 5  },
+    { i: 'tarefas',       x: 0, y: 28, w: 4, h: 7  },
+    { i: 'intimacoes',    x: 0, y: 35, w: 4, h: 7  },
+    { i: 'processos',     x: 0, y: 42, w: 4, h: 7  },
+    { i: 'requerimentos', x: 0, y: 49, w: 4, h: 7  },
+  ],
+  xxs: [
+    { i: 'agenda',        x: 0, y: 0,  w: 2, h: 12 },
+    { i: 'acoes',         x: 0, y: 12, w: 2, h: 4  },
+    { i: 'financeiro',    x: 0, y: 16, w: 2, h: 7  },
+    { i: 'prazos',        x: 0, y: 23, w: 2, h: 5  },
+    { i: 'tarefas',       x: 0, y: 28, w: 2, h: 7  },
+    { i: 'intimacoes',    x: 0, y: 35, w: 2, h: 7  },
+    { i: 'processos',     x: 0, y: 42, w: 2, h: 7  },
+    { i: 'requerimentos', x: 0, y: 49, w: 2, h: 7  },
+  ],
+};
 
 interface DashboardCache {
   version: number;
@@ -191,22 +289,39 @@ const parseLocalDateTime = (value: string) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
-  // Adicionar animação CSS dinamicamente
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
       @keyframes wave {
-        0% { transform: rotate(0deg); }
-        25% { transform: rotate(20deg); }
-        75% { transform: rotate(-10deg); }
+        0%   { transform: rotate(0deg); }
+        25%  { transform: rotate(20deg); }
+        75%  { transform: rotate(-10deg); }
         100% { transform: rotate(0deg); }
+      }
+      .scroll-hidden::-webkit-scrollbar { display: none; }
+      .scroll-hidden { -ms-overflow-style: none; scrollbar-width: none; }
+      .widget-header { cursor: grab; user-select: none; }
+      .widget-header:active { cursor: grabbing; }
+      .react-grid-item.react-grid-placeholder {
+        background: rgba(245,158,11,0.1) !important;
+        border: 2px dashed rgba(245,158,11,0.4) !important;
+        border-radius: 12px;
+        z-index: 2;
+      }
+      .react-resizable-handle {
+        opacity: 0.2;
+        transition: opacity 0.15s;
+      }
+      .react-resizable-handle:hover { opacity: 0.6; }
+      .react-grid-item.cssTransforms {
+        transition-property: transform !important;
+        transition-duration: 150ms !important;
       }
     `;
     document.head.appendChild(style);
-    return () => {
-      document.head.removeChild(style);
-    };
+    return () => { document.head.removeChild(style); };
   }, []);
+
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -224,26 +339,118 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     start_at: string;
     type: string;
     client_id?: string | null;
+    clientId?: string;
+    clientName?: string;
+    description?: string;
   } | null>(null);
   const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [userProfileId, setUserProfileId] = useState<string>('');
+  const [userAuthId, setUserAuthId] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  const [layouts, setLayouts] = useState<RLayouts>(() => {
+    try {
+      const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_LAYOUTS;
+  });
+
+  // Ref para debounce de salvamento remoto (Supabase)
+  const saveLayoutTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Flag para evitar salvar layout durante o carregamento inicial do Supabase
+  const remoteLayoutLoadedRef = React.useRef<boolean>(false);
+  const [layoutSaved, setLayoutSaved] = React.useState(false);
+  const layoutSavedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Carrega o layout salvo no Supabase ao montar (sobrescreve localStorage se existir remotamente)
+  React.useEffect(() => {
+    if (!userAuthId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await dashboardPreferencesService.getGridLayout(userAuthId);
+        if (cancelled) return;
+        if (remote && typeof remote === 'object') {
+          setLayouts(remote as RLayouts);
+          try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(remote)); } catch {}
+        } else {
+          // No remote layout — clear any stale localStorage so default is used cleanly
+          try { localStorage.removeItem(LAYOUT_STORAGE_KEY); } catch {}
+        }
+      } catch (err) {
+        console.warn('Não foi possível carregar layout do Supabase:', err);
+      } finally {
+        remoteLayoutLoadedRef.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userAuthId]);
+
+  const handleLayoutsChange = useCallback((_layout: readonly LayoutItem[], allLayouts: RLayouts) => {
+    setLayouts((prev: RLayouts) => {
+      const next: RLayouts = { ...prev };
+      Object.entries(allLayouts).forEach(([bp, updatedItems]) => {
+        const prevItems: readonly LayoutItem[] = prev[bp] || DEFAULT_LAYOUTS[bp] || [];
+        const merged: LayoutItem[] = (prevItems as LayoutItem[]).map((item: LayoutItem) => {
+          const updated = (updatedItems as LayoutItem[]).find((u: LayoutItem) => u.i === item.i);
+          return updated ? { ...item, ...updated } : item;
+        });
+        (updatedItems as LayoutItem[]).forEach((item: LayoutItem) => {
+          if (!merged.find((m: LayoutItem) => m.i === item.i)) merged.push(item);
+        });
+        next[bp] = merged;
+      });
+      try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(next)); } catch {}
+
+      // Debounce do salvamento no Supabase (800ms) — evita flood durante drag/resize.
+      // Só salva após o carregamento inicial e se houver usuário autenticado.
+      if (remoteLayoutLoadedRef.current && userAuthId) {
+        if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
+        saveLayoutTimerRef.current = setTimeout(() => {
+          dashboardPreferencesService.saveGridLayout(userAuthId, next as any).then(ok => {
+            if (ok) {
+              setLayoutSaved(true);
+              if (layoutSavedTimerRef.current) clearTimeout(layoutSavedTimerRef.current);
+              layoutSavedTimerRef.current = setTimeout(() => setLayoutSaved(false), 2500);
+            }
+          }).catch(err => {
+            console.warn('Falha ao persistir layout no Supabase:', err);
+          });
+        }, 800);
+      }
+      return next;
+    });
+  }, [userAuthId]);
+
+  // Limpa o timer de debounce ao desmontar
+  React.useEffect(() => {
+    return () => {
+      if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
+    };
+  }, []);
+
+  const resetLayouts = useCallback(() => {
+    setLayouts(DEFAULT_LAYOUTS);
+    try { localStorage.removeItem(LAYOUT_STORAGE_KEY); } catch {}
+    // Limpa o layout salvo no Supabase também (define grid_layout como null;
+    // não remove a linha pois ela pode conter left_widgets/right_widgets de outras features)
+    if (userAuthId) {
+      dashboardPreferencesService.saveGridLayout(userAuthId, null).catch(err => {
+        console.warn('Falha ao resetar layout no Supabase:', err);
+      });
+    }
+  }, [userAuthId]);
 
   const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`${label} excedeu ${REQUEST_TIMEOUT_MS / 1000}s`));
       }, REQUEST_TIMEOUT_MS);
-
-      promise
-        .then((value) => {
-          clearTimeout(timer);
-          resolve(value);
-        })
-        .catch((error) => {
-          clearTimeout(timer);
-          reject(error);
-        });
+      promise.then(v => { clearTimeout(timer); resolve(v); })
+             .catch(e => { clearTimeout(timer); reject(e); });
     });
   }, []);
 
@@ -258,7 +465,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     try {
       setLoading(true);
 
-      // Tentar carregar do cache primeiro
       if (!forceRefresh) {
         const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
         if (cachedData) {
@@ -278,8 +484,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               typeof cache.data.financialStats !== 'undefined' &&
               Array.isArray(cache.data.overdueInstallments) &&
               Array.isArray(cache.data.djenIntimacoes);
-            
-            // Verificar se o cache ainda é válido
             if (cacheValid && now - cache.timestamp < CACHE_DURATION) {
               setClients(cache.data.clients);
               setProcesses(cache.data.processes);
@@ -291,6 +495,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               setOverdueInstallments(cache.data.overdueInstallments);
               setDjenIntimacoes(cache.data.djenIntimacoes);
               setLoading(false);
+              // Sempre re-busca eventos de calendário em background (dados mais voláteis)
+              const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0);
+              const future = new Date(cutoff.getTime() + 60 * 24 * 60 * 60 * 1000);
+              calendarService.listEvents()
+                .then(evs => {
+                  const fresh = evs.filter(e => {
+                    if (!e.start_at) return false;
+                    const d = parseLocalDateTime(e.start_at);
+                    return d >= cutoff && d <= future;
+                  }).slice(0, 100);
+                  setCalendarEvents(fresh);
+                })
+                .catch(() => {});
               return;
             }
           } catch (e) {
@@ -299,10 +516,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         }
       }
 
-      // Carregar dados da API com limites para reduzir egress
       const today = new Date().toISOString().split('T')[0];
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+
       const [
         clientsData,
         processesData,
@@ -314,86 +530,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         allInstallmentsData,
         djenIntimacoesData,
       ] = await Promise.all([
-        safeFetch(
-          () => clientService.listClients().then((clients) => clients.filter((c) => c.status === 'ativo')),
-          [],
-          'Clientes'
-        ),
-        safeFetch(
-          () => processService.listProcesses().then((procs) => procs.filter((p) => p.status !== 'arquivado').slice(0, 100)),
-          [],
-          'Processos'
-        ),
-        safeFetch(
-          () => deadlineService.listDeadlines().then((deadlines) => deadlines.filter((d) => d.status === 'pendente').slice(0, 50)),
-          [],
-          'Prazos'
-        ),
-        safeFetch(
-          () => taskService.listTasks().then((tasks) => tasks.filter((t) => t.status === 'pending').slice(0, 50)),
-          [],
-          'Tarefas'
-        ),
-        safeFetch(
-          () =>
-            calendarService.listEvents().then((events) => {
-              const now = new Date();
-              now.setHours(0, 0, 0, 0);
-              const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-              return events
-                .filter((e) => {
-                  if (!e.start_at) return false;
-                  const eventDate = parseLocalDateTime(e.start_at);
-                  return eventDate >= now && eventDate <= futureDate;
-                })
-                .slice(0, 100);
-            }),
-          [],
-          'Agenda'
-        ),
-        safeFetch(
-          () => requirementService
-            .listRequirements()
-            .then((reqs) => reqs.filter((r) => r.status === 'aguardando_confeccao').slice(0, 50)),
-          [],
-          'Requerimentos'
-        ),
-        safeFetch(
-          () => financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
-          null,
-          'Financeiro'
-        ),
-        safeFetch(
-          () =>
-            financialService.listAllInstallments().then((insts) =>
-              insts
-                .filter(
-                  (i) => (i.status === 'pendente' || i.status === 'vencido') && i.due_date >= thirtyDaysAgo
-                )
-                .slice(0, 50)
-            ),
-          [],
-          'Parcelas'
-        ),
-        safeFetch(
-          () => djenLocalService.listComunicacoes({ lida: false }),
-          [],
-          'Intimações DJEN'
-        ),
+        safeFetch(() => clientService.listClients().then(cs => cs.filter(c => c.status === 'ativo')), [], 'Clientes'),
+        safeFetch(() => processService.listProcesses().then(ps => ps.filter(p => p.status !== 'arquivado').slice(0, 100)), [], 'Processos'),
+        safeFetch(() => deadlineService.listDeadlines().then(ds => ds.filter(d => d.status === 'pendente').slice(0, 50)), [], 'Prazos'),
+        safeFetch(() => taskService.listTasks().then(ts => ts.filter(t => t.status === 'pending').slice(0, 50)), [], 'Tarefas'),
+        safeFetch(() => calendarService.listEvents().then(evs => {
+          const now = new Date(); now.setHours(0, 0, 0, 0);
+          const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+          return evs.filter(e => {
+            if (!e.start_at) return false;
+            const d = parseLocalDateTime(e.start_at);
+            return d >= now && d <= futureDate;
+          }).slice(0, 100);
+        }), [], 'Agenda'),
+        safeFetch(() => requirementService.listRequirements().then(rs => rs.filter(r => r.status === 'aguardando_confeccao').slice(0, 50)), [], 'Requerimentos'),
+        safeFetch(() => financialService.getFinancialStats(new Date().toISOString().slice(0, 7)), null, 'Financeiro'),
+        safeFetch(() => financialService.listAllInstallments().then(insts =>
+          insts.filter(i => (i.status === 'pendente' || i.status === 'vencido') && i.due_date >= thirtyDaysAgo).slice(0, 50)
+        ), [], 'Parcelas'),
+        safeFetch(() => djenLocalService.listComunicacoes({ lida: false }), [], 'Intimações DJEN'),
       ]);
-      
-      // Filtrar parcelas vencidas (reutilizar variável today já declarada)
+
       const overdue = allInstallmentsData
         .filter((inst: any) => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
         .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))
         .slice(0, 5);
 
-      // Carregar estatísticas de urgência das intimações
       if (djenIntimacoesData.length > 0) {
         try {
           const intimationIds = djenIntimacoesData.map((int: any) => int.id);
           const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
-          
           const stats = { alta: 0, media: 0, baixa: 0, sem_analise: 0 };
           djenIntimacoesData.forEach((intimacao: any) => {
             const analysis = analyses.get(intimacao.id);
@@ -409,7 +575,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         }
       }
 
-      // Atualizar estados
       setClients(clientsData);
       setProcesses(processesData);
       setDeadlines(deadlinesData);
@@ -420,7 +585,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       setDjenIntimacoes(djenIntimacoesData);
       setOverdueInstallments(overdue);
 
-      // Salvar no cache
       const cacheData: DashboardCache = {
         version: DASHBOARD_CACHE_VERSION,
         timestamp: Date.now(),
@@ -438,11 +602,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       };
       try {
         localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
-      } catch (cacheError) {
-        // Se localStorage estiver cheio, limpa caches antigos e tenta novamente
-        console.warn('Cache cheio, limpando dados antigos...');
+      } catch {
         try {
-          // Remove caches antigos do CRM
           const keysToRemove: string[] = [];
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
@@ -451,10 +612,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             }
           }
           keysToRemove.forEach(key => localStorage.removeItem(key));
-          // Tenta salvar novamente
           localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
         } catch {
-          // Se ainda falhar, ignora o cache
           console.warn('Não foi possível salvar cache do dashboard');
         }
       }
@@ -465,100 +624,143 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     }
   }, [safeFetch]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
 
   useEffect(() => {
     const loadUserName = async () => {
       try {
         const profile = await profileService.getMyProfile();
         const fullName = profile?.name || '';
-        const firstName = fullName.split(' ')[0];
-        setUserName(firstName);
+        setUserName(fullName.split(' ')[0]);
+        setUserProfileId(profile?.id || '');
+        setUserAuthId(profile?.user_id || '');
+        setUserRole(profile?.role || '');
       } catch (error) {
         console.warn('Não foi possível carregar o nome do usuário:', error);
       }
     };
-    
     loadUserName();
   }, []);
 
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
-      console.log('🔄 Dashboard: Mudança de clientes detectada, recarregando...');
-      loadDashboardData(true); // Forçar recarregamento ignorando cache
+      loadDashboardData(true);
     });
-    
     return () => unsubscribe();
   }, [loadDashboardData]);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
+  // Hook nativo do react-grid-layout v2 que mede a largura do container automaticamente.
+  // No mobile (< 768px) a sidebar é oculta (ml-0), então não subtrai offset.
+  const initialGridWidth = typeof window !== 'undefined'
+    ? Math.max(window.innerWidth >= 768 ? window.innerWidth - 80 : window.innerWidth, 320)
+    : 1200;
+  const { width: gridWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth({
+    measureBeforeMount: false,
+    initialWidth: initialGridWidth,
+  });
+  // Limpa layouts antigos de versões anteriores (uma vez)
+  React.useEffect(() => {
+    try {
+      ['crm-dashboard-grid', 'crm-dashboard-grid-v2', 'crm-dashboard-grid-v3', 'crm-dashboard-grid-v4'].forEach(k => localStorage.removeItem(k));
+    } catch {}
+  }, []);
 
-  const activeClients = clients.filter((c) => c.status === 'ativo').length;
+  const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;
-  // ... (rest of the code remains the same)
-  const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
-  const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
-  const awaitingRequirements = requirements.filter((r) => r.status === 'aguardando_confeccao');
-  const awaitingDraftProcesses = processes.filter((p) => p.status === 'aguardando_confeccao');
-  const pendingProcesses = processes.filter((p) => p.status === 'andamento' || p.status === 'distribuido');
+  const pendingDeadlines = deadlines.filter(d => d.status === 'pendente').length;
+  const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+  const awaitingRequirements = requirements.filter(r => r.status === 'aguardando_confeccao');
+  const awaitingDraftProcesses = processes.filter(p => p.status === 'aguardando_confeccao');
+  const pendingProcesses = processes.filter(p => p.status === 'andamento' || p.status === 'distribuido');
+
+  const isAdmin = userRole.toLowerCase().includes('admin');
 
   const upcomingDeadlines = deadlines
-    .filter((d) => d.status === 'pendente' && d.due_date)
+    .filter(d => d.status === 'pendente' && d.due_date && (isAdmin || !userProfileId || d.responsible_id === userProfileId))
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
     .slice(0, 5);
 
   const recentTasks = tasks
-    .filter((t) => t.status === 'pending')
+    .filter(t => t.status === 'pending' && (!userAuthId || t.user_id === userAuthId))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5);
 
-  // Combinar compromissos manuais + audiências dos processos
   const upcomingEvents = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(today.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
 
-    // Compromissos manuais
-    const manualEvents = calendarEvents
-      .filter((e) => {
-        if (!e.start_at) return false;
-        const eventDate = parseLocalDateTime(e.start_at);
-        return eventDate >= today;
+    const cMap = new Map(clients.map(c => [c.id, c.full_name]));
+    const inWeek = (d: Date) => d >= today && d <= weekEnd;
+
+    const calEvts = calendarEvents
+      .filter(e => {
+        if (!e.start_at || !inWeek(parseLocalDateTime(e.start_at))) return false;
+        if (isAdmin || !userAuthId) return true;
+        // Evento próprio ou compartilhado com o usuário
+        return e.user_id === userAuthId || (e.shared_with_ids?.includes(userAuthId) ?? false);
       })
-      .map((e) => ({
-        id: e.id,
-        title: e.title,
-        start_at: e.start_at,
+      .map(e => ({
+        id: e.id, title: e.title, start_at: e.start_at,
         type: e.event_type || 'meeting',
-        client_id: e.client_id,
+        clientId: e.client_id || undefined,
+        clientName: e.client_id ? cMap.get(e.client_id) : undefined,
+        description: e.description || undefined,
       }));
 
-    // Audiências dos processos
-    const hearingEvents = processes
-      .filter((p) => p.hearing_scheduled && p.hearing_date)
-      .filter((p) => {
-        const hearingDate = parseLocalDateTime(p.hearing_date!);
-        return hearingDate >= today;
-      })
-      .map((p) => {
-        const client = clients.find((c) => c.id === p.client_id);
-        const clientName = client?.full_name || 'Sem cliente';
-        const modeLabel = p.hearing_mode ? p.hearing_mode.toUpperCase() : '';
-        return {
-          id: `hearing-${p.id}`,
-          title: `Audiência${modeLabel ? ` - ${modeLabel}` : ''} - ${clientName}`,
-          start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
-          type: 'hearing',
-          client_id: p.client_id,
-        };
-      });
+    const hearingEvts = processes
+      .filter(p => p.hearing_scheduled && p.hearing_date && inWeek(parseLocalDateTime(p.hearing_date!)))
+      .map(p => ({
+        id: `hearing-${p.id}`,
+        title: `Audiência${p.hearing_mode ? ` ${p.hearing_mode}` : ''}`,
+        start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
+        type: 'hearing',
+        clientId: p.client_id || undefined,
+        clientName: p.client_id ? cMap.get(p.client_id) : undefined,
+        description: p.process_code ? `Processo: ${p.process_code}` : undefined,
+      }));
 
-    // Combinar e ordenar
-    return [...manualEvents, ...hearingEvents]
-      .sort((a, b) => parseLocalDateTime(a.start_at).getTime() - parseLocalDateTime(b.start_at).getTime())
-      .slice(0, 10);
-  }, [calendarEvents, processes, clients]);
+    const deadlineEvts = deadlines
+      .filter(d => {
+        if (d.status !== 'pendente' || !d.due_date || !inWeek(parseLocalDateTime(d.due_date))) return false;
+        if (isAdmin || !userProfileId) return true;
+        return d.responsible_id === userProfileId;
+      })
+      .map(d => ({
+        id: `deadline-${d.id}`, title: d.title,
+        start_at: d.due_date!,
+        type: 'deadline',
+        clientId: d.client_id || undefined,
+        clientName: d.client_id ? cMap.get(d.client_id) : undefined,
+        description: d.description || undefined,
+      }));
+
+    const reqEvts = requirements
+      .filter(r => r.status === 'em_exigencia' && r.exigency_due_date && inWeek(parseLocalDateTime(r.exigency_due_date)))
+      .map(r => ({
+        id: `req-${r.id}`,
+        title: `Prazo exigência — ${r.beneficiary || 'Requerimento'}`,
+        start_at: r.exigency_due_date!,
+        type: 'deadline',
+        clientId: undefined,
+        clientName: r.beneficiary || undefined,
+        description: undefined,
+      }));
+
+    return [...calEvts, ...hearingEvts, ...deadlineEvts, ...reqEvts].sort((a, b) => {
+      const da = parseLocalDateTime(a.start_at);
+      const db = parseLocalDateTime(b.start_at);
+      const dayA = new Date(da); dayA.setHours(0, 0, 0, 0);
+      const dayB = new Date(db); dayB.setHours(0, 0, 0, 0);
+      if (dayA.getTime() !== dayB.getTime()) return dayA.getTime() - dayB.getTime();
+      const aAllDay = da.getHours() === 0 && da.getMinutes() === 0;
+      const bAllDay = db.getHours() === 0 && db.getMinutes() === 0;
+      if (aAllDay !== bAllDay) return aAllDay ? 1 : -1;
+      return da.getTime() - db.getTime();
+    });
+  }, [calendarEvents, processes, deadlines, requirements, clients, userAuthId, userRole, userProfileId]);
 
   const pendingRequirementsList = awaitingRequirements
     .sort((a, b) => {
@@ -570,98 +772,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   const awaitingDraftProcessesList = awaitingDraftProcesses
     .sort((a, b) => {
-      // Primeiro: urgentes vs não urgentes
       if (a.priority === 'urgente' && b.priority !== 'urgente') return -1;
       if (a.priority !== 'urgente' && b.priority === 'urgente') return 1;
-      // Segundo: por data (mais antigos primeiro para aguardando confecção)
       const dateA = a.distributed_at ? new Date(a.distributed_at).getTime() : new Date(a.created_at).getTime();
       const dateB = b.distributed_at ? new Date(b.distributed_at).getTime() : new Date(b.created_at).getTime();
       return dateA - dateB;
     })
     .slice(0, 5);
 
-  const pendingProcessesList = pendingProcesses
-    .sort((a, b) => {
-      const dateA = a.distributed_at ? new Date(a.distributed_at).getTime() : new Date(a.created_at).getTime();
-      const dateB = b.distributed_at ? new Date(b.distributed_at).getTime() : new Date(b.created_at).getTime();
-      return dateB - dateA;
-    })
-    .slice(0, 5);
-
   const nowDate = new Date();
-  const dayDescription = nowDate.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
 
-  const newClientsThisMonth = clients.filter((client) => {
-    if (!client.created_at) return false;
-    const created = new Date(client.created_at);
-    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
+  const newClientsThisMonth = clients.filter(c => {
+    if (!c.created_at) return false;
+    const d = new Date(c.created_at);
+    return d.getMonth() === nowDate.getMonth() && d.getFullYear() === nowDate.getFullYear();
   }).length;
 
-  const newProcessesThisMonth = processes.filter((process) => {
-    if (!process.created_at) return false;
-    const created = new Date(process.created_at);
-    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
+  const newProcessesThisMonth = processes.filter(p => {
+    if (!p.created_at) return false;
+    const d = new Date(p.created_at);
+    return d.getMonth() === nowDate.getMonth() && d.getFullYear() === nowDate.getFullYear();
   }).length;
 
-  const completedTasksCount = tasks.filter((task) => {
-    const normalized = (task.status || '').toLowerCase();
-    return normalized === 'completed' || normalized === 'done' || normalized === 'concluido';
+  const completedTasksCount = tasks.filter(t => {
+    const n = (t.status || '').toLowerCase();
+    return n === 'completed' || n === 'done' || n === 'concluido';
   }).length;
 
   const totalTrackedTasks = completedTasksCount + pendingTasks;
   const tasksCompletionRate = totalTrackedTasks ? Math.round((completedTasksCount / totalTrackedTasks) * 100) : 0;
 
-  const summaryCards = [
-    {
-      id: 'clients',
-      label: 'Clientes',
-      value: activeClients,
-      helper: `${newClientsThisMonth} novos este mês`,
-      accent: 'text-blue-600 bg-blue-50',
-      icon: Users,
-      action: 'clientes',
-    },
-    {
-      id: 'processes',
-      label: 'Processos',
-      value: activeProcesses,
-      helper: `${newProcessesThisMonth} iniciados`,
-      accent: 'text-purple-600 bg-purple-50',
-      icon: Briefcase,
-      action: 'processos',
-    },
-    {
-      id: 'deadlines',
-      label: 'Prazos',
-      value: pendingDeadlines,
-      helper: 'pendentes',
-      accent: 'text-rose-600 bg-rose-50',
-      icon: CalendarDays,
-      action: 'prazos',
-    },
-    {
-      id: 'tasks',
-      label: 'Tarefas',
-      value: `${tasksCompletionRate}%`,
-      helper: `${completedTasksCount}/${totalTrackedTasks} concluídas`,
-      accent: 'text-amber-600 bg-amber-50',
-      icon: CheckSquare,
-      action: 'tarefas',
-    },
-  ];
-
   const handleNavigate = (moduleWithParams: string) => {
     if (!onNavigateToModule) return;
-    
-    // Extrair módulo e parâmetros da string (ex: "clients?mode=create")
     const [module, queryString] = moduleWithParams.split('?');
-    
     if (queryString) {
-      // Parsear query string em objeto de parâmetros
       const params: Record<string, string> = {};
       queryString.split('&').forEach(pair => {
         const [key, value] = pair.split('=');
@@ -673,14 +817,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
-  };
-
-  // Calcular saudação baseada na hora
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Bom dia';
@@ -688,10 +824,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     return 'Boa noite';
   };
 
-  // Calcular alertas urgentes
   const urgentAlerts = useMemo(() => {
     const alerts: { type: string; count: number; color: string; icon: React.ReactNode; action: string }[] = [];
-    
     if (pendingDeadlines > 0) {
       const urgentDeadlines = deadlines.filter(d => {
         if (d.status !== 'pendente') return false;
@@ -704,17 +838,61 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         alerts.push({ type: 'Prazos Urgentes', count: urgentDeadlines, color: 'red', icon: <AlertTriangle className="w-4 h-4" />, action: 'prazos' });
       }
     }
-    
     if (djenIntimacoes.length > 0) {
       alerts.push({ type: 'Intimações Não Lidas', count: djenIntimacoes.length, color: 'orange', icon: <Bell className="w-4 h-4" />, action: 'intimacoes' });
     }
-    
     if (financialStats && financialStats.overdue_installments > 0) {
       alerts.push({ type: 'Parcelas Vencidas', count: financialStats.overdue_installments, color: 'amber', icon: <Wallet className="w-4 h-4" />, action: 'financeiro' });
     }
-    
     return alerts;
   }, [pendingDeadlines, deadlines, djenIntimacoes, financialStats]);
+
+  // Compute filtered layouts for only visible widgets
+  const visibleWidgetKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (canView('agenda')) keys.add('agenda');
+    if (canView('tarefas')) keys.add('tarefas');
+    if (canView('clientes') || canView('prazos') || canView('tarefas') || canView('agenda') ||
+        canView('requerimentos') || canView('processos') || canView('financeiro')) keys.add('acoes');
+    // Financeiro: aparece sempre que há permissão (mesmo sem stats ainda carregados —
+    // o widget próprio trata o estado vazio/loading)
+    if (canView('financeiro')) keys.add('financeiro');
+    if (canView('prazos')) keys.add('prazos');
+    if (canView('intimacoes')) keys.add('intimacoes');
+    if (canView('processos')) keys.add('processos');
+    if (canView('requerimentos')) keys.add('requerimentos');
+    return keys;
+  }, [canView]);
+
+  // Número de colunas por breakpoint
+  const COLS_PER_BP: Record<string, number> = { lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 };
+
+  const activeLayouts = useMemo<RLayouts>(() => {
+    const result: RLayouts = {};
+    const allBps = ['lg', 'md', 'sm', 'xs', 'xxs'];
+    const allVisible = visibleWidgetKeys.size === WIDGET_ORDER.length;
+    allBps.forEach(bp => {
+      if (allVisible) {
+        const items: readonly LayoutItem[] = layouts[bp] || DEFAULT_LAYOUTS[bp] || [];
+        const cols = COLS_PER_BP[bp] ?? 12;
+        // Filtra widgets visíveis e valida que cada item cabe nas colunas do breakpoint
+        const filtered = (items as LayoutItem[])
+          .filter((item: LayoutItem) => visibleWidgetKeys.has(item.i))
+          .map((item: LayoutItem) => ({
+            ...item,
+            // Garante que o widget não exceda a largura do breakpoint
+            w: Math.min(item.w, cols),
+            x: Math.min(item.x, cols - Math.min(item.w, cols)),
+          }));
+        // Se algum item ficou inválido (w+x > cols), usa auto-fit como fallback
+        const hasInvalid = filtered.some((item: LayoutItem) => item.x + item.w > cols);
+        result[bp] = hasInvalid ? buildAutoFitLayout(visibleWidgetKeys, bp) : filtered;
+      } else {
+        result[bp] = buildAutoFitLayout(visibleWidgetKeys, bp);
+      }
+    });
+    return result;
+  }, [layouts, visibleWidgetKeys]);
 
   if (loading || permissionsLoading) {
     return (
@@ -727,89 +905,101 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     );
   }
 
+  const typeDot: Record<string, string> = {
+    meeting: 'bg-amber-400', hearing: 'bg-red-500',
+    payment: 'bg-emerald-500', deadline: 'bg-rose-500',
+    task: 'bg-violet-400', other: 'bg-slate-300',
+  };
+  const typeTag: Record<string, { bg: string; text: string; label: string }> = {
+    meeting:  { bg: 'bg-amber-50',   text: 'text-amber-700',   label: 'Reunião' },
+    hearing:  { bg: 'bg-red-50',     text: 'text-red-700',     label: 'Audiência' },
+    payment:  { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Pagamento' },
+    deadline: { bg: 'bg-rose-50',    text: 'text-rose-700',    label: 'Prazo' },
+    task:     { bg: 'bg-violet-50',  text: 'text-violet-700',  label: 'Tarefa' },
+    other:    { bg: 'bg-slate-100',  text: 'text-slate-500',   label: 'Evento' },
+  };
+
+  const agendaGroups: { label: string; dateLabel: string; isToday: boolean; dateKey: string; events: typeof upcomingEvents }[] = [];
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(now.getTime() + 86400000);
+  upcomingEvents.forEach(ev => {
+    const d = parseLocalDateTime(ev.start_at); d.setHours(0, 0, 0, 0);
+    const isToday    = d.getTime() === now.getTime();
+    const isTomorrow = d.getTime() === tomorrow.getTime();
+    const label = isToday ? 'Hoje' : isTomorrow ? 'Amanhã'
+      : d.toLocaleDateString('pt-BR', { weekday: 'long' });
+    const dateLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    const key = d.toISOString().slice(0, 10);
+    const g = agendaGroups.find(g => g.dateKey === key);
+    if (g) g.events.push(ev); else agendaGroups.push({ label, dateLabel, isToday, dateKey: key, events: [ev] });
+  });
+
   return (
-    <div className="space-y-4 sm:space-y-6 bg-slate-50/50 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 min-h-screen">
+    <div className="bg-slate-50/50 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 min-h-screen overflow-x-hidden">
+
+      {/* Layout saved toast */}
+      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-full shadow-xl transition-all duration-300 pointer-events-none ${
+        layoutSaved ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+      }`}>
+        <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+        Layout salvo
+      </div>
 
       {/* Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-
-        {/* Linha 1 mobile: Saudação (esq) + Botão Novo Cliente (dir) */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 mb-4 sm:mb-5">
         <div className="flex items-center justify-between sm:gap-4">
-          {/* Saudação e Nome */}
           <div className="flex items-center gap-2">
             <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
             <User className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
-            <h1 className="text-lg sm:text-2xl font-bold text-slate-900">
-              {userName || 'Dashboard'}
-            </h1>
+            <h1 className="text-lg sm:text-2xl font-bold text-slate-900">{userName || 'Dashboard'}</h1>
             {userName && (
-              <span
-                className="text-base sm:text-xl leading-none select-none"
-                style={{
-                  animation: 'wave 1s ease-in-out infinite',
-                  transformOrigin: '70% 70%',
-                  display: 'inline-block',
-                }}
-              >
+              <span className="text-base sm:text-xl leading-none select-none"
+                style={{ animation: 'wave 1s ease-in-out infinite', transformOrigin: '70% 70%', display: 'inline-block' }}>
                 👋
               </span>
             )}
           </div>
-
-          {/* Botão Novo Cliente — inline com a saudação no mobile */}
           {canView('clientes') && canCreate('clientes') && (
-            <button
-              onClick={() => handleNavigate('clientes?mode=create')}
-              className="sm:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-all shrink-0"
-            >
+            <button onClick={() => handleNavigate('clientes?mode=create')}
+              className="sm:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-all shrink-0">
               <Plus className="w-3.5 h-3.5" />
               <span>Novo Cliente</span>
             </button>
           )}
         </div>
 
-        {/* Linha 2 mobile: Estatísticas (esq) + Alertas+Botão desktop (dir) */}
         <div className="flex items-center justify-between sm:justify-start sm:gap-4">
-          {/* Estatísticas */}
           <div className="flex items-center gap-2 sm:gap-3">
             {canView('clientes') && (
-              <button
-                onClick={() => handleNavigate('clientes')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm"
-              >
+              <button onClick={() => handleNavigate('clientes')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm">
                 <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="font-semibold">{activeClients}</span>
                 <span className="text-blue-600 hidden sm:inline">clientes</span>
-                {newClientsThisMonth > 0 && (
-                  <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
-                )}
+                {newClientsThisMonth > 0 && <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>}
               </button>
             )}
             {canView('processos') && (
-              <button
-                onClick={() => handleNavigate('processos')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm"
-              >
+              <button onClick={() => handleNavigate('processos')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm">
                 <Gavel className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="font-semibold">{activeProcesses}</span>
                 <span className="text-purple-600 hidden sm:inline">processos</span>
               </button>
             )}
             {canView('prazos') && (
-              <button
-                onClick={() => handleNavigate('prazos')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm"
-              >
+              <button onClick={() => handleNavigate('prazos')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm">
                 <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="font-semibold">{pendingDeadlines}</span>
                 <span className="text-red-600 hidden sm:inline">prazos</span>
               </button>
             )}
             {canView('tarefas') && (
-              <button
-                onClick={() => handleNavigate('tarefas')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm"
-              >
+              <button onClick={() => handleNavigate('tarefas')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm">
                 <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="font-semibold">{pendingTasks}</span>
                 <span className="text-emerald-600 hidden sm:inline">tarefas</span>
@@ -817,40 +1007,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
 
-          {/* Alertas + Botão Novo Cliente — desktop apenas */}
           <div className="hidden sm:flex items-center gap-2">
             {urgentAlerts.length > 0 && (
               <div className="flex items-center gap-2">
-                {urgentAlerts.filter((a) => canView(a.action)).map((alert, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleNavigate(alert.action)}
+                {urgentAlerts.filter(a => canView(a.action)).map((alert, index) => (
+                  <button key={index} onClick={() => handleNavigate(alert.action)}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                      alert.action === 'prazos'
-                        ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
-                        : alert.action === 'intimacoes'
-                          ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
-                          : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
-                    }`}
-                  >
+                      alert.action === 'prazos' ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
+                      : alert.action === 'intimacoes' ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
+                      : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
+                    }`}>
                     {alert.icon}
-                    <span>
-                      {alert.action === 'prazos'
-                        ? 'Prazos'
-                        : alert.action === 'intimacoes'
-                          ? 'Intimações'
-                          : 'Financeiro'}
-                    </span>
+                    <span>{alert.action === 'prazos' ? 'Prazos' : alert.action === 'intimacoes' ? 'Intimações' : 'Financeiro'}</span>
                     <span className="font-bold">{alert.count}</span>
                   </button>
                 ))}
               </div>
             )}
+            <button onClick={resetLayouts} title="Resetar layout dos widgets"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
             {canView('clientes') && canCreate('clientes') && (
-              <button
-                onClick={() => handleNavigate('clientes?mode=create')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-all"
-              >
+              <button onClick={() => handleNavigate('clientes?mode=create')}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-all">
                 <Plus className="w-4 h-4" />
                 <span>Novo Cliente</span>
               </button>
@@ -859,553 +1039,624 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
       </div>
 
-      {/* Grid Principal - Agenda + Financeiro */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-        <div className="flex flex-col gap-4">
-          {/* Widget de Agenda - Design Limpo */}
-          {canView('agenda') && (
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-            <div className="p-3 sm:p-4 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-blue-100 flex items-center justify-center">
-                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Agenda</h3>
-                    <p className="text-[10px] sm:text-xs text-slate-500">{upcomingEvents.length} próximo{upcomingEvents.length !== 1 ? 's' : ''}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <button
-                    onClick={() => loadDashboardData(true)}
-                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                    title="Atualizar agenda"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleNavigate('agenda')}
-                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                  >
-                    <span className="hidden sm:inline">Ver todos</span>
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
-                </div>
+      {/* Draggable / Resizable Widget Grid */}
+      <div ref={gridContainerRef} className="w-full" style={{ width: '100%' }}>
+      {gridMounted && (
+      <ResponsiveGridLayout
+        width={gridWidth}
+        layouts={activeLayouts}
+        breakpoints={{ lg: 1100, md: 768, sm: 480, xs: 320, xxs: 0 }}
+        cols={{ lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 }}
+        rowHeight={ROW_HEIGHT}
+        margin={gridWidth < 480 ? [8, 8] as [number, number] : [12, 12] as [number, number]}
+        containerPadding={[0, 0] as [number, number]}
+        dragConfig={{ enabled: gridWidth >= 480, handle: '.widget-header', cancel: 'button,a', bounded: false, threshold: 3 }}
+        resizeConfig={{ enabled: gridWidth >= 480, handles: ['se'] }}
+        onLayoutChange={handleLayoutsChange}
+        compactor={verticalCompactor}
+      >
+        {/* ── Agenda ── */}
+        {visibleWidgetKeys.has('agenda') && (
+          <div key="agenda" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="widget-header px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                  {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </h3>
+                <p className="text-[10px] text-slate-400 leading-tight capitalize">
+                  {upcomingEvents.length === 0 ? 'Sem eventos esta semana' : `${upcomingEvents.length} evento${upcomingEvents.length !== 1 ? 's' : ''} esta semana`}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button onClick={() => loadDashboardData(true)} title="Atualizar" className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center transition text-slate-400">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => handleNavigate('agenda')} className="h-7 px-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-semibold flex items-center gap-0.5 transition">
+                  <span className="hidden sm:inline">Ver minha agenda</span>
+                  <span className="sm:hidden">Agenda</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-4 h-4 text-slate-300 ml-0.5 flex-shrink-0" />}
               </div>
             </div>
 
-            <div className="p-2 sm:p-3">
-              {upcomingEvents.length === 0 ? (
-                <div className="text-center py-4 sm:py-6">
-                  <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-slate-200 mx-auto mb-2" />
-                  <p className="text-slate-500 text-[10px] sm:text-xs">Nenhum compromisso</p>
-                  <button
-                    onClick={() => handleNavigate('agenda')}
-                    className="mt-2 sm:mt-3 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors"
-                  >
-                    Criar Compromisso
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1.5 sm:space-y-2">
-                  {upcomingEvents.slice(0, 4).map((event) => {
-                    const eventDate = parseLocalDateTime(event.start_at);
-                    const now = new Date();
-                    now.setHours(0, 0, 0, 0);
-                    const tomorrow = new Date(now.getTime() + 86400000);
-                    const isToday = eventDate >= now && eventDate < tomorrow;
-                    const isTomorrow = eventDate >= tomorrow && eventDate < new Date(tomorrow.getTime() + 86400000);
-                    
-                    return (
-                      <div 
-                        key={event.id} 
-                        className="group flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
-                        onClick={() => setSelectedEvent(event)}
-                      >
-                        <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex flex-col items-center justify-center flex-shrink-0 ${
-                          isToday ? 'bg-blue-500 text-white' : isTomorrow ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          <span className="text-xs sm:text-sm font-bold leading-none">{eventDate.getDate()}</span>
-                          <span className="text-[8px] uppercase">{eventDate.toLocaleDateString('pt-BR', { month: 'short' })}</span>
+            {/* Mini week strip */}
+            {(() => {
+              const today = new Date(); today.setHours(0, 0, 0, 0);
+              const dow = today.getDay();
+              const monday = new Date(today);
+              monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+              const weekDays = Array.from({ length: 7 }, (_, i) => {
+                const d = new Date(monday); d.setDate(monday.getDate() + i); return d;
+              });
+              const DAY_ABBR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+              const eventDateSet = new Set(upcomingEvents.map(ev => {
+                const d = parseLocalDateTime(ev.start_at); d.setHours(0, 0, 0, 0);
+                return d.toISOString().slice(0, 10);
+              }));
+              return (
+                <div className="px-4 py-3 border-b border-slate-100 flex-shrink-0">
+                  <div className="flex justify-between gap-1">
+                    {weekDays.map(day => {
+                      const isToday = day.getTime() === today.getTime();
+                      const dateKey = day.toISOString().slice(0, 10);
+                      const hasEvt = eventDateSet.has(dateKey);
+                      return (
+                        <div key={dateKey} className="flex flex-col items-center gap-0.5 flex-1">
+                          <span className={`text-[9px] font-semibold uppercase tracking-wide ${isToday ? 'text-amber-600' : 'text-slate-400'}`}>
+                            {DAY_ABBR[day.getDay()]}
+                          </span>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
+                            isToday ? 'bg-amber-500 shadow-sm shadow-amber-200' : 'hover:bg-slate-100'
+                          }`}>
+                            <span className={`text-xs font-bold tabular-nums ${isToday ? 'text-white' : 'text-slate-700'}`}>
+                              {day.getDate()}
+                            </span>
+                          </div>
+                          <div className={`w-1 h-1 rounded-full ${hasEvt ? (isToday ? 'bg-amber-300' : 'bg-amber-400') : 'bg-transparent'}`} />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{event.title}</p>
-                          <p className="text-[10px] sm:text-xs text-slate-500">
-                            {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {isToday && <span className="ml-1 text-blue-600 font-medium">Hoje</span>}
-                            {isTomorrow && <span className="ml-1 text-blue-500">Amanhã</span>}
-                          </p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors flex-shrink-0" />
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
-          )}
+              );
+            })()}
 
-          {/* Tarefas Pendentes */}
-          {canView('tarefas') && (
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-            <div className="p-3 sm:p-4 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-emerald-100 flex items-center justify-center">
-                    <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm sm:text-base font-semibold text-slate-900">Tarefas</h2>
-                    <p className="text-[10px] sm:text-xs text-slate-500">{recentTasks.length} pendente{recentTasks.length !== 1 ? 's' : ''}</p>
-                  </div>
+            {/* Event list */}
+            {upcomingEvents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 flex-1">
+                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-slate-300" />
                 </div>
-                <button
-                  onClick={() => handleNavigate('tarefas')}
-                  className="text-xs sm:text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
-                >
-                  <span className="hidden sm:inline">Ver todas</span>
-                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-slate-500">Semana livre</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Nenhum compromisso agendado</p>
+                </div>
+                <button onClick={() => handleNavigate('agenda')}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm shadow-amber-200">
+                  + Novo compromisso
                 </button>
               </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto scroll-hidden">
+                {agendaGroups.map((group) => (
+                  <div key={group.dateKey}>
+                    {/* Day separator */}
+                    <div className={`flex items-center gap-3 px-4 py-1.5 ${
+                      group.isToday ? 'bg-amber-500' : 'bg-slate-50 border-t border-slate-100'
+                    }`}>
+                      <span className={`text-[11px] font-bold capitalize flex-1 ${group.isToday ? 'text-white' : 'text-slate-600'}`}>
+                        {group.label}
+                      </span>
+                      <span className={`text-[10px] ${group.isToday ? 'text-amber-100' : 'text-slate-400'}`}>
+                        {group.dateLabel}
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                        group.isToday ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500'
+                      }`}>
+                        {group.events.length}
+                      </span>
+                    </div>
+
+                    {/* Events */}
+                    {group.events.map(ev => {
+                      const d = parseLocalDateTime(ev.start_at);
+                      const hasTime = !(d.getHours() === 0 && d.getMinutes() === 0);
+                      const time = hasTime ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+                      const stripe = typeDot[ev.type] ?? typeDot.other;
+                      const tag = typeTag[ev.type] ?? typeTag.other;
+                      return (
+                        <div key={ev.id} onClick={() => setSelectedEvent(ev)}
+                          className="flex items-stretch hover:bg-amber-50/30 cursor-pointer transition-colors border-b border-slate-50 last:border-b-0 group">
+                          <div className={`w-0.5 flex-shrink-0 ${stripe}`} />
+                          <div className="flex items-center gap-2.5 px-3 py-2.5 flex-1 min-w-0">
+                            <div className="flex-shrink-0 w-10 text-right">
+                              {time ? (
+                                <span className="text-[11px] font-bold text-slate-600 tabular-nums">{time}</span>
+                              ) : (
+                                <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wide">dia todo</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-800 truncate leading-snug group-hover:text-amber-700 transition-colors">{ev.title}</p>
+                              {(ev.clientName || ev.description) && (
+                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{ev.clientName || ev.description}</p>
+                              )}
+                            </div>
+                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${tag.bg} ${tag.text}`}>
+                              {tag.label}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tarefas ── */}
+        {visibleWidgetKeys.has('tarefas') && (
+          <div key="tarefas" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <div>
+                  <h2 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Tarefas</h2>
+                  <p className="text-[10px] text-slate-500">{recentTasks.length} pendente{recentTasks.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleNavigate('tarefas')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+                  Ver todas <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
+              </div>
             </div>
-            <div className="p-2 sm:p-3">
+            <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
               {recentTasks.length === 0 ? (
-                <div className="text-center py-6 sm:py-8">
-                  <CheckSquare className="w-10 h-10 sm:w-12 sm:h-12 text-slate-200 mx-auto mb-3" />
-                  <p className="text-slate-500 text-xs sm:text-sm">Nenhuma tarefa pendente</p>
+                <div className="text-center py-4">
+                  <CheckSquare className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-slate-500 text-xs">Nenhuma tarefa pendente</p>
                 </div>
               ) : (
-                <div className="space-y-1.5 sm:space-y-2">
-                  {recentTasks.map((task) => (
-                    <div 
-                      key={task.id} 
-                      onClick={() => handleNavigate('tarefas')}
-                      className="group flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                        <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+                <div className="space-y-1">
+                  {recentTasks.map(task => (
+                    <div key={task.id} onClick={() => handleNavigate('tarefas')}
+                      className="group flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                      <div className="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <CheckSquare className="w-3 h-3 text-emerald-600" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{task.title}</p>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                      <p className="flex-1 text-xs font-medium text-slate-800 truncate">{task.title}</p>
+                      <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
                     </div>
                   ))}
                 </div>
               )}
             </div>
           </div>
-          )}
-        </div>
+        )}
 
-        <div className="flex flex-col gap-3 sm:gap-4 h-full">
-          {/* Ações Rápidas - Botões com mais espaço */}
-          {(canView('clientes') || canView('prazos') || canView('tarefas') || canView('agenda') || canView('requerimentos') || canView('processos') || canView('financeiro')) && (
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-            <div className="p-2.5 sm:p-3 border-b border-slate-100">
+        {/* ── Ações Rápidas ── */}
+        {visibleWidgetKeys.has('acoes') && (
+          <div key="acoes" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                   <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
                 </div>
                 <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Ações rápidas</h3>
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Ações rápidas</h3>
                   <p className="text-[10px] sm:text-xs text-slate-500">Crie itens em 1 clique</p>
                 </div>
               </div>
+              {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
             </div>
-            <div className="p-2 sm:p-3">
+            <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
               <QuickActions onNavigate={handleNavigate} canView={canView} canCreate={canCreate} />
             </div>
           </div>
-          )}
-
-          {canView('financeiro') && financialStats && (
-            <FinancialCard 
-              stats={financialStats}
-              onNavigate={() => handleNavigate('financeiro')}
-            />
-          )}
-
-          {canView('prazos') && (
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-            <div className="p-3 sm:p-4 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-red-100 flex items-center justify-center">
-                    <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Prazos</h3>
-                    <p className="text-[10px] sm:text-xs text-slate-500">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleNavigate('prazos')}
-                  className="text-[10px] sm:text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
-                >
-                  <span className="hidden sm:inline">Ver todos</span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-            <div className="p-2 sm:p-3">
-              {upcomingDeadlines.length === 0 ? (
-                <div className="text-center py-4 sm:py-6">
-                  <CalendarDays className="w-8 h-8 sm:w-10 sm:h-10 text-slate-200 mx-auto mb-2" />
-                  <p className="text-slate-500 text-[10px] sm:text-xs">Nenhum prazo pendente</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5 sm:space-y-2">
-                  {upcomingDeadlines.map((deadline) => {
-                    const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-                    const dueDate = new Date(deadline.due_date!);
-                    const today = new Date();
-                    const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                    const isUrgent = diffDays <= 3 && diffDays >= 0;
-                    
-                    return (
-                      <div
-                        key={deadline.id}
-                        onClick={() => handleNavigate('prazos')}
-                        className="group flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
-                      >
-                        <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex flex-col items-center justify-center flex-shrink-0 ${
-                          isUrgent ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          <span className="text-[10px] sm:text-sm font-bold leading-none">{dueDate.getDate()}</span>
-                          <span className="text-[8px] sm:text-[9px] uppercase">{dueDate.toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{deadline.title}</p>
-                          <p className="text-[10px] sm:text-xs text-slate-500 truncate">{client?.full_name || 'Sem cliente'}</p>
-                        </div>
-                        <span className={`px-1.5 sm:px-2 py-0.5 sm:py-1 text-[8px] sm:text-[9px] font-semibold rounded-md ${
-                          isUrgent ? 'bg-red-500 text-white' :
-                          deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
-                          deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {isUrgent ? (diffDays === 0 ? 'Hoje' : `${diffDays}d`) : (deadline.priority || 'normal')}
-                        </span>
-                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          )}
-        </div>
-      </div>
-
-      {/* Grid de 3 Colunas - Intimações, Aguardando, Requerimentos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Widget de Intimações */}
-        {canView('intimacoes') && (
-        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-          <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-orange-100 flex items-center justify-center">
-                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
-              </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Intimações</h3>
-                <p className="text-[10px] sm:text-xs text-slate-500">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleNavigate('intimacoes')}
-              className="text-[10px] sm:text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
-            >
-              <span className="hidden sm:inline">Ver todas</span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="p-2 sm:p-3">
-            {djenIntimacoes.length === 0 ? (
-              <div className="text-center py-6 sm:py-8">
-                <Scale className="w-10 h-10 sm:w-12 sm:h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500 text-xs sm:text-sm">Nenhuma intimação</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5 sm:space-y-2">
-                {djenIntimacoes.slice(0, 3).map((intimacao) => (
-                  <div 
-                    key={intimacao.id} 
-                    className="group p-2 sm:p-3 rounded-lg sm:rounded-xl hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
-                    onClick={() => setSelectedIntimacao(intimacao)}
-                  >
-                    <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-                      <span className="px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold rounded-full bg-orange-100 text-orange-700">
-                        {intimacao.tipo_comunicacao || 'Intimação'}
-                      </span>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-                    </div>
-                    <p className="text-[10px] sm:text-xs font-medium text-slate-900 truncate mb-1">
-                      {intimacao.numero_processo_mascara || intimacao.numero_processo}
-                    </p>
-                    {intimacao.nome_orgao && (
-                      <p className="text-[9px] sm:text-[10px] text-slate-500 truncate mb-1">
-                        {intimacao.nome_orgao}
-                      </p>
-                    )}
-                    {(intimacao.polo_ativo || intimacao.polo_passivo) && (
-                      <div className="text-[9px] sm:text-[10px] text-slate-600 mt-1 pt-1 border-t border-slate-100">
-                        {intimacao.polo_ativo && (
-                          <p className="truncate"><span className="text-slate-400">Autor:</span> {intimacao.polo_ativo}</p>
-                        )}
-                        {intimacao.polo_passivo && (
-                          <p className="truncate"><span className="text-slate-400">Réu:</span> {intimacao.polo_passivo}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
         )}
 
-        {/* Processos Aguardando Confecção */}
-        {canView('processos') && (
-        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-          <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-amber-100 flex items-center justify-center">
-                <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+        {/* ── Financeiro ── */}
+        {visibleWidgetKeys.has('financeiro') && (
+          <div key="financeiro" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+              <div className="widget-header p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                    <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-semibold text-slate-900">Financeiro</h3>
+                    <p className="text-[10px] sm:text-xs text-slate-500">Resumo do mês</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleNavigate('financeiro')}
+                    className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                    Ver <ChevronRight className="w-4 h-4" />
+                  </button>
+                  {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Aguardando</h3>
-                <p className="text-[10px] sm:text-xs text-slate-500">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
+              <div className="flex-1 overflow-y-auto scroll-hidden p-3 sm:p-4 space-y-3">
+                {!financialStats && (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-6">
+                    <Wallet className="w-8 h-8 text-slate-300 mb-2" />
+                    <p className="text-xs text-slate-400">Nenhum dado financeiro</p>
+                  </div>
+                )}
+                {financialStats && (() => {
+                  const s = financialStats;
+                  const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-emerald-500" />
+                          <span className="text-sm text-slate-600">Recebido</span>
+                        </div>
+                        <span className="text-sm font-semibold text-emerald-600">{fmt(s.monthly_fees_received)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <PiggyBank className="w-4 h-4 text-amber-500" />
+                          <span className="text-sm text-slate-600">A receber</span>
+                        </div>
+                        <span className="text-sm font-semibold text-amber-600">{fmt(s.monthly_fees_pending)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-500" />
+                          <span className="text-sm text-slate-600">Em atraso</span>
+                        </div>
+                        <span className="text-sm font-semibold text-red-600">{fmt(s.total_overdue)}</span>
+                      </div>
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className="text-slate-500"><strong className="text-slate-700">{s.paid_installments}</strong> recebidas</span>
+                        <span className="text-amber-600"><strong>{s.pending_installments}</strong> pendentes</span>
+                        <span className="text-red-600"><strong>{s.overdue_installments}</strong> vencidas</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+          </div>
+        )}
+
+        {/* ── Prazos ── */}
+        {visibleWidgetKeys.has('prazos') && (
+          <div key="prazos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+                  <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Prazos</h3>
+                  <p className="text-[10px] text-slate-400">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleNavigate('prazos')} className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition">
+                  Ver todos <ChevronRight className="w-3 h-3" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
               </div>
             </div>
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="text-[10px] sm:text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1"
-            >
-              <span className="hidden sm:inline">Ver todos</span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="p-2 sm:p-3">
-            {awaitingDraftProcessesList.length === 0 ? (
-              <div className="text-center py-6 sm:py-8">
-                <FileText className="w-10 h-10 sm:w-12 sm:h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500 text-xs sm:text-sm">Nenhum processo</p>
+            {upcomingDeadlines.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                <CalendarDays className="w-8 h-8 text-slate-200" />
+                <p className="text-xs text-slate-400">Nenhum prazo pendente</p>
               </div>
             ) : (
-              <div className="space-y-1.5 sm:space-y-2">
-                {awaitingDraftProcessesList.slice(0, 4).map((process) => {
-                  const client = process.client_id ? clientMap.get(process.client_id) : null;
+              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                {upcomingDeadlines.map(deadline => {
+                  const cName = deadline.client_id ? clientMap.get(deadline.client_id)?.full_name : null;
+                  const due = parseLocalDateTime(deadline.due_date!);
+                  const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+                  const diffDays = Math.ceil((due.getTime() - todayMs.getTime()) / 86400000);
+                  const isToday   = diffDays === 0;
+                  const isUrgent  = diffDays <= 2 && diffDays >= 0;
+                  const isOverdue = diffDays < 0;
                   return (
-                    <div 
-                      key={process.id} 
-                      onClick={() => handleNavigate('processos')}
-                      className="group flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
+                    <div key={deadline.id} onClick={() => handleNavigate('prazos')}
+                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                      <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0 ${
+                        isOverdue ? 'bg-red-600 text-white' : isToday ? 'bg-rose-500 text-white' : isUrgent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <span className="text-sm font-bold leading-none">{due.getDate()}</span>
+                        <span className="text-[9px] uppercase leading-none mt-0.5">{due.toLocaleDateString('pt-BR', { month: 'short' })}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente'}</p>
-                        {process.priority === 'urgente' && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200 shadow-sm mt-1">
-                            <AlertTriangle className="w-2.5 h-2.5" />
-                            Urgente
-                          </span>
-                        )}
+                        <p className="text-xs font-semibold text-slate-800 truncate">{deadline.title}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{cName || 'Sem cliente'}</p>
                       </div>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
+                        isOverdue ? 'bg-red-100 text-red-700' :
+                        isToday   ? 'bg-rose-100 text-rose-700' :
+                        isUrgent  ? 'bg-orange-100 text-orange-700' :
+                        deadline.priority === 'urgente' ? 'bg-red-100 text-red-700' :
+                        deadline.priority === 'alta'    ? 'bg-orange-100 text-orange-700' :
+                        deadline.priority === 'media'   ? 'bg-amber-100 text-amber-700' :
+                                                          'bg-slate-100 text-slate-500'
+                      }`}>
+                        {isOverdue ? 'Vencido' : isToday ? 'Hoje' : `${diffDays}d`}
+                      </span>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-        </div>
         )}
 
-        {/* Requerimentos */}
-        {canView('requerimentos') && (
-        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
-          <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-purple-100 flex items-center justify-center">
-                <Target className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
+        {/* ── Intimações ── */}
+        {visibleWidgetKeys.has('intimacoes') && (
+          <div key="intimacoes" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Intimações</h3>
+                  <p className="text-[10px] text-slate-400">{djenIntimacoes.length} pendente{djenIntimacoes.length !== 1 ? 's' : ''}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-semibold text-slate-900">Requerimentos</h3>
-                <p className="text-[10px] sm:text-xs text-slate-500">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleNavigate('intimacoes')} className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5 transition">
+                  Ver todas <ChevronRight className="w-3 h-3" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
               </div>
             </div>
-            <button
-              onClick={() => handleNavigate('requerimentos')}
-              className="text-[10px] sm:text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
-            >
-              <span className="hidden sm:inline">Ver todos</span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="p-2 sm:p-3">
-            {pendingRequirementsList.length === 0 ? (
-              <div className="text-center py-6 sm:py-8">
-                <Target className="w-10 h-10 sm:w-12 sm:h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500 text-xs sm:text-sm">Nenhum requerimento</p>
+            {djenIntimacoes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                <Scale className="w-8 h-8 text-slate-200" />
+                <p className="text-xs text-slate-400">Nenhuma intimação pendente</p>
               </div>
             ) : (
-              <div className="space-y-1.5 sm:space-y-2">
-                {pendingRequirementsList.slice(0, 4).map((requirement) => (
-                  <div 
-                    key={requirement.id} 
-                    onClick={() => handleNavigate('requerimentos')}
-                    className="group flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
-                  >
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
-                      <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
+              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                {djenIntimacoes.slice(0, 5).map(intimacao => (
+                  <div key={intimacao.id} onClick={() => setSelectedIntimacao(intimacao)}
+                    className="px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-orange-100 text-orange-700 truncate">
+                        {intimacao.tipo_comunicacao || 'Intimação'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0">
+                        {intimacao.data_disponibilizacao ? new Date(intimacao.data_disponibilizacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''}
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{requirement.beneficiary || 'Beneficiário'}</p>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    <p className="text-xs font-semibold text-slate-800 truncate">{intimacao.numero_processo_mascara || intimacao.numero_processo}</p>
+                    {intimacao.nome_orgao && <p className="text-[10px] text-slate-400 truncate">{intimacao.nome_orgao}</p>}
+                    {intimacao.polo_ativo && <p className="text-[10px] text-slate-500 truncate mt-0.5"><span className="text-slate-400">Autor:</span> {intimacao.polo_ativo}</p>}
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
         )}
 
+        {/* ── Processos Aguardando ── */}
+        {visibleWidgetKeys.has('processos') && (
+          <div key="processos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Aguardando Confecção</h3>
+                  <p className="text-[10px] text-slate-400">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleNavigate('processos')} className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition">
+                  Ver todos <ChevronRight className="w-3 h-3" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
+              </div>
+            </div>
+            {awaitingDraftProcessesList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                <FileText className="w-8 h-8 text-slate-200" />
+                <p className="text-xs text-slate-400">Nenhum processo aguardando</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                {awaitingDraftProcessesList.slice(0, 6).map(process => {
+                  const cName = process.client_id ? clientMap.get(process.client_id)?.full_name : null;
+                  const since = process.distributed_at || process.created_at;
+                  const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
+                  return (
+                    <div key={process.id} onClick={() => handleNavigate('processos')}
+                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{cName || 'Cliente'}</p>
+                        {sinceDays !== null && <p className="text-[10px] text-slate-400">Há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
+                      </div>
+                      {process.priority === 'urgente' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-red-100 text-red-700 flex-shrink-0">Urgente</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Requerimentos ── */}
+        {visibleWidgetKeys.has('requerimentos') && (
+          <div key="requerimentos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                  <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-600" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Requerimentos</h3>
+                  <p className="text-[10px] text-slate-400">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleNavigate('requerimentos')} className="text-[11px] font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-0.5 transition">
+                  Ver todos <ChevronRight className="w-3 h-3" />
+                </button>
+                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
+              </div>
+            </div>
+            {pendingRequirementsList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                <Target className="w-8 h-8 text-slate-200" />
+                <p className="text-xs text-slate-400">Nenhum requerimento pendente</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                {pendingRequirementsList.slice(0, 6).map(req => {
+                  const since = req.entry_date;
+                  const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
+                  return (
+                    <div key={req.id} onClick={() => handleNavigate('requerimentos')}
+                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-violet-600">{(req.beneficiary || 'R').charAt(0).toUpperCase()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{req.beneficiary || 'Beneficiário'}</p>
+                        {sinceDays !== null && <p className="text-[10px] text-slate-400">Entrada há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </ResponsiveGridLayout>
+      )}
       </div>
 
       {/* Modal de Detalhes do Evento */}
-      {selectedEvent && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-2 sm:px-4 py-4">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setSelectedEvent(null)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-white !bg-white rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1.5 sm:h-2 w-full bg-orange-500" />
-            <div className="px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-2 sm:gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Detalhes
-                </p>
-                <h3 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 truncate">{selectedEvent.title}</h3>
-                <span className="inline-flex items-center gap-1 mt-2 sm:mt-3 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-blue-100 text-blue-700 text-[10px] sm:text-xs font-semibold">
-                  Compromisso
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg sm:rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-            </div>
-            <div className="p-3 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto">
-              {/* Tipo de Evento */}
-              <div className="flex items-center gap-2">
-                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full ${
-                  selectedEvent.type === 'hearing' ? 'bg-red-500' :
-                  selectedEvent.type === 'deadline' ? 'bg-blue-500' :
-                  selectedEvent.type === 'payment' ? 'bg-green-500' :
-                  'bg-purple-500'
-                }`}></div>
-                <span className="text-xs sm:text-sm font-semibold text-slate-700">Tipo:</span>
-                <span className="text-xs sm:text-sm text-slate-600 capitalize">
-                  {selectedEvent.type === 'deadline' && 'Prazo'}
-                  {selectedEvent.type === 'hearing' && 'Audiência'}
-                  {selectedEvent.type === 'requirement' && 'Exigência'}
-                  {selectedEvent.type === 'payment' && 'Pagamento'}
-                  {selectedEvent.type === 'meeting' && 'Reunião'}
-                  {selectedEvent.type === 'pericia' && 'Perícia'}
-                </span>
-              </div>
-
-              {/* Data */}
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                <div className="flex-1">
-                  <span className="text-xs sm:text-sm font-semibold text-slate-700">Data:</span>
-                  <span className="text-xs sm:text-sm text-slate-600 ml-2">
-                    {new Date(selectedEvent.start_at).toLocaleDateString('pt-BR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+      {selectedEvent && (() => {
+        const ev = selectedEvent;
+        const d = parseLocalDateTime(ev.start_at);
+        const hasTime = !(d.getHours() === 0 && d.getMinutes() === 0);
+        const typeLabels: Record<string, string> = {
+          meeting: 'Reunião', hearing: 'Audiência', payment: 'Pagamento',
+          deadline: 'Prazo', task: 'Tarefa', pericia: 'Perícia', other: 'Evento',
+        };
+        const typeBadge: Record<string, string> = {
+          meeting: 'bg-amber-100 text-amber-700', hearing: 'bg-red-100 text-red-700',
+          payment: 'bg-emerald-100 text-emerald-700', deadline: 'bg-rose-100 text-rose-700',
+          task: 'bg-violet-100 text-violet-700', other: 'bg-slate-100 text-slate-600',
+        };
+        const accentBar: Record<string, string> = {
+          meeting: 'bg-amber-500', hearing: 'bg-red-500',
+          payment: 'bg-emerald-500', deadline: 'bg-rose-500',
+          task: 'bg-violet-500', other: 'bg-slate-400',
+        };
+        const cleanDesc = ev.description
+          ? ev.description
+              .replace(/\[agreement_id:[^\]]+\]/g, '')
+              .replace(/\[installment:\d+\]/g, '')
+              .replace(/\[inadimplencia\]/g, '')
+              .split('\n').filter(l => !/Valor:\s*R\$\s*(NaN|undefined|null|--)/.test(l))
+              .join('\n').trim()
+          : '';
+        const agmMatch = ev.description?.match(/\[agreement_id:([^\]]+)\]/);
+        const instMatch = ev.description?.match(/\[installment:(\d+)\]/);
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 py-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedEvent(null)} />
+            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden max-h-[90vh]">
+              <div className={`h-1.5 w-full ${accentBar[ev.type] ?? accentBar.other}`} />
+              <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${typeBadge[ev.type] ?? typeBadge.other}`}>
+                    {typeLabels[ev.type] ?? 'Evento'}
                   </span>
+                  <h3 className="mt-1.5 text-base font-semibold text-slate-900 leading-snug">{ev.title}</h3>
                 </div>
+                <button onClick={() => setSelectedEvent(null)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition flex-shrink-0">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-
-              {/* Cliente */}
-              {selectedEvent.client_id && (
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                  <div className="flex-1">
-                    <span className="text-xs sm:text-sm font-semibold text-slate-700">Cliente:</span>
-                    <span className="text-xs sm:text-sm text-slate-600 ml-2">
-                      {clientMap.get(selectedEvent.client_id)?.full_name || 'Cliente vinculado'}
-                    </span>
+              <div className="p-5 space-y-3 overflow-y-auto scroll-hidden">
+                <div className="flex items-start gap-3 text-sm">
+                  <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-slate-700 capitalize">
+                      {d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                    </p>
+                    {hasTime && <p className="text-slate-500 text-sm">{d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>}
                   </div>
                 </div>
-              )}
-
-              <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="w-full sm:w-auto px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition"
-                >
+                {(ev.clientId || ev.clientName) && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Users className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    {ev.clientId ? (
+                      <button type="button"
+                        onClick={() => { setSelectedEvent(null); handleNavigate(`clientes?mode=details&entityId=${ev.clientId}`); }}
+                        className="font-semibold text-amber-600 hover:text-amber-700 hover:underline transition text-left">
+                        {ev.clientName || 'Ver cliente'}
+                      </button>
+                    ) : (
+                      <span className="text-slate-700">{ev.clientName}</span>
+                    )}
+                  </div>
+                )}
+                {cleanDesc && (
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">{cleanDesc}</p>
+                  </div>
+                )}
+                {agmMatch && instMatch && (
+                  <button
+                    onClick={() => { setSelectedEvent(null); handleNavigate(`financeiro?entityId=${agmMatch[1]}&installmentNumber=${instMatch[1]}`); }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold rounded-xl transition">
+                    <DollarSign className="w-4 h-4" />
+                    Registrar Pagamento
+                  </button>
+                )}
+              </div>
+              <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+                <button onClick={() => setSelectedEvent(null)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition">
                   Fechar
                 </button>
-                <button
-                  onClick={() => {
-                    setSelectedEvent(null);
-                    handleNavigate('agenda');
-                  }}
-                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg sm:rounded-xl transition"
-                >
+                <button onClick={() => { setSelectedEvent(null); handleNavigate('agenda'); }}
+                  className="px-4 py-2 text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition">
                   Ver na Agenda
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal de Detalhes da Intimação */}
       {selectedIntimacao && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-2 sm:px-4 py-4">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setSelectedIntimacao(null)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-white !bg-white rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedIntimacao(null)} aria-hidden="true" />
+          <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-white rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-1.5 sm:h-2 w-full bg-orange-500" />
             <div className="px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-2 sm:gap-4">
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  DJEN
-                </p>
+                <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">DJEN</p>
                 <h3 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 truncate">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
                 <span className="inline-flex items-center gap-1 mt-2 sm:mt-3 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-orange-100 text-orange-700 text-[10px] sm:text-xs font-semibold uppercase">
                   {selectedIntimacao.sigla_tribunal}
                 </span>
               </div>
-              <button
-                onClick={() => setSelectedIntimacao(null)}
-                className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg sm:rounded-xl transition"
-                aria-label="Fechar modal"
-              >
+              <button onClick={() => setSelectedIntimacao(null)}
+                className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg sm:rounded-xl transition">
                 <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
@@ -1415,48 +1666,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 <div className="flex-1">
                   <span className="text-xs sm:text-sm font-semibold text-slate-700">Data de Disponibilização:</span>
                   <span className="text-xs sm:text-sm text-slate-600 ml-2">
-                    {new Date(selectedIntimacao.data_disponibilizacao).toLocaleDateString('pt-BR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
+                    {new Date(selectedIntimacao.data_disponibilizacao).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </span>
                 </div>
               </div>
-
               <div>
                 <span className="text-xs sm:text-sm font-semibold text-slate-700">Processo:</span>
                 <p className="text-xs sm:text-sm text-slate-600 mt-1">{selectedIntimacao.numero_processo_mascara || selectedIntimacao.numero_processo}</p>
               </div>
-
               {selectedIntimacao.nome_orgao && (
                 <div>
                   <span className="text-xs sm:text-sm font-semibold text-slate-700">Órgão:</span>
                   <p className="text-xs sm:text-sm text-slate-600 mt-1">{selectedIntimacao.nome_orgao}</p>
                 </div>
               )}
-
               {selectedIntimacao.texto && (
                 <div>
                   <span className="text-xs sm:text-sm font-semibold text-slate-700">Texto:</span>
                   <p className="text-xs sm:text-sm text-slate-600 mt-1 max-h-40 overflow-y-auto">{selectedIntimacao.texto}</p>
                 </div>
               )}
-
               <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                <button
-                  onClick={() => setSelectedIntimacao(null)}
-                  className="w-full sm:w-auto px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition"
-                >
+                <button onClick={() => setSelectedIntimacao(null)}
+                  className="w-full sm:w-auto px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition">
                   Fechar
                 </button>
-                <button
-                  onClick={() => {
-                    setSelectedIntimacao(null);
-                    handleNavigate('intimacoes');
-                  }}
-                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg sm:rounded-xl transition"
-                >
+                <button onClick={() => { setSelectedIntimacao(null); handleNavigate('intimacoes'); }}
+                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg sm:rounded-xl transition">
                   Ver Todas Intimações
                 </button>
               </div>

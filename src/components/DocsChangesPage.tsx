@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.101': { name: 'Café Notificação Certa', emoji: '🔔' },
   '1.10.095': { name: 'Café Áudio no Módulo', emoji: '🎧' },
   '1.10.094': { name: 'Café Widget Afiado', emoji: '🎯' },
   '1.10.093': { name: 'Café Chamou Atenção', emoji: '👋' },
@@ -800,6 +801,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.101',
+    date: '17/05/2026',
+    summary: 'Sistema de notificações corrigido — tipo do evento, nome do atribuidor, navegação direta ao modal e lembretes apenas para o responsável.',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          { type: 'fix', title: 'Notificações de prazo com user_id correto', description: 'Era usado o profile.id como destinatário — corrigido para auth user_id. Prazos criados/editados agora notificam a pessoa certa.' },
+          { type: 'improvement', title: 'Tipo do evento na notificação', description: 'Notificações exibem o tipo exato: Audiência, Reunião, Pagamento, Perícia, Pessoal, Requerimento, Prazo — com emoji por tipo.' },
+          { type: 'improvement', title: 'Nome do atribuidor na mensagem', description: 'Mensagens agora identificam quem atribuiu: "Pedro atribuiu uma Audiência a você" e "Pedro deu visibilidade de uma Reunião a você".' },
+          { type: 'improvement', title: 'Clique no prazo abre o modal', description: 'Notificações de deadline_assigned e deadline_reminder agora navegam direto ao modal do prazo específico via entityId.' },
+          { type: 'improvement', title: 'Clique no compromisso abre o modal', description: 'Notificações de appointment_assigned e appointment_reminder agora navegam direto ao modal do evento via entityId.' },
+          { type: 'fix', title: 'Lembretes apenas para o responsável', description: 'notification-scheduler enviava lembrete de prazo para TODOS os usuários ativos. Corrigido: notifica somente o responsável designado. Idem para compromissos da agenda.' },
+          { type: 'fix', title: 'Bug =20 no email de prazo', description: 'Artefato quoted-printable =20 aparecia no corpo do email. Corrigido colocando HTML em linha única.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.100',
     date: '17/05/2026',

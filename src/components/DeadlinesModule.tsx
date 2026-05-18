@@ -1511,8 +1511,27 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             setSelectedDeadlineForView(updatedDeadline);
           }
 
-          // 📧 Enviar email se o responsável mudou (não-bloqueante)
-          if (responsibleChanged && user?.id) {
+          // 🔔 Notificação de sistema + email se o responsável mudou
+          const newRespAuthId = payloadBase.responsible_id ? memberMap.get(payloadBase.responsible_id)?.user_id : null;
+          if (responsibleChanged && user?.id && newRespAuthId && newRespAuthId !== user.id) {
+            try {
+              const assignerName = currentUser?.name || 'Alguém';
+              const daysUntilDue = Math.ceil((new Date(payloadBase.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              const isUrgent = daysUntilDue <= 3 || payloadBase.priority === 'urgente' || payloadBase.priority === 'alta';
+              const deadlineTypeLabels: Record<string, string> = { geral: 'Geral', processo: 'Processo', requerimento: 'Requerimento' };
+              const deadlineTypeLabel = deadlineTypeLabels[payloadBase.type] || payloadBase.type || 'Prazo';
+              const priorityLabels: Record<string, string> = { urgente: 'Urgente', alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+              const priorityLabel = priorityLabels[payloadBase.priority] || '';
+              const daysLabel = daysUntilDue <= 0 ? 'Vencido!' : daysUntilDue === 1 ? 'Vence amanhã' : `Vence em ${daysUntilDue} dia(s)`;
+              await userNotificationService.createNotification({
+                title: isUrgent ? `⚠️ Prazo ${deadlineTypeLabel} — ${priorityLabel}` : `📅 Prazo ${deadlineTypeLabel} Atribuído`,
+                message: `${assignerName} atribuiu um prazo a você\n"${payloadBase.title}" • ${daysLabel}`,
+                type: 'deadline_assigned',
+                user_id: newRespAuthId,
+                deadline_id: editingDeadline.id,
+                metadata: { priority: payloadBase.priority, type: payloadBase.type, days_until_due: daysUntilDue },
+              });
+            } catch {}
             supabase.functions.invoke('notify-deadline-assigned', {
               body: { deadline_id: editingDeadline.id, assigned_by_id: user.id },
             }).catch((err) => console.error('Erro ao enviar email de prazo:', err));
@@ -1524,16 +1543,23 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         const newDeadline = await deadlineService.createDeadline(payloadBase as any);
         
         // 🔔 Criar notificação para novo prazo
-        if (user?.id && newDeadline && payloadBase.responsible_id && payloadBase.responsible_id !== currentUser?.id) {
+        const responsibleAuthId = payloadBase.responsible_id ? memberMap.get(payloadBase.responsible_id)?.user_id : null;
+        if (user?.id && newDeadline && responsibleAuthId && responsibleAuthId !== user.id) {
           try {
+            const assignerName = currentUser?.name || 'Alguém';
             const daysUntilDue = Math.ceil((new Date(payloadBase.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             const isUrgent = daysUntilDue <= 3 || payloadBase.priority === 'urgente' || payloadBase.priority === 'alta';
-            
+            const deadlineTypeLabels: Record<string, string> = { geral: 'Geral', processo: 'Processo', requerimento: 'Requerimento' };
+            const deadlineTypeLabel = deadlineTypeLabels[payloadBase.type] || payloadBase.type || 'Prazo';
+            const priorityLabels: Record<string, string> = { urgente: 'Urgente', alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+            const priorityLabel = priorityLabels[payloadBase.priority] || '';
+            const daysLabel = daysUntilDue <= 0 ? 'Vencido!' : daysUntilDue === 1 ? 'Vence amanhã' : `Vence em ${daysUntilDue} dia(s)`;
+
             await userNotificationService.createNotification({
-              title: isUrgent ? '⚠️ Prazo Urgente Criado' : '📅 Novo Prazo',
-              message: `${payloadBase.title} • Vence em ${daysUntilDue} dia(s)`,
+              title: isUrgent ? `⚠️ Prazo ${deadlineTypeLabel} — ${priorityLabel}` : `📅 Prazo ${deadlineTypeLabel} Atribuído`,
+              message: `${assignerName} atribuiu um prazo a você\n"${payloadBase.title}" • ${daysLabel}`,
               type: 'deadline_assigned',
-              user_id: payloadBase.responsible_id,
+              user_id: responsibleAuthId,
               deadline_id: newDeadline.id,
               metadata: {
                 priority: payloadBase.priority,
