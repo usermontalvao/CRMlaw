@@ -39,6 +39,15 @@ function main() {
   const stagedFiles = getStagedFiles();
   if (stagedFiles.length === 0) process.exit(0);
 
+  // Commits que só tocam arquivos de documentação interna (.qoder/, docs/, *.md) não precisam de bump.
+  const EXEMPT_PREFIXES = ['.qoder/', 'docs/'];
+  const EXEMPT_EXTENSIONS = ['.md'];
+  const isExempt = stagedFiles.every((f) =>
+    EXEMPT_PREFIXES.some((p) => f.startsWith(p)) ||
+    EXEMPT_EXTENSIONS.some((e) => f.endsWith(e))
+  );
+  if (isExempt) process.exit(0);
+
   const requiredFiles = ['package.json', 'src/components/DocsChangesPage.tsx'];
   const onlyRequired = stagedFiles.every((f) => requiredFiles.includes(f));
 

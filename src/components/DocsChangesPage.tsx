@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.104': { name: 'Café Hook Esperto', emoji: '🪝' },
   '1.10.103': { name: 'Café Hoje em Foco', emoji: '📅' },
   '1.10.102': { name: 'Café Tela Certa', emoji: '📱' },
   '1.10.101': { name: 'Café Notificação Certa', emoji: '🔔' },
@@ -803,6 +804,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.104',
+    date: '17/05/2026',
+    summary: 'Pre-commit hook atualizado — commits de documentação (.qoder/, .md) não precisam mais de bump de versão.',
+    modules: [
+      {
+        module: 'Configuração',
+        icon: 'Settings',
+        changes: [
+          { type: 'fix', description: 'Hook de pre-commit isenta arquivos em .qoder/, docs/ e extensão .md de exigir bump de versão.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.103',
     date: '17/05/2026',
