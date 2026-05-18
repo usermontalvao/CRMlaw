@@ -1,39 +1,98 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Search, X, FileText, Users, Gavel, Loader2, ChevronRight, ArrowRight,
+  ClipboardList, Calendar, CheckSquare, User,
 } from 'lucide-react';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { djenLocalService } from '../services/djenLocal.service';
+import { requirementService } from '../services/requirement.service';
+import { calendarService } from '../services/calendar.service';
+import { taskService } from '../services/task.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
-import type { Process } from '../types/process.types';
+
+// ─── Result types ────────────────────────────────────────────────────────────
+
+type ResultType =
+  | 'cliente'
+  | 'processo'
+  | 'processo-via-cliente'
+  | 'intimacao'
+  | 'requerimento'
+  | 'agenda'
+  | 'tarefa';
 
 interface SearchResult {
   id: string;
-  type: 'processo' | 'cliente' | 'intimacao' | 'processo-via-cliente';
+  type: ResultType;
   title: string;
   subtitle?: string;
   meta?: string;
   navModule: string;
+  /** Params passed directly to navigateTo — no extra wrapping */
   navParams?: Record<string, string>;
 }
+
+// ─── Props ───────────────────────────────────────────────────────────────────
 
 interface GlobalSearchModalProps {
   open: boolean;
   onClose: () => void;
-  onNavigate: (module: string, params?: Record<string, unknown>) => void;
+  /** navigateTo(module, params) — params stored as JSON in moduleParams[module] */
+  onNavigate: (module: string, params?: Record<string, string>) => void;
 }
 
-const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string; border: string }> = {
-  processo:             { label: 'Processo',   icon: FileText, color: 'text-amber-600 bg-amber-50',   border: 'border-amber-200'  },
-  'processo-via-cliente': { label: 'Processo', icon: FileText, color: 'text-amber-600 bg-amber-50',   border: 'border-amber-200'  },
-  cliente:              { label: 'Cliente',    icon: Users,    color: 'text-slate-600 bg-slate-100',  border: 'border-slate-200'  },
-  intimacao:            { label: 'Intimação',  icon: Gavel,    color: 'text-orange-600 bg-orange-50', border: 'border-orange-200' },
+// ─── Visual config per type ───────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<ResultType, {
+  label: string;
+  icon: React.ElementType;
+  color: string;
+  border: string;
+  group: string;
+}> = {
+  cliente:              { label: 'Cliente',       icon: Users,         color: 'text-slate-600 bg-slate-100',   border: 'border-slate-200',  group: 'Clientes'      },
+  processo:             { label: 'Processo',      icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
+  'processo-via-cliente':{ label: 'Processo',     icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
+  intimacao:            { label: 'Intimação',     icon: Gavel,         color: 'text-orange-600 bg-orange-50',  border: 'border-orange-200', group: 'Intimações'    },
+  requerimento:         { label: 'Requerimento',  icon: ClipboardList, color: 'text-purple-600 bg-purple-50',  border: 'border-purple-200', group: 'Requerimentos' },
+  agenda:               { label: 'Agenda',        icon: Calendar,      color: 'text-teal-600 bg-teal-50',      border: 'border-teal-200',   group: 'Agenda'        },
+  tarefa:               { label: 'Tarefa',        icon: CheckSquare,   color: 'text-sky-600 bg-sky-50',        border: 'border-sky-200',    group: 'Tarefas'       },
 };
+
+const GROUP_ORDER: ResultType[] = [
+  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'intimacao', 'agenda', 'tarefa',
+];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const normalizeStr = (s: string) =>
   (s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
+
+const BENEFIT_LABELS: Record<string, string> = {
+  bpc_loas: 'BPC LOAS',
+  bpc_loas_deficiencia: 'BPC LOAS - Deficiência',
+  bpc_loas_idoso: 'BPC LOAS - Idoso',
+  aposentadoria_tempo: 'Aposent. Tempo Contribuição',
+  aposentadoria_idade: 'Aposent. por Idade',
+  aposentadoria_invalidez: 'Aposent. por Invalidez',
+  auxilio_acidente: 'Auxílio Acidente',
+  auxilio_doenca: 'Auxílio Doença',
+  pensao_morte: 'Pensão por Morte',
+  salario_maternidade: 'Salário Maternidade',
+  outro: 'Outro',
+};
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  deadline: 'Prazo', hearing: 'Audiência', requirement: 'Requerimento',
+  payment: 'Pagamento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
+};
+
+const fmtDate = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onClose, onNavigate }) => {
   const [query, setQuery] = useState('');
@@ -43,6 +102,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Reset on open
   useEffect(() => {
     if (open) {
       setQuery('');
@@ -52,62 +112,66 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     }
   }, [open]);
 
+  // ── Search ──────────────────────────────────────────────────────────────────
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) { setResults([]); return; }
     setLoading(true);
     try {
       const q2 = q.trim();
+      const nq = normalizeStr(q2);
 
-      const [processes, clients, intimacoes] = await Promise.all([
+      // Parallel fetch all data
+      const [processes, clients, intimacoes, requirements, events, tasks] = await Promise.all([
         processService.listProcesses(),
         clientService.listClients(),
         djenLocalService.listComunicacoes({}),
+        requirementService.listRequirements().catch(() => []),
+        calendarService.listEvents().catch(() => []),
+        taskService.listTasks().catch(() => []),
       ]);
 
-      // Mapa cliente_id → client para cross-search
       const clientById = new Map<string, Client>(clients.map(c => [c.id, c]));
 
-      // ── Clientes ────────────────────────────────────────────────────────────
+      // ── Clientes ──────────────────────────────────────────────────────────
       const clientResults: SearchResult[] = clients
         .filter(c => matchesNormalizedSearch(q2, [c.full_name ?? '', c.cpf_cnpj ?? '', c.email ?? '', c.phone ?? '']))
         .slice(0, 5)
         .map(c => ({
-          id: c.id, type: 'cliente',
+          id: c.id,
+          type: 'cliente',
           title: c.full_name ?? 'Cliente',
           subtitle: [c.cpf_cnpj, c.email].filter(Boolean).join(' · ') || undefined,
           meta: c.phone || undefined,
           navModule: 'clientes',
-          navParams: { clientes: JSON.stringify({ mode: 'details', entityId: c.id }) },
+          // Direct params — navigateTo('clientes', { mode: 'details', entityId: id })
+          navParams: { mode: 'details', entityId: c.id },
         }));
 
-      // IDs dos clientes que bateram no nome
       const matchedClientIds = new Set(clientResults.map(r => r.id));
 
-      // ── Processos (por código, comarca, advogado) ────────────────────────────
+      // ── Processos ─────────────────────────────────────────────────────────
       const processResults: SearchResult[] = processes
-        .filter(p => matchesNormalizedSearch(q2, [
-          p.process_code ?? '', p.court ?? '', p.responsible_lawyer ?? '',
-        ]))
+        .filter(p => matchesNormalizedSearch(q2, [p.process_code ?? '', p.court ?? '', p.responsible_lawyer ?? '']))
         .slice(0, 5)
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
           return {
-            id: p.id, type: 'processo' as const,
+            id: p.id,
+            type: 'processo' as const,
             title: p.process_code ?? 'Processo',
             subtitle: [p.court, client?.full_name].filter(Boolean).join(' · ') || undefined,
             meta: p.status,
             navModule: 'processos',
-            navParams: { processos: JSON.stringify({ searchQuery: p.process_code }) },
+            navParams: { searchQuery: p.process_code ?? '' },
           };
         });
 
-      // ── Processos via nome do cliente (cross-search) ──────────────────────
+      // ── Processos via cliente ─────────────────────────────────────────────
       const processViaClientResults: SearchResult[] = processes
         .filter(p => {
           if (!p.client_id) return false;
           const client = clientById.get(p.client_id);
           if (!client) return false;
-          // Só incluir se o cliente não veio direto na busca de clientes E o nome bate
           return !matchedClientIds.has(p.client_id) &&
             matchesNormalizedSearch(q2, [client.full_name ?? '']);
         })
@@ -115,51 +179,113 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
           return {
-            id: p.id, type: 'processo-via-cliente' as const,
+            id: p.id,
+            type: 'processo-via-cliente' as const,
             title: p.process_code ?? 'Processo',
             subtitle: `Cliente: ${client?.full_name ?? ''}${p.court ? ' · ' + p.court : ''}`,
             meta: p.status,
             navModule: 'processos',
-            navParams: { processos: JSON.stringify({ searchQuery: p.process_code }) },
+            navParams: { searchQuery: p.process_code ?? '' },
           };
         });
 
-      // ── Intimações (número do processo, polo_ativo, polo_passivo, texto) ────
-      const normalizedQ = normalizeStr(q2);
+      // ── Intimações ────────────────────────────────────────────────────────
       const intimacaoResults: SearchResult[] = intimacoes
         .filter(i => {
           const fields = [
             i.numero_processo ?? '', i.polo_ativo ?? '', i.polo_passivo ?? '',
             i.tipo_documento ?? '', i.nome_classe ?? '',
-            // texto limitado para não ser lento
             (i.texto ?? '').slice(0, 400),
           ].map(normalizeStr);
-          return fields.some(f => f.includes(normalizedQ));
+          return fields.some(f => f.includes(nq));
         })
         .slice(0, 5)
         .map(i => ({
-          id: i.id, type: 'intimacao' as const,
+          id: i.id,
+          type: 'intimacao' as const,
           title: i.numero_processo ?? 'Intimação',
           subtitle: [i.polo_ativo, i.polo_passivo].filter(Boolean).join(' × ') ||
                     i.tipo_documento || undefined,
-          meta: i.data_disponibilizacao?.slice(0, 10),
+          meta: fmtDate(i.data_disponibilizacao),
           navModule: 'intimacoes',
           navParams: undefined,
         }));
 
-      // Merge: clientes primeiro, depois processos, depois intimações
+      // ── Requerimentos ─────────────────────────────────────────────────────
+      const reqResults: SearchResult[] = requirements
+        .filter(r => {
+          const fields = [
+            r.beneficiary ?? '', r.cpf ?? '', r.protocol ?? '',
+            BENEFIT_LABELS[r.benefit_type] ?? '',
+          ].map(normalizeStr);
+          return fields.some(f => f.includes(nq));
+        })
+        .slice(0, 4)
+        .map(r => ({
+          id: r.id,
+          type: 'requerimento' as const,
+          title: r.beneficiary ?? 'Requerimento',
+          subtitle: [BENEFIT_LABELS[r.benefit_type], r.protocol].filter(Boolean).join(' · ') || undefined,
+          meta: r.cpf || undefined,
+          navModule: 'requerimentos',
+          navParams: { entityId: r.id },
+        }));
+
+      // ── Agenda ────────────────────────────────────────────────────────────
+      const agendaResults: SearchResult[] = events
+        .filter(e => {
+          const fields = [
+            e.title ?? '', e.description ?? '', e.client_name ?? '',
+            EVENT_TYPE_LABELS[e.event_type] ?? '',
+          ].map(normalizeStr);
+          return fields.some(f => f.includes(nq));
+        })
+        .slice(0, 4)
+        .map(e => ({
+          id: e.id,
+          type: 'agenda' as const,
+          title: e.title ?? 'Compromisso',
+          subtitle: [EVENT_TYPE_LABELS[e.event_type], e.client_name].filter(Boolean).join(' · ') || undefined,
+          meta: fmtDate(e.start_at),
+          navModule: 'agenda',
+          navParams: { mode: 'event', entityId: e.id },
+        }));
+
+      // ── Tarefas ───────────────────────────────────────────────────────────
+      const tarefaResults: SearchResult[] = tasks
+        .filter(t => {
+          const fields = [t.title ?? '', t.description ?? ''].map(normalizeStr);
+          return fields.some(f => f.includes(nq));
+        })
+        .slice(0, 4)
+        .map(t => {
+          const client = clientById.get(t.client_id ?? '');
+          return {
+            id: t.id,
+            type: 'tarefa' as const,
+            title: t.title ?? 'Tarefa',
+            subtitle: client?.full_name || undefined,
+            meta: t.due_date ? fmtDate(t.due_date) : undefined,
+            navModule: 'tarefas',
+            navParams: undefined,
+          };
+        });
+
+      // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
         ...clientResults,
         ...processResults,
         ...processViaClientResults,
+        ...reqResults,
         ...intimacaoResults,
+        ...agendaResults,
+        ...tarefaResults,
       ];
-
-      // Deduplicar por id
       const seen = new Set<string>();
       const deduped = merged.filter(r => {
-        if (seen.has(r.id)) return false;
-        seen.add(r.id);
+        const key = `${r.type}:${r.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
       });
 
@@ -170,12 +296,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     }
   }, []);
 
+  // Debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), 280);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, search]);
 
+  // Keyboard
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -189,27 +317,41 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   }, [open, results, selected]);
 
   const handleSelect = (result: SearchResult) => {
-    onNavigate(result.navModule, result.navParams as any);
+    onNavigate(result.navModule, result.navParams);
     onClose();
   };
 
   if (!open) return null;
 
+  // Group results for display
+  const grouped = GROUP_ORDER
+    .map(type => ({
+      type,
+      cfg: TYPE_CONFIG[type],
+      items: results.filter(r => r.type === type),
+    }))
+    .filter(g => g.items.length > 0);
+
+  // Flat list for keyboard selection (preserving group order)
+  const flatResults = grouped.flatMap(g => g.items);
+  // Map from result id+type to flat index
+  const flatIdx = new Map(flatResults.map((r, i) => [`${r.type}:${r.id}`, i]));
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[10vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[8vh]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-2xl mx-4 bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden"
+        className="relative w-full max-w-2xl mx-4 bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-[82vh]"
         onClick={e => e.stopPropagation()}
       >
-        {/* Input */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100">
+        {/* ── Input ── */}
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 flex-shrink-0">
           <Search className="w-4.5 h-4.5 text-slate-400 flex-shrink-0" />
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Nome, processo, CPF, comarca, advogado, polo..."
+            placeholder="Nome, processo, CPF, beneficiário, compromisso, tarefa..."
             className="flex-1 text-sm text-slate-900 placeholder-slate-400 bg-transparent outline-none"
           />
           <div className="flex items-center gap-2">
@@ -221,67 +363,84 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           </div>
         </div>
 
-        {/* Results */}
+        {/* ── Results ── */}
         {results.length > 0 ? (
-          <ul className="max-h-[60vh] overflow-y-auto py-2 divide-y divide-slate-50">
-            {results.map((r, i) => {
-              const cfg = TYPE_CONFIG[r.type] ?? TYPE_CONFIG.cliente;
-              const Icon = cfg.icon;
-              const isSelected = i === selected;
-              return (
-                <li key={`${r.type}-${r.id}`}>
-                  <button
-                    onClick={() => handleSelect(r)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
-                  >
-                    <span className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border ${cfg.color} ${cfg.border}`}>
-                      <Icon className="w-4 h-4" />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate">{r.title}</div>
-                      {r.subtitle && <div className="text-xs text-slate-500 truncate mt-0.5">{r.subtitle}</div>}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {r.meta && <span className="text-[10px] text-slate-400 tabular-nums">{r.meta}</span>}
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cfg.color} ${cfg.border}`}>{cfg.label}</span>
-                      {isSelected
-                        ? <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
-                        : <ChevronRight className="w-3.5 h-3.5 text-slate-300" />}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="overflow-y-auto flex-1 py-2">
+            {grouped.map(({ type, cfg, items }) => (
+              <div key={type}>
+                {/* Group header */}
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+                  <cfg.icon className={`w-3 h-3 ${cfg.color.split(' ')[0]}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{cfg.group}</span>
+                  <span className="text-[10px] font-semibold text-slate-300 tabular-nums">({items.length})</span>
+                </div>
+                {/* Items */}
+                {items.map(r => {
+                  const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
+                  const isSelected = fi === selected;
+                  const Icon = cfg.icon;
+                  return (
+                    <button
+                      key={`${r.type}-${r.id}`}
+                      onClick={() => handleSelect(r)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border ${cfg.color} ${cfg.border}`}>
+                        <Icon className="w-4 h-4" />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate">{r.title}</div>
+                        {r.subtitle && <div className="text-xs text-slate-400 truncate mt-0.5">{r.subtitle}</div>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {r.meta && <span className="text-[10px] text-slate-400 tabular-nums">{r.meta}</span>}
+                        {isSelected
+                          ? <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
+                          : <ChevronRight className="w-3.5 h-3.5 text-slate-300" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         ) : query.trim().length >= 2 && !loading ? (
-          <div className="py-12 text-center text-sm text-slate-400">
+          <div className="py-12 text-center text-sm text-slate-400 flex-1">
             <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
             Nenhum resultado para <strong>"{query}"</strong>
           </div>
         ) : query.trim().length === 0 ? (
-          <div className="px-6 py-8 text-center">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">O que você pode buscar</p>
-            <div className="grid grid-cols-3 gap-3 text-xs text-slate-600">
+          <div className="px-6 py-6 flex-1">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4 text-center">O que você pode buscar</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs text-slate-600">
               {[
-                { icon: Users,    label: 'Clientes',   desc: 'nome, CPF, e-mail' },
-                { icon: FileText, label: 'Processos',  desc: 'número, comarca, advogado' },
-                { icon: Gavel,    label: 'Intimações', desc: 'polo, número, tipo' },
+                { icon: Users,         label: 'Clientes',       desc: 'nome, CPF, e-mail, telefone' },
+                { icon: FileText,      label: 'Processos',      desc: 'número, comarca, advogado' },
+                { icon: Gavel,         label: 'Intimações',     desc: 'polo, número, tipo de doc' },
+                { icon: ClipboardList, label: 'Requerimentos',  desc: 'beneficiário, CPF, protocolo' },
+                { icon: Calendar,      label: 'Agenda',         desc: 'audiências, prazos, reuniões' },
+                { icon: CheckSquare,   label: 'Tarefas',        desc: 'título, descrição da tarefa' },
               ].map(({ icon: Icon, label, desc }) => (
-                <div key={label} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <Icon className="w-5 h-5 text-amber-500" />
-                  <span className="font-semibold">{label}</span>
-                  <span className="text-slate-400 text-center leading-tight">{desc}</span>
+                <div key={label} className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <Icon className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-semibold text-slate-700">{label}</div>
+                    <div className="text-slate-400 leading-tight mt-0.5">{desc}</div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         ) : null}
 
-        {/* Footer */}
-        <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-4 text-[10px] text-slate-400">
+        {/* ── Footer ── */}
+        <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-4 text-[10px] text-slate-400 flex-shrink-0">
           <span><kbd className="bg-slate-100 px-1.5 rounded">↑↓</kbd> navegar</span>
           <span><kbd className="bg-slate-100 px-1.5 rounded">Enter</kbd> abrir</span>
           <span><kbd className="bg-slate-100 px-1.5 rounded">Esc</kbd> fechar</span>
+          {results.length > 0 && (
+            <span className="text-slate-300">{flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}</span>
+          )}
           <span className="ml-auto font-mono opacity-50">⌘K · Ctrl+K</span>
         </div>
       </div>

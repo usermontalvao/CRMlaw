@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.121': { name: 'Café Busca Total', emoji: '🔭' },
   '1.10.120': { name: 'Café Partes Identificadas', emoji: '👥' },
   '1.10.119': { name: 'Café Busca Global', emoji: '🔍' },
   '1.10.118': { name: 'Café Cron Inteligente', emoji: '🤖' },
@@ -820,6 +821,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.121',
+    date: '18/05/2026',
+    summary: 'Busca global totalmente integrada: requerimentos, agenda, tarefas; navegação direta para modais; partes detectadas com 3 fallbacks.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'improvement', title: 'Busca global — 6 fontes de dados', description: 'A busca ⌘K agora pesquisa simultaneamente: Clientes (nome, CPF, e-mail, telefone), Processos (número, comarca, advogado), Intimações (polo, número, texto), Requerimentos (beneficiário, CPF, protocolo, tipo de benefício), Agenda (título, tipo, cliente) e Tarefas (título, descrição). Resultados agrupados por categoria com contagem.' },
+          { type: 'fix', title: 'Navegação via busca agora abre os modais corretamente', description: 'O formato dos parâmetros de navegação estava errado (wrapper extra), impedindo que focusClientId, entityId e searchQuery fossem reconhecidos. Corrigido — clicar em qualquer resultado abre o modal/ficha correspondente diretamente.' },
+          { type: 'improvement', title: 'UI refinada — grupos, contagem, empty state', description: 'Resultados organizados em seções por tipo com ícone e contagem. Footer mostra total de resultados. Empty state com 6 categorias e descrição do que pode ser buscado em cada uma.' },
+        ],
+      },
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'improvement', title: 'Partes do processo — 3 estratégias de detecção', description: 'Ao abrir o detalhe do processo, o sistema tenta: (1) polo_ativo/polo_passivo já gravados na comunicação; (2) destinatários DJEN com campo polo; (3) extração via regex do texto da intimação (padrões "Autor:", "Réu:", "Polo Ativo:"). Aumenta significativamente a cobertura de processos que exibem as partes.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.120',
     date: '18/05/2026',

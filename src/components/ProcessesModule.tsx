@@ -1323,9 +1323,40 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     // Carregar partes do processo a partir das intimações vinculadas
     try {
       const comuns = await djenLocalService.listComunicacoes({ process_id: process.id });
-      const withParties = comuns.find(c => c.polo_ativo);
-      if (withParties) {
-        setProcessParties({ polo_ativo: withParties.polo_ativo ?? null, polo_passivo: withParties.polo_passivo ?? null });
+      if (comuns.length === 0) return;
+
+      // 1) Tentar polo_ativo/polo_passivo já gravados
+      const withPolo = comuns.find(c => c.polo_ativo || c.polo_passivo);
+      if (withPolo) {
+        setProcessParties({ polo_ativo: withPolo.polo_ativo ?? null, polo_passivo: withPolo.polo_passivo ?? null });
+        return;
+      }
+
+      // 2) Tentar via djen_destinatarios (joinados)
+      for (const c of comuns) {
+        const dests = c.djen_destinatarios ?? [];
+        if (dests.length === 0) continue;
+        const ativo = dests
+          .filter(d => d.polo && /ativo|autor|requerente/i.test(d.polo))
+          .map(d => d.nome).join(', ') || null;
+        const passivo = dests
+          .filter(d => d.polo && /passivo|r[eé]u|requerido/i.test(d.polo))
+          .map(d => d.nome).join(', ') || null;
+        if (ativo || passivo) {
+          setProcessParties({ polo_ativo: ativo, polo_passivo: passivo });
+          return;
+        }
+        // 3) Extrair do texto: "Autor: X Réu: Y" patterns
+        const texto = c.texto ?? '';
+        const autorMatch = texto.match(/(?:Autor|Polo Ativo|Requerente)[:\s]+([^\n\r|–•]{3,80})/i);
+        const reuMatch = texto.match(/(?:R[eé]u|Polo Passivo|Requerido)[:\s]+([^\n\r|–•]{3,80})/i);
+        if (autorMatch || reuMatch) {
+          setProcessParties({
+            polo_ativo: autorMatch ? autorMatch[1].trim() : null,
+            polo_passivo: reuMatch ? reuMatch[1].trim() : null,
+          });
+          return;
+        }
       }
     } catch {
       // silently fail
