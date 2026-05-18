@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.122': { name: 'Café Prazo Certo', emoji: '⏰' },
   '1.10.121': { name: 'Café Busca Total', emoji: '🔭' },
   '1.10.120': { name: 'Café Partes Identificadas', emoji: '👥' },
   '1.10.119': { name: 'Café Busca Global', emoji: '🔍' },
@@ -821,6 +822,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.122',
+    date: '18/05/2026',
+    summary: 'Busca global: Prazos adicionados; Agenda mostra apenas compromissos futuros.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'feature', title: 'Busca global — Prazos integrados', description: 'A busca ⌘K agora pesquisa prazos pendentes e vencidos (exclui cumpridos e cancelados) pelo título e cliente. Prazos vencidos exibem ⚠ na data. Clicar navega para o módulo Prazos com o prazo aberto.' },
+          { type: 'fix', title: 'Agenda — apenas compromissos futuros', description: 'A busca de agenda estava retornando eventos passados, poluindo os resultados. Agora são exibidos apenas eventos com data ≥ hoje.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.121',
     date: '18/05/2026',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Search, X, FileText, Users, Gavel, Loader2, ChevronRight, ArrowRight,
-  ClipboardList, Calendar, CheckSquare, User,
+  ClipboardList, Calendar, CheckSquare, AlarmClock,
 } from 'lucide-react';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
@@ -9,6 +9,7 @@ import { djenLocalService } from '../services/djenLocal.service';
 import { requirementService } from '../services/requirement.service';
 import { calendarService } from '../services/calendar.service';
 import { taskService } from '../services/task.service';
+import { deadlineService } from '../services/deadline.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
 
@@ -20,6 +21,7 @@ type ResultType =
   | 'processo-via-cliente'
   | 'intimacao'
   | 'requerimento'
+  | 'prazo'
   | 'agenda'
   | 'tarefa';
 
@@ -52,17 +54,18 @@ const TYPE_CONFIG: Record<ResultType, {
   border: string;
   group: string;
 }> = {
-  cliente:              { label: 'Cliente',       icon: Users,         color: 'text-slate-600 bg-slate-100',   border: 'border-slate-200',  group: 'Clientes'      },
-  processo:             { label: 'Processo',      icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
-  'processo-via-cliente':{ label: 'Processo',     icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
-  intimacao:            { label: 'Intimação',     icon: Gavel,         color: 'text-orange-600 bg-orange-50',  border: 'border-orange-200', group: 'Intimações'    },
-  requerimento:         { label: 'Requerimento',  icon: ClipboardList, color: 'text-purple-600 bg-purple-50',  border: 'border-purple-200', group: 'Requerimentos' },
-  agenda:               { label: 'Agenda',        icon: Calendar,      color: 'text-teal-600 bg-teal-50',      border: 'border-teal-200',   group: 'Agenda'        },
-  tarefa:               { label: 'Tarefa',        icon: CheckSquare,   color: 'text-sky-600 bg-sky-50',        border: 'border-sky-200',    group: 'Tarefas'       },
+  cliente:               { label: 'Cliente',       icon: Users,         color: 'text-slate-600 bg-slate-100',   border: 'border-slate-200',  group: 'Clientes'      },
+  processo:              { label: 'Processo',      icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
+  'processo-via-cliente':{ label: 'Processo',      icon: FileText,      color: 'text-amber-600 bg-amber-50',    border: 'border-amber-200',  group: 'Processos'     },
+  intimacao:             { label: 'Intimação',     icon: Gavel,         color: 'text-orange-600 bg-orange-50',  border: 'border-orange-200', group: 'Intimações'    },
+  requerimento:          { label: 'Requerimento',  icon: ClipboardList, color: 'text-purple-600 bg-purple-50',  border: 'border-purple-200', group: 'Requerimentos' },
+  prazo:                 { label: 'Prazo',         icon: AlarmClock,    color: 'text-red-600 bg-red-50',        border: 'border-red-200',    group: 'Prazos'        },
+  agenda:                { label: 'Agenda',        icon: Calendar,      color: 'text-teal-600 bg-teal-50',      border: 'border-teal-200',   group: 'Agenda'        },
+  tarefa:                { label: 'Tarefa',        icon: CheckSquare,   color: 'text-sky-600 bg-sky-50',        border: 'border-sky-200',    group: 'Tarefas'       },
 };
 
 const GROUP_ORDER: ResultType[] = [
-  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'intimacao', 'agenda', 'tarefa',
+  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo', 'intimacao', 'agenda', 'tarefa',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -121,13 +124,16 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       const nq = normalizeStr(q2);
 
       // Parallel fetch all data
-      const [processes, clients, intimacoes, requirements, events, tasks] = await Promise.all([
+      const now = new Date().toISOString();
+      const [processes, clients, intimacoes, requirements, events, tasks, deadlines] = await Promise.all([
         processService.listProcesses(),
         clientService.listClients(),
         djenLocalService.listComunicacoes({}),
         requirementService.listRequirements().catch(() => []),
-        calendarService.listEvents().catch(() => []),
+        // Agenda: only future/today events
+        calendarService.listEvents().catch(() => [] as Awaited<ReturnType<typeof calendarService.listEvents>>),
         taskService.listTasks().catch(() => []),
+        deadlineService.listDeadlines().catch(() => []),
       ]);
 
       const clientById = new Map<string, Client>(clients.map(c => [c.id, c]));
@@ -231,9 +237,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           navParams: { entityId: r.id },
         }));
 
-      // ── Agenda ────────────────────────────────────────────────────────────
+      // ── Agenda (somente eventos futuros / hoje) ───────────────────────────
       const agendaResults: SearchResult[] = events
         .filter(e => {
+          // Somente compromissos não passados (start_at >= hoje)
+          if (e.start_at < now.slice(0, 10)) return false;
           const fields = [
             e.title ?? '', e.description ?? '', e.client_name ?? '',
             EVENT_TYPE_LABELS[e.event_type] ?? '',
@@ -250,6 +258,33 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           navModule: 'agenda',
           navParams: { mode: 'event', entityId: e.id },
         }));
+
+      // ── Prazos (pendentes/vencidos, não cumpridos/cancelados) ─────────────
+      const PRIORITY_LABEL: Record<string, string> = {
+        urgente: 'Urgente', alta: 'Alta', media: 'Média', baixa: 'Baixa',
+      };
+      const prazoResults: SearchResult[] = deadlines
+        .filter(d => {
+          if (d.status === 'cumprido' || d.status === 'cancelado') return false;
+          const fields = [d.title ?? '', d.description ?? ''].map(normalizeStr);
+          const client = clientById.get(d.client_id ?? '');
+          if (client) fields.push(normalizeStr(client.full_name ?? ''));
+          return fields.some(f => f.includes(nq));
+        })
+        .slice(0, 4)
+        .map(d => {
+          const client = clientById.get(d.client_id ?? '');
+          const isOverdue = d.due_date < now.slice(0, 10) && d.status === 'pendente';
+          return {
+            id: d.id,
+            type: 'prazo' as const,
+            title: d.title,
+            subtitle: client?.full_name || undefined,
+            meta: `${fmtDate(d.due_date)}${isOverdue ? ' ⚠' : ''}`,
+            navModule: 'prazos',
+            navParams: { entityId: d.id },
+          };
+        });
 
       // ── Tarefas ───────────────────────────────────────────────────────────
       const tarefaResults: SearchResult[] = tasks
@@ -277,6 +312,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         ...processResults,
         ...processViaClientResults,
         ...reqResults,
+        ...prazoResults,
         ...intimacaoResults,
         ...agendaResults,
         ...tarefaResults,
@@ -418,8 +454,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                 { icon: FileText,      label: 'Processos',      desc: 'número, comarca, advogado' },
                 { icon: Gavel,         label: 'Intimações',     desc: 'polo, número, tipo de doc' },
                 { icon: ClipboardList, label: 'Requerimentos',  desc: 'beneficiário, CPF, protocolo' },
-                { icon: Calendar,      label: 'Agenda',         desc: 'audiências, prazos, reuniões' },
-                { icon: CheckSquare,   label: 'Tarefas',        desc: 'título, descrição da tarefa' },
+                { icon: AlarmClock,    label: 'Prazos',         desc: 'título, cliente (pendentes)' },
+                { icon: Calendar,      label: 'Agenda',         desc: 'futuros: audiências, reuniões' },
+                { icon: CheckSquare,   label: 'Tarefas',        desc: 'título, descrição' },
               ].map(({ icon: Icon, label, desc }) => (
                 <div key={label} className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
                   <Icon className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
