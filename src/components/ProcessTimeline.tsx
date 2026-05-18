@@ -200,28 +200,45 @@ const detectCurrentStage = (events: TimelineEvent[]): number => {
   const eventTypes = events.map(e => e.type);
   const titles = events.map(e => e.title.toLowerCase());
   const descriptions = events.map(e => (e.description || '').toLowerCase());
-  
+
   // Prioridade: verificar tipos de eventos primeiro
   if (eventTypes.includes('recurso')) return 6;
   if (eventTypes.includes('sentenca')) return 5;
   if (eventTypes.includes('citacao')) return 1;
-  
+
   // Fallback: verificar títulos com padrões mais específicos
-  const hasRecurso = titles.some(t => 
-    t.includes('recurso interposto') || 
-    t.includes('apelação') || 
+  const hasRecurso = titles.some(t =>
+    t.includes('recurso interposto') ||
+    t.includes('apelação') ||
     t.includes('agravo de instrumento') ||
     t.includes('embargos de declaração') ||
     t.includes('recurso especial') ||
     t.includes('recurso extraordinário')
   );
   if (hasRecurso) return 6;
-  
-  const hasSentenca = titles.some(t => 
-    t.includes('sentença proferida') || 
+
+  const hasSentenca = titles.some(t =>
+    t.trim() === 'sentença' ||
+    t.trim() === 'sentença/acórdão' ||
+    t.includes('sentença proferida') ||
     t.includes('sentença homologatória') ||
     t.includes('julgamento procedente') ||
-    t.includes('julgamento improcedente')
+    t.includes('julgamento improcedente') ||
+    t.includes('julgo procedente') ||
+    t.includes('julgo improcedente') ||
+    t.includes('julgo parcialmente procedente') ||
+    t.includes('homologando o projeto de sentença')
+  ) || descriptions.some(d =>
+    d.includes('foi proferida sentença') ||
+    d.includes('proferiu sentença') ||
+    d.includes('sentença proferida') ||
+    d.includes('homologando o projeto de sentença') ||
+    d.includes('condenando o réu a pagar') ||
+    d.includes('julgo procedente') ||
+    d.includes('julgo improcedente') ||
+    d.includes('julgo parcialmente') ||
+    d.includes('julgamento de mérito') ||
+    d.includes('dispositivo da sentença')
   );
   if (hasSentenca) return 5;
   
@@ -313,6 +330,32 @@ const mapStageToStatus = (stage: number): ProcessStatus => {
   }
 };
 
+/** Extrai a vara/comarca dos títulos dos movimentos do DJEN.
+ *  Padrões comuns: "Juizado Especial Cível da Comarca de Nova Friburgo"
+ *                  "2ª Vara Cível da Comarca de Niterói" etc.
+ */
+const extractComarcaFromEvents = (events: TimelineEvent[]): string | null => {
+  const patterns = [
+    // Juizado Especial/Criminal/Fazenda da Comarca de XXXX
+    /Juizado\s+(?:Especial|Criminal|da\s+Fazenda)[^\n]*?da\s+Comarca\s+de\s+([A-Za-zÀ-ú\s]+?)(?:\s*$|\s{2,}|,)/i,
+    // Nª Vara XXXX da Comarca de XXXX
+    /(?:\d+ª?\s+)?Vara\s+[^\n]*?da\s+Comarca\s+de\s+([A-Za-zÀ-ú\s]+?)(?:\s*$|\s{2,}|,)/i,
+    // Comarca de XXXX
+    /Comarca\s+de\s+([A-Za-zÀ-ú][A-Za-zÀ-ú\s]{2,30}?)(?:\s+Juizado|\s+Vara|\s*$|\s{2,}|,)/i,
+  ];
+
+  for (const event of events) {
+    const text = `${event.title} ${event.description || ''}`;
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1].trim().replace(/\s+/g, ' ');
+      }
+    }
+  }
+  return null;
+};
+
 // Função para limpar tags HTML do conteúdo
 const cleanHtmlContent = (content: string): string => {
   if (!content) return '';
@@ -393,14 +436,27 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       const stage = detectCurrentStage(data);
       setCurrentStage(stage);
 
-      // Atualizar status do processo obrigatoriamente conforme o mapa (estágio exibido)
+      // Atualizar status e comarca do processo conforme a timeline
       if (processId && data.length > 0) {
         const mappedStatus = mapStageToStatus(stage);
         const currentProcess = await processService.getProcessById(processId);
-        if (currentProcess && currentProcess.status !== mappedStatus) {
-          await processService.updateStatus(processId, mappedStatus);
-          setStatusUpdated(mappedStatus);
-          onStatusUpdated?.(mappedStatus);
+        if (currentProcess) {
+          const updates: Record<string, string> = {};
+          if (currentProcess.status !== mappedStatus) {
+            updates.status = mappedStatus;
+          }
+          if (!currentProcess.court) {
+            const detectedComarca = extractComarcaFromEvents(data);
+            if (detectedComarca) updates.court = detectedComarca;
+          }
+          if (updates.status) {
+            await processService.updateStatus(processId, updates.status as any);
+            setStatusUpdated(updates.status);
+            onStatusUpdated?.(updates.status as any);
+          }
+          if (updates.court) {
+            await processService.updateProcess(processId, { court: updates.court } as any);
+          }
         }
       }
     } catch (err: any) {
@@ -411,14 +467,25 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         const stage = detectCurrentStage(data);
         setCurrentStage(stage);
 
-        // Atualizar status do processo obrigatoriamente conforme o mapa (estágio exibido)
+        // Atualizar status e comarca do processo conforme a timeline
         if (processId && data.length > 0) {
           const mappedStatus = mapStageToStatus(stage);
           const currentProcess = await processService.getProcessById(processId);
-          if (currentProcess && currentProcess.status !== mappedStatus) {
-            await processService.updateStatus(processId, mappedStatus);
-            setStatusUpdated(mappedStatus);
-            onStatusUpdated?.(mappedStatus);
+          if (currentProcess) {
+            const updates: Record<string, string> = {};
+            if (currentProcess.status !== mappedStatus) updates.status = mappedStatus;
+            if (!currentProcess.court) {
+              const detectedComarca = extractComarcaFromEvents(data);
+              if (detectedComarca) updates.court = detectedComarca;
+            }
+            if (updates.status) {
+              await processService.updateStatus(processId, updates.status as any);
+              setStatusUpdated(updates.status);
+              onStatusUpdated?.(updates.status as any);
+            }
+            if (updates.court) {
+              await processService.updateProcess(processId, { court: updates.court } as any);
+            }
           }
         }
       } catch (innerErr: any) {

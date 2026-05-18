@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.116': { name: 'Café Comarca Detectada', emoji: '🏛️' },
   '1.10.115': { name: 'Café Intimação Material', emoji: '⚖️' },
   '1.10.114': { name: 'Café Deploy Fresco', emoji: '🚀' },
   '1.10.113': { name: 'Café Balão Visível', emoji: '👁️' },
@@ -815,6 +816,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.116',
+    date: '18/05/2026',
+    summary: 'Timeline: corrigida detecção de estágio "Sentença" e auto-preenchimento de Vara/Comarca a partir dos movimentos do DJEN.',
+    modules: [
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'fix', title: 'Estágio detectado incorretamente como Conciliação', description: 'detectCurrentStage não reconhecia o título exato "Sentença" nem keywords na descrição ("foi proferida sentença", "condenando o réu", etc.). Adicionados padrões de título e descrição para detectar sentença proferida corretamente.' },
+          { type: 'improvement', title: 'Auto-preenchimento de Vara/Comarca', description: 'Quando o campo Vara/Comarca está vazio, a timeline extrai automaticamente o nome da comarca a partir dos títulos dos movimentos do DJEN (ex: "Comarca de Nova Friburgo") e salva no processo.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.115',
     date: '18/05/2026',
