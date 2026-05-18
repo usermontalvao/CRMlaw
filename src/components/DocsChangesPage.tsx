@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.115': { name: 'Café Intimação Material', emoji: '⚖️' },
   '1.10.114': { name: 'Café Deploy Fresco', emoji: '🚀' },
   '1.10.113': { name: 'Café Balão Visível', emoji: '👁️' },
   '1.10.112': { name: 'Café Balão Resolvido', emoji: '💬' },
@@ -814,6 +815,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.115',
+    date: '18/05/2026',
+    summary: 'Intimações: redesign do cabeçalho com Material Design 3 — ícone âmbar, título azul-marinho, botão Sincronizar laranja.',
+    modules: [
+      {
+        moduleId: 'Intimations',
+        changes: [
+          { type: 'improvement', title: 'Cabeçalho Material Design 3', description: 'Header redesenhado com paleta MD3: ícone Gavel em fundo #ffb783, título em #031636, badges de status em #105ac0 (não lidas) e #ba1a1a (urgentes).' },
+          { type: 'improvement', title: 'Botão Sincronizar laranja sólido', description: 'Botão atualizado para #E67E22 com hover #D26F1B, substituindo o amber com sombra anterior.' },
+          { type: 'improvement', title: 'Campo de busca refinado', description: 'Input de busca com bordas mais nítidas e focus ring azul (#105ac0), alinhado com o design do cabeçalho.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.114',
     date: '18/05/2026',

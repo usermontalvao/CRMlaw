@@ -21,10 +21,9 @@
 
 ## Update Summary
 **Changes Made**
-- Updated Dashboard component calendar display logic to show today in leftmost position followed by next six days
-- Enhanced weekly strip implementation with improved date calculation and event visualization
-- Added comprehensive documentation for the new calendar display pattern
-- Updated widget architecture to reflect the integrated agenda widget design
+- Enhanced TypeScript type safety in CalendarModule component with clientId property addition to SelectedEvent interface
+- Improved type definitions and deployment reliability through stronger client identification in calendar event handling
+- Updated event data mapping to consistently include client identifier across all calendar event sources
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -41,7 +40,7 @@
 ## Introduction
 This document explains the Calendar & Deadlines module: how the calendar integrates with deadlines, hearings, requirements, and other events; how the CalendarModule renders month/year views, handles navigation, and displays event details; how the DeadlinesModule tracks deadlines, manages reminders, and supports overdue notifications; and how the underlying services implement CRUD operations, timezone handling, and reminder scheduling. It also covers deadline categories, priorities, escalation rules, calendar synchronization, import/export capabilities, and team collaboration features.
 
-**Updated** The Dashboard component now features an enhanced calendar display system that prioritizes today's date in the weekly strip, presenting a more intuitive and user-friendly interface for quick event access.
+**Updated** The CalendarModule component now includes enhanced TypeScript type safety with the addition of the clientId property to the SelectedEvent interface, improving type definitions and deployment reliability across all calendar event handling scenarios.
 
 ## Project Structure
 The Calendar & Deadlines domain spans React components, TypeScript types, Supabase services, and serverless notification functions:
@@ -187,6 +186,7 @@ FN-->>DB : dedupe by metadata key
 - **Mobile-responsive toolbar**: Implements a two-row design optimized for mobile devices:
   - First row: Primary navigation controls and "New" button for creating events
   - Second row (mobile only): Responsibility filters, schedule view, and action buttons for better mobile usability
+- **Enhanced type safety**: SelectedEvent interface now includes clientId property for improved TypeScript type checking and deployment reliability
 
 ```mermaid
 flowchart TD
@@ -450,8 +450,7 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 - Timezone conversion in CalendarService ensures consistent storage and rendering across devices.
 - **Mobile optimization**: Two-row toolbar reduces scrolling and improves accessibility on smaller screens.
 - **Dashboard performance**: Enhanced weekly strip uses efficient date calculations and event mapping for optimal rendering.
-
-[No sources needed since this section provides general guidance]
+- **Type safety improvements**: Enhanced TypeScript definitions improve compile-time error detection and deployment reliability.
 
 ## Troubleshooting Guide
 - Realtime not updating: Verify Supabase channel subscription and that tables (calendar_events, deadlines, representative_appointments) are included.
@@ -461,6 +460,7 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 - **Mobile toolbar issues**: Verify responsive breakpoints and ensure the two-row toolbar is properly configured for mobile devices.
 - **Notification delivery problems**: Check userNotificationService.createNotification calls and ensure deduplication keys are properly set.
 - **Dashboard calendar display issues**: Verify the weekly strip date calculation logic and ensure today is properly centered in the display.
+- **Type safety errors**: Ensure all calendar event handlers properly handle the clientId property in SelectedEvent interface.
 
 **Section sources**
 - [CalendarModule.tsx:691-706](file://src/components/CalendarModule.tsx#L691-L706)
@@ -471,7 +471,7 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 ## Conclusion
 The Calendar & Deadlines module provides a unified, real-time system for managing legal deadlines, hearings, requirements, and general events. It offers flexible views, robust filtering, team collaboration via representative appointments and mentions, and automated reminders. The services and types ensure consistent data handling and timezone-aware operations, while the notification scheduler keeps stakeholders informed. The recent calendar display logic improvements in the Dashboard component enhance user experience by prioritizing today's date in the weekly strip, replacing traditional ISO week patterns with a more intuitive left-to-right progression. The enhanced notification system provides more contextual and informative alerts with assigner names and event type emojis, while the mobile-responsive toolbar restructuring improves usability on smaller screens.
 
-[No sources needed since this section summarizes without analyzing specific files]
+**Updated** The CalendarModule component now includes enhanced TypeScript type safety through the addition of the clientId property to the SelectedEvent interface, improving type definitions and deployment reliability across all calendar event handling scenarios. This enhancement ensures stronger client identification and better type checking throughout the calendar event lifecycle.
 
 ## Appendices
 
@@ -481,6 +481,7 @@ The Calendar & Deadlines module provides a unified, real-time system for managin
 - Calendar navigation: Maintains month/year view state and calendarTitle; supports cronograma schedule view with period selection.
 - **Mobile toolbar**: Two-row design with primary navigation controls and action buttons optimized for mobile device usability.
 - **Dashboard integration**: Enhanced weekly strip displays today + 6 upcoming days for improved navigation and event access.
+- **Enhanced type safety**: SelectedEvent interface now includes clientId property for improved TypeScript type checking and deployment reliability.
 
 **Section sources**
 - [CalendarModule.tsx:452-473](file://src/components/CalendarModule.tsx#L452-L473)
@@ -582,5 +583,4 @@ Highlight --> Events["Show Event Indicators"]
 - **Mobile optimization**: The two-row toolbar automatically adapts to mobile screens, with the second row containing responsibility filters, schedule view, and action buttons for better mobile usability.
 - **Enhanced notifications**: Configure appointment assignment notifications to include contextual information with assigner names and event type emojis for improved user experience.
 - **Dashboard customization**: The weekly strip automatically centers today's date and displays the next six days for intuitive navigation and event planning.
-
-[No sources needed since this section provides general guidance]
+- **Type safety improvements**: Ensure all calendar event handlers properly utilize the clientId property from the SelectedEvent interface for enhanced type checking and deployment reliability.

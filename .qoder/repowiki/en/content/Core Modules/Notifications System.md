@@ -21,9 +21,11 @@
 
 ## Update Summary
 **Changes Made**
-- Updated notification scheduler logic to fix critical bug where deadlines were incorrectly assigned using profile.id instead of auth user_id
-- Enhanced notification messages with contextual information including event types with corresponding emojis, assigner names, and specific entity IDs for direct navigation
+- Enhanced notification scheduler logic to fix critical bug where deadlines were incorrectly assigned using profile.id instead of auth user_id
+- Improved notification messages with rich contextual information including event types with corresponding emojis, assigner names, and specific entity IDs for direct navigation
+- Enhanced notification creation process with better error handling and user experience
 - Improved notification distribution to send reminders only to designated responsible parties rather than broadcasting to all active users
+- Added rich contextual information including deadline type labels, priority levels, assigner names, days until due dates, and appointment type labels with emoji indicators
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -188,6 +190,7 @@ Key features:
 - Pagination: Efficient rendering of large notification lists.
 - Bulk actions: Mark all as read, clear read notifications.
 - Navigation: Direct links to relevant modules based on notification type.
+- Rich contextual information: Days until due dates, priority levels, and detailed descriptions.
 
 ```mermaid
 flowchart TD
@@ -282,6 +285,7 @@ Key capabilities:
 - Sound effects using Web Audio API.
 - Preference management for sound and visibility.
 - Popup notifications with auto-dismiss and countdown.
+- Rich contextual information display including urgency badges, tribunal indicators, and signature progress.
 
 ```mermaid
 sequenceDiagram
@@ -496,6 +500,7 @@ Key improvements:
 - **Contextual Messaging**: Enhanced messages now include event types with corresponding emojis, assigner names, and specific entity IDs for direct navigation
 - **Targeted Distribution**: Reminders are sent only to designated responsible parties rather than broadcasting to all active users
 - **Improved Deduplication**: Enhanced deduplication logic with permanent dedupe keys for metadata-based filtering
+- **Rich Contextual Information**: Added deadline type labels, priority levels, assigner names, days until due dates, and appointment type labels with emoji indicators
 
 ```mermaid
 flowchart TD
@@ -579,6 +584,7 @@ SCHED["notification-scheduler"] --> UNS
 - **Sound Effects**: Web Audio API is used for sound effects. Be mindful of memory usage and avoid excessive concurrent audio instances.
 - **Service Worker Registration**: Push notification initialization registers a service worker. Ensure proper caching and update strategies to minimize bandwidth usage.
 - **Scheduler Optimization**: The notification scheduler now uses targeted distribution to designated responsible parties, reducing unnecessary notifications and improving system efficiency.
+- **Rich Context Processing**: Enhanced notification processing with contextual information requires careful optimization to avoid performance degradation.
 
 ## Troubleshooting Guide
 Common issues and resolutions:
@@ -588,6 +594,7 @@ Common issues and resolutions:
 - **Notification Deduplication Issues**: Review dedupe keys and timestamps to ensure proper identification of duplicate notifications.
 - **Performance Problems**: Monitor component re-renders and consider implementing virtualization for large notification lists.
 - **Missing Notifications**: Verify that the notification scheduler is properly mapping profile IDs to user IDs and sending notifications only to designated responsible parties.
+- **Contextual Information Missing**: Ensure that notification metadata includes proper fields like days_until_due, priority, and tribunal information.
 
 **Section sources**
 - [NotificationPermissionBanner.tsx:1-98](file://src/components/NotificationPermissionBanner.tsx#L1-L98)
@@ -596,4 +603,4 @@ Common issues and resolutions:
 - [notification-scheduler/index.ts:95-124](file://supabase/functions/notification-scheduler/index.ts#L95-L124)
 
 ## Conclusion
-The Notifications System provides a robust, extensible framework for delivering timely and relevant information to users across multiple channels. Its modular architecture supports easy customization and enhancement while maintaining performance and reliability. The recent improvements to the notification scheduler ensure proper user assignment and targeted notification delivery, while enhanced contextual messaging provides users with richer information and direct navigation capabilities. The combination of in-app notifications, browser alerts, and sound effects ensures users stay informed regardless of their interaction pattern with the application.
+The Notifications System provides a robust, extensible framework for delivering timely and relevant information to users across multiple channels. Its modular architecture supports easy customization and enhancement while maintaining performance and reliability. The recent improvements to the notification scheduler ensure proper user assignment and targeted notification delivery, while enhanced contextual messaging provides users with richer information and direct navigation capabilities. The combination of in-app notifications, browser alerts, and sound effects ensures users stay informed regardless of their interaction pattern with the application. The system now offers comprehensive rich contextual information including deadline type labels, priority levels, assigner names, days until due dates, and appointment type labels with emoji indicators, significantly improving the user experience and notification effectiveness.

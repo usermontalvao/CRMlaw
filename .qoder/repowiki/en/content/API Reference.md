@@ -4,7 +4,9 @@
 **Referenced Files in This Document**
 - [supabase.ts](file://src/config/supabase.ts)
 - [AuthContext.tsx](file://src/contexts/AuthContext.tsx)
+- [NavigationContext.tsx](file://src/contexts/NavigationContext.tsx)
 - [main.tsx](file://src/main.tsx)
+- [App.tsx](file://src/App.tsx)
 - [client.service.ts](file://src/services/client.service.ts)
 - [process.service.ts](file://src/services/process.service.ts)
 - [case.service.ts](file://src/services/case.service.ts)
@@ -17,17 +19,25 @@
 - [send-email/index.ts](file://supabase/functions/send-email/index.ts)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Enhanced navigation API documentation with improved type annotations
+- Updated NavigationContext documentation to reflect explicit Record<string, string> type definitions
+- Added comprehensive coverage of navigation parameter typing and validation
+- Expanded API reference for module navigation and parameter passing
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+6. [Navigation API](#navigation-api)
+7. [Dependency Analysis](#dependency-analysis)
+8. [Performance Considerations](#performance-considerations)
+9. [Troubleshooting Guide](#troubleshooting-guide)
+10. [Conclusion](#conclusion)
+11. [Appendices](#appendices)
 
 ## Introduction
 This document provides a comprehensive API reference for the CRM Jurídico system. It covers:
@@ -35,6 +45,7 @@ This document provides a comprehensive API reference for the CRM Jurídico syste
 - Authentication and session lifecycle
 - Real-time subscriptions for chat and presence-like features
 - Edge function endpoints for external integrations (DJEN proxy, email OTP, email sending)
+- Navigation API with enhanced type safety for module routing
 - Request/response schemas, validation, and error handling
 - Rate limiting, authentication headers, and API versioning considerations
 - Webhook/callback patterns and monitoring approaches
@@ -45,6 +56,7 @@ The API surface is primarily implemented through:
 - Service classes encapsulating CRUD operations against Supabase tables
 - Edge functions for cross-origin proxying and email orchestration
 - Real-time subscriptions leveraging Supabase channels
+- Enhanced navigation system with explicit type annotations
 
 ```mermaid
 graph TB
@@ -52,6 +64,7 @@ subgraph "Client App"
 UI["React UI"]
 Services["Service Classes<br/>client.service.ts<br/>process.service.ts<br/>case.service.ts<br/>chat.service.ts"]
 Auth["AuthContext.tsx"]
+Nav["NavigationContext.tsx<br/>Enhanced Type Safety"]
 end
 subgraph "Supabase"
 SB["Supabase Client<br/>supabase.ts"]
@@ -68,6 +81,7 @@ Services --> SB
 SB --> Tables
 SB --> Realtime
 Auth --> SB
+Nav --> UI
 UI --> DJEN
 UI --> OTP
 UI --> SMTPE
@@ -76,6 +90,7 @@ UI --> SMTPE
 **Diagram sources**
 - [supabase.ts:1-34](file://src/config/supabase.ts#L1-L34)
 - [AuthContext.tsx:1-285](file://src/contexts/AuthContext.tsx#L1-L285)
+- [NavigationContext.tsx:1-94](file://src/contexts/NavigationContext.tsx#L1-L94)
 - [client.service.ts:1-604](file://src/services/client.service.ts#L1-L604)
 - [process.service.ts:1-192](file://src/services/process.service.ts#L1-L192)
 - [case.service.ts:1-173](file://src/services/case.service.ts#L1-L173)
@@ -92,17 +107,21 @@ UI --> SMTPE
 - Supabase client initialization and auth interceptor
 - Authentication context managing session lifecycle, inactivity checks, and token refresh
 - Service classes for clients, processes, cases, and chat
+- Enhanced navigation system with explicit type annotations for module parameters
 - Edge functions for DJEN proxy, email OTP, and email sending
 
 Key responsibilities:
 - Supabase client: centralized auth and DB access
 - AuthContext: session persistence, heartbeat refresh, inactivity logout
 - Services: typed CRUD, caching, and error propagation
+- NavigationContext: type-safe module navigation with validated parameters
 - Edge functions: CORS-safe external API access and email delivery
 
 **Section sources**
 - [supabase.ts:13-34](file://src/config/supabase.ts#L13-L34)
 - [AuthContext.tsx:45-115](file://src/contexts/AuthContext.tsx#L45-L115)
+- [NavigationContext.tsx:32-38](file://src/contexts/NavigationContext.tsx#L32-L38)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
 - [client.service.ts:43-95](file://src/services/client.service.ts#L43-L95)
 - [process.service.ts:42-93](file://src/services/process.service.ts#L42-L93)
 - [case.service.ts:20-71](file://src/services/case.service.ts#L20-L71)
@@ -114,12 +133,14 @@ The system integrates:
 - Supabase Auth for session management
 - Supabase Tables for persistent data
 - Supabase Realtime for live chat and reactions
+- Enhanced NavigationContext for type-safe module routing
 - Edge Functions for external integrations and email orchestration
 
 ```mermaid
 sequenceDiagram
 participant Client as "Client App"
 participant Auth as "AuthContext"
+participant Nav as "NavigationContext"
 participant Supabase as "Supabase Client"
 participant DB as "PostgreSQL Tables"
 participant Realtime as "Realtime Channels"
@@ -128,6 +149,10 @@ Client->>Auth : Initialize session
 Auth->>Supabase : getSession()
 Supabase-->>Auth : Session or null
 Auth->>Auth : Heartbeat & refresh token
+Client->>Nav : navigateTo(module, params?)
+Nav->>Nav : Validate params type (Record<string, string>)
+Nav->>Nav : Store params as JSON string
+Nav->>Nav : Update currentModule
 Client->>Supabase : CRUD via services
 Supabase->>DB : SQL queries
 DB-->>Supabase : Rows
@@ -140,6 +165,7 @@ Edge-->>Client : Responses
 
 **Diagram sources**
 - [AuthContext.tsx:142-189](file://src/contexts/AuthContext.tsx#L142-L189)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
 - [supabase.ts:22-33](file://src/config/supabase.ts#L22-L33)
 - [chat.service.ts:585-633](file://src/services/chat.service.ts#L585-L633)
 - [djen-proxy/index.ts:8-81](file://supabase/functions/djen-proxy/index.ts#L8-L81)
@@ -379,7 +405,7 @@ Proxy-->>Client : JSON or error
 - [email-send-otp/index.ts:40-297](file://supabase/functions/email-send-otp/index.ts#L40-L297)
 
 #### Send Email
-- Purpose: Send email using authenticated user’s email account
+- Purpose: Send email using authenticated user's email account
 - Authentication: requires Authorization header
 - Request: account_id, recipients, subject, body
 - Behavior: validates account ownership, sends via SMTP, persists sent email
@@ -387,11 +413,49 @@ Proxy-->>Client : JSON or error
 **Section sources**
 - [send-email/index.ts:22-138](file://supabase/functions/send-email/index.ts#L22-L138)
 
+## Navigation API
+
+### Enhanced Type Safety
+The navigation system now provides enhanced type safety through explicit `Record<string, string>` type definitions for navigation parameters. This ensures compile-time validation of navigation parameter types across the application.
+
+#### Navigation Context Interface
+The NavigationContext provides a strongly-typed interface for module navigation:
+
+```typescript
+interface NavigationContextType {
+  currentModule: ModuleName;
+  moduleParams: Record<string, string>;
+  navigateTo: (module: ModuleName, params?: Record<string, string>) => void;
+  setModuleParams: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  clearModuleParams: (moduleKey: string) => void;
+}
+```
+
+#### Module Parameter Handling
+Navigation parameters are automatically serialized and deserialized:
+- Parameters are stored as JSON strings in moduleParams
+- Automatic JSON parsing when retrieving parameters
+- Type-safe parameter validation through Record<string, string>
+
+#### Safe Navigation Functions
+The application provides two navigation functions with different parameter types:
+
+1. **safeNavigateTo**: Accepts `Record<string, string>` parameters
+2. **handleNavigateToModule**: Accepts `Record<string, string>` parameters
+
+Both functions validate permissions before navigation and provide error handling for unauthorized access.
+
+**Section sources**
+- [NavigationContext.tsx:32-38](file://src/contexts/NavigationContext.tsx#L32-L38)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
+- [App.tsx:375-386](file://src/App.tsx#L375-L386)
+
 ### Authentication Headers and Policies
 - Supabase client configured with autoRefreshToken and persisted sessions
 - Auth state change listener for cleanup and logging
 - Frontend session heartbeat and inactivity logout
 - Edge functions use Supabase service role keys and environment variables
+- Navigation parameters use explicit Record<string, string> type definitions
 
 Headers:
 - Supabase client uses Authorization header for authenticated requests
@@ -400,6 +464,7 @@ Headers:
 Rate limiting:
 - Edge function enforces minimum interval between OTP requests
 - No explicit global rate limits observed in services
+- Navigation parameter validation prevents malformed parameter types
 
 Versioning:
 - No explicit API versioning headers or routes observed
@@ -408,6 +473,7 @@ Versioning:
 - [supabase.ts:13-20](file://src/config/supabase.ts#L13-L20)
 - [supabase.ts:22-33](file://src/config/supabase.ts#L22-L33)
 - [AuthContext.tsx:142-189](file://src/contexts/AuthContext.tsx#L142-L189)
+- [NavigationContext.tsx:35](file://src/contexts/NavigationContext.tsx#L35)
 - [email-send-otp/index.ts:46-50](file://supabase/functions/email-send-otp/index.ts#L46-L50)
 - [send-email/index.ts:29-46](file://supabase/functions/send-email/index.ts#L29-L46)
 
@@ -441,9 +507,20 @@ Versioning:
 **Section sources**
 - [chat.types.ts:4-39](file://src/types/chat.types.ts#L4-L39)
 
+#### Navigation Parameters
+- Module parameters are stored as JSON strings in moduleParams
+- Automatic JSON parsing when retrieving parameters
+- Type-safe parameter validation through Record<string, string>
+- Supports arbitrary key-value pairs for module-specific configuration
+
+**Section sources**
+- [NavigationContext.tsx:28-30](file://src/contexts/NavigationContext.tsx#L28-L30)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
+
 ## Dependency Analysis
 - Service classes depend on Supabase client for all DB operations
 - AuthContext depends on Supabase auth and manages session lifecycle
+- NavigationContext provides type-safe module navigation with validated parameters
 - Edge functions depend on Supabase service role keys and environment variables
 - Real-time subscriptions depend on Supabase channels and table events
 
@@ -451,6 +528,9 @@ Versioning:
 graph LR
 Auth["AuthContext.tsx"] --> Supabase["supabase.ts"]
 Services["Services"] --> Supabase
+Nav["NavigationContext.tsx<br/>Enhanced Types"] --> App["App.tsx"]
+App --> Services
+App --> Nav
 Chat["chat.service.ts"] --> Supabase
 Edge["Edge Functions"] --> Supabase
 Supabase --> Tables["PostgreSQL Tables"]
@@ -460,6 +540,8 @@ Supabase --> Realtime["Realtime Channels"]
 **Diagram sources**
 - [supabase.ts:1-34](file://src/config/supabase.ts#L1-L34)
 - [AuthContext.tsx:1-285](file://src/contexts/AuthContext.tsx#L1-L285)
+- [NavigationContext.tsx:1-94](file://src/contexts/NavigationContext.tsx#L1-L94)
+- [App.tsx:177-184](file://src/App.tsx#L177-L184)
 - [client.service.ts:1-604](file://src/services/client.service.ts#L1-L604)
 - [process.service.ts:1-192](file://src/services/process.service.ts#L1-L192)
 - [case.service.ts:1-173](file://src/services/case.service.ts#L1-L173)
@@ -471,6 +553,8 @@ Supabase --> Realtime["Realtime Channels"]
 **Section sources**
 - [supabase.ts:1-34](file://src/config/supabase.ts#L1-L34)
 - [AuthContext.tsx:1-285](file://src/contexts/AuthContext.tsx#L1-L285)
+- [NavigationContext.tsx:1-94](file://src/contexts/NavigationContext.tsx#L1-L94)
+- [App.tsx:177-184](file://src/App.tsx#L177-L184)
 - [client.service.ts:1-604](file://src/services/client.service.ts#L1-L604)
 - [process.service.ts:1-192](file://src/services/process.service.ts#L1-L192)
 - [case.service.ts:1-173](file://src/services/case.service.ts#L1-L173)
@@ -481,17 +565,22 @@ Supabase --> Realtime["Realtime Channels"]
 - Accent-insensitive search and normalization performed client-side for flexibility
 - Debounced auth events prevent redundant handlers
 - Real-time subscriptions minimize polling and keep UI synchronized
+- Enhanced navigation type checking prevents runtime parameter errors
+- JSON serialization of navigation parameters optimizes storage efficiency
 
 Recommendations:
 - Add pagination and server-side filtering for large datasets
 - Consider indexing on frequently queried columns
 - Monitor realtime channel usage and unsubscribe on unmount
+- Leverage navigation parameter type safety to catch errors early
+- Use consistent parameter naming conventions across modules
 
 **Section sources**
 - [process.service.ts:12-40](file://src/services/process.service.ts#L12-L40)
 - [process.service.ts:42-93](file://src/services/process.service.ts#L42-L93)
 - [client.service.ts:69-88](file://src/services/client.service.ts#L69-L88)
 - [AuthContext.tsx:75-114](file://src/contexts/AuthContext.tsx#L75-L114)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
 
 ## Troubleshooting Guide
 Common issues and resolutions:
@@ -507,6 +596,10 @@ Common issues and resolutions:
 - Edge function errors
   - Check Supabase service role key configuration
   - Review SMTP credentials and network connectivity
+- Navigation parameter errors
+  - Verify parameter types match Record<string, string> interface
+  - Check JSON serialization/deserialization of parameters
+  - Ensure module parameter keys are properly formatted
 - Client search not matching accents
   - Normalize search terms and ensure accent-insensitive comparison
 
@@ -514,6 +607,7 @@ Monitoring:
 - Console logs for auth events, heartbeat, and realtime updates
 - Network tab for Supabase requests and edge function responses
 - Supabase dashboard for DB performance and edge function logs
+- Navigation parameter validation logs for debugging type errors
 
 **Section sources**
 - [supabase.ts:9-11](file://src/config/supabase.ts#L9-L11)
@@ -521,9 +615,10 @@ Monitoring:
 - [chat.service.ts:585-633](file://src/services/chat.service.ts#L585-L633)
 - [email-send-otp/index.ts:46-50](file://supabase/functions/email-send-otp/index.ts#L46-L50)
 - [send-email/index.ts:29-46](file://supabase/functions/send-email/index.ts#L29-L46)
+- [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
 
 ## Conclusion
-The CRM Jurídico API leverages Supabase for robust data access, real-time collaboration, and secure authentication. Edge functions extend capabilities to external systems and email workflows. The documented endpoints, schemas, and patterns enable reliable client implementations and maintainable integrations.
+The CRM Jurídico API leverages Supabase for robust data access, real-time collaboration, and secure authentication. Enhanced navigation type safety through explicit Record<string, string> type definitions improves developer experience and reduces runtime errors. Edge functions extend capabilities to external systems and email workflows. The documented endpoints, schemas, and patterns enable reliable client implementations and maintainable integrations.
 
 ## Appendices
 
@@ -532,9 +627,13 @@ The CRM Jurídico API leverages Supabase for robust data access, real-time colla
 - Integration tests for Supabase queries and edge functions
 - Real-time tests verifying channel subscriptions and event delivery
 - End-to-end tests covering authentication flows and protected routes
+- Navigation parameter validation tests for type safety
+- Permission guard tests for module access control
 
 ### Monitoring Approaches
 - Track Supabase request latency and error rates
 - Observe edge function execution duration and failure logs
 - Monitor real-time channel subscribers and event throughput
 - Use browser devtools to inspect network and console logs
+- Monitor navigation parameter serialization and deserialization
+- Track type safety violations in navigation parameter handling
