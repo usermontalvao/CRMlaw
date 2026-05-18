@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.102': { name: 'Café Tela Certa', emoji: '📱' },
   '1.10.101': { name: 'Café Notificação Certa', emoji: '🔔' },
   '1.10.095': { name: 'Café Áudio no Módulo', emoji: '🎧' },
   '1.10.094': { name: 'Café Widget Afiado', emoji: '🎯' },
@@ -801,6 +802,32 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.102',
+    date: '17/05/2026',
+    summary: 'Interface responsiva para mobile — Dashboard e Agenda adaptados para telas pequenas.',
+    modules: [
+      {
+        module: 'Dashboard',
+        icon: 'LayoutDashboard',
+        changes: [
+          { type: 'fix', description: 'Largura inicial calculada corretamente no mobile (sidebar oculta não era descontada).' },
+          { type: 'improvement', description: 'Drag e resize de widgets desativados no mobile para evitar conflito com scroll.' },
+          { type: 'improvement', description: 'Ícone de arrastar (GripVertical) oculto em telas pequenas.' },
+          { type: 'improvement', description: 'Margens entre widgets reduzidas no mobile (8px vs 12px no desktop).' },
+        ],
+      },
+      {
+        module: 'Agenda',
+        icon: 'Calendar',
+        changes: [
+          { type: 'fix', description: 'Toolbar restruturada para mobile: controles principais na linha 1, filtros e lista na linha 2.' },
+          { type: 'improvement', description: 'Botão "+ Novo" mostra apenas "+" em telas pequenas para economizar espaço.' },
+          { type: 'improvement', description: 'Filtro de responsável e botão Cronograma/Lista acessíveis no mobile via segunda linha.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.101',
     date: '17/05/2026',
