@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.112': { name: 'Café Balão Resolvido', emoji: '💬' },
   '1.10.111': { name: 'Café Intimação Limpa', emoji: '🧹' },
   '1.10.110': { name: 'Café Intimação Enterprise', emoji: '🏛️' },
   '1.10.109': { name: 'Café Sem Ruído Visual', emoji: '🧘' },
@@ -811,6 +812,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.112',
+    date: '18/05/2026',
+    summary: 'Chat Widget: balão branco/vazio corrigido — conteúdo nulo exibe placeholder, imagens com loading eager e tratamento de erro.',
+    modules: [
+      {
+        moduleId: 'ChatFloatingWidget',
+        changes: [
+          { type: 'fix', title: 'Balão vazio eliminado', description: 'Quando message.content é null, vazio ou apenas espaços em branco, o chat exibe "Mensagem não disponível" em itálico ao invés de um retângulo branco sem conteúdo.' },
+          { type: 'fix', title: 'Imagens com erro exibem fallback', description: 'Quando uma imagem de anexo falha ao carregar, exibe "Imagem não disponível" no lugar do balão branco vazio.' },
+          { type: 'improvement', title: 'Imagens carregam eager', description: 'Alterado loading="lazy" para loading="eager" nas imagens de chat para evitar estado intermediário em branco.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.111',
     date: '18/05/2026',

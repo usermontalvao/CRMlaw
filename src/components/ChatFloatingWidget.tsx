@@ -240,16 +240,26 @@ const AttachmentSignedMedia: React.FC<{
         <button
           type="button"
           onClick={() => setViewerOpen(true)}
-          className="mt-2 rounded-xl overflow-hidden bg-white/5 border border-white/10 w-full text-left"
+          className="mt-2 rounded-xl overflow-hidden bg-white/5 border border-white/10 w-full text-left min-h-[60px] flex items-center justify-center"
           title="Ampliar imagem"
         >
           <img
             src={signedUrl}
             alt={attachment.fileName}
             className="w-full max-h-64 object-contain"
-            loading="lazy"
+            loading="eager"
             onLoad={() => {
               onMediaLoaded?.();
+            }}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent && !parent.querySelector('.img-error-msg')) {
+                const msg = document.createElement('span');
+                msg.className = 'img-error-msg text-xs text-white/40 italic p-2';
+                msg.textContent = 'Imagem não disponível';
+                parent.appendChild(msg);
+              }
             }}
           />
         </button>
@@ -286,7 +296,11 @@ const AttachmentSignedMedia: React.FC<{
 const MessageBody: React.FC<{ message: ChatMessage; onMediaLoaded?: () => void }> = ({ message, onMediaLoaded }) => {
   const attachment = parseAttachment(message.content);
   if (!attachment) {
-    return <div className="break-words whitespace-pre-wrap">{message.content}</div>;
+    const text = (message.content ?? '').trim();
+    if (!text) {
+      return <span className="italic text-white/30 text-xs">Mensagem não disponível</span>;
+    }
+    return <div className="break-words whitespace-pre-wrap">{text}</div>;
   }
 
   const isAudio = attachment.mimeType.startsWith('audio/');
