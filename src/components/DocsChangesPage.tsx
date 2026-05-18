@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.108': { name: 'Café Intimação Pro', emoji: '⚖️' },
   '1.10.107': { name: 'Café Documento Legível', emoji: '📜' },
   '1.10.106': { name: 'Café Intimação Notifica', emoji: '⚖️' },
   '1.10.105': { name: 'Café Qoder Docs', emoji: '📖' },
@@ -807,6 +808,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.108',
+    date: '18/05/2026',
+    summary: 'Módulo de Intimações redesenhado — header profissional, tabs pill, cards limpos e hierarquia visual consistente.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'improvement', title: 'Header redesenhado', description: 'Ícone amber, título/subtítulo profissional, pill de status ao vivo, busca com foco amber, botão Sincronizar em amber.' },
+          { type: 'improvement', title: 'Tabs pill style', description: 'Abas mudaram de underline para pill dentro de container bg-slate-100; aba ativa em branco com shadow. Não lidas destacadas em amber.' },
+          { type: 'improvement', title: 'Cards da lista redesenhados', description: 'Removido badge "NÃO LIDA" e "Sem vínculo". Unread = dot + negrito. Border-l-4 amber para não lidas, transparente para lidas. Partes como texto inline. Hierarquia: tribunal → processo → partes → preview.' },
+          { type: 'improvement', title: 'Sistema de cores unificado', description: 'Substituídos todos os zinc-* por slate-*. Cor de marca amber consistente em toda a interface.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.107',
     date: '18/05/2026',

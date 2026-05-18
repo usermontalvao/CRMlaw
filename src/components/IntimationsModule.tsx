@@ -32,6 +32,7 @@ import {
   Layers,
   Banknote,
   ShieldAlert,
+  Gavel,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -1736,85 +1737,87 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           PREMIUM CARD WRAPPER
       ═══════════════════════════════════════════ */}
       {/* glass card wrapper */}
-      <div className="rounded-2xl overflow-hidden border border-slate-200/70 shadow-lg shadow-slate-200/60 bg-white/80 backdrop-blur-xl">
+      <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
 
-        {/* 1px accent line at top */}
-        <div className="h-px bg-gradient-to-r from-slate-300 via-slate-400 to-slate-300" />
+        {/* amber accent top line */}
+        <div className="h-0.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400" />
 
-        {/* ── COMPACT GLASS HEADER — single row ── */}
-        <div className="px-4 sm:px-5 py-3 flex items-center gap-3 border-b border-slate-100/80 bg-white/60 backdrop-blur-sm">
-
-          {/* Identity */}
-          <Bell className="w-4 h-4 text-slate-400 flex-shrink-0" />
-          <span className="font-semibold text-slate-800 text-sm tracking-tight whitespace-nowrap">Intimações</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-
-          {/* Stats — hidden on mobile */}
-          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 border-l border-slate-200 pl-3">
-            {unreadCount > 0 && <span className="text-slate-700 font-semibold">{unreadCount} não lidas</span>}
-            {unreadCount > 0 && <span>·</span>}
-            <span>{intimations.length} total</span>
-            {aiUrgencyStats.alta > 0 && <><span>·</span><span className="text-red-500 font-medium">{aiUrgencyStats.alta} urgentes</span></>}
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center shadow-sm shadow-amber-200 flex-shrink-0">
+              <Gavel className="w-4.5 h-4.5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-900 leading-tight">Diário de Justiça Eletrônico</h2>
+              <p className="text-[11px] text-slate-400 leading-tight">Comunicações processuais do DJEN</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full ml-1 flex-shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[11px] font-medium text-slate-500">
+                {unreadCount > 0 ? `${unreadCount} não lidas` : 'Em dia'}
+              </span>
+              {aiUrgencyStats.alta > 0 && (
+                <span className="text-[11px] font-semibold text-red-500 ml-1">· {aiUrgencyStats.alta} urgentes</span>
+              )}
+            </div>
           </div>
-
-          {/* Spacer */}
           <div className="flex-1" />
-
-          {/* Search */}
           <div className="relative hidden sm:block">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar..."
-              className="w-48 bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:bg-white transition" />
+              placeholder="Buscar processo, parte..."
+              className="w-56 bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition" />
           </div>
-
-          {/* Sync */}
           <button onClick={handleSync} disabled={syncing}
-            className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50 flex-shrink-0">
+            className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm shadow-amber-200 transition disabled:opacity-50 flex-shrink-0">
             {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
           </button>
         </div>
 
         {/* Mobile search */}
-        <div className="sm:hidden px-4 py-2 border-b border-slate-100 bg-white/60">
+        <div className="sm:hidden px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar intimação..."
-              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 transition" />
+              placeholder="Buscar processo, parte..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 transition" />
           </div>
         </div>
 
         {/* ── FILTER / TABS BAR ── */}
-        <div className="px-4 sm:px-5 border-b border-slate-100 bg-white/60 backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2">
-            {/* ── Left: status tabs ── */}
-            <div className="flex items-center gap-0 overflow-x-auto flex-1 min-w-0">
-              {([
-                { key: 'unread'   as const, label: 'Não lidas',   count: unreadCount },
-                { key: 'linked'   as const, label: 'Vinculadas',  count: intimations.filter(isLinked).length },
-                { key: 'unlinked' as const, label: 'Sem vínculo', count: intimations.filter(isUnlinked).length },
-                { key: 'read'     as const, label: 'Lidas',       count: readCount },
-                { key: 'all'      as const, label: 'Todas',       count: intimations.length },
-              ]).map((chip) => (
-                <button key={chip.key} onClick={() => setStatusFilter(chip.key)}
-                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${
-                    statusFilter === chip.key
-                      ? 'border-slate-800 text-slate-900 font-semibold'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  {chip.label}
-                  <span className={`text-[10px] font-bold tabular-nums ${statusFilter === chip.key ? 'text-slate-700' : 'text-slate-400'}`}>
-                    {chip.count}
-                  </span>
-                </button>
-              ))}
-            </div>
+        <div className="px-4 sm:px-5 py-2.5 border-b border-slate-100 flex items-center justify-between gap-3">
+          {/* Pill tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto flex-shrink-0">
+            {([
+              { key: 'unread'   as const, label: 'Não lidas',   count: unreadCount },
+              { key: 'linked'   as const, label: 'Vinculadas',  count: intimations.filter(isLinked).length },
+              { key: 'unlinked' as const, label: 'Sem vínculo', count: intimations.filter(isUnlinked).length },
+              { key: 'read'     as const, label: 'Lidas',       count: readCount },
+              { key: 'all'      as const, label: 'Todas',       count: intimations.length },
+            ]).map((tab) => (
+              <button key={tab.key} onClick={() => setStatusFilter(tab.key)}
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  statusFilter === tab.key
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab.label}
+                <span className={`text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded-full ${
+                  statusFilter === tab.key
+                    ? tab.key === 'unread' && tab.count > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                    : 'text-slate-400'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-            {/* ── Right: compact action buttons ── */}
-            <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Right: compact action buttons */}
+          <div className="flex items-center gap-1 flex-shrink-0">
 
               {/* Filtros dropdown */}
               <div className="relative">
@@ -1992,7 +1995,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
                 )}
               </div>
-            </div>
           </div>
         </div>
 
@@ -2362,208 +2364,179 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               return (
                 <div
                   key={intimation.id}
-                  className={`group bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm border-l-4 transition hover:shadow-md ${
-                    urgCfg ? urgCfg.border : 'border-l-slate-200'
-                  } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-blue-500' : ''}`}
+                  className={`group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-md hover:border-slate-300 ${
+                    !intimation.lida
+                      ? `border-l-4 ${urgCfg ? urgCfg.border : 'border-l-amber-400'}`
+                      : 'border-l-4 border-l-transparent'
+                  } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-amber-400 border-amber-200' : ''}`}
                 >
                   {/* Card main row */}
                   <div
-                    className="px-4 sm:px-5 py-4 flex items-start gap-3 cursor-pointer"
+                    className="px-5 py-4 cursor-pointer"
                     onClick={() => toggleExpanded(intimation.id)}
                   >
-                    {selectionMode && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(intimation.id)}
-                        onChange={() => toggleSelectedId(intimation.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-1 w-4 h-4 text-blue-600 border-slate-300 rounded flex-shrink-0"
-                      />
-                    )}
-
-                    {/* Unread dot */}
-                    <div className="flex-shrink-0 mt-1.5">
-                      {!intimation.lida ? (
-                        <span className={`block w-2 h-2 rounded-full ${urgCfg ? urgCfg.dot : 'bg-zinc-400'}`} />
-                      ) : (
-                        <span className="block w-2.5 h-2.5" />
+                    <div className="flex items-start gap-3">
+                      {selectionMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(intimation.id)}
+                          onChange={() => toggleSelectedId(intimation.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 w-4 h-4 accent-amber-500 border-slate-300 rounded flex-shrink-0"
+                        />
                       )}
-                    </div>
+                      <div className="flex-1 min-w-0">
 
-                    <div className="flex-1 min-w-0">
-                      {/* Badges row */}
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-600">
-                          {intimation.sigla_tribunal}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">{formatDate(intimation.data_disponibilizacao)}</span>
-                        {!intimation.lida && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
-                            NÃO LIDA
-                          </span>
-                        )}
-                        {isLinked(intimation) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300">
-                            <Link2 className="w-3 h-3" /> Vinculada
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-transparent text-zinc-400 border border-zinc-200">
-                            Sem vínculo
-                          </span>
-                        )}
-                        {analysis && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
-                            <Sparkles className="w-2.5 h-2.5" />
-                            {urgencyConfig[analysis.urgency].label}
-                          </span>
-                        )}
-                        {intimation.tipo_comunicacao && (
-                          <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600">
-                            {intimation.tipo_comunicacao}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Process number */}
-                      <p className="text-sm font-bold text-slate-900 font-mono truncate mb-1.5">
-                        {intimation.numero_processo_mascara || intimation.numero_processo}
-                      </p>
-
-                      {/* Partes */}
-                      {(() => {
-                        const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
-                          ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-                          : extractPartesFromTexto(htmlToText(intimation.texto || ''));
-                        return partes.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1 mb-2">
-                            {partes.slice(0, 2).map((parte, idx) => (
-                              <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md text-[11px] border border-slate-200">
-                                {parte.nome}
-                                {parte.polo && <span className="text-slate-400">({parte.polo})</span>}
+                        {/* Top row: tribunal + type + right: date + urgency + chevron */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {!intimation.lida && (
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${urgCfg ? urgCfg.dot : 'bg-amber-400'}`} />
+                            )}
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0">
+                              {intimation.sigla_tribunal}
+                            </span>
+                            {intimation.tipo_comunicacao && (
+                              <span className="hidden sm:inline text-[11px] text-slate-400 truncate">{intimation.tipo_comunicacao}</span>
+                            )}
+                            {isLinked(intimation) && (
+                              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+                                <Link2 className="w-3 h-3" /> Vinculada
                               </span>
-                            ))}
-                            {partes.length > 2 && (
-                              <span className="text-[11px] text-slate-400">+{partes.length - 2}</span>
                             )}
                           </div>
-                        ) : null;
-                      })()}
-
-                      {/* Client / process link */}
-                      {(intimation.client_id || intimation.process_id) && (
-                        <div className="flex flex-wrap items-center gap-3 mb-2">
-                          {intimation.client_id && (
-                            <span className="text-xs text-slate-500">
-                              <strong className="text-slate-700">Cliente:</strong> {getClientName(intimation.client_id)}
-                            </span>
-                          )}
-                          {intimation.process_id && (
-                            <span className="text-xs text-slate-500">
-                              <strong className="text-slate-700">Processo:</strong> {getProcessCode(intimation.process_id)}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Polo ativo/passivo */}
-                      {(intimation.polo_ativo || intimation.polo_passivo) && (
-                        <div className="flex flex-wrap gap-3 mb-2">
-                          {intimation.polo_ativo && (
-                            <span className="text-xs">
-                              <span className="font-semibold text-emerald-700">Ativo:</span>{' '}
-                              <span className="text-slate-600">{intimation.polo_ativo}</span>
-                            </span>
-                          )}
-                          {intimation.polo_passivo && (
-                            <span className="text-xs">
-                              <span className="font-semibold text-red-700">Passivo:</span>{' '}
-                              <span className="text-slate-600">{intimation.polo_passivo}</span>
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Text snippet: AI summary when collapsed */}
-                      {!isExpanded && (
-                        <div className="mt-1 space-y-1.5">
-                          {/* Outcome badge */}
-                          {(() => {
-                            const outcome = detectOutcome(analysis?.summary);
-                            return outcome ? (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>
-                                {outcome.label}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {analysis && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                <Sparkles className="w-2.5 h-2.5" />
+                                {urgencyConfig[analysis.urgency].label}
                               </span>
-                            ) : null;
-                          })()}
-                          <p className="text-sm text-slate-500 line-clamp-2">
-                            {analysis?.summary ?? htmlToText(intimation.texto || '').slice(0, 160)}
-                          </p>
+                            )}
+                            <span className="text-[11px] text-slate-400 tabular-nums">{formatDate(intimation.data_disponibilizacao)}</span>
+                            {isExpanded
+                              ? <ChevronDown className="w-4 h-4 text-slate-300" />
+                              : <ChevronRight className="w-4 h-4 text-slate-300" />}
+                          </div>
                         </div>
-                      )}
 
-                      {/* AI deadline quick-action chip */}
-                      {!isExpanded && analysis?.deadline && (
-                        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
-                            <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
-                          </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition">
-                            + Criar prazo
-                          </button>
-                        </div>
-                      )}
+                        {/* Process number */}
+                        <p className={`font-mono text-sm font-bold truncate mb-1.5 ${!intimation.lida ? 'text-slate-900' : 'text-slate-500'}`}>
+                          {intimation.numero_processo_mascara || intimation.numero_processo}
+                        </p>
 
-                      {/* Analisar com IA — when no analysis exists */}
-                      {!isExpanded && !analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
-                          className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
-                          <Sparkles className="w-3 h-3" /> Analisar com IA
-                        </button>
-                      )}
-                      {!isExpanded && analyzingIds.has(intimation.id) && (
-                        <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
-                        </span>
-                      )}
+                        {/* Parties inline */}
+                        {(() => {
+                          const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
+                            ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+                            : extractPartesFromTexto(htmlToText(intimation.texto || ''));
+                          return partes.length > 0 ? (
+                            <p className="text-xs text-slate-500 mb-1.5 truncate">
+                              {partes.slice(0, 2).map((p, i) => (
+                                <span key={i}>{i > 0 && <span className="mx-1 text-slate-300">·</span>}<span className="font-medium text-slate-700">{p.nome}</span>{p.polo && <span className="text-slate-400"> ({p.polo})</span>}</span>
+                              ))}
+                              {partes.length > 2 && <span className="text-slate-400 ml-1">+{partes.length - 2}</span>}
+                            </p>
+                          ) : null;
+                        })()}
 
-                      {/* Hover quick-action buttons */}
-                      {!isExpanded && !selectionMode && (
-                        <div className="flex items-center gap-1.5 mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {!intimation.lida && (
-                            <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition">
-                              <CheckCircle className="w-3 h-3" /> Lida
+                        {/* Client / process link */}
+                        {(intimation.client_id || intimation.process_id) && (
+                          <div className="flex items-center gap-3 mb-2">
+                            {intimation.client_id && (
+                              <span className="text-xs text-slate-500 truncate max-w-[200px]">
+                                <span className="font-medium text-slate-700">{getClientName(intimation.client_id)}</span>
+                              </span>
+                            )}
+                            {intimation.process_id && (
+                              <span className="text-xs font-mono text-slate-400 truncate">{getProcessCode(intimation.process_id)}</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Polo ativo/passivo */}
+                        {(intimation.polo_ativo || intimation.polo_passivo) && (
+                          <div className="flex flex-wrap gap-3 mb-2">
+                            {intimation.polo_ativo && (
+                              <span className="text-xs"><span className="font-semibold text-emerald-700">Ativo:</span> <span className="text-slate-600">{intimation.polo_ativo}</span></span>
+                            )}
+                            {intimation.polo_passivo && (
+                              <span className="text-xs"><span className="font-semibold text-red-600">Passivo:</span> <span className="text-slate-600">{intimation.polo_passivo}</span></span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Preview + outcome + deadline — when collapsed */}
+                        {!isExpanded && (
+                          <div className="space-y-2">
+                            {(() => {
+                              const outcome = detectOutcome(analysis?.summary);
+                              return outcome ? (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>
+                                  {outcome.label}
+                                </span>
+                              ) : null;
+                            })()}
+                            <p className={`text-sm line-clamp-2 leading-relaxed ${!intimation.lida ? 'text-slate-600' : 'text-slate-400'}`}>
+                              {analysis?.summary ?? htmlToText(intimation.texto || '').slice(0, 200)}
+                            </p>
+                            {analysis?.deadline && (
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
+                                  <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
+                                </span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition shadow-sm shadow-amber-200">
+                                  + Criar prazo
+                                </button>
+                              </div>
+                            )}
+                            {!analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
+                                <Sparkles className="w-3 h-3" /> Analisar com IA
+                              </button>
+                            )}
+                            {analyzingIds.has(intimation.id) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Hover quick-actions */}
+                        {!isExpanded && !selectionMode && (
+                          <div className="flex items-center gap-1.5 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!intimation.lida && (
+                              <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition">
+                                <CheckCircle className="w-3 h-3" /> Marcar lida
+                              </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition">
+                              <Clock className="w-3 h-3" /> Prazo
                             </button>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition">
-                            <Clock className="w-3 h-3" /> Prazo
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
-                            <Link2 className="w-3 h-3" /> Vincular
-                          </button>
-                          {intimation.link && (
-                            <a href={intimation.link} target="_blank" rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition">
-                              <ExternalLink className="w-3 h-3" /> Diário
-                            </a>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition">
-                            <Eye className="w-3 h-3" /> Detalhes
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Expand chevron */}
-                    <div className="flex-shrink-0 mt-1">
-                      {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition">
+                              <Link2 className="w-3 h-3" /> Vincular
+                            </button>
+                            {intimation.link && (
+                              <a href={intimation.link} target="_blank" rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition">
+                                <ExternalLink className="w-3 h-3" /> Diário
+                              </a>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
+                              className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition shadow-sm">
+                              <Eye className="w-3 h-3" /> Ver detalhes
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
