@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.114': { name: 'Café Deploy Fresco', emoji: '🚀' },
   '1.10.113': { name: 'Café Balão Visível', emoji: '👁️' },
   '1.10.112': { name: 'Café Balão Resolvido', emoji: '💬' },
   '1.10.111': { name: 'Café Intimação Limpa', emoji: '🧹' },
@@ -813,6 +814,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.114',
+    date: '18/05/2026',
+    summary: 'Deploy: corrigido erro 404 de chunks (PetitionEditorModule) após novo deploy — _headers Netlify + auto-reload + SW sem cache de index.html.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'fix', title: 'Chunks 404 após deploy (PetitionEditorModule)', description: 'Raiz: browser cacheava o index.html antigo com hashes de chunks que não existem mais após novo deploy. Corrigido com 3 camadas de proteção.' },
+          { type: 'improvement', title: 'Netlify _headers: index.html no-cache', description: 'Criado public/_headers que instrui o Netlify a nunca cachear index.html, sw.js e manifest. Assets do Vite (/assets/*) recebem max-age=1 ano (imutáveis por hash).' },
+          { type: 'improvement', title: 'Auto-reload em ChunkLoadError', description: 'main.tsx agora escuta unhandledrejection e faz window.location.reload() ao detectar "Failed to fetch dynamically imported module" — com throttle de 1 min para evitar loop.' },
+          { type: 'improvement', title: 'Service Worker v7 sem cache de HTML', description: 'SW atualizado para NÃO cachear index.html. Navegação sempre via network-first com cache:no-store. Assets /assets/* cacheados por hash imutável.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.113',
     date: '18/05/2026',

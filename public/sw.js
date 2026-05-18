@@ -1,18 +1,18 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v6'; // Incrementado para forçar atualização
+// ⚠️ IMPORTANTE: index.html e sw.js NÃO são cacheados pelo SW.
+// O _headers do Netlify já instrui o browser a nunca cachear index.html,
+// garantindo que após novo deploy os chunks corretos sejam carregados.
+const CACHE_NAME = 'crm-cache-v7'; // Incrementar aqui a cada mudança na estratégia de cache
 
-// Install event
+// Install event — não pré-cacheia index.html para evitar stale chunks
 self.addEventListener('install', (event) => {
-  console.log('Service Worker instalado - v6');
-  
-  // Pré-cache dos arquivos essenciais
+  console.log('Service Worker instalado - v7');
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Cache aberto, pré-carregando arquivos essenciais');
+      // Pré-cache somente de recursos estáticos que NÃO mudam entre deploys
       return cache.addAll([
-        '/',
-        '/index.html',
         '/manifest.webmanifest',
         '/favicon.ico'
       ]).catch((error) => {
@@ -21,13 +21,13 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  
+
   self.skipWaiting();
 });
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker ativado - v6');
+  console.log('Service Worker ativado - v7');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -45,53 +45,45 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - estratégia de fallback para navegação SPA
+// Fetch event — network-first para navegação SPA
+// index.html NUNCA vem do cache (evita stale chunks após deploy)
 self.addEventListener('fetch', (event) => {
-  // Não interceptar requisições de API ou outros recursos
-  if (event.request.url.includes('/api/') || 
-      event.request.url.includes('/functions/v1/') ||
-      event.request.mode !== 'navigate') {
-    return; // Deixa o navegador lidar normalmente
-  }
-  
-  // Apenas interceptar requisições de navegação (HTML)
+  // Ignorar requisições não-GET e recursos de API/storage
+  if (event.request.method !== 'GET') return;
+  if (
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('/functions/v1/') ||
+    event.request.url.includes('supabase.co')
+  ) return;
+
+  // Requisições de navegação (HTML) — sempre da rede, NUNCA do cache
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      (async () => {
-        try {
-          // Tenta buscar a requisição original primeiro
-          const response = await fetch(event.request);
-          return response;
-        } catch (error) {
-          console.log('Fetch falhou, tentando fallback para index.html:', error);
-          
-          try {
-            // Fallback: tenta buscar index.html diretamente
-            const indexResponse = await fetch('/index.html');
-            return indexResponse;
-          } catch (indexError) {
-            console.log('Index.html falhou, tentando cache:', indexError);
-            
-            // Último recurso: tenta do cache
-            const cachedResponse = await caches.match('/index.html');
-            if (cachedResponse) {
-              console.log('Usando index.html do cache');
-              return cachedResponse;
-            }
-            
-            // Se nada funcionar, retorna uma resposta básica
-            console.log('Nenhuma opção funcionou, retornando resposta básica');
-            return new Response(
-              '<html><body><h1>Offline - App Indisponível</h1><p>Verifique sua conexão e recarregue a página.</p></body></html>',
-              {
-                status: 503,
-                statusText: 'Service Unavailable',
-                headers: { 'Content-Type': 'text/html' }
-              }
-            );
+      fetch(event.request, { cache: 'no-store' }).catch(() => {
+        // Offline: fallback mínimo (não usar index.html cacheado pois teria chunks antigos)
+        return new Response(
+          '<html><meta charset="utf-8"><body style="font-family:sans-serif;padding:2rem"><h2>Sem conexão</h2><p>Verifique sua internet e <a href="/">recarregue a página</a>.</p></body></html>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      })
+    );
+    return;
+  }
+
+  // Outros recursos (imagens, fontes, etc.) — cache-first com fallback de rede
+  // Assets do Vite (/assets/*) já têm hash imutável, podem ser cacheados
+  if (event.request.url.includes('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-        }
-      })()
+          return response;
+        });
+      })
     );
   }
 });

@@ -1,6 +1,29 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+
+// ── Stale-chunk auto-reload ────────────────────────────────────────────────
+// Após um novo deploy os nomes dos chunks mudam (hash Vite).
+// Se o browser usou o index.html antigo em cache e tenta carregar um chunk
+// que não existe mais → 404 / "Failed to fetch dynamically imported module".
+// A solução é forçar um reload para buscar o index.html novo.
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = String((event.reason as any)?.message || event.reason || '');
+  if (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('dynamically imported module') ||
+    msg.includes('Unable to preload CSS')
+  ) {
+    console.warn('[App] Chunk desatualizado detectado — recarregando para aplicar novo deploy...');
+    // Evita loop infinito: só recarrega 1x por minuto
+    const lastReload = Number(sessionStorage.getItem('_chunk_reload_at') || 0);
+    if (Date.now() - lastReload > 60_000) {
+      sessionStorage.setItem('_chunk_reload_at', String(Date.now()));
+      window.location.reload();
+    }
+  }
+});
 import { NavigationProvider } from './contexts/NavigationContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
