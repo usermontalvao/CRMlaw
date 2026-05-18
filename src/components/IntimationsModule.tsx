@@ -81,6 +81,24 @@ const subDays = (date: Date, amount: number) => {
   return result;
 };
 
+// Converte HTML com entidades (ex: &aacute;, &nbsp;) em texto legível
+const htmlToText = (html: string): string => {
+  if (!html) return '';
+  try {
+    const withBreaks = html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<p[^>]*>/gi, '')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<div[^>]*>/gi, '');
+    const el = document.createElement('div');
+    el.innerHTML = withBreaks;
+    return (el.textContent || (el as any).innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+  } catch {
+    return html;
+  }
+};
+
 // Extrai nomes das partes do texto da intimação
 const extractPartesFromTexto = (texto: string): { nome: string; polo: string }[] => {
   const partes: { nome: string; polo: string }[] = [];
@@ -358,7 +376,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       // Buscar partes: primeiro dos destinatários, depois do texto
       const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
         ? intimation.djen_destinatarios.map(d => d.nome)
-        : extractPartesFromTexto(intimation.texto || '').map(p => p.nome);
+        : extractPartesFromTexto(htmlToText(intimation.texto || '')).map(p => p.nome);
       
       console.log(`📋 Intimação ${intimation.id.substring(0, 8)}: ${partes.length} partes encontradas`, partes.slice(0, 2));
       
@@ -1496,8 +1514,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return null;
   };
 
-  const highlightText = (text: string, importantPassages?: string[]): React.ReactNode => {
-    if (!text) return null;
+  const highlightText = (rawText: string, importantPassages?: string[]): React.ReactNode => {
+    if (!rawText) return null;
+    const text = htmlToText(rawText);
     type MatchEntry = { start: number; end: number; cls: string };
     const allMatches: MatchEntry[] = [];
 
@@ -1550,162 +1569,160 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     const detailUrgency = detailAnalysis?.urgency as keyof typeof urgencyConfig | undefined;
     const detailUrgCfg = detailUrgency ? urgencyConfig[detailUrgency] : null;
 
+    const decodedTexto = htmlToText(selectedIntimation.texto || '');
+    const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
+      ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+      : extractPartesFromTexto(decodedTexto);
+
     return (
-      <div className="flex flex-col rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm">
-        {/* ── Header dark ── */}
-        <div className="bg-slate-900 px-5 py-4 flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
+      <div className="flex flex-col h-full rounded-2xl overflow-hidden border border-slate-200/80 shadow-lg bg-white">
+
+        {/* ── Header ── */}
+        <div className="bg-slate-900 px-5 py-4 flex-shrink-0">
+          <div className="flex items-center justify-between mb-3">
             <button
               onClick={() => setSelectedIntimation(null)}
-              className="mt-0.5 inline-flex items-center gap-1 text-slate-400 hover:text-white transition text-xs font-medium shrink-0"
+              className="inline-flex items-center gap-1.5 text-slate-400 hover:text-white transition text-xs font-medium"
             >
               <ChevronRight className="w-3.5 h-3.5 rotate-180" />
-              Voltar
+              Voltar à lista
             </button>
-            <div className="min-w-0">
-              <div className="flex items-center flex-wrap gap-1.5 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Intimação</span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-500/20 text-blue-300">{selectedIntimation.sigla_tribunal}</span>
-                {!selectedIntimation.lida && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-400/20 text-amber-300">
-                    <EyeOff className="w-3 h-3" /> Não lida
-                  </span>
-                )}
-                {detailUrgCfg && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${detailUrgCfg.badge}`}>
-                    {urgencyConfig[detailUrgency!].label}
-                  </span>
-                )}
-              </div>
-              <p className="text-base font-bold text-white font-mono leading-tight truncate">
-                {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                {formatDate(selectedIntimation.data_disponibilizacao)}
-                {selectedIntimation.nome_orgao && ` · ${selectedIntimation.nome_orgao}`}
-              </p>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-white/10 text-white">
+                {selectedIntimation.sigla_tribunal}
+              </span>
+              {!selectedIntimation.lida && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-400/20 text-amber-300">
+                  <EyeOff className="w-3 h-3" /> Não lida
+                </span>
+              )}
+              {detailUrgCfg && (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${detailUrgCfg.badge}`}>
+                  {urgencyConfig[detailUrgency!].label}
+                </span>
+              )}
+              <button onClick={() => setSelectedIntimation(null)} className="ml-1 p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-          <button onClick={() => setSelectedIntimation(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+          <p className="text-lg font-bold text-white font-mono leading-tight">
+            {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo}
+          </p>
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-1">
+            <span className="text-xs text-slate-400">{formatDate(selectedIntimation.data_disponibilizacao)}</span>
+            {selectedIntimation.nome_orgao && <span className="text-xs text-slate-500">{selectedIntimation.nome_orgao}</span>}
+            {selectedIntimation.tipo_comunicacao && (
+              <span className="text-xs text-amber-400/80 font-medium">{selectedIntimation.tipo_comunicacao}</span>
+            )}
+            {selectedIntimation.nome_classe && (
+              <span className="text-xs text-slate-500">{selectedIntimation.nome_classe}</span>
+            )}
+          </div>
         </div>
 
-        {/* ── Corpo ── */}
-        <div className="bg-white p-5 space-y-4 flex-1">
-          {/* Cliente + Processo vinculados */}
-          {(client || process) && (
-            <div className="grid grid-cols-2 gap-3">
-              {client && (
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Cliente</p>
-                  <p className="text-sm font-semibold text-slate-900 truncate">{client}</p>
-                </div>
-              )}
-              {process && (
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Processo</p>
-                  <p className="text-sm font-mono font-semibold text-slate-900 truncate">{process}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tipo + Classe */}
-          {(selectedIntimation.tipo_comunicacao || selectedIntimation.nome_classe) && (
-            <div className="flex flex-wrap gap-2">
-              {selectedIntimation.tipo_comunicacao && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                  {selectedIntimation.tipo_comunicacao}
-                </span>
-              )}
-              {selectedIntimation.nome_classe && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                  {selectedIntimation.nome_classe}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* IA */}
-          {detailAnalysis && (
-            <div className={`rounded-xl p-4 border ${detailUrgCfg?.badge ?? 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span className="text-xs font-bold uppercase tracking-wider">Análise IA</span>
+        {/* ── Metadata compacta ── */}
+        {(client || process || partes.length > 0) && (
+          <div className="flex-shrink-0 border-b border-slate-100 bg-slate-50/60 px-5 py-3 flex flex-wrap gap-4">
+            {client && (
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Cliente</p>
+                <p className="text-xs font-semibold text-slate-800 truncate max-w-[160px]">{client}</p>
               </div>
-              <p className="text-sm text-slate-800 mb-2">{detailAnalysis.summary}</p>
-              {detailAnalysis.deadline && (
-                <div className="bg-white/70 rounded-lg p-3 mt-2 border border-black/5">
-                  <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days} dias úteis</p>
-                  <p className="text-xs text-slate-700">{detailAnalysis.deadline.description}</p>
-                  {detailAnalysis.deadline.dueDate && (
-                    <p className="text-xs text-slate-600 mt-1">Vencimento: {new Date(detailAnalysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Partes */}
-          {(() => {
-            const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
-              ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-              : extractPartesFromTexto(selectedIntimation.texto || '');
-            return partes.length > 0 ? (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Partes</p>
-                <div className="flex flex-wrap gap-2">
-                  {partes.map((parte, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-700 rounded-lg text-xs border border-slate-200">
-                      <span className="font-semibold">{parte.nome}</span>
-                      {parte.polo && <span className="text-slate-400">({parte.polo})</span>}
+            )}
+            {process && (
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Processo</p>
+                <p className="text-xs font-mono font-semibold text-slate-800 truncate max-w-[160px]">{process}</p>
+              </div>
+            )}
+            {partes.length > 0 && (
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Partes</p>
+                <div className="flex flex-wrap gap-1">
+                  {partes.slice(0, 3).map((p, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 rounded text-[11px] text-slate-700">
+                      <span className="font-medium">{p.nome}</span>
+                      {p.polo && <span className="text-slate-400 text-[10px]">({p.polo})</span>}
                     </span>
                   ))}
+                  {partes.length > 3 && <span className="text-[11px] text-slate-400">+{partes.length - 3}</span>}
                 </div>
               </div>
-            ) : null;
-          })()}
+            )}
+          </div>
+        )}
 
-          {/* Texto */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Conteúdo</p>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-h-72 overflow-y-auto">
-              <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{highlightText(selectedIntimation.texto || '', detailAnalysis?.importantPassages)}</p>
+        {/* ── IA Analysis (se disponível) ── */}
+        {detailAnalysis && (
+          <div className="flex-shrink-0 border-b border-slate-100">
+            <div className={`mx-4 my-3 rounded-xl p-3.5 border ${detailUrgCfg?.badge ?? 'bg-amber-50 border-amber-200'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                  <p className="text-xs font-semibold text-slate-800 leading-snug">{detailAnalysis.summary}</p>
+                </div>
+                {detailAnalysis.deadline && (
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days}d úteis</p>
+                    {detailAnalysis.deadline.dueDate && (
+                      <p className="text-[10px] text-slate-600">{new Date(detailAnalysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {detailAnalysis.deadline?.description && (
+                <p className="text-[11px] text-slate-600 mt-1.5 ml-5">{detailAnalysis.deadline.description}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Conteúdo do documento ── */}
+        <div className="flex-1 overflow-y-auto bg-white">
+          <div className="px-6 py-5">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+              <div className="w-1 h-4 rounded-full bg-amber-500" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conteúdo da Intimação</span>
+            </div>
+            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] font-[system-ui] selection:bg-amber-100">
+              {highlightText(selectedIntimation.texto || '', detailAnalysis?.importantPassages)}
             </div>
           </div>
         </div>
 
         {/* ── Ações ── */}
-        <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex flex-wrap gap-2">
-          {!selectedIntimation.lida && (
-            <button onClick={() => { handleMarkAsRead(selectedIntimation.id); setSelectedIntimation(null); }}
-              className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3 py-1.5 rounded-lg transition text-xs">
-              <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
+        <div className="flex-shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-wrap gap-2">
+            {!selectedIntimation.lida && (
+              <button onClick={() => { handleMarkAsRead(selectedIntimation.id); setSelectedIntimation(null); }}
+                className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-emerald-200">
+                <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
+              </button>
+            )}
+            <button onClick={() => { handleCreateDeadline(selectedIntimation); setSelectedIntimation(null); }}
+              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-amber-200">
+              <Clock className="w-3.5 h-3.5" /> Novo Prazo
             </button>
-          )}
-          <button onClick={() => { handleCreateDeadline(selectedIntimation); setSelectedIntimation(null); }}
-            className="inline-flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
-            <Clock className="w-3.5 h-3.5 text-amber-600" /> Novo Prazo
-          </button>
-          <button onClick={() => { handleCreateAppointment(selectedIntimation); setSelectedIntimation(null); }}
-            className="inline-flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
-            <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
-          </button>
-          <button onClick={() => { handleOpenPrescriptionModal(selectedIntimation); setSelectedIntimation(null); }}
-            className="inline-flex items-center gap-1.5 bg-white hover:bg-orange-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
-            <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
-          </button>
-          <button onClick={() => { handleOpenLinkModal(selectedIntimation); setSelectedIntimation(null); }}
-            className="inline-flex items-center gap-1.5 bg-white hover:bg-blue-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
-            <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
-          </button>
-          {selectedIntimation.link && (
-            <a href={selectedIntimation.link} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 bg-white hover:bg-purple-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
-              <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
-            </a>
-          )}
+            <button onClick={() => { handleCreateAppointment(selectedIntimation); setSelectedIntimation(null); }}
+              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-slate-200">
+              <CalendarIcon className="w-3.5 h-3.5 text-indigo-500" /> Compromisso
+            </button>
+            <button onClick={() => { handleOpenPrescriptionModal(selectedIntimation); setSelectedIntimation(null); }}
+              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-slate-200">
+              <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
+            </button>
+            <button onClick={() => { handleOpenLinkModal(selectedIntimation); setSelectedIntimation(null); }}
+              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-slate-200">
+              <Link2 className="w-3.5 h-3.5 text-blue-500" /> Vincular
+            </button>
+            {selectedIntimation.link && (
+              <a href={selectedIntimation.link} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-slate-200">
+                <ExternalLink className="w-3.5 h-3.5 text-purple-500" /> Ver Diário
+              </a>
+            )}
+          </div>
         </div>
 
       </div>
@@ -2159,7 +2176,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                     ) : null;
                                   })()}
                                   <p className="text-sm text-slate-500 line-clamp-2">
-                                    {analysis?.summary ?? (intimation.texto || '').slice(0, 160)}
+                                    {analysis?.summary ?? htmlToText(intimation.texto || '').slice(0, 160)}
                                   </p>
                                 </div>
                               )}
@@ -2416,7 +2433,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       {(() => {
                         const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
                           ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-                          : extractPartesFromTexto(intimation.texto || '');
+                          : extractPartesFromTexto(htmlToText(intimation.texto || ''));
                         return partes.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-1 mb-2">
                             {partes.slice(0, 2).map((parte, idx) => (
@@ -2479,7 +2496,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             ) : null;
                           })()}
                           <p className="text-sm text-slate-500 line-clamp-2">
-                            {analysis?.summary ?? (intimation.texto || '').slice(0, 160)}
+                            {analysis?.summary ?? htmlToText(intimation.texto || '').slice(0, 160)}
                           </p>
                         </div>
                       )}

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.107': { name: 'Café Documento Legível', emoji: '📜' },
   '1.10.106': { name: 'Café Intimação Notifica', emoji: '⚖️' },
   '1.10.105': { name: 'Café Qoder Docs', emoji: '📖' },
   '1.10.104': { name: 'Café Hook Esperto', emoji: '🪝' },
@@ -806,6 +807,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.107',
+    date: '18/05/2026',
+    summary: 'Intimações redesenhadas — HTML entities decodificados e painel de detalhe profissional como visualizador de documento.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'fix', title: 'HTML entities decodificados', description: 'Função htmlToText converte &aacute;, &nbsp;, &atilde; e todos os entities HTML em texto legível antes de exibir o conteúdo.' },
+          { type: 'improvement', title: 'Painel de detalhe redesenhado', description: 'Header compacto com tribunal, status e data em linha. Metadados (cliente, processo, partes) em banda compacta. IA em card horizontal. Conteúdo ocupa toda a altura disponível com scroll nativo e tipografia legível.' },
+          { type: 'improvement', title: 'Ações com hierarquia visual', description: 'Botões "Marcar lida" e "Novo Prazo" em amber primário; demais ações como secundárias. Melhor contraste e espaçamento.' },
+          { type: 'fix', title: 'Preview nos cards decodificado', description: 'Texto de prévia nos cards da lista também decodifica HTML antes de exibir.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.106',
     date: '18/05/2026',
