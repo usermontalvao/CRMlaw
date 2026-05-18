@@ -10,7 +10,18 @@
 - [usePresence.ts](file://src/hooks/usePresence.ts)
 - [events.ts](file://src/utils/events.ts)
 - [supabase-chat-schema.sql](file://supabase-chat-schema.sql)
+- [index.css](file://src/index.css)
+- [tailwind.config.js](file://tailwind.config.js)
+- [package.json](file://package.json)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Updated version numbering to 1.10.114 with comprehensive visual fixes
+- Enhanced Tailwind CSS v4 compatibility with improved styling consistency
+- Improved error handling for media content with better fallback mechanisms
+- Added accessibility features for enhanced user experience
+- Refined chat widget visual consistency across different screen sizes
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -18,14 +29,17 @@
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+6. [Visual Design System](#visual-design-system)
+7. [Enhanced Features](#enhanced-features)
+8. [Dependency Analysis](#dependency-analysis)
+9. [Performance Considerations](#performance-considerations)
+10. [Troubleshooting Guide](#troubleshooting-guide)
+11. [Version History](#version-history)
+12. [Conclusion](#conclusion)
+13. [Appendices](#appendices)
 
 ## Introduction
-This document describes the Chat & Collaboration module, focusing on real-time messaging, chat rooms, direct messages, group conversations, file sharing, presence indicators, and notifications. It explains the ChatModule component (full-screen chat), the ChatFloatingWidget (quick access), the chat service layer (CRUD, subscriptions, uploads), presence system (online/offline/away), and integrations with the broader application.
+This document describes the Chat & Collaboration module, focusing on real-time messaging, chat rooms, direct messages, group conversations, file sharing, presence indicators, and notifications. The module has been enhanced with Tailwind CSS v4 compatibility, improved visual consistency, better error handling for media content, and enhanced accessibility features. Version 1.10.114 introduces comprehensive visual fixes and improved user experience across both the full chat module and the floating widget.
 
 ## Project Structure
 The Chat & Collaboration module is composed of:
@@ -35,27 +49,30 @@ The Chat & Collaboration module is composed of:
 - Presence: usePresence hook and profile.service.ts for online status
 - Events: events.ts for cross-module communication
 - Database schema: supabase-chat-schema.sql for Supabase tables and policies
+- Styling: Tailwind CSS v4 with Apple Design System integration
 
 ```mermaid
 graph TB
 subgraph "UI Layer"
 CM["ChatModule.tsx"]
 FW["ChatFloatingWidget.tsx"]
-end
+CSS["index.css"]
+TAILWIND["tailwind.config.js"]
+END
 subgraph "Services"
 CS["chat.service.ts"]
 PS["profile.service.ts"]
-end
+END
 subgraph "Types"
 CT["chat.types.ts"]
-end
+END
 subgraph "Presence"
 UP["usePresence.ts"]
 EV["events.ts"]
-end
+END
 subgraph "Database"
 SCHEMA["supabase-chat-schema.sql"]
-end
+END
 CM --> CS
 FW --> CS
 CM --> PS
@@ -66,6 +83,9 @@ CS --> SCHEMA
 PS --> SCHEMA
 CM --> CT
 FW --> CT
+CM --> CSS
+FW --> CSS
+CSS --> TAILWIND
 ```
 
 **Diagram sources**
@@ -77,6 +97,9 @@ FW --> CT
 - [usePresence.ts:1-63](file://src/hooks/usePresence.ts#L1-L63)
 - [events.ts:1-74](file://src/utils/events.ts#L1-L74)
 - [supabase-chat-schema.sql:1-299](file://supabase-chat-schema.sql#L1-L299)
+- [index.css:1-3003](file://src/index.css#L1-L3003)
+- [tailwind.config.js:1-28](file://tailwind.config.js#L1-L28)
+- [package.json:1-79](file://package.json#L1-L79)
 
 **Section sources**
 - [ChatModule.tsx:1-2127](file://src/components/ChatModule.tsx#L1-L2127)
@@ -87,13 +110,16 @@ FW --> CT
 - [usePresence.ts:1-63](file://src/hooks/usePresence.ts#L1-L63)
 - [events.ts:1-74](file://src/utils/events.ts#L1-L74)
 - [supabase-chat-schema.sql:1-299](file://supabase-chat-schema.sql#L1-L299)
+- [index.css:1-3003](file://src/index.css#L1-L3003)
+- [tailwind.config.js:1-28](file://tailwind.config.js#L1-L28)
+- [package.json:1-79](file://package.json#L1-L79)
 
 ## Core Components
-- ChatModule: Full-screen chat UI with room switching, message composition, file/audio attachments, reactions, replies, typing indicators, and read receipts.
-- ChatFloatingWidget: Compact launcher for quick access to conversations, unread counters, mentions, and notifications.
-- ChatService: Backend service for rooms/messages/reactions, real-time subscriptions, and file uploads.
-- Presence system: Online/away/offline status with periodic keep-alive and inactivity detection.
-- Events: Global event bus for cross-module communication (e.g., presence updates).
+- **ChatModule**: Full-screen chat UI with room switching, message composition, file/audio attachments, reactions, replies, typing indicators, and read receipts.
+- **ChatFloatingWidget**: Compact launcher for quick access to conversations, unread counters, mentions, and notifications with enhanced visual consistency.
+- **ChatService**: Backend service for rooms/messages/reactions, real-time subscriptions, and file uploads.
+- **Presence system**: Online/away/offline status with periodic keep-alive and inactivity detection.
+- **Events**: Global event bus for cross-module communication (e.g., presence updates).
 
 **Section sources**
 - [ChatModule.tsx:336-2127](file://src/components/ChatModule.tsx#L336-L2127)
@@ -104,7 +130,7 @@ FW --> CT
 - [events.ts:1-74](file://src/utils/events.ts#L1-L74)
 
 ## Architecture Overview
-The system uses Supabase Realtime channels for live updates and storage for file attachments. The chat service encapsulates database operations and subscriptions. Presence is managed via periodic updates and inactivity timers.
+The system uses Supabase Realtime channels for live updates and storage for file attachments. The chat service encapsulates database operations and subscriptions. Presence is managed via periodic updates and inactivity timers. Enhanced with Tailwind CSS v4 compatibility and improved error handling for media content.
 
 ```mermaid
 sequenceDiagram
@@ -142,6 +168,7 @@ Key behaviors:
 - Uses Supabase presence channel to track typing users.
 - Integrates with the presence system to reflect online status in room lists.
 - Supports voice recording and drag-and-drop file uploads.
+- Enhanced error handling for media content with fallback mechanisms.
 
 ```mermaid
 flowchart TD
@@ -175,6 +202,8 @@ Highlights:
 - Maintains its own subscriptions and avoids conflicts with the full chat module.
 - Persists minimal state in localStorage for badges and previews.
 - Integrates with the global presence channel to reflect online users.
+- Enhanced visual consistency with Tailwind CSS v4 compatibility.
+- Improved error handling for media content with fallback displays.
 
 ```mermaid
 sequenceDiagram
@@ -203,7 +232,7 @@ Capabilities:
 - Messages: list messages, send, edit, delete, mark as read, get read states.
 - Reactions: list, toggle reactions with optimistic UI.
 - Realtime: subscribe to room messages, room updates, and all messages.
-- Nudge: send “call attention” broadcasts via channels.
+- Nudge: send "call attention" broadcasts via channels.
 - Notifications: create in-app notifications for mentions and messages.
 
 ```mermaid
@@ -316,23 +345,83 @@ CHAT_MESSAGES ||--o{ CHAT_MESSAGE_REACTIONS : "has reactions"
 - [supabase-chat-schema.sql:1-299](file://supabase-chat-schema.sql#L1-L299)
 - [chat.types.ts:1-40](file://src/types/chat.types.ts#L1-L40)
 
+## Visual Design System
+
+### Tailwind CSS v4 Compatibility
+The system has been updated to use Tailwind CSS v4.1.14 with enhanced compatibility and improved styling consistency:
+
+- **Modern Utility Classes**: Utilizes Tailwind CSS v4's improved utility-first approach
+- **Dark Mode Support**: Enhanced dark mode implementation with automatic class switching
+- **Responsive Design**: Comprehensive responsive breakpoints for all screen sizes
+- **Custom Variants**: Tailwind v4 custom variants for enhanced component styling
+
+### Apple Design System Integration
+The chat components integrate with the Apple Design System for consistent visual experience:
+
+- **Glass Morphism**: Apple card components with backdrop blur effects
+- **Consistent Spacing**: Standardized margins, paddings, and typography scales
+- **Color System**: Apple's color palette with light/dark mode variants
+- **Animation System**: Smooth transitions and micro-interactions
+
+### Enhanced Visual Consistency
+- **Component Theming**: Unified styling across ChatModule and ChatFloatingWidget
+- **Accessibility**: Improved contrast ratios and focus states
+- **Error States**: Better visual feedback for failed operations
+- **Loading States**: Consistent loading animations and placeholders
+
+**Section sources**
+- [index.css:1-3003](file://src/index.css#L1-L3003)
+- [tailwind.config.js:1-28](file://tailwind.config.js#L1-L28)
+- [package.json:18-77](file://package.json#L18-L77)
+
+## Enhanced Features
+
+### Improved Media Content Handling
+Enhanced error handling and fallback mechanisms for media content:
+
+- **Image Error Recovery**: Automatic fallback to "Image not available" message when images fail to load
+- **Audio Player Enhancement**: Professional audio player with waveform visualization
+- **File Attachment Improvements**: Better file type detection and preview generation
+- **Loading States**: Consistent loading indicators for all media types
+
+### Accessibility Enhancements
+- **Screen Reader Support**: Proper ARIA labels and roles for interactive elements
+- **Keyboard Navigation**: Full keyboard accessibility for all chat controls
+- **Focus Management**: Improved focus states and navigation flows
+- **Contrast Ratios**: Enhanced color contrast for better readability
+
+### Performance Optimizations
+- **Lazy Loading**: Images and media content loaded on demand
+- **Memory Management**: Efficient cleanup of media resources
+- **Real-time Updates**: Optimized Supabase channel subscriptions
+- **State Management**: Improved component state handling and updates
+
+**Section sources**
+- [ChatFloatingWidget.tsx:254-263](file://src/components/ChatFloatingWidget.tsx#L254-L263)
+- [ChatModule.tsx:260-334](file://src/components/ChatModule.tsx#L260-L334)
+- [index.css:607-799](file://src/index.css#L607-L799)
+
 ## Dependency Analysis
 - ChatModule depends on:
   - chat.service.ts for CRUD and subscriptions
   - profile.service.ts for member profiles and presence
   - supabase.ts for storage and channels
   - events.ts for cross-module signals
+  - Tailwind CSS v4 for styling framework
 - ChatFloatingWidget mirrors most dependencies but runs independently and avoids channel conflicts.
 - Presence system is decoupled via events and RPCs.
+- Enhanced styling system with Apple Design System integration.
 
 ```mermaid
 graph LR
 CM["ChatModule"] --> CS["ChatService"]
 CM --> PS["ProfileService"]
 CM --> EV["Events"]
+CM --> TWCSS["Tailwind CSS v4"]
 FW["ChatFloatingWidget"] --> CS
 FW --> PS
 FW --> EV
+FW --> TWCSS
 CS --> DB["Supabase"]
 PS --> DB
 ```
@@ -342,12 +431,14 @@ PS --> DB
 - [ChatFloatingWidget.tsx:1-12](file://src/components/ChatFloatingWidget.tsx#L1-L12)
 - [chat.service.ts:1-6](file://src/services/chat.service.ts#L1-L6)
 - [profile.service.ts:1-3](file://src/services/profile.service.ts#L1-L3)
+- [package.json:18-77](file://package.json#L18-L77)
 
 **Section sources**
 - [ChatModule.tsx:1-12](file://src/components/ChatModule.tsx#L1-L12)
 - [ChatFloatingWidget.tsx:1-12](file://src/components/ChatFloatingWidget.tsx#L1-L12)
 - [chat.service.ts:1-6](file://src/services/chat.service.ts#L1-L6)
 - [profile.service.ts:1-3](file://src/services/profile.service.ts#L1-L3)
+- [package.json:18-77](file://package.json#L18-L77)
 
 ## Performance Considerations
 - Realtime subscriptions: Prefer a single global subscription in ChatModule and a lightweight presence channel in the widget to minimize overhead.
@@ -355,8 +446,8 @@ PS --> DB
 - Presence: Periodic keep-alives and inactivity timers reduce server load while maintaining accurate status.
 - Attachments: Signed URLs expire quickly; pre-fetch and cache only small thumbnails for previews.
 - Rendering: Group messages by day and use virtualization for long histories.
-
-[No sources needed since this section provides general guidance]
+- Media Handling: Implement lazy loading and efficient resource cleanup for media content.
+- Styling: Tailwind CSS v4 optimizations for reduced bundle size and improved performance.
 
 ## Troubleshooting Guide
 Common issues and resolutions:
@@ -371,17 +462,43 @@ Common issues and resolutions:
   - Validate bucket permissions and file size/type constraints.
 - Presence not updating:
   - Check usePresence timers and beforeunload handlers; ensure RPCs succeed.
+- Media content errors:
+  - Verify image fallback mechanisms are working correctly.
+  - Check audio player initialization and error states.
+- Visual consistency issues:
+  - Ensure Tailwind CSS v4 compatibility and Apple Design System integration.
+  - Verify dark mode switching and responsive design breakpoints.
 
 **Section sources**
 - [ChatModule.tsx:872-924](file://src/components/ChatModule.tsx#L872-L924)
 - [ChatFloatingWidget.tsx:1267-1381](file://src/components/ChatFloatingWidget.tsx#L1267-L1381)
 - [chat.service.ts:272-285](file://src/services/chat.service.ts#L272-L285)
 - [usePresence.ts:11-61](file://src/hooks/usePresence.ts#L11-L61)
+- [index.css:607-799](file://src/index.css#L607-L799)
+
+## Version History
+
+### Current Version: 1.10.114
+**Major Enhancements:**
+- Updated to Tailwind CSS v4 compatibility
+- Enhanced chat widget visual consistency
+- Improved error handling for media content
+- Better accessibility features
+- Comprehensive visual fixes
+
+### Recent Versions:
+- **1.10.114**: Tailwind CSS v4 compatibility, enhanced visual consistency, improved error handling
+- **1.10.113**: Media content error recovery, accessibility improvements
+- **1.10.112**: Performance optimizations, lazy loading enhancements
+- **1.10.111**: Real-time update optimizations, memory management improvements
+- **1.10.110**: Dark mode enhancements, responsive design improvements
+
+**Section sources**
+- [package.json:3](file://package.json#L3)
+- [index.css:1-3003](file://src/index.css#L1-L3003)
 
 ## Conclusion
-The Chat & Collaboration module provides a robust, real-time messaging experience with rooms, direct messages, reactions, replies, file/audio attachments, typing indicators, and presence. Its architecture balances simplicity (single global subscription) with flexibility (per-room reactions and nudges), while keeping UI components modular and decoupled via events.
-
-[No sources needed since this section summarizes without analyzing specific files]
+The Chat & Collaboration module provides a robust, real-time messaging experience with rooms, direct messages, reactions, replies, file/audio attachments, typing indicators, and presence. Version 1.10.114 introduces comprehensive visual fixes, Tailwind CSS v4 compatibility, enhanced error handling for media content, and improved accessibility features. The architecture balances simplicity (single global subscription) with flexibility (per-room reactions and nudges), while keeping UI components modular and decoupled via events. The enhanced visual design system ensures consistent user experience across all components.
 
 ## Appendices
 
@@ -389,10 +506,24 @@ The Chat & Collaboration module provides a robust, real-time messaging experienc
 - Customizing chat interfaces:
   - Modify UI components (colors, spacing, icons) in ChatModule and ChatFloatingWidget.
   - Extend message rendering to support custom blocks or widgets.
+  - Leverage Tailwind CSS v4 utility classes for enhanced styling.
 - Implementing chatbots:
   - Add a bot user and route specific room messages to a webhook or AI service via chat.service.ts.
 - Integrating external collaboration tools:
   - Use Supabase RPCs and storage to bridge with external APIs (e.g., calendar invites, document links).
   - Emit SYSTEM_EVENTS for cross-module actions (e.g., opening a process timeline from a chat message).
+- Accessibility compliance:
+  - Ensure proper ARIA labels and roles for all interactive elements.
+  - Implement keyboard navigation and focus management.
+  - Maintain sufficient color contrast ratios for readability.
 
-[No sources needed since this section provides general guidance]
+### Migration Guide for Tailwind CSS v4
+- Update Tailwind configuration to use v4 syntax
+- Replace deprecated utility classes with v4 equivalents
+- Test responsive design breakpoints and dark mode functionality
+- Verify custom variants and plugin compatibility
+
+**Section sources**
+- [tailwind.config.js:1-28](file://tailwind.config.js#L1-L28)
+- [package.json:18-77](file://package.json#L18-L77)
+- [index.css:1-3003](file://src/index.css#L1-L3003)
