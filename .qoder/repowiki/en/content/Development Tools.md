@@ -13,10 +13,20 @@
 - [DEPLOY_INSTRUCTIONS.md](file://DEPLOY_INSTRUCTIONS.md)
 - [.githooks/pre-commit](file://.githooks/pre-commit)
 - [scripts/setup-githooks.cjs](file://scripts/setup-githooks.cjs)
+- [scripts/verify-version-changelog.cjs](file://scripts/verify-version-changelog.cjs)
 - [src/App.tsx](file://src/App.tsx)
 - [src/components/Login.tsx](file://src/components/Login.tsx)
 - [src/contexts/AuthContext.tsx](file://src/contexts/AuthContext.tsx)
+- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/PETITION_EDITOR_MODULE.md](file://docs/PETITION_EDITOR_MODULE.md)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Enhanced Git Hooks section to document new exemption logic for documentation files
+- Updated pre-commit hook system documentation with intelligence for version bump enforcement
+- Added details about exemption criteria for .qoder/, docs/, and .md files
+- Improved troubleshooting guidance for documentation-only commits
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -73,7 +83,7 @@ H --> I["src/contexts/AuthContext.tsx<br/>Auth Provider"]
 - Type System: TypeScript compiles TS/TSX with strictness and emits declarations and source maps.
 - Styling: TailwindCSS with PostCSS auto-prefixing and dark mode support.
 - Scripts: npm scripts orchestrate dev, build, preview, and API tests.
-- Git Hooks: Pre-commit hook enforces version and changelog checks.
+- Git Hooks: Pre-commit hook enforces version and changelog checks with intelligent exemption logic for documentation files.
 
 **Section sources**
 - [package.json](file://package.json)
@@ -286,30 +296,43 @@ App-->>User : Redirect to dashboard
 - [src/App.tsx](file://src/App.tsx)
 
 ### Git Hooks and Maintenance
-- Pre-commit hook runs a version/changelog verification script.
+- Pre-commit hook runs a sophisticated version/changelog verification script with intelligent exemption logic.
+- The system now exempts documentation-only commits from version bump requirements.
 - prepare script configures core.hooksPath to .githooks.
+
+**Updated** Enhanced pre-commit hook system with exemption logic for documentation files (.qoder/, docs/, .md) and intelligence to allow documentation commits to proceed without version increments.
 
 ```mermaid
 flowchart TD
 Commit["Commit Attempt"] --> Hook[".githooks/pre-commit"]
 Hook --> Verify["verify-version-changelog.cjs"]
-Verify --> Result{"Pass?"}
-Result --> |Yes| Allow["Allow Commit"]
-Result --> |No| Block["Block Commit"]
+Verify --> StageCheck["Check Staged Files"]
+StageCheck --> DocCheck{"Documentation Only?"}
+DocCheck --> |Yes| Exempt["Exempt from Version Bump<br/>.qoder/, docs/, *.md"]
+DocCheck --> |No| RequiredCheck["Check Required Files"]
+RequiredCheck --> RequiredFiles{"package.json & DocsChangesPage.tsx?"}
+RequiredFiles --> |Yes| VersionCheck["Validate Version Bump"]
+RequiredFiles --> |No| Block["Block Commit<br/>Missing Required Files"]
+VersionCheck --> VersionValid{"Version Incremented?"}
+VersionValid --> |Yes| Allow["Allow Commit"]
+VersionValid --> |No| BlockVersion["Block Commit<br/>Version Not Incremented"]
+Exempt --> Allow
 ```
 
 **Diagram sources**
 - [.githooks/pre-commit](file://.githooks/pre-commit)
 - [scripts/setup-githooks.cjs](file://scripts/setup-githooks.cjs)
+- [scripts/verify-version-changelog.cjs](file://scripts/verify-version-changelog.cjs)
 
 **Section sources**
 - [.githooks/pre-commit](file://.githooks/pre-commit)
 - [scripts/setup-githooks.cjs](file://scripts/setup-githooks.cjs)
+- [scripts/verify-version-changelog.cjs](file://scripts/verify-version-changelog.cjs)
 
 ## Dependency Analysis
 - Vite plugin-react enables JSX transform and HMR.
 - TailwindCSS and autoprefixer integrated via PostCSS.
-- TypeScript compiler options align with Vite’s module resolution and emit targets.
+- TypeScript compiler options align with Vite's module resolution and emit targets.
 - Syncfusion license registration is environment-driven.
 
 ```mermaid
@@ -342,22 +365,22 @@ CSS --> Dist["dist/assets"]
 - Service Worker: Improves offline experience and ensures SPA fallback.
 - Tailwind purging: Configure content globs to avoid shipping unused CSS.
 
-[No sources needed since this section provides general guidance]
-
 ## Troubleshooting Guide
 - 404 on direct route after sleep/deploy: Ensure SPA fallback and cache headers are configured. Clear browser cache and unregister old service workers.
 - Service Worker not updating: Manually unregister and reload; force re-deploy with cache clearing.
 - Network errors during SW registration: The app attempts to clean conflicting caches and logs remediation steps.
 - Build artifacts missing: Confirm dist/_redirects exists and public assets are copied.
+- Pre-commit hook blocking documentation-only commits: The system now exempts .qoder/, docs/, and .md files from version bump requirements automatically.
+
+**Updated** Documentation-only commits (files in .qoder/, docs/, or with .md extension) are now automatically exempted from version bump enforcement, allowing developers to update documentation without incrementing the application version.
 
 **Section sources**
 - [DEPLOY_INSTRUCTIONS.md](file://DEPLOY_INSTRUCTIONS.md)
 - [src/main.tsx](file://src/main.tsx)
+- [scripts/verify-version-changelog.cjs](file://scripts/verify-version-changelog.cjs)
 
 ## Conclusion
-The CRM Jurídico project leverages Vite for a fast dev experience, TypeScript for safety, and TailwindCSS for efficient styling. The build is streamlined for SPA hosting, with a robust service worker fallback and clear deployment instructions. Git hooks enforce quality gates, and the app’s architecture supports scalable development and maintenance.
-
-[No sources needed since this section summarizes without analyzing specific files]
+The CRM Jurídico project leverages Vite for a fast dev experience, TypeScript for safety, and TailwindCSS for efficient styling. The build is streamlined for SPA hosting, with a robust service worker fallback and clear deployment instructions. Git hooks enforce quality gates with intelligent exemption logic for documentation files, and the app's architecture supports scalable development and maintenance.
 
 ## Appendices
 
@@ -366,8 +389,7 @@ The CRM Jurídico project leverages Vite for a fast dev experience, TypeScript f
 - Keep TypeScript strictness for early bug detection.
 - Leverage lazy loading and prefetching for perceived performance.
 - Use Tailwind utilities and dark mode variants consistently.
-
-[No sources needed since this section provides general guidance]
+- Take advantage of documentation commit exemptions to streamline documentation updates.
 
 ### Extending the Build System
 - Add Vite plugins in vite.config.ts.
@@ -375,7 +397,14 @@ The CRM Jurídico project leverages Vite for a fast dev experience, TypeScript f
 - Extend PostCSS with additional plugins in postcss.config.js.
 - Add new npm scripts in package.json for specialized tasks.
 
+### Git Hook Enhancement Guidelines
+- The pre-commit hook system now intelligently exempts documentation files from version bump requirements.
+- Documentation files in .qoder/, docs/, and .md files are automatically recognized as exempt.
+- This enhancement allows documentation updates without triggering version increment requirements.
+- The exemption logic maintains strict enforcement for non-documentation code changes.
+
 **Section sources**
 - [vite.config.ts](file://vite.config.ts)
 - [postcss.config.js](file://postcss.config.js)
 - [package.json](file://package.json)
+- [scripts/verify-version-changelog.cjs](file://scripts/verify-version-changelog.cjs)

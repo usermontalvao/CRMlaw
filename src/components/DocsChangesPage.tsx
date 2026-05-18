@@ -805,15 +805,39 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.105',
+    date: '17/05/2026',
+    summary: 'Correção de erros TypeScript que impediam o deploy — CalendarModule, App e DocsChangesPage.',
+    modules: [
+      {
+        moduleId: 'CalendarModule',
+        changes: [
+          { type: 'fix', title: 'Tipo clientId adicionado', description: 'Propriedade clientId faltava no tipo SelectedEvent.extendedProps, causando erro de build.' },
+        ],
+      },
+      {
+        moduleId: 'App',
+        changes: [
+          { type: 'fix', title: 'Tipagem params corrigida', description: 'Anotação Record<string, string> explícita no navigateTo para evitar conflito de união de tipos.' },
+        ],
+      },
+      {
+        moduleId: 'DocsChangesPage',
+        changes: [
+          { type: 'fix', title: 'Entradas de changelog corrigidas', description: 'Adicionado title obrigatório e corrigido module → moduleId nas releases 1.10.102–1.10.104.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.104',
     date: '17/05/2026',
     summary: 'Pre-commit hook atualizado — commits de documentação (.qoder/, .md) não precisam mais de bump de versão.',
     modules: [
       {
-        module: 'Configuração',
-        icon: 'Settings',
+        moduleId: 'Configuração',
         changes: [
-          { type: 'fix', description: 'Hook de pre-commit isenta arquivos em .qoder/, docs/ e extensão .md de exigir bump de versão.' },
+          { type: 'fix', title: 'Pre-commit isenta documentação', description: 'Hook de pre-commit isenta arquivos em .qoder/, docs/ e extensão .md de exigir bump de versão.' },
         ],
       },
     ],
@@ -824,10 +848,9 @@ const releases: ReleaseNote[] = [
     summary: 'Mini-calendário do Dashboard mostra hoje + 6 dias futuros — hoje sempre na primeira posição.',
     modules: [
       {
-        module: 'Dashboard',
-        icon: 'LayoutDashboard',
+        moduleId: 'Dashboard',
         changes: [
-          { type: 'fix', description: 'Faixa semanal exibe hoje na posição inicial (esquerda) seguido dos próximos 6 dias, em vez de mostrar a semana ISO (dom podia cair à direita).' },
+          { type: 'fix', title: 'Mini-calendário com hoje à esquerda', description: 'Faixa semanal exibe hoje na posição inicial (esquerda) seguido dos próximos 6 dias, em vez de mostrar a semana ISO (dom podia cair à direita).' },
         ],
       },
     ],
@@ -838,22 +861,20 @@ const releases: ReleaseNote[] = [
     summary: 'Interface responsiva para mobile — Dashboard e Agenda adaptados para telas pequenas.',
     modules: [
       {
-        module: 'Dashboard',
-        icon: 'LayoutDashboard',
+        moduleId: 'Dashboard',
         changes: [
-          { type: 'fix', description: 'Largura inicial calculada corretamente no mobile (sidebar oculta não era descontada).' },
-          { type: 'improvement', description: 'Drag e resize de widgets desativados no mobile para evitar conflito com scroll.' },
-          { type: 'improvement', description: 'Ícone de arrastar (GripVertical) oculto em telas pequenas.' },
-          { type: 'improvement', description: 'Margens entre widgets reduzidas no mobile (8px vs 12px no desktop).' },
+          { type: 'fix', title: 'Largura inicial correta no mobile', description: 'Largura inicial calculada corretamente no mobile (sidebar oculta não era descontada).' },
+          { type: 'improvement', title: 'Drag/resize desativado no mobile', description: 'Drag e resize de widgets desativados no mobile para evitar conflito com scroll.' },
+          { type: 'improvement', title: 'Ícone de arrastar oculto no mobile', description: 'Ícone de arrastar (GripVertical) oculto em telas pequenas.' },
+          { type: 'improvement', title: 'Margens reduzidas no mobile', description: 'Margens entre widgets reduzidas no mobile (8px vs 12px no desktop).' },
         ],
       },
       {
-        module: 'Agenda',
-        icon: 'Calendar',
+        moduleId: 'Agenda',
         changes: [
-          { type: 'fix', description: 'Toolbar restruturada para mobile: controles principais na linha 1, filtros e lista na linha 2.' },
-          { type: 'improvement', description: 'Botão "+ Novo" mostra apenas "+" em telas pequenas para economizar espaço.' },
-          { type: 'improvement', description: 'Filtro de responsável e botão Cronograma/Lista acessíveis no mobile via segunda linha.' },
+          { type: 'fix', title: 'Toolbar reestruturada para mobile', description: 'Toolbar restruturada para mobile: controles principais na linha 1, filtros e lista na linha 2.' },
+          { type: 'improvement', title: 'Botão Novo compacto no mobile', description: 'Botão "+ Novo" mostra apenas "+" em telas pequenas para economizar espaço.' },
+          { type: 'improvement', title: 'Filtros acessíveis no mobile', description: 'Filtro de responsável e botão Cronograma/Lista acessíveis no mobile via segunda linha.' },
         ],
       },
     ],

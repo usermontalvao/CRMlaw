@@ -1714,9 +1714,9 @@ useEffect(() => {
                 userName={profile.name}
                 onNavigateToModule={({ module, entityId, extra }) => {
                   if (entityId) {
-                    const params = module === 'clientes'
+                    const params: Record<string, string> = module === 'clientes'
                       ? { mode: 'details', entityId }
-                      : { entityId, ...extra };
+                      : { entityId, ...(extra as Record<string, string> | undefined) };
                     navigateTo(module as any, params);
                   } else {
                     navigateTo(module as any);

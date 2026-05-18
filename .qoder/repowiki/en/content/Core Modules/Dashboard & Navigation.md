@@ -29,6 +29,7 @@
 - Integrated automatic layout fitting algorithm with visual feedback during drag-and-drop
 - Enhanced persistence layer with localStorage and Supabase integration for cross-device synchronization
 - Added mobile optimizations and improved responsive design considerations
+- **Updated calendar display functionality**: Enhanced mini-calendar in AgendaWidget to always show today as the first day of the displayed week, improving user experience by making today's position intuitive and eliminating confusion with ISO week calculations
 - Updated widget system documentation to reflect new interactive capabilities
 
 ## Table of Contents
@@ -38,16 +39,19 @@
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
 6. [Interactive Grid System](#interactive-grid-system)
-7. [Responsive Design Implementation](#responsive-design-implementation)
-8. [Persistence and Synchronization](#persistence-and-synchronization)
-9. [Dependency Analysis](#dependency-analysis)
-10. [Performance Considerations](#performance-considerations)
-11. [Troubleshooting Guide](#troubleshooting-guide)
-12. [Conclusion](#conclusion)
-13. [Appendices](#appendices)
+7. [Enhanced Calendar Display](#enhanced-calendar-display)
+8. [Responsive Design Implementation](#responsive-design-implementation)
+9. [Persistence and Synchronization](#persistence-and-synchronization)
+10. [Dependency Analysis](#dependency-analysis)
+11. [Performance Considerations](#performance-considerations)
+12. [Troubleshooting Guide](#troubleshooting-guide)
+13. [Conclusion](#conclusion)
+14. [Appendices](#appendices)
 
 ## Introduction
 This document explains the Dashboard and Navigation system of the CRM application. The dashboard has been transformed from a static layout to a fully interactive, draggable, and resizable grid system with responsive breakpoints. It covers the navigation state management via a dedicated provider, the responsive layout built around a sidebar and header, and the dashboard's widget-driven architecture with real-time drag-and-drop functionality. It also documents user preference persistence for dashboard preferences, module access control, and practical guidance for customization and extension.
+
+**Updated** The calendar display functionality has been enhanced to always show today as the first day of the displayed week in the mini-calendar, improving user experience by making today's position intuitive and eliminating confusion with ISO week calculations.
 
 ## Project Structure
 The Dashboard and Navigation system spans several modules:
@@ -71,7 +75,7 @@ subgraph "Dashboard"
 DP["DashboardPage"]
 DB["Dashboard<br/>(Interactive Grid)"]
 WIDX["dashboard/index.ts"]
-AG["AgendaWidget"]
+AG["AgendaWidget<br/>(Enhanced Calendar)"]
 DL["DeadlinesWidget"]
 IT["IntimationsWidget"]
 PS["ProcessesWidget"]
@@ -256,7 +260,7 @@ UpdateState --> RenderMain["Render main content"]
   - Real-time refresh triggers via system events.
   - Quick actions and alert banners.
 - Widgets:
-  - AgendaWidget: Upcoming calendar and hearing events with gradient styling.
+  - AgendaWidget: Upcoming calendar and hearing events with gradient styling and enhanced mini-calendar display.
   - DeadlinesWidget: Pending deadlines with urgency indicators and color-coded badges.
   - IntimationsWidget: Unread DJEN communications with urgency stats and recent indicators.
   - ProcessesWidget: Awaiting processes with client association and scrollable list.
@@ -426,6 +430,59 @@ Feedback --> End(["Layout Updated"])
 - [Dashboard.tsx:392-426](file://src/components/Dashboard.tsx#L392-L426)
 - [Dashboard.tsx:435-445](file://src/components/Dashboard.tsx#L435-L445)
 
+## Enhanced Calendar Display
+
+**Updated** The calendar display functionality has been significantly enhanced to improve user experience and eliminate confusion with ISO week calculations.
+
+### Mini-Week Calendar Enhancement
+The AgendaWidget now features an enhanced mini-week calendar that always displays today as the first day of the displayed week:
+
+- **Today-Centric Display**: The calendar always starts with today as the first day, making it immediately intuitive for users
+- **Consistent Week Structure**: Displays exactly 7 days (today + 6 upcoming days) regardless of ISO week boundaries
+- **Visual Today Indicator**: Today's date is prominently highlighted with amber styling and a subtle shadow effect
+- **Event Visualization**: Shows event markers below each date to indicate when activities occur
+
+### Implementation Details
+The enhanced mini-week calendar is implemented with the following logic:
+
+```typescript
+// Generate 7 consecutive days starting from today
+const today = new Date(); today.setHours(0, 0, 0, 0);
+const weekDays = Array.from({ length: 7 }, (_, i) => {
+  const d = new Date(today); d.setDate(today.getDate() + i); return d;
+});
+
+// Create event date set for quick lookup
+const eventDateSet = new Set(upcomingEvents.map(ev => {
+  const d = parseLocalDateTime(ev.start_at); d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}));
+```
+
+### User Experience Improvements
+- **Intuitive Navigation**: Users can immediately see today's position without mental calculations
+- **Reduced Cognitive Load**: Eliminates confusion between business weeks and ISO weeks
+- **Better Context Awareness**: Clear visual indication of today's date makes scheduling decisions easier
+- **Consistent Behavior**: Works the same way across all devices and time zones
+
+```mermaid
+flowchart TD
+Start(["User Opens Agenda Widget"]) --> GetToday["Get Current Date"]
+GetToday --> SetZero["Set Time to 00:00:00"]
+SetZero --> GenerateWeek["Generate 7-Day Array Starting Today"]
+GenerateWeek --> CreateEventSet["Create Event Date Lookup Set"]
+CreateEventSet --> RenderCalendar["Render Mini-Week Calendar"]
+RenderCalendar --> HighlightToday["Highlight Today's Date"]
+HighlightToday --> ShowEvents["Show Event Indicators"]
+ShowEvents --> End(["Enhanced User Experience"])
+```
+
+**Diagram sources**
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+
+**Section sources**
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+
 ## Responsive Design Implementation
 The dashboard implements a sophisticated responsive design system:
 
@@ -493,7 +550,7 @@ AL --> SB["Sidebar"]
 DP["DashboardPage"] --> DB["Dashboard<br/>(Interactive Grid)"]
 DB --> SVC["dashboardPreferences.service"]
 DB --> WIDX["dashboard/index.ts"]
-WIDX --> AG["AgendaWidget"]
+WIDX --> AG["AgendaWidget<br/>(Enhanced Calendar)"]
 WIDX --> DL["DeadlinesWidget"]
 WIDX --> IT["IntimationsWidget"]
 WIDX --> PS["ProcessesWidget"]
@@ -529,6 +586,10 @@ SVC --> DBP["dashboard_preferences Table"]
   - Debounced Supabase saves prevent excessive API calls during drag-and-drop.
   - Auto-fit algorithm minimizes layout recalculation overhead.
   - CSS transforms provide hardware-accelerated widget animations.
+- **Enhanced Calendar Performance**: 
+  - Mini-week calendar uses efficient Set-based event lookup for O(1) date checking.
+  - Today-centric calculation eliminates complex ISO week boundary calculations.
+  - Memoized event grouping reduces re-computation overhead.
 - Permissions:
   - Early filtering in Sidebar and Dashboard avoids unnecessary computations and DOM nodes.
 - **NEW**: Memory management:
@@ -553,6 +614,10 @@ SVC --> DBP["dashboard_preferences Table"]
   - Verify react-grid-layout dependencies are properly installed.
   - Check for CSS conflicts that might interfere with drag handles.
   - Ensure proper event handling for touch devices.
+- **NEW**: Calendar display issues:
+  - Verify that the mini-week calendar is calculating dates correctly for the current timezone.
+  - Check that event date parsing handles different date formats consistently.
+  - Ensure the today indicator is properly highlighted in all breakpoints.
 
 **Section sources**
 - [NavigationContext.tsx:54-62](file://src/contexts/NavigationContext.tsx#L54-L62)
@@ -562,6 +627,8 @@ SVC --> DBP["dashboard_preferences Table"]
 
 ## Conclusion
 The Dashboard and Navigation system has evolved into a sophisticated, interactive platform combining robust navigation, responsive layout, and a modular widget architecture. The new grid system provides users with complete control over their dashboard layout while maintaining responsive design principles. NavigationContext centralizes state, AppLayout provides a consistent shell, and the interactive Dashboard delivers a customizable, permission-aware, and performance-conscious experience with cross-device synchronization capabilities.
+
+**Updated** The enhanced calendar display functionality significantly improves user experience by making today's position intuitive and eliminating confusion with ISO week calculations, while the rest of the system maintains its robust foundation of interactive widgets, responsive design, and cross-device synchronization.
 
 ## Appendices
 
@@ -575,6 +642,7 @@ The Dashboard and Navigation system has evolved into a sophisticated, interactiv
   - Adjust data fetching and sorting inside Dashboard.
   - Update permissions checks to control visibility.
   - **NEW**: Ensure widget implements proper click handlers for navigation integration.
+  - **NEW**: Consider calendar integration patterns for date-sensitive widgets.
 
 **Section sources**
 - [dashboard/index.ts:1-11](file://src/components/dashboard/index.ts#L1-L11)
@@ -600,6 +668,7 @@ The Dashboard and Navigation system has evolved into a sophisticated, interactiv
   - Prefer stacked layouts for small screens with full-width widgets.
   - Keep touch-friendly targets and readable typography.
   - **NEW**: Test drag-and-drop functionality on touch devices with proper feedback.
+  - **NEW**: Ensure calendar widgets adapt well to different screen sizes and orientations.
 
 **Section sources**
 - [Dashboard.tsx:198-253](file://src/components/Dashboard.tsx#L198-L253)
@@ -619,3 +688,15 @@ The Dashboard and Navigation system has evolved into a sophisticated, interactiv
 - [20250109_dashboard_preferences.sql:1-56](file://supabase/migrations/20250109_dashboard_preferences.sql#L1-L56)
 - [dashboardPreferences.service.ts:14-148](file://src/services/dashboardPreferences.service.ts#L14-L148)
 - [Dashboard.tsx:368-426](file://src/components/Dashboard.tsx#L368-L426)
+
+### Calendar Integration Best Practices
+- **NEW**: When implementing date-sensitive widgets:
+  - Use the enhanced mini-week calendar pattern for consistent today-centric display.
+  - Implement efficient date parsing and comparison utilities.
+  - Consider timezone handling for international deployments.
+  - Provide clear visual indicators for today's date and upcoming events.
+  - Ensure calendar widgets work well across different screen sizes and orientations.
+
+**Section sources**
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+- [AgendaWidget.tsx:26-117](file://src/components/dashboard/AgendaWidget.tsx#L26-L117)

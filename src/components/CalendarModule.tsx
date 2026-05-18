@@ -137,6 +137,7 @@ type SelectedEvent = {
     moduleLink?: string;
     clientName?: string;
     clientPhone?: string;
+    clientId?: string;
     calendarEventId?: string;
     entityId?: string;
     representativeAppointments?: RepresentativeAppointment[];

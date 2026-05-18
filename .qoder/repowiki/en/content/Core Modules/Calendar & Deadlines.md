@@ -15,14 +15,16 @@
 - [events.ts](file://src/utils/events.ts)
 - [userNotification.service.ts](file://src/services/userNotification.service.ts)
 - [notify-deadline-assigned/index.ts](file://supabase/functions/notify-deadline-assigned/index.ts)
+- [Dashboard.tsx](file://src/components/Dashboard.tsx)
+- [AgendaWidget.tsx](file://src/components/dashboard/AgendaWidget.tsx)
 </cite>
 
 ## Update Summary
 **Changes Made**
-- Updated CalendarModule mobile-responsive toolbar section to reflect the new two-row design
-- Enhanced notification logic documentation to include contextual messaging with assigner names and event type emojis
-- Added detailed coverage of the mobile-first toolbar implementation with responsibility filters and schedule view
-- Expanded notification service documentation to include appointment assignment notifications
+- Updated Dashboard component calendar display logic to show today in leftmost position followed by next six days
+- Enhanced weekly strip implementation with improved date calculation and event visualization
+- Added comprehensive documentation for the new calendar display pattern
+- Updated widget architecture to reflect the integrated agenda widget design
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -39,10 +41,13 @@
 ## Introduction
 This document explains the Calendar & Deadlines module: how the calendar integrates with deadlines, hearings, requirements, and other events; how the CalendarModule renders month/year views, handles navigation, and displays event details; how the DeadlinesModule tracks deadlines, manages reminders, and supports overdue notifications; and how the underlying services implement CRUD operations, timezone handling, and reminder scheduling. It also covers deadline categories, priorities, escalation rules, calendar synchronization, import/export capabilities, and team collaboration features.
 
+**Updated** The Dashboard component now features an enhanced calendar display system that prioritizes today's date in the weekly strip, presenting a more intuitive and user-friendly interface for quick event access.
+
 ## Project Structure
 The Calendar & Deadlines domain spans React components, TypeScript types, Supabase services, and serverless notification functions:
 - CalendarModule: FullCalendar-based UI with month/week/day/list views, filtering, export, and integration with deadlines/hearings/requirements.
 - DeadlinesModule: Deadline lifecycle, status tracking, reminders, comments, and reporting.
+- Dashboard: Integrated calendar widget with enhanced weekly strip display showing today + 6 upcoming days.
 - Services: calendar.service.ts and deadline.service.ts encapsulate Supabase queries and data normalization.
 - Types: calendar.types.ts and deadline.types.ts define event and deadline schemas.
 - Representative/Profile services: support team collaboration and member visibility.
@@ -55,6 +60,8 @@ subgraph "UI"
 CM["CalendarModule.tsx"]
 DM["DeadlinesModule.tsx"]
 DW["DeadlinesWidget.tsx"]
+AG["AgendaWidget.tsx"]
+DB["Dashboard.tsx"]
 end
 subgraph "Services"
 CS["calendar.service.ts"]
@@ -86,7 +93,9 @@ PS --> SUPA
 UNS --> SUPA
 SUPA --> FN
 SUPA --> DA
-CM --> DW
+DB --> AG
+DB --> CS
+DB --> DS
 ```
 
 **Diagram sources**
@@ -100,6 +109,8 @@ CM --> DW
 - [DeadlinesWidget.tsx:23-118](file://src/components/dashboard/DeadlinesWidget.tsx#L23-L118)
 - [userNotification.service.ts:1-252](file://src/services/userNotification.service.ts#L1-L252)
 - [notify-deadline-assigned/index.ts:1-296](file://supabase/functions/notify-deadline-assigned/index.ts#L1-L296)
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
+- [AgendaWidget.tsx:1-116](file://src/components/dashboard/AgendaWidget.tsx#L1-L116)
 
 **Section sources**
 - [CalendarModule.tsx:146-780](file://src/components/CalendarModule.tsx#L146-L780)
@@ -110,10 +121,13 @@ CM --> DW
 - [profile.service.ts:45-200](file://src/services/profile.service.ts#L45-L200)
 - [notification-scheduler/index.ts:74-196](file://supabase/functions/notification-scheduler/index.ts#L74-L196)
 - [DeadlinesWidget.tsx:23-118](file://src/components/dashboard/DeadlinesWidget.tsx#L23-L118)
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
+- [AgendaWidget.tsx:1-116](file://src/components/dashboard/AgendaWidget.tsx#L1-L116)
 
 ## Core Components
 - CalendarModule: Renders FullCalendar with multiple views, filters, and event creation/editing; integrates deadlines, hearings, requirements, and custom events; supports export to Excel/PDF and deletion logging.
 - DeadlinesModule: Manages deadlines with status/priority/type, filters, bulk actions, comments, and reporting; calculates due dates and overdue states; integrates with reminder scheduler.
+- Dashboard: Integrated calendar widget featuring an enhanced weekly strip that displays today in the leftmost position followed by the next six days, providing intuitive navigation and event visualization.
 - CalendarService: Normalizes timestamps to local timezone, performs CRUD on calendar_events.
 - DeadlineService: Filters and sorts deadlines, updates status/completion timestamps, and exposes upcoming/overdue helpers.
 - Representative/Profile services: Member lookup and representative appointment linkage for calendar events.
@@ -129,6 +143,7 @@ CM --> DW
 - [profile.service.ts:96-121](file://src/services/profile.service.ts#L96-L121)
 - [notification-scheduler/index.ts:74-196](file://supabase/functions/notification-scheduler/index.ts#L74-L196)
 - [userNotification.service.ts:195-230](file://src/services/userNotification.service.ts#L195-L230)
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
 
 ## Architecture Overview
 The Calendar & Deadlines system combines a React UI with Supabase-backed services and a serverless notification pipeline:
@@ -136,6 +151,7 @@ The Calendar & Deadlines system combines a React UI with Supabase-backed service
 - CalendarModule listens to real-time changes and merges calendar_events with deadlines, hearings, and requirements.
 - DeadlinesModule computes buckets (overdue, soon, week, future) and supports comments and mentions.
 - The notification-scheduler function periodically checks due dates and emits reminders and emails.
+- **Updated** Dashboard integrates calendar functionality with an enhanced weekly strip that prioritizes today's date for improved user experience.
 
 ```mermaid
 sequenceDiagram
@@ -230,6 +246,35 @@ Actions --> Notify["notification-scheduler emits reminders"]
 - [DeadlinesModule.tsx:332-800](file://src/components/DeadlinesModule.tsx#L332-L800)
 - [DeadlinesModule.tsx:594-750](file://src/components/DeadlinesModule.tsx#L594-L750)
 - [DeadlinesModule.tsx:751-789](file://src/components/DeadlinesModule.tsx#L751-L789)
+
+### Dashboard Calendar Widget
+**Updated** The Dashboard component now features an enhanced calendar display system with improved weekly strip logic:
+
+- **Today-centered weekly strip**: Displays today in the leftmost position followed by the next six days, replacing the traditional ISO week pattern
+- **Enhanced date calculation**: Uses Array.from({ length: 7 }) to generate sequential dates starting from today
+- **Improved event visualization**: Shows event markers with today highlighted in amber color scheme
+- **Integrated widget design**: Combines weekly strip with event list in a cohesive dashboard layout
+- **Responsive design**: Adapts to different screen sizes while maintaining the today-centered approach
+
+```mermaid
+flowchart TD
+Start(["Dashboard Load"]) --> Calc["Calculate Today + 6 Days"]
+Calc --> Generate["Generate Week Array<br/>Array.from({length: 7})"]
+Generate --> MapDays["Map to Daily Components"]
+MapDays --> CheckEvents["Check Event Dates"]
+CheckEvents --> RenderStrip["Render Weekly Strip<br/>Today Leftmost"]
+RenderStrip --> RenderList["Render Event List<br/>Grouped by Date"]
+RenderList --> Interact["User Interaction<br/>Click Events/Navigate"]
+```
+
+**Diagram sources**
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+- [Dashboard.tsx:1086-1118](file://src/components/Dashboard.tsx#L1086-L1118)
+
+**Section sources**
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+- [Dashboard.tsx:1086-1118](file://src/components/Dashboard.tsx#L1086-L1118)
 
 ### CalendarService
 - Timezone handling: Converts naive local datetime strings to ISO with local offset (+/-HH:mm).
@@ -351,6 +396,7 @@ end
 ## Dependency Analysis
 - CalendarModule depends on CalendarService, DeadlineService, RepresentativeService, ProfileService, and Supabase realtime channels.
 - DeadlinesModule depends on DeadlineService, ProfileService, Supabase, and the notification-scheduler function.
+- Dashboard integrates CalendarService and DeadlineService for the enhanced weekly strip display.
 - Types define the contract between UI, services, and database.
 
 ```mermaid
@@ -362,6 +408,9 @@ CM --> PS["profile.service.ts"]
 CM --> UNS["userNotification.service.ts"]
 DM["DeadlinesModule.tsx"] --> DS
 DM --> PS
+DB["Dashboard.tsx"] --> CS
+DB --> DS
+DB --> AG["AgendaWidget.tsx"]
 CS --> CT["calendar.types.ts"]
 DS --> DT["deadline.types.ts"]
 CS --> SUPA["Supabase"]
@@ -385,6 +434,8 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 - [notification-scheduler/index.ts:74-196](file://supabase/functions/notification-scheduler/index.ts#L74-L196)
 - [userNotification.service.ts:1-252](file://src/services/userNotification.service.ts#L1-L252)
 - [notify-deadline-assigned/index.ts:1-296](file://supabase/functions/notify-deadline-assigned/index.ts#L1-L296)
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
+- [AgendaWidget.tsx:1-116](file://src/components/dashboard/AgendaWidget.tsx#L1-L116)
 
 **Section sources**
 - [CalendarModule.tsx:146-780](file://src/components/CalendarModule.tsx#L146-L780)
@@ -398,6 +449,7 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 - Notification scheduler runs periodically and uses deduplication to prevent spam.
 - Timezone conversion in CalendarService ensures consistent storage and rendering across devices.
 - **Mobile optimization**: Two-row toolbar reduces scrolling and improves accessibility on smaller screens.
+- **Dashboard performance**: Enhanced weekly strip uses efficient date calculations and event mapping for optimal rendering.
 
 [No sources needed since this section provides general guidance]
 
@@ -408,14 +460,16 @@ DA["notify-deadline-assigned/index.ts"] --> SUPA
 - Export failures: Validate selected period and format; ensure browser supports file-saver/pdf-lib.
 - **Mobile toolbar issues**: Verify responsive breakpoints and ensure the two-row toolbar is properly configured for mobile devices.
 - **Notification delivery problems**: Check userNotificationService.createNotification calls and ensure deduplication keys are properly set.
+- **Dashboard calendar display issues**: Verify the weekly strip date calculation logic and ensure today is properly centered in the display.
 
 **Section sources**
 - [CalendarModule.tsx:691-706](file://src/components/CalendarModule.tsx#L691-L706)
 - [calendar.service.ts:12-27](file://src/services/calendar.service.ts#L12-L27)
 - [notification-scheduler/index.ts:74-196](file://supabase/functions/notification-scheduler/index.ts#L74-L196)
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
 
 ## Conclusion
-The Calendar & Deadlines module provides a unified, real-time system for managing legal deadlines, hearings, requirements, and general events. It offers flexible views, robust filtering, team collaboration via representative appointments and mentions, and automated reminders. The services and types ensure consistent data handling and timezone-aware operations, while the notification scheduler keeps stakeholders informed. The recent mobile-responsive toolbar restructuring enhances usability on smaller screens, and the enhanced notification system provides more contextual and informative alerts with assigner names and event type emojis.
+The Calendar & Deadlines module provides a unified, real-time system for managing legal deadlines, hearings, requirements, and general events. It offers flexible views, robust filtering, team collaboration via representative appointments and mentions, and automated reminders. The services and types ensure consistent data handling and timezone-aware operations, while the notification scheduler keeps stakeholders informed. The recent calendar display logic improvements in the Dashboard component enhance user experience by prioritizing today's date in the weekly strip, replacing traditional ISO week patterns with a more intuitive left-to-right progression. The enhanced notification system provides more contextual and informative alerts with assigner names and event type emojis, while the mobile-responsive toolbar restructuring improves usability on smaller screens.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
@@ -426,12 +480,14 @@ The Calendar & Deadlines module provides a unified, real-time system for managin
 - Recurring events: No explicit recurrence rule parsing is present; recurring logic would require extending DTOs and service methods.
 - Calendar navigation: Maintains month/year view state and calendarTitle; supports cronograma schedule view with period selection.
 - **Mobile toolbar**: Two-row design with primary navigation controls and action buttons optimized for mobile device usability.
+- **Dashboard integration**: Enhanced weekly strip displays today + 6 upcoming days for improved navigation and event access.
 
 **Section sources**
 - [CalendarModule.tsx:452-473](file://src/components/CalendarModule.tsx#L452-L473)
 - [CalendarModule.tsx:1041-1072](file://src/components/CalendarModule.tsx#L1041-L1072)
 - [calendar.service.ts:60-104](file://src/services/calendar.service.ts#L60-L104)
 - [CalendarModule.tsx:2213-2267](file://src/components/CalendarModule.tsx#L2213-L2267)
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
 
 ### DeadlinesModule Features
 - Categories and priorities: DeadlineType (processo/requerimento/geral), DeadlinePriority (baixa/média/alta/urgente).
@@ -490,11 +546,41 @@ The Calendar & Deadlines module provides a unified, real-time system for managin
 - [notification-scheduler/index.ts:197-260](file://supabase/functions/notification-scheduler/index.ts#L197-L260)
 - [notify-deadline-assigned/index.ts:216-277](file://supabase/functions/notify-deadline-assigned/index.ts#L216-L277)
 
+### Dashboard Calendar Widget Implementation
+**Updated** The Dashboard component features an enhanced calendar display system:
+
+- **Today-centered weekly strip**: Generates seven consecutive days starting from today using Array.from({ length: 7 })
+- **Improved date calculation**: Uses setDate(today.getDate() + i) to create sequential dates
+- **Enhanced visual feedback**: Today's date is highlighted in amber with special styling
+- **Event density indication**: Shows event markers with different colors for today vs. other days
+- **Responsive design**: Adapts to different screen sizes while maintaining the today-centered approach
+
+```mermaid
+flowchart TD
+Today["Get Current Date"] --> SetZero["Set Hours to 00:00:00"]
+SetZero --> Generate["Generate 7-Day Array"]
+Generate --> MapDates["Map to Individual Dates"]
+MapDates --> Calculate["Calculate Date Keys"]
+Calculate --> Render["Render Weekly Strip"]
+Render --> Highlight["Highlight Today's Date"]
+Highlight --> Events["Show Event Indicators"]
+```
+
+**Diagram sources**
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+- [Dashboard.tsx:1086-1118](file://src/components/Dashboard.tsx#L1086-L1118)
+
+**Section sources**
+- [Dashboard.tsx:1059-1196](file://src/components/Dashboard.tsx#L1059-L1196)
+- [Dashboard.tsx:1084-1121](file://src/components/Dashboard.tsx#L1084-L1121)
+- [Dashboard.tsx:1086-1118](file://src/components/Dashboard.tsx#L1086-L1118)
+
 ### Examples and How-To
 - Customize calendar views: Switch calendarView state among dayGridMonth/timeGridWeek/timeGridDay/listWeek; adjust calendarTitle for custom labels.
 - Set up reminder systems: Configure deadline.notify_days_before; ensure notification-scheduler is deployed and scheduled.
 - Integrate with external calendar services: Add OAuth flow, map events to CalendarService.createEvent, and handle sync conflicts.
 - **Mobile optimization**: The two-row toolbar automatically adapts to mobile screens, with the second row containing responsibility filters, schedule view, and action buttons for better mobile usability.
 - **Enhanced notifications**: Configure appointment assignment notifications to include contextual information with assigner names and event type emojis for improved user experience.
+- **Dashboard customization**: The weekly strip automatically centers today's date and displays the next six days for intuitive navigation and event planning.
 
 [No sources needed since this section provides general guidance]
