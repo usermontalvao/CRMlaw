@@ -330,51 +330,10 @@ const mapStageToStatus = (stage: number): ProcessStatus => {
   }
 };
 
-/** Extrai a vara/comarca dos títulos dos movimentos do DJEN.
- *  Padrões comuns: "Juizado Especial Cível da Comarca de Nova Friburgo"
- *                  "2ª Vara Cível da Comarca de Niterói" etc.
- *  Para antes de logradouros (Avenida, Rua, Praça…) e keywords jurídicos.
- */
-const COMARCA_STOP = /Avenida|Av\.|Rua|Praça|Alameda|Al\.|CEP|Processo:|Classe:|AUTOR|RÉU|Despacho|Sentença|Intimação|Poder\s+Judiciário|\d{5}-\d{3}/i;
-
+/** Delega extração de comarca ao serviço (fonte única de verdade). */
 const extractComarcaFromEvents = (events: TimelineEvent[]): string | null => {
-  for (const event of events) {
-    const text = `${event.title} ${event.description || ''}`;
-
-    // 1. "Juizado Especial/Criminal … da Comarca de CITY" — para antes de logradouro
-    const jMatch = text.match(
-      /(Juizado\s+(?:Especial|Criminal|da\s+Fazenda)[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
-    );
-    if (jMatch) {
-      const city = jMatch[2].trim();
-      // Remover palavras de logradouro que vazaram
-      const cleanCity = city.split(/\s+/).filter(w => !COMARCA_STOP.test(w)).join(' ');
-      if (cleanCity) return `Juizado Especial Cível - ${cleanCity}`;
-    }
-
-    // 2. "Nª Vara XXXX da Comarca de CITY"
-    const vMatch = text.match(
-      /(\d+[ªa°]?\s+Vara\s+[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
-    );
-    if (vMatch) {
-      const city = vMatch[2].trim();
-      const cleanCity = city.split(/\s+/).filter(w => !COMARCA_STOP.test(w)).join(' ');
-      if (cleanCity) return `${vMatch[1].split('da Comarca')[0].trim()} - ${cleanCity}`;
-    }
-
-    // 3. Apenas "Comarca de CITY" — para ao encontrar stop word
-    const cMatch = text.match(/Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3})/i);
-    if (cMatch) {
-      const words = cMatch[1].trim().split(/\s+/);
-      const cleanWords: string[] = [];
-      for (const w of words) {
-        if (COMARCA_STOP.test(w)) break;
-        cleanWords.push(w);
-      }
-      if (cleanWords.length) return cleanWords.join(' ');
-    }
-  }
-  return null;
+  const text = events.map(e => `${e.title} ${e.description || ''}`).join(' ');
+  return processTimelineService.extractComarcaFromText(text);
 };
 
 // Função para limpar tags HTML do conteúdo
@@ -457,26 +416,20 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       const stage = detectCurrentStage(data);
       setCurrentStage(stage);
 
-      // Atualizar status e comarca do processo conforme a timeline
+      // Atualizar status (via serviço — detecção mais robusta) e comarca
       if (processId && data.length > 0) {
-        const mappedStatus = mapStageToStatus(stage);
         const currentProcess = await processService.getProcessById(processId);
         if (currentProcess) {
-          const updates: Record<string, string> = {};
-          if (currentProcess.status !== mappedStatus) {
-            updates.status = mappedStatus;
+          // Status: o serviço usa detectSuggestedStatus (últimos 5 eventos + descrições)
+          const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
+          if (newStatus) {
+            setStatusUpdated(newStatus);
+            onStatusUpdated?.(newStatus);
           }
+          // Comarca: preencher se ainda vazia
           if (!currentProcess.court) {
-            const detectedComarca = extractComarcaFromEvents(data);
-            if (detectedComarca) updates.court = detectedComarca;
-          }
-          if (updates.status) {
-            await processService.updateStatus(processId, updates.status as any);
-            setStatusUpdated(updates.status);
-            onStatusUpdated?.(updates.status as any);
-          }
-          if (updates.court) {
-            await processService.updateProcess(processId, { court: updates.court } as any);
+            const comarca = extractComarcaFromEvents(data);
+            if (comarca) await processService.updateProcess(processId, { court: comarca });
           }
         }
       }
@@ -488,24 +441,17 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         const stage = detectCurrentStage(data);
         setCurrentStage(stage);
 
-        // Atualizar status e comarca do processo conforme a timeline
         if (processId && data.length > 0) {
-          const mappedStatus = mapStageToStatus(stage);
           const currentProcess = await processService.getProcessById(processId);
           if (currentProcess) {
-            const updates: Record<string, string> = {};
-            if (currentProcess.status !== mappedStatus) updates.status = mappedStatus;
+            const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
+            if (newStatus) {
+              setStatusUpdated(newStatus);
+              onStatusUpdated?.(newStatus);
+            }
             if (!currentProcess.court) {
-              const detectedComarca = extractComarcaFromEvents(data);
-              if (detectedComarca) updates.court = detectedComarca;
-            }
-            if (updates.status) {
-              await processService.updateStatus(processId, updates.status as any);
-              setStatusUpdated(updates.status);
-              onStatusUpdated?.(updates.status as any);
-            }
-            if (updates.court) {
-              await processService.updateProcess(processId, { court: updates.court } as any);
+              const comarca = extractComarcaFromEvents(data);
+              if (comarca) await processService.updateProcess(processId, { court: comarca });
             }
           }
         }

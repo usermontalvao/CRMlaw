@@ -3,6 +3,8 @@ import { djenLocalService } from '../services/djenLocal.service';
 import { djenService } from '../services/djen.service';
 import { profileService } from '../services/profile.service';
 import { processService } from '../services/process.service';
+import { clientService } from '../services/client.service';
+import { processTimelineService } from '../services/processTimeline.service';
 import { supabase } from '../config/supabase';
 
 const CronEndpoint = () => {
@@ -53,18 +55,25 @@ const CronEndpoint = () => {
         .single();
 
       try {
-        // Buscar perfis com nome DJEN configurado
+        // ── 1. Carregar dados de referência ──────────────────────────────────
+        setMessage('Carregando processos e clientes...');
+
         const profiles = await profileService.listMembers();
         const profilesWithDjen = profiles.filter(p => p.lawyer_full_name);
 
-        // Buscar processos em andamento
-        const processes = await processService.listProcesses();
-        const activeProcesses = processes.filter(p => p.status === 'andamento').slice(0, 50);
+        // MELHORIA #3: incluir todos os processos ativos (não só 'andamento')
+        const allProcesses = await processService.listProcesses();
+        const activeProcesses = allProcesses
+          .filter(p => p.status !== 'arquivado')
+          .slice(0, 100);
+
+        // MELHORIA #3: passar clientes para auto-vínculo mais rápido (sem hits extras no Supabase)
+        const allClients = await clientService.listClients();
 
         setMessage('Buscando intimações por advogado...');
 
-        // Sincronizar por nome do advogado
-        for (const profile of profilesWithDjen.slice(0, 3)) { // Limitar a 3 perfis
+        // ── 2. Sincronizar por nome do advogado ──────────────────────────────
+        for (const profile of profilesWithDjen.slice(0, 3)) {
           if (!profile.lawyer_full_name) continue;
 
           console.log(`🔍 Buscando intimações para: ${profile.lawyer_full_name}`);
@@ -79,28 +88,27 @@ const CronEndpoint = () => {
           };
 
           const response = await djenService.consultarTodasComunicacoes(params);
-          
+
           if (response.items && response.items.length > 0) {
             totalFound += response.items.length;
-            
+
             const result = await djenLocalService.saveComunicacoes(response.items, {
-              clients: [],
-              processes: activeProcesses
+              clients: allClients,       // ← antes era []
+              processes: activeProcesses // ← antes só 'andamento'
             });
             totalSaved += result.saved;
           }
 
-          // Aguardar entre requisições
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         setMessage('Buscando intimações por processo...');
 
-        // Sincronizar por processos cadastrados
+        // ── 3. Sincronizar por número de processo ────────────────────────────
         const processNumbers = activeProcesses
           .map(p => p.process_code?.trim())
           .filter((code): code is string => Boolean(code))
-          .slice(0, 10); // Limitar a 10 processos
+          .slice(0, 20); // aumentado de 10 → 20
 
         if (processNumbers.length > 0) {
           const processResponse = await djenService.consultarPorProcessos(processNumbers, {
@@ -113,16 +121,36 @@ const CronEndpoint = () => {
 
           if (processResponse.items && processResponse.items.length > 0) {
             totalFound += processResponse.items.length;
-            
+
             const result = await djenLocalService.saveComunicacoes(processResponse.items, {
-              clients: [],
+              clients: allClients,
               processes: activeProcesses
             });
             totalSaved += result.saved;
           }
         }
 
-        // Atualizar log de sincronização
+        // ── 4. MELHORIA #1 e #2: Atualizar estágio + comarca pós-sincronização ─
+        setMessage('Atualizando estágios e comarcas dos processos...');
+
+        // Obter apenas os processos que têm comunicações vinculadas (evita N+1 desnecessário)
+        const { data: linkedRows } = await supabase
+          .from('djen_comunicacoes')
+          .select('process_id')
+          .not('process_id', 'is', null)
+          .eq('ativo', true);
+
+        const linkedIds = new Set((linkedRows ?? []).map(r => r.process_id));
+        const processesToEnrich = activeProcesses.filter(p => linkedIds.has(p.id));
+
+        if (processesToEnrich.length > 0) {
+          const enrichResult = await processTimelineService.enrichProcessesAfterSync(
+            processesToEnrich.map(p => ({ id: p.id, process_code: p.process_code, court: p.court }))
+          );
+          console.log(`🏛️ Enriquecimento: ${enrichResult.stagesUpdated} estágios, ${enrichResult.comarcasUpdated} comarcas`);
+        }
+
+        // ── 5. Atualizar log de sincronização ────────────────────────────────
         const syncEndTime = new Date().toISOString();
 
         if (syncLog) {

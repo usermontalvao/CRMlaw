@@ -787,7 +787,7 @@ Regras:
    */
   async autoUpdateProcessStatus(processId: string, events: TimelineEvent[]): Promise<ProcessStatus | null> {
     const suggestedStatus = this.detectSuggestedStatus(events);
-    
+
     if (!suggestedStatus) return null;
 
     try {
@@ -808,6 +808,104 @@ Regras:
       console.error('Erro ao atualizar status do processo:', error);
       return null;
     }
+  }
+
+  // ─── Comarca extraction ──────────────────────────────────────────────────────
+  // Palavras que sinalizam fim do nome da cidade (logradouros, keywords jurídicos)
+  private readonly COMARCA_STOP = /^(Avenida|Av\.|Rua|Praça|Alameda|Al\.|CEP|Processo:|Classe:|AUTOR|RÉU|Despacho|Sentença|Intimação|Poder|Juizado|\d{5})$/i;
+
+  /**
+   * Extrai nome da vara/comarca de um texto livre (nome_orgao ou texto do movimento).
+   * Para antes de logradouros para não incluir endereço.
+   */
+  extractComarcaFromText(text: string): string | null {
+    if (!text) return null;
+
+    // 1. "Juizado Especial/Criminal … da Comarca de CITY"
+    const jMatch = text.match(
+      /(Juizado\s+(?:Especial|Criminal|da\s+Fazenda)[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
+    );
+    if (jMatch) {
+      const city = jMatch[2].trim().split(/\s+/).filter(w => !this.COMARCA_STOP.test(w)).join(' ');
+      if (city) return `Juizado Especial Cível - ${city}`;
+    }
+
+    // 2. "Nª Vara XXXX da Comarca de CITY"
+    const vMatch = text.match(
+      /(\d+[ªa°]?\s+Vara\s+[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
+    );
+    if (vMatch) {
+      const city = vMatch[2].trim().split(/\s+/).filter(w => !this.COMARCA_STOP.test(w)).join(' ');
+      const vara = vMatch[1].split(/da\s+Comarca/i)[0].trim();
+      if (city) return `${vara} - ${city}`;
+    }
+
+    // 3. Apenas "Comarca de CITY" — para na stop word
+    const cMatch = text.match(/Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3})/i);
+    if (cMatch) {
+      const words = cMatch[1].trim().split(/\s+/);
+      const clean: string[] = [];
+      for (const w of words) {
+        if (this.COMARCA_STOP.test(w)) break;
+        clean.push(w);
+      }
+      if (clean.length) return clean.join(' ');
+    }
+
+    return null;
+  }
+
+  /**
+   * Pós-sincronização DJEN: atualiza estágio e comarca dos processos afetados.
+   * Chamado pelo CronEndpoint após salvar comunicações.
+   * @param processIds IDs dos processos que receberam novas comunicações
+   */
+  async enrichProcessesAfterSync(
+    processes: Array<{ id: string; process_code: string | null | undefined; court?: string | null }>
+  ): Promise<{ stagesUpdated: number; comarcasUpdated: number }> {
+    let stagesUpdated = 0;
+    let comarcasUpdated = 0;
+
+    console.log(`🔄 enrichProcessesAfterSync: processando ${processes.length} processos...`);
+
+    for (const proc of processes) {
+      try {
+        const events = await this.fetchTimelineFromDatabase(proc.id, proc.process_code ?? '');
+        if (events.length === 0) continue;
+
+        // 1. Atualizar estágio
+        const newStatus = await this.autoUpdateProcessStatus(proc.id, events);
+        if (newStatus) stagesUpdated++;
+
+        // 2. Atualizar comarca se ainda vazia
+        if (!proc.court) {
+          // Buscar nome_orgao das comunicações do processo
+          const { data: comuns } = await supabase
+            .from('djen_comunicacoes')
+            .select('nome_orgao, texto')
+            .eq('process_id', proc.id)
+            .eq('ativo', true)
+            .not('nome_orgao', 'is', null)
+            .limit(5);
+
+          const textBlob = (comuns ?? [])
+            .map(c => `${c.nome_orgao || ''} ${c.texto?.slice(0, 500) || ''}`)
+            .join(' ');
+
+          const comarca = this.extractComarcaFromText(textBlob);
+          if (comarca) {
+            await processService.updateProcess(proc.id, { court: comarca });
+            console.log(`📍 Comarca detectada para processo ${proc.process_code}: ${comarca}`);
+            comarcasUpdated++;
+          }
+        }
+      } catch (err) {
+        console.error(`⚠️ enrichProcessesAfterSync: erro no processo ${proc.id}`, err);
+      }
+    }
+
+    console.log(`✅ enrichProcessesAfterSync: ${stagesUpdated} estágios, ${comarcasUpdated} comarcas atualizados`);
+    return { stagesUpdated, comarcasUpdated };
   }
 }
 

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.118': { name: 'Café Cron Inteligente', emoji: '🤖' },
   '1.10.117': { name: 'Café Comarca Limpa', emoji: '📍' },
   '1.10.116': { name: 'Café Comarca Detectada', emoji: '🏛️' },
   '1.10.115': { name: 'Café Intimação Material', emoji: '⚖️' },
@@ -817,6 +818,29 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.118',
+    date: '18/05/2026',
+    summary: 'Alta prioridade: cron agora atualiza comarca e estágio automaticamente; auto-vínculo inclui todos os processos ativos e clientes completos.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'improvement', title: 'Comarca e estágio atualizados pelo cron', description: 'Após cada sincronização DJEN, o cron identifica quais processos receberam novas comunicações e chama enrichProcessesAfterSync — que atualiza automaticamente o estágio (via detectSuggestedStatus) e preenche Vara/Comarca (via extractComarcaFromText) sem precisar abrir a Linha do Tempo.' },
+          { type: 'fix', title: 'Auto-vínculo incluindo todos os processos ativos', description: 'O cron usava apenas processos com status "andamento" para auto-vincular intimações. Agora inclui todos os processos não-arquivados (conciliação, instrução, sentença, recurso, etc.) — evitando intimações "perdidas" sem vínculo.' },
+          { type: 'fix', title: 'Clientes passados ao saveComunicacoes', description: 'O cron passava clients:[] vazio ao salvar comunicações, forçando consulta Supabase para cada intimação. Agora carrega todos os clientes no início e os repassa — vínculo de clientes mais rápido e confiável.' },
+          { type: 'improvement', title: 'Limite de processos por número aumentado de 10 → 20', description: 'A busca por número de processo no DJEN agora consulta até 20 processos por ciclo.' },
+        ],
+      },
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'improvement', title: 'Timeline usa detectSuggestedStatus do serviço', description: 'O fetchAndAnalyze da Linha do Tempo agora usa processTimelineService.autoUpdateProcessStatus (analisa últimos 5 eventos + descrições) em vez do detectCurrentStage local. Detecção de sentença, recurso e cumprimento mais precisa.' },
+          { type: 'improvement', title: 'extractComarcaFromText centralizado no serviço', description: 'Lógica de extração de comarca movida para ProcessTimelineService.extractComarcaFromText — única fonte de verdade usada tanto pelo componente ProcessTimeline quanto pelo cron.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.117',
     date: '18/05/2026',
