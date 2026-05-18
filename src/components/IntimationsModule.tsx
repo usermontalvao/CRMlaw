@@ -1515,51 +1515,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return null;
   };
 
-  const highlightText = (rawText: string, importantPassages?: string[]): React.ReactNode => {
+  const highlightText = (rawText: string, _importantPassages?: string[]): React.ReactNode => {
     if (!rawText) return null;
-    const text = htmlToText(rawText);
-    type MatchEntry = { start: number; end: number; cls: string };
-    const allMatches: MatchEntry[] = [];
-
-    // 1. AI-identified important passages — amber background highlight
-    if (importantPassages && importantPassages.length > 0) {
-      for (const passage of importantPassages) {
-        const found = findPassageInText(text, passage);
-        if (found) {
-          allMatches.push({ ...found, cls: 'bg-amber-100 text-zinc-900 rounded px-0.5' });
-        }
-      }
-    }
-
-    // 2. Structural markers always: R$ values and dates
-    const structuralPatterns: { regex: RegExp; cls: string }[] = [
-      { regex: /R\$\s?[\d.,]+/g,           cls: 'font-semibold text-zinc-900' },
-      { regex: /\b\d{2}\/\d{2}\/\d{4}\b/g, cls: 'font-semibold text-zinc-700' },
-    ];
-    for (const { regex, cls } of structuralPatterns) {
-      regex.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = regex.exec(text)) !== null) {
-        allMatches.push({ start: m.index, end: m.index + m[0].length, cls });
-      }
-    }
-
-    if (allMatches.length === 0) return text;
-    allMatches.sort((a, b) => a.start - b.start);
-    const filtered: MatchEntry[] = [];
-    let lastEnd = 0;
-    for (const entry of allMatches) {
-      if (entry.start >= lastEnd) { filtered.push(entry); lastEnd = entry.end; }
-    }
-    const nodes: React.ReactNode[] = [];
-    let pos = 0;
-    for (const entry of filtered) {
-      if (entry.start > pos) nodes.push(text.slice(pos, entry.start));
-      nodes.push(<mark key={entry.start} className={entry.cls}>{text.slice(entry.start, entry.end)}</mark>);
-      pos = entry.end;
-    }
-    if (pos < text.length) nodes.push(text.slice(pos));
-    return <>{nodes}</>;
+    return htmlToText(rawText);
   };
 
   // Visualização de detalhes
@@ -2136,79 +2094,72 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-600">
-                                  {intimation.sigla_tribunal}
-                                </span>
-                                <span className="text-xs text-slate-400">{formatDate(intimation.data_disponibilizacao)}</span>
-                                {!intimation.lida && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
-                                    NÃO LIDA
+                              {/* Top row: tribunal + tipo + right: urgency + date + chevron */}
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0">
+                                    {intimation.sigla_tribunal}
                                   </span>
-                                )}
-                                {isLinked(intimation) ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300">
-                                    <Link2 className="w-3 h-3" /> Vinculada
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-transparent text-zinc-400 border border-zinc-200">
-                                    Sem vínculo
-                                  </span>
-                                )}
-                                {analysis && (
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
-                                    <Sparkles className="w-2.5 h-2.5" />
-                                    {urgencyConfig[analysis.urgency].label}
-                                  </span>
-                                )}
-                                {intimation.tipo_comunicacao && (
-                                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600">
-                                    {intimation.tipo_comunicacao}
-                                  </span>
-                                )}
+                                  {intimation.tipo_comunicacao && (
+                                    <span className="hidden sm:inline text-[11px] text-slate-400 truncate">{intimation.tipo_comunicacao}</span>
+                                  )}
+                                  {isLinked(intimation) && (
+                                    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+                                      <Link2 className="w-3 h-3" /> Vinculada
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {analysis && (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                      <Sparkles className="w-2.5 h-2.5" />
+                                      {urgencyConfig[analysis.urgency].label}
+                                    </span>
+                                  )}
+                                  <span className="text-[11px] text-slate-400 tabular-nums">{formatDate(intimation.data_disponibilizacao)}</span>
+                                  {isExpanded
+                                    ? <ChevronDown className="w-4 h-4 text-slate-400" />
+                                    : <ChevronRight className="w-4 h-4 text-slate-300" />}
+                                </div>
                               </div>
+
+                              {/* Preview when collapsed */}
                               {!isExpanded && (
-                                <div className="mt-1 space-y-1.5">
-                                  {(() => {
-                                    const outcome = detectOutcome(analysis?.summary);
-                                    return outcome ? (
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>
-                                        {outcome.label}
-                                      </span>
-                                    ) : null;
-                                  })()}
-                                  <p className="text-sm text-slate-500 line-clamp-2">
+                                <div className="space-y-1.5">
+                                  <p className={`text-sm line-clamp-2 leading-relaxed ${!intimation.lida ? 'text-slate-600' : 'text-slate-400'}`}>
                                     {analysis?.summary ?? htmlToText(intimation.texto || '').slice(0, 160)}
                                   </p>
+                                  {analysis?.deadline && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
+                                        <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
+                                      </span>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition shadow-sm shadow-amber-200">
+                                        + Criar prazo
+                                      </button>
+                                    </div>
+                                  )}
+                                  {!analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
+                                      <Sparkles className="w-3 h-3" /> Analisar com IA
+                                    </button>
+                                  )}
+                                  {analyzingIds.has(intimation.id) && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
+                                      <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
+                                    </span>
+                                  )}
                                 </div>
                               )}
-                              {!isExpanded && analysis?.deadline && (
-                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
-                                    <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
-                                  </span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition">
-                                    + Criar prazo
-                                  </button>
-                                </div>
+
+                              {/* Expanded: show collapse hint */}
+                              {isExpanded && (
+                                <p className="text-[11px] text-slate-400">Clique para recolher</p>
                               )}
-                              {!isExpanded && !analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
-                                  className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
-                                  <Sparkles className="w-3 h-3" /> Analisar com IA
-                                </button>
-                              )}
-                              {!isExpanded && analyzingIds.has(intimation.id) && (
-                                <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
-                                  <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-shrink-0">
-                              {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                             </div>
                           </div>
                         </div>

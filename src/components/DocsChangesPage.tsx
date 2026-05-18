@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.109': { name: 'Café Sem Ruído Visual', emoji: '🧘' },
   '1.10.108': { name: 'Café Intimação Pro', emoji: '⚖️' },
   '1.10.107': { name: 'Café Documento Legível', emoji: '📜' },
   '1.10.106': { name: 'Café Intimação Notifica', emoji: '⚖️' },
@@ -808,6 +809,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.109',
+    date: '18/05/2026',
+    summary: 'Intimações: removido highlighting inútil, view agrupada redesenhada e indicação de collapse.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'fix', title: 'Sem marcação amarela', description: 'Removido highlighting automático de datas e valores R$ no conteúdo das intimações. Texto exibido limpo.' },
+          { type: 'improvement', title: 'View agrupada redesenhada', description: 'Removidos badges "NÃO LIDA" e "Sem vínculo" da view agrupada. Mesma hierarquia do flat list: tribunal → tipo → data → urgência.' },
+          { type: 'fix', title: 'Indicação de collapse', description: 'Quando um item está expandido na view agrupada, exibe "Clique para recolher" para deixar claro que é clicável.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.108',
     date: '18/05/2026',
