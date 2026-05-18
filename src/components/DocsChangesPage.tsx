@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.110': { name: 'Café Intimação Enterprise', emoji: '🏛️' },
   '1.10.109': { name: 'Café Sem Ruído Visual', emoji: '🧘' },
   '1.10.108': { name: 'Café Intimação Pro', emoji: '⚖️' },
   '1.10.107': { name: 'Café Documento Legível', emoji: '📜' },
@@ -809,6 +810,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.110',
+    date: '18/05/2026',
+    summary: 'Módulo de Intimações alinhado ao design enterprise do sistema — stats bar, banner de urgência e barra laranja padrão.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'improvement', title: 'Stats bar enterprise', description: 'Barra de estatísticas no topo com Não Lidas (amber), Vinculadas, Urgentes IA (red), Lidas e Total — mesma linguagem visual dos demais módulos.' },
+          { type: 'improvement', title: 'Banner de urgência', description: 'Quando a IA detecta intimações com urgência alta, um banner vermelho aparece no topo com atalho para filtrar diretamente.' },
+          { type: 'improvement', title: 'Acento laranja padrão', description: 'A linha de acento superior passou de gradiente amber para h-1 bg-orange-500, consistente com todos os outros módulos do sistema.' },
+          { type: 'improvement', title: 'Layout space-y-4', description: 'Wrapper externo mudou de space-y-0 para space-y-4, separando as seções visualmente como os demais módulos.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.109',
     date: '18/05/2026',

@@ -1689,16 +1689,55 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   }
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-4">
 
-      {/* ═══════════════════════════════════════════
-          PREMIUM CARD WRAPPER
-      ═══════════════════════════════════════════ */}
-      {/* glass card wrapper */}
+      {/* ══ STATS BAR ══ */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-slate-100">
+          <div className="px-4 py-3.5 text-center">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Não Lidas</p>
+            <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${unreadCount > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{unreadCount}</p>
+          </div>
+          <div className="px-4 py-3.5 text-center">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vinculadas</p>
+            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{intimations.filter(isLinked).length}</p>
+          </div>
+          <div className="px-4 py-3.5 text-center">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Urgentes IA</p>
+            <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${aiUrgencyStats.alta > 0 ? 'text-red-500' : 'text-slate-300'}`}>{aiUrgencyStats.alta}</p>
+          </div>
+          <div className="px-4 py-3.5 text-center">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Lidas</p>
+            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{readCount}</p>
+          </div>
+          <div className="px-4 py-3.5 text-center col-span-2 sm:col-span-1">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Total</p>
+            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{intimations.length}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ══ URGENCY ALERT BANNER ══ */}
+      {aiUrgencyStats.alta > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl">
+          <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <p className="text-sm font-semibold text-red-700">
+            {aiUrgencyStats.alta} intimaç{aiUrgencyStats.alta === 1 ? 'ão' : 'ões'} com urgência alta detectada{aiUrgencyStats.alta !== 1 ? 's' : ''} pela IA
+          </p>
+          <button
+            onClick={() => setUrgencyFilter('alta')}
+            className="ml-auto text-xs font-bold text-red-600 hover:text-red-800 underline flex-shrink-0"
+          >
+            Filtrar
+          </button>
+        </div>
+      )}
+
+      {/* ══ MAIN CARD ══ */}
       <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
 
-        {/* amber accent top line */}
-        <div className="h-0.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400" />
+        {/* orange accent bar — same as all other modules */}
+        <div className="h-1 w-full bg-orange-500" />
 
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-4">
