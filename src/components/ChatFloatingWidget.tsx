@@ -1827,12 +1827,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             <div
                               className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm transition-all ${
                                 isDeleted
-                                  ? 'bg-white/5 text-white/30 italic rounded-bl-md rounded-br-md'
+                                  ? 'bg-slate-700/40 text-white/30 italic rounded-bl-md rounded-br-md'
                                   : isMine
                                     ? 'bg-indigo-600 text-white rounded-br-sm'
                                     : isNew
-                                      ? 'bg-emerald-600/90 text-white rounded-bl-sm ring-1 ring-emerald-400/40'
-                                      : 'bg-white/10 text-white rounded-bl-sm'
+                                      ? 'bg-emerald-600 text-white rounded-bl-sm ring-1 ring-emerald-400'
+                                      : 'bg-slate-700 text-white rounded-bl-sm'
                               } overflow-hidden`}
                             >
                               {isDeleted
@@ -1873,7 +1873,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 {/* Typing indicator */}
                 {typingUsers.length > 0 && (
                   <div className="flex items-center gap-2 pt-1 pb-2">
-                    <div className="flex gap-[3px] items-center bg-white/10 rounded-2xl px-3 py-2">
+                    <div className="flex gap-[3px] items-center bg-slate-700 rounded-2xl px-3 py-2">
                       <span className="text-xs text-white/60 mr-1">
                         {typingUsers.length === 1 ? `${typingUsers[0]} está digitando` : 'Várias pessoas digitando'}
                       </span>

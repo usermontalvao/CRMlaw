@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.113': { name: 'Café Balão Visível', emoji: '👁️' },
   '1.10.112': { name: 'Café Balão Resolvido', emoji: '💬' },
   '1.10.111': { name: 'Café Intimação Limpa', emoji: '🧹' },
   '1.10.110': { name: 'Café Intimação Enterprise', emoji: '🏛️' },
@@ -812,6 +813,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.113',
+    date: '18/05/2026',
+    summary: 'Chat: balão recebido branco corrigido — bg-white/10 incompatível com Tailwind v4 substituído por bg-slate-700 sólido.',
+    modules: [
+      {
+        moduleId: 'ChatFloatingWidget',
+        changes: [
+          { type: 'fix', title: 'Texto invisível no balão recebido', description: 'O Tailwind v4 gerava bg-white/10 via color-mix OKLCH incompatível com alguns browsers, fazendo o balão ficar branco com text-white invisível. Substituído por bg-slate-700 (cor sólida opaca) que garante contraste correto.' },
+          { type: 'fix', title: 'Typing indicator cor corrigida', description: 'O indicador de digitação também usava bg-white/10 — atualizado para bg-slate-700 consistente com os demais balões.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.112',
     date: '18/05/2026',
