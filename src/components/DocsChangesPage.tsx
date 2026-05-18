@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.111': { name: 'Café Intimação Limpa', emoji: '🧹' },
   '1.10.110': { name: 'Café Intimação Enterprise', emoji: '🏛️' },
   '1.10.109': { name: 'Café Sem Ruído Visual', emoji: '🧘' },
   '1.10.108': { name: 'Café Intimação Pro', emoji: '⚖️' },
@@ -810,6 +811,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.111',
+    date: '18/05/2026',
+    summary: 'Intimações: removida stats bar e banner, cores unificadas (zinc/indigo/blue → slate/amber). Módulo limpo e organizado.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'fix', title: 'Stats bar removida', description: 'Removida a barra de estatísticas e o banner de urgência do topo — design minimalista e integrado, sem cards poluindo a tela.' },
+          { type: 'improvement', title: 'Cores 100% unificadas', description: 'Toda a interface usa slate-* + amber de marca. Removidos zinc-*, indigo-* e blue-* da view agrupada, popovers, toolbar de seleção e badges de urgência.' },
+          { type: 'improvement', title: 'View agrupada redesenhada', description: 'Cabeçalho de grupo limpo com ícone em chip, badge "não lidas" em amber arredondado e botão "Marcar todas" discreto. Hover shadow consistente.' },
+          { type: 'improvement', title: 'Popovers e dropdowns limpos', description: 'Filtros, Limpar, Exportar e Configurações com bordas slate, focus ring amber e checkboxes accent-amber.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.110',
     date: '18/05/2026',

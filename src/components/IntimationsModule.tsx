@@ -1291,7 +1291,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (!status) return 'bg-slate-100 text-slate-600';
     const normalized = status.toLowerCase();
     if (['success', 'completed', 'ok'].some((tag) => normalized.includes(tag))) {
-      return 'bg-zinc-100 text-zinc-700 border border-zinc-300';
+      return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
     }
     if (['error', 'failed'].some((tag) => normalized.includes(tag))) {
       return 'bg-red-100 text-red-700';
@@ -1485,8 +1485,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const urgencyConfig = {
     critica: { border: 'border-l-red-500',    dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-300',          label: 'Crítica' },
     alta:    { border: 'border-l-orange-400', dot: 'bg-orange-400', badge: 'bg-orange-50 text-orange-700 border-orange-300', label: 'Alta' },
-    media:   { border: 'border-l-zinc-300',   dot: 'bg-zinc-400',   badge: 'bg-zinc-100 text-zinc-600 border-zinc-300',      label: 'Média' },
-    baixa:   { border: 'border-l-zinc-200',   dot: 'bg-zinc-300',   badge: 'bg-zinc-50 text-zinc-400 border-zinc-200',       label: 'Baixa' },
+    media:   { border: 'border-l-amber-300',  dot: 'bg-amber-400',  badge: 'bg-amber-50 text-amber-700 border-amber-200',    label: 'Média' },
+    baixa:   { border: 'border-l-slate-200',  dot: 'bg-slate-300',  badge: 'bg-slate-50 text-slate-500 border-slate-200',    label: 'Baixa' },
   };
 
   // ── highlight text using AI passages + light structural markers ──────
@@ -1689,51 +1689,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   }
 
   return (
-    <div className="space-y-4">
-
-      {/* ══ STATS BAR ══ */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-slate-100">
-          <div className="px-4 py-3.5 text-center">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Não Lidas</p>
-            <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${unreadCount > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{unreadCount}</p>
-          </div>
-          <div className="px-4 py-3.5 text-center">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vinculadas</p>
-            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{intimations.filter(isLinked).length}</p>
-          </div>
-          <div className="px-4 py-3.5 text-center">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Urgentes IA</p>
-            <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${aiUrgencyStats.alta > 0 ? 'text-red-500' : 'text-slate-300'}`}>{aiUrgencyStats.alta}</p>
-          </div>
-          <div className="px-4 py-3.5 text-center">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Lidas</p>
-            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{readCount}</p>
-          </div>
-          <div className="px-4 py-3.5 text-center col-span-2 sm:col-span-1">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Total</p>
-            <p className="text-2xl sm:text-3xl font-bold tabular-nums text-slate-800">{intimations.length}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ══ URGENCY ALERT BANNER ══ */}
-      {aiUrgencyStats.alta > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl">
-          <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm font-semibold text-red-700">
-            {aiUrgencyStats.alta} intimaç{aiUrgencyStats.alta === 1 ? 'ão' : 'ões'} com urgência alta detectada{aiUrgencyStats.alta !== 1 ? 's' : ''} pela IA
-          </p>
-          <button
-            onClick={() => setUrgencyFilter('alta')}
-            className="ml-auto text-xs font-bold text-red-600 hover:text-red-800 underline flex-shrink-0"
-          >
-            Filtrar
-          </button>
-        </div>
-      )}
-
-      {/* ══ MAIN CARD ══ */}
+    <div>
       <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
 
         {/* orange accent bar — same as all other modules */}
@@ -1834,22 +1790,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 </button>
 
                 {mobileControlsExpanded && (
-                  <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 p-4 space-y-3">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Filtros avançados</p>
+                  <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 space-y-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Filtros avançados</p>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Tribunal</label>
+                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Tribunal</label>
                         <select value={tribunalFilter} onChange={(e) => setTribunalFilter(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white">
                           <option value="all">Todos</option>
                           {availableTribunals.map((t) => <option key={t} value={t}>{t}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Período</label>
+                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Período</label>
                         <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as any)}
-                          className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white">
                           <option value="30days">30 dias</option>
                           <option value="60days">60 dias</option>
                           <option value="90days">90 dias</option>
@@ -1859,7 +1815,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Urgência IA</label>
+                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Urgência IA</label>
                       <div className="flex gap-1 flex-wrap">
                         {([
                           { key: 'all'   as const, label: 'Todas' },
@@ -1868,44 +1824,44 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           { key: 'baixa' as const, label: 'Baixa' },
                         ]).map(c => (
                           <button key={c.key} onClick={() => setUrgencyFilter(c.key)}
-                            className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition ${
-                              urgencyFilter === c.key ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-400'
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                              urgencyFilter === c.key ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                             }`}>{c.label}</button>
                         ))}
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100">
-                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                    <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={groupByProcess} onChange={(e) => setGroupByProcess(e.target.checked)}
-                          className="rounded border-zinc-300" />
-                        <Layers className="w-3.5 h-3.5 text-zinc-500" />
+                          className="rounded border-slate-300 accent-amber-500" />
+                        <Layers className="w-3.5 h-3.5 text-slate-400" />
                         Agrupar por processo
                       </label>
-                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={selectionMode}
                           onChange={(e) => { setSelectionMode(e.target.checked); if (!e.target.checked) clearSelectedIds(); }}
-                          className="rounded border-zinc-300" />
+                          className="rounded border-slate-300 accent-amber-500" />
                         Modo seleção múltipla
                       </label>
-                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={showFilters} onChange={(e) => setShowFilters(e.target.checked)}
-                          className="rounded border-zinc-300" />
+                          className="rounded border-slate-300 accent-amber-500" />
                         Filtrar por data personalizada
                       </label>
                     </div>
 
                     {showFilters && (
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                         <div>
-                          <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">De</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">De</label>
                           <input type="date" value={customDateStart} onChange={(e) => setCustomDateStart(e.target.value)}
-                            className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500" />
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300" />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Até</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Até</label>
                           <input type="date" value={customDateEnd} onChange={(e) => setCustomDateEnd(e.target.value)}
-                            className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500" />
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300" />
                         </div>
                       </div>
                     )}
@@ -1929,17 +1885,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
                 {showClearMenu && (
-                  <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 py-1 text-sm text-zinc-700">
-                    <button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-zinc-500" /> Remover selecionadas
+                  <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 z-50 py-1 text-sm text-slate-700">
+                    <button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-slate-400" /> Remover selecionadas
                     </button>
-                    <button onClick={handleDeleteRead} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
-                      <EyeOff className="w-4 h-4 text-zinc-500" /> Remover lidas
+                    <button onClick={handleDeleteRead} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                      <EyeOff className="w-4 h-4 text-slate-400" /> Remover lidas
                     </button>
-                    <button onClick={handleMarkAllAsRead} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-zinc-500" /> Marcar todas lidas
+                    <button onClick={handleMarkAllAsRead} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-slate-400" /> Marcar todas lidas
                     </button>
-                    <div className="border-t border-zinc-100 my-1" />
+                    <div className="border-t border-slate-100 my-1" />
                     <button onClick={handleClearAllIntimations} disabled={clearingAll || intimations.length === 0}
                       className="w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center gap-2 text-red-600 disabled:opacity-50">
                       <Trash2 className="w-4 h-4" /> Remover tudo
@@ -1956,10 +1912,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <Download className="w-3.5 h-3.5" />
                 </button>
                 {showExportMenu && (
-                  <div className="absolute right-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 py-1 text-sm text-zinc-700">
-                    <button onClick={handleExportCSV} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> CSV</button>
-                    <button onClick={handleExportExcel} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> Excel</button>
-                    <button onClick={handleExportPDF} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> PDF</button>
+                  <div className="absolute right-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-slate-200 z-50 py-1 text-sm text-slate-700">
+                    <button onClick={handleExportCSV} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> CSV</button>
+                    <button onClick={handleExportExcel} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> Excel</button>
+                    <button onClick={handleExportPDF} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> PDF</button>
                   </div>
                 )}
               </div>
@@ -1971,19 +1927,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <Settings className="w-3.5 h-3.5" />
                 </button>
                 {showSettingsMenu && (
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 p-4 space-y-3">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Configurações</p>
-                    <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-4 space-y-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configurações</p>
+                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                       <input type="checkbox" checked={moduleSettings.defaultGroupByProcess}
                         onChange={(e) => { setModuleSettings((prev) => ({ ...prev, defaultGroupByProcess: e.target.checked })); setGroupByProcess(e.target.checked); }}
-                        className="rounded border-zinc-300" />
+                        className="rounded border-slate-300 accent-amber-500" />
                       Agrupar por processo (padrão)
                     </label>
-                    <div className="pt-2 border-t border-zinc-100">
-                      <label className="block text-xs font-medium text-zinc-600 mb-1">Filtro padrão</label>
+                    <div className="pt-2 border-t border-slate-100">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
                       <select value={moduleSettings.defaultStatusFilter}
                         onChange={(e) => { const v = e.target.value as 'all' | 'unread' | 'read'; setModuleSettings((prev) => ({ ...prev, defaultStatusFilter: v })); }}
-                        className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white">
                         <option value="all">Todas</option>
                         <option value="unread">Não lidas</option>
                         <option value="read">Lidas</option>
@@ -1998,7 +1954,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         {/* ── LOADING BANNER ── */}
         {loading && hasCompletedInitialLoad && (
-          <div className="flex items-center gap-2 text-xs font-medium text-indigo-700 bg-indigo-50 border-b border-indigo-100 px-4 sm:px-5 py-1.5">
+          <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 border-b border-amber-100 px-4 sm:px-5 py-1.5">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Atualizando em segundo plano...
           </div>
@@ -2006,29 +1962,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         {/* ── SELECTION TOOLBAR ── */}
         {selectionMode && selectedIds.size > 0 && (
-          <div className="bg-indigo-50 border-b border-indigo-100 px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm text-indigo-700">
-              <strong className="text-indigo-900">{selectedIds.size}</strong> selecionada(s)
+          <div className="bg-amber-50 border-b border-amber-100 px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-amber-800">
+              <strong className="text-amber-900">{selectedIds.size}</strong> selecionada(s)
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={handleMarkSelectedAsRead}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
-                <CheckCircle className="w-3.5 h-3.5 text-zinc-500" /> Marcar lidas
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200">
+                <CheckCircle className="w-3.5 h-3.5 text-slate-400" /> Marcar lidas
               </button>
               <button onClick={handleBatchLink}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
-                <Link2 className="w-3.5 h-3.5 text-zinc-500" /> Vincular
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200">
+                <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
               </button>
               <button onClick={handleExportSelected}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
-                <Download className="w-3.5 h-3.5 text-zinc-500" /> Exportar
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200">
+                <Download className="w-3.5 h-3.5 text-slate-400" /> Exportar
               </button>
               <button onClick={handleDeleteSelected}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-red-50 text-red-600 text-xs font-semibold rounded-lg transition border border-red-200">
                 <Trash2 className="w-3.5 h-3.5" /> Remover
               </button>
               <button onClick={disableSelectionMode}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-zinc-200 text-zinc-500 text-xs font-semibold rounded-lg transition">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-slate-200 text-slate-500 text-xs font-semibold rounded-lg transition">
                 <X className="w-3.5 h-3.5" /> Cancelar
               </button>
             </div>
@@ -2036,7 +1992,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         )}
 
         {/* ── LIST AREA ── */}
-        <div className="bg-slate-50/60 p-4 sm:p-5 space-y-2.5">
+        <div className="bg-slate-50/40 p-4 sm:p-5 space-y-2.5">
           {filteredIntimations.length === 0 ? (
 
             /* Empty state */
@@ -2058,26 +2014,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
             /* ── GROUPED VIEW ── */
             Array.from(groupedByProcess.entries()).map(([processNum, group]) => (
-              <div key={processNum} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
+              <div key={processNum} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
 
                 {/* Group header */}
-                <div className="bg-zinc-50 border-b border-zinc-200 px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <div className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
                     <div className="min-w-0">
-                      <p className="text-zinc-900 font-mono font-bold text-sm truncate">{processNum}</p>
+                      <p className="text-slate-900 font-mono font-bold text-sm truncate leading-tight">{processNum}</p>
                       {group[0].client_id && (
-                        <p className="text-zinc-500 text-xs truncate">{getClientName(group[0].client_id)}</p>
+                        <p className="text-slate-400 text-[11px] truncate leading-tight">{getClientName(group[0].client_id)}</p>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {group.filter((i) => !i.lida).length > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                    {group.filter((i) => !i.lida).length > 0 ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
                         {group.filter((i) => !i.lida).length} não lida{group.filter((i) => !i.lida).length !== 1 ? 's' : ''}
                       </span>
+                    ) : (
+                      <span className="text-slate-300 text-[11px] tabular-nums">{group.length}</span>
                     )}
-                    <span className="text-zinc-400 text-xs hidden sm:inline">{group.length} total</span>
                     {group.filter((i) => !i.lida).length > 0 && (
                       <button
                         onClick={async () => {
@@ -2085,10 +2044,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             await handleMarkAsRead(int.id);
                           }
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-zinc-50 text-zinc-600 border border-zinc-300 rounded-lg text-xs font-medium transition"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-[11px] font-semibold transition"
                       >
                         <CheckCircle className="w-3 h-3" />
-                        Marcar todas
+                        <span className="hidden sm:inline">Marcar todas</span>
                       </button>
                     )}
                   </div>
@@ -2124,7 +2083,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 checked={selectedIds.has(intimation.id)}
                                 onChange={() => toggleSelectedId(intimation.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 w-4 h-4 text-blue-600 border-slate-300 rounded flex-shrink-0"
+                                className="mt-1 w-4 h-4 accent-amber-500 border-slate-300 rounded flex-shrink-0"
                               />
                             )}
                             <div className="flex-shrink-0 mt-1.5">
@@ -2233,7 +2192,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               </div>
                             )}
                             {analysis && (
-                              <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 space-y-3">
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-2">
                                     <Sparkles className="w-4 h-4 text-violet-600" />
@@ -2299,7 +2258,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             {/* Full text (highlighted) */}
                             <div>
                               <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Conteúdo da Intimação</h5>
-                              <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{highlightText(intimation.texto || '', analysis?.importantPassages)}</p>
+                              <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{highlightText(intimation.texto || '', analysis?.importantPassages)}</p>
                             </div>
 
                             {/* Actions */}
@@ -2320,7 +2279,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); setLinkingIntimation(intimation); setSelectedClientId(intimation.client_id || ''); setSelectedProcessId(intimation.process_id || ''); setLinkModalOpen(true); }}
                                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
-                                <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
+                                <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
                               </button>
                               {intimation.link && (
                                 <a href={intimation.link} target="_blank" rel="noopener noreferrer"
@@ -2330,7 +2289,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 </a>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition">
                                 <Eye className="w-3.5 h-3.5" /> Detalhes completos
                               </button>
                             </div>
@@ -2674,7 +2633,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
                           className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
-                          <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
+                          <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
                         </button>
                         {intimation.link && (
                           <a href={intimation.link} target="_blank" rel="noopener noreferrer"
