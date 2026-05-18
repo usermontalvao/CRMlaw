@@ -1081,14 +1081,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            {/* Mini week strip */}
+            {/* Mini week strip — today + 6 upcoming days */}
             {(() => {
               const today = new Date(); today.setHours(0, 0, 0, 0);
-              const dow = today.getDay();
-              const monday = new Date(today);
-              monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
               const weekDays = Array.from({ length: 7 }, (_, i) => {
-                const d = new Date(monday); d.setDate(monday.getDate() + i); return d;
+                const d = new Date(today); d.setDate(today.getDate() + i); return d;
               });
               const DAY_ABBR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
               const eventDateSet = new Set(upcomingEvents.map(ev => {

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.103': { name: 'Café Hoje em Foco', emoji: '📅' },
   '1.10.102': { name: 'Café Tela Certa', emoji: '📱' },
   '1.10.101': { name: 'Café Notificação Certa', emoji: '🔔' },
   '1.10.095': { name: 'Café Áudio no Módulo', emoji: '🎧' },
@@ -802,6 +803,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.103',
+    date: '17/05/2026',
+    summary: 'Mini-calendário do Dashboard mostra hoje + 6 dias futuros — hoje sempre na primeira posição.',
+    modules: [
+      {
+        module: 'Dashboard',
+        icon: 'LayoutDashboard',
+        changes: [
+          { type: 'fix', description: 'Faixa semanal exibe hoje na posição inicial (esquerda) seguido dos próximos 6 dias, em vez de mostrar a semana ISO (dom podia cair à direita).' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.102',
     date: '17/05/2026',
