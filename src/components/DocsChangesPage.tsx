@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.117': { name: 'Café Comarca Limpa', emoji: '📍' },
   '1.10.116': { name: 'Café Comarca Detectada', emoji: '🏛️' },
   '1.10.115': { name: 'Café Intimação Material', emoji: '⚖️' },
   '1.10.114': { name: 'Café Deploy Fresco', emoji: '🚀' },
@@ -816,6 +817,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.117',
+    date: '18/05/2026',
+    summary: 'Fix: extração de comarca parava antes do endereço (Avenida, Rua…) — resultado era "Nova Friburgo Avenida Euterpe Friburguense".',
+    modules: [
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'fix', title: 'Comarca extraindo logradouro junto ao nome da cidade', description: 'Regex de extração de comarca não parava antes de palavras de endereço (Avenida, Rua, Praça, etc.). Adicionada lista de stop-words (COMARCA_STOP) que interrompe a captura ao encontrar termos de logradouro ou keywords jurídicos. Resultado correto: "Juizado Especial Cível - Nova Friburgo".' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.116',
     date: '18/05/2026',

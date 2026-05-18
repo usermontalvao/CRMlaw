@@ -333,24 +333,45 @@ const mapStageToStatus = (stage: number): ProcessStatus => {
 /** Extrai a vara/comarca dos títulos dos movimentos do DJEN.
  *  Padrões comuns: "Juizado Especial Cível da Comarca de Nova Friburgo"
  *                  "2ª Vara Cível da Comarca de Niterói" etc.
+ *  Para antes de logradouros (Avenida, Rua, Praça…) e keywords jurídicos.
  */
-const extractComarcaFromEvents = (events: TimelineEvent[]): string | null => {
-  const patterns = [
-    // Juizado Especial/Criminal/Fazenda da Comarca de XXXX
-    /Juizado\s+(?:Especial|Criminal|da\s+Fazenda)[^\n]*?da\s+Comarca\s+de\s+([A-Za-zÀ-ú\s]+?)(?:\s*$|\s{2,}|,)/i,
-    // Nª Vara XXXX da Comarca de XXXX
-    /(?:\d+ª?\s+)?Vara\s+[^\n]*?da\s+Comarca\s+de\s+([A-Za-zÀ-ú\s]+?)(?:\s*$|\s{2,}|,)/i,
-    // Comarca de XXXX
-    /Comarca\s+de\s+([A-Za-zÀ-ú][A-Za-zÀ-ú\s]{2,30}?)(?:\s+Juizado|\s+Vara|\s*$|\s{2,}|,)/i,
-  ];
+const COMARCA_STOP = /Avenida|Av\.|Rua|Praça|Alameda|Al\.|CEP|Processo:|Classe:|AUTOR|RÉU|Despacho|Sentença|Intimação|Poder\s+Judiciário|\d{5}-\d{3}/i;
 
+const extractComarcaFromEvents = (events: TimelineEvent[]): string | null => {
   for (const event of events) {
     const text = `${event.title} ${event.description || ''}`;
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match) {
-        return match[1].trim().replace(/\s+/g, ' ');
+
+    // 1. "Juizado Especial/Criminal … da Comarca de CITY" — para antes de logradouro
+    const jMatch = text.match(
+      /(Juizado\s+(?:Especial|Criminal|da\s+Fazenda)[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
+    );
+    if (jMatch) {
+      const city = jMatch[2].trim();
+      // Remover palavras de logradouro que vazaram
+      const cleanCity = city.split(/\s+/).filter(w => !COMARCA_STOP.test(w)).join(' ');
+      if (cleanCity) return `Juizado Especial Cível - ${cleanCity}`;
+    }
+
+    // 2. "Nª Vara XXXX da Comarca de CITY"
+    const vMatch = text.match(
+      /(\d+[ªa°]?\s+Vara\s+[^,\n]*?da\s+Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3}))/i
+    );
+    if (vMatch) {
+      const city = vMatch[2].trim();
+      const cleanCity = city.split(/\s+/).filter(w => !COMARCA_STOP.test(w)).join(' ');
+      if (cleanCity) return `${vMatch[1].split('da Comarca')[0].trim()} - ${cleanCity}`;
+    }
+
+    // 3. Apenas "Comarca de CITY" — para ao encontrar stop word
+    const cMatch = text.match(/Comarca\s+de\s+([\wÀ-ú]+(?:\s+[\wÀ-ú]+){0,3})/i);
+    if (cMatch) {
+      const words = cMatch[1].trim().split(/\s+/);
+      const cleanWords: string[] = [];
+      for (const w of words) {
+        if (COMARCA_STOP.test(w)) break;
+        cleanWords.push(w);
       }
+      if (cleanWords.length) return cleanWords.join(' ');
     }
   }
   return null;
