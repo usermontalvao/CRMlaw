@@ -3051,6 +3051,11 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
       setSaving(true);
       setError(null);
 
+      // formData.responsible_id é m.user_id (auth UID) — precisa do profile.id para salvar no prazo
+      const responsibleMember = members.find(m => (m.user_id || m.id) === formData.responsible_id);
+      const profileId = responsibleMember?.id || null;
+      const responsibleAuthId = responsibleMember?.user_id || null;
+
       const payload: CreateDeadlineDTO = {
         title: formData.title.trim(),
         description: formData.description || null,
@@ -3060,25 +3065,37 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
         status: 'pendente',
         client_id: formData.client_id || null,
         process_id: formData.process_id || null,
-        responsible_id: formData.responsible_id || null,
+        responsible_id: profileId,
       };
 
       const createdDeadline = await deadlineService.createDeadline(payload);
-      
-      // Notificar responsável se foi atribuído
-      if (formData.responsible_id && formData.responsible_id !== user?.id) {
+
+      // Notificar responsável se foi atribuído e for diferente do criador
+      if (responsibleAuthId && responsibleAuthId !== user?.id) {
         try {
-          await userNotificationService.notifyDeadlineAssigned({
-            userId: formData.responsible_id,
-            deadlineId: createdDeadline.id,
-            deadlineTitle: formData.title,
+          const deadlineTypeLabels: Record<string, string> = { geral: 'Geral', processo: 'Processo', requerimento: 'Requerimento' };
+          const deadlineTypeLabel = deadlineTypeLabels[formData.type] || 'Prazo';
+          const priorityLabels: Record<string, string> = { urgente: 'Urgente', alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+          const priorityLabel = priorityLabels[formData.priority] || formData.priority;
+          const isUrgent = formData.priority === 'urgente' || formData.priority === 'alta';
+          const dueDate = new Date(formData.due_date + 'T00:00:00');
+          const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+          const daysUntilDue = Math.ceil((dueDate.getTime() - todayD.getTime()) / 86400000);
+          const daysLabel = daysUntilDue <= 0 ? 'Vencido!' : daysUntilDue === 1 ? 'Vence amanhã' : `Vence em ${daysUntilDue} dia(s)`;
+          const assignerName = members.find(m => m.user_id === user?.id)?.name || 'Alguém';
+
+          await userNotificationService.createNotification({
+            user_id: responsibleAuthId,
+            type: 'deadline_assigned',
+            title: isUrgent ? `⚠️ Prazo ${deadlineTypeLabel} — ${priorityLabel}` : `📅 Prazo ${deadlineTypeLabel} Atribuído`,
+            message: `${assignerName} atribuiu um prazo a você\n"${formData.title.trim()}" • ${daysLabel}`,
+            deadline_id: createdDeadline.id,
           });
         } catch (notifError) {
           console.error('Erro ao criar notificação:', notifError);
-          // Não bloqueia a criação do prazo se notificação falhar
         }
       }
-      
+
       onSuccess();
     } catch (err: any) {
       setError(err.message || 'Erro ao criar prazo');
@@ -3398,14 +3415,32 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
       };
 
       const createdAppointment = await calendarService.createEvent(payload);
-      
-      // Notificar responsável se foi atribuído
-      if (formData.responsible_id && formData.responsible_id !== user?.id) {
+
+      // Notificar responsável se foi atribuído e for diferente do criador
+      const responsibleAuthId = formData.responsible_id || null;
+      if (responsibleAuthId && responsibleAuthId !== user?.id) {
         try {
-          await userNotificationService.notifyAppointmentAssigned({
-            userId: formData.responsible_id,
-            appointmentId: createdAppointment.id,
-            appointmentTitle: formData.title,
+          const EVENT_TYPE_LABELS: Record<string, string> = {
+            hearing: 'Audiência', meeting: 'Reunião', payment: 'Pagamento',
+            pericia: 'Perícia', personal: 'Pessoal', requirement: 'Requerimento', deadline: 'Prazo',
+          };
+          const typeEmojis: Record<string, string> = {
+            hearing: '⚖️', meeting: '🤝', payment: '💰', pericia: '🔬',
+            personal: '👤', requirement: '📋', deadline: '📅',
+          };
+          const typeLabel = EVENT_TYPE_LABELS[formData.type] || 'Compromisso';
+          const typeEmoji = typeEmojis[formData.type] || '📅';
+          const assignerName = members.find(m => m.user_id === user?.id)?.name || 'Alguém';
+          const eventDate = new Date(`${formData.date}T${formData.time}:00`);
+          const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            + ' ' + eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+          await userNotificationService.createNotification({
+            user_id: responsibleAuthId,
+            type: 'appointment_assigned',
+            title: `${typeEmoji} Nova ${typeLabel}`,
+            message: `${assignerName} atribuiu uma ${typeLabel} a você\n"${formData.title}" • ${formattedDate}`,
+            appointment_id: createdAppointment.id,
           });
         } catch (notifError) {
           console.error('Erro ao criar notificação:', notifError);

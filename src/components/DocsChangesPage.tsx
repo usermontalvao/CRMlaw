@@ -47,6 +47,8 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.106': { name: 'Café Intimação Notifica', emoji: '⚖️' },
+  '1.10.105': { name: 'Café Qoder Docs', emoji: '📖' },
   '1.10.104': { name: 'Café Hook Esperto', emoji: '🪝' },
   '1.10.103': { name: 'Café Hoje em Foco', emoji: '📅' },
   '1.10.102': { name: 'Café Tela Certa', emoji: '📱' },
@@ -804,6 +806,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.106',
+    date: '18/05/2026',
+    summary: 'Notificações do módulo de Intimações corrigidas — tipo, assigner e prazo corretos; responsible_id salvo como profile.id.',
+    modules: [
+      {
+        moduleId: 'IntimationsModule',
+        changes: [
+          { type: 'fix', title: 'responsible_id correto no prazo', description: 'Prazo criado via Intimações agora salva profile.id como responsible_id (antes salvava auth user_id, quebrando filtros e lembretes do scheduler).' },
+          { type: 'improvement', title: 'Notificação de prazo rica', description: 'Notificação de prazo atribuído via Intimações agora inclui tipo, prioridade, nome do atribuidor e dias até o vencimento — igual ao módulo de Prazos.' },
+          { type: 'improvement', title: 'Notificação de compromisso rica', description: 'Notificação de compromisso atribuído via Intimações agora inclui tipo (Audiência, Reunião…), nome do atribuidor e data/hora formatados.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.105',
     date: '17/05/2026',
