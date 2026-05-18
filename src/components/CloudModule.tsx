@@ -461,6 +461,8 @@ const getEventTargetElement = (target: EventTarget | null): Element | null => {
 
 interface CloudModuleProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, any>) => void;
+  initialFolderId?: string;
+  onParamConsumed?: () => void;
 }
 
 type CloudViewMode = 'list' | 'cards';
@@ -506,7 +508,7 @@ const SortablePdfPageCard: React.FC<{
   );
 };
 
-const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
+const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFolderId, onParamConsumed }) => {
   const toast = useToastContext();
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1346,6 +1348,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     void loadData({ showLoading: true });
   }, [currentFolderArchived, currentFolderId, isArchivedView, isTrashView]);
+
+  // Navegar para pasta inicial vinda da busca global
+  const appliedInitialFolderRef = React.useRef(false);
+  useEffect(() => {
+    if (!initialFolderId || appliedInitialFolderRef.current) return;
+    appliedInitialFolderRef.current = true;
+    setCurrentFolderId(initialFolderId);
+    onParamConsumed?.();
+  }, [initialFolderId, onParamConsumed]);
 
   const movePdfToolPage = (index: number, direction: -1 | 1) => {
     setPdfToolPages((prev) => {

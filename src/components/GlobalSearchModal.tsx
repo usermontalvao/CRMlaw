@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Search, X, FileText, Users, Gavel, Loader2, ChevronRight, ArrowRight,
-  ClipboardList, Calendar, CheckSquare, AlarmClock,
+  ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
 } from 'lucide-react';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
@@ -10,6 +10,8 @@ import { requirementService } from '../services/requirement.service';
 import { calendarService } from '../services/calendar.service';
 import { taskService } from '../services/task.service';
 import { deadlineService } from '../services/deadline.service';
+import { financialService } from '../services/financial.service';
+import { cloudService } from '../services/cloud.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
 
@@ -23,7 +25,9 @@ type ResultType =
   | 'requerimento'
   | 'prazo'
   | 'agenda'
-  | 'tarefa';
+  | 'tarefa'
+  | 'financeiro'
+  | 'cloud';
 
 interface SearchResult {
   id: string;
@@ -62,10 +66,12 @@ const TYPE_CONFIG: Record<ResultType, {
   prazo:                 { label: 'Prazo',         icon: AlarmClock,    color: 'text-red-600 bg-red-50',        border: 'border-red-200',    group: 'Prazos'        },
   agenda:                { label: 'Agenda',        icon: Calendar,      color: 'text-teal-600 bg-teal-50',      border: 'border-teal-200',   group: 'Agenda'        },
   tarefa:                { label: 'Tarefa',        icon: CheckSquare,   color: 'text-sky-600 bg-sky-50',        border: 'border-sky-200',    group: 'Tarefas'       },
+  financeiro:            { label: 'Financeiro',    icon: DollarSign,    color: 'text-emerald-600 bg-emerald-50',border: 'border-emerald-200',group: 'Financeiro'    },
+  cloud:                 { label: 'Pasta',         icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',  border: 'border-indigo-200', group: 'Cloud'         },
 };
 
 const GROUP_ORDER: ResultType[] = [
-  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo', 'intimacao', 'agenda', 'tarefa',
+  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo', 'intimacao', 'agenda', 'tarefa', 'financeiro', 'cloud',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -125,16 +131,27 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
       // Parallel fetch all data
       const now = new Date().toISOString();
-      const [processes, clients, intimacoes, requirements, events, tasks, deadlines] = await Promise.all([
+      const today = now.slice(0, 10);
+      const [processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders] = await Promise.all([
         processService.listProcesses(),
         clientService.listClients(),
         djenLocalService.listComunicacoes({}),
         requirementService.listRequirements().catch(() => []),
-        // Agenda: only future/today events
         calendarService.listEvents().catch(() => [] as Awaited<ReturnType<typeof calendarService.listEvents>>),
         taskService.listTasks().catch(() => []),
         deadlineService.listDeadlines().catch(() => []),
+        financialService.listAgreements().catch(() => []),
+        // Cloud: apenas pastas raiz (parent_id = null), não arquivadas
+        cloudService.listFolders(null, false).catch(() => [] as Awaited<ReturnType<typeof cloudService.listFolders>>),
       ]);
+
+      // Mapa process_id → partes (a partir das intimações já carregadas)
+      const partiesByProcessId = new Map<string, { polo_ativo: string | null; polo_passivo: string | null }>();
+      for (const i of intimacoes) {
+        if (i.process_id && !partiesByProcessId.has(i.process_id) && (i.polo_ativo || i.polo_passivo)) {
+          partiesByProcessId.set(i.process_id, { polo_ativo: i.polo_ativo, polo_passivo: i.polo_passivo });
+        }
+      }
 
       const clientById = new Map<string, Client>(clients.map(c => [c.id, c]));
 
@@ -155,7 +172,18 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
       const matchedClientIds = new Set(clientResults.map(r => r.id));
 
-      // ── Processos ─────────────────────────────────────────────────────────
+      // Helper: monta subtitle do processo priorizando partes
+      const buildProcessSubtitle = (processId: string, clientFallback?: string | null, court?: string | null) => {
+        const parties = partiesByProcessId.get(processId);
+        if (parties?.polo_ativo || parties?.polo_passivo) {
+          const partsStr = [parties.polo_ativo, parties.polo_passivo].filter(Boolean).join(' × ');
+          return court ? `${partsStr} · ${court}` : partsStr;
+        }
+        // fallback: cliente + comarca
+        return [clientFallback, court].filter(Boolean).join(' · ') || undefined;
+      };
+
+      // ── Processos (por número, comarca, advogado) ─────────────────────────
       const processResults: SearchResult[] = processes
         .filter(p => matchesNormalizedSearch(q2, [p.process_code ?? '', p.court ?? '', p.responsible_lawyer ?? '']))
         .slice(0, 5)
@@ -165,7 +193,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             id: p.id,
             type: 'processo' as const,
             title: p.process_code ?? 'Processo',
-            subtitle: [p.court, client?.full_name].filter(Boolean).join(' · ') || undefined,
+            subtitle: buildProcessSubtitle(p.id, client?.full_name, p.court),
             meta: p.status,
             navModule: 'processos',
             navParams: { searchQuery: p.process_code ?? '' },
@@ -184,11 +212,15 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .slice(0, 4)
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
+          const parties = partiesByProcessId.get(p.id);
+          const partiesStr = parties?.polo_ativo
+            ? [parties.polo_ativo, parties.polo_passivo].filter(Boolean).join(' × ')
+            : null;
           return {
             id: p.id,
             type: 'processo-via-cliente' as const,
             title: p.process_code ?? 'Processo',
-            subtitle: `Cliente: ${client?.full_name ?? ''}${p.court ? ' · ' + p.court : ''}`,
+            subtitle: partiesStr ?? `${client?.full_name ?? ''}${p.court ? ' · ' + p.court : ''}`,
             meta: p.status,
             navModule: 'processos',
             navParams: { searchQuery: p.process_code ?? '' },
@@ -241,7 +273,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       const agendaResults: SearchResult[] = events
         .filter(e => {
           // Somente compromissos não passados (start_at >= hoje)
-          if (e.start_at < now.slice(0, 10)) return false;
+          if (e.start_at.slice(0, 10) < today) return false;
           const fields = [
             e.title ?? '', e.description ?? '', e.client_name ?? '',
             EVENT_TYPE_LABELS[e.event_type] ?? '',
@@ -274,7 +306,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .slice(0, 4)
         .map(d => {
           const client = clientById.get(d.client_id ?? '');
-          const isOverdue = d.due_date < now.slice(0, 10) && d.status === 'pendente';
+          const isOverdue = d.due_date < today && d.status === 'pendente';
           return {
             id: d.id,
             type: 'prazo' as const,
@@ -306,6 +338,50 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           };
         });
 
+      // ── Financeiro (acordos ativos/pendentes) ────────────────────────────
+      const FEE_TYPE_LABEL: Record<string, string> = { percentage: 'Percentual', fixed: 'Fixo' };
+      const financeiroResults: SearchResult[] = agreements
+        .filter(a => {
+          const client = clientById.get(a.client_id ?? '');
+          const fields = [a.title ?? '', client?.full_name ?? '', client?.cpf_cnpj ?? ''].map(normalizeStr);
+          return fields.some(f => f.includes(nq));
+        })
+        .slice(0, 4)
+        .map(a => {
+          const client = clientById.get(a.client_id ?? '');
+          const valorFmt = `R$ ${a.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+          return {
+            id: a.id,
+            type: 'financeiro' as const,
+            title: a.title,
+            subtitle: client?.full_name || undefined,
+            meta: valorFmt,
+            navModule: 'financeiro',
+            navParams: { entityId: a.id },
+          };
+        });
+
+      // ── Cloud (pastas raiz vinculadas a clientes) ─────────────────────────
+      const cloudResults: SearchResult[] = rootFolders
+        .filter(f => {
+          const client = f.client_id ? clientById.get(f.client_id) : undefined;
+          const fields = [f.name ?? '', client?.full_name ?? ''].map(normalizeStr);
+          return fields.some(ff => ff.includes(nq));
+        })
+        .slice(0, 4)
+        .map(f => {
+          const client = f.client_id ? clientById.get(f.client_id) : undefined;
+          return {
+            id: f.id,
+            type: 'cloud' as const,
+            title: f.name,
+            subtitle: client?.full_name || undefined,
+            meta: undefined,
+            navModule: 'cloud',
+            navParams: { folderId: f.id },
+          };
+        });
+
       // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
         ...clientResults,
@@ -316,6 +392,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         ...intimacaoResults,
         ...agendaResults,
         ...tarefaResults,
+        ...financeiroResults,
+        ...cloudResults,
       ];
       const seen = new Set<string>();
       const deduped = merged.filter(r => {
@@ -451,12 +529,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs text-slate-600">
               {[
                 { icon: Users,         label: 'Clientes',       desc: 'nome, CPF, e-mail, telefone' },
-                { icon: FileText,      label: 'Processos',      desc: 'número, comarca, advogado' },
+                { icon: FileText,      label: 'Processos',      desc: 'número, comarca, partes' },
                 { icon: Gavel,         label: 'Intimações',     desc: 'polo, número, tipo de doc' },
                 { icon: ClipboardList, label: 'Requerimentos',  desc: 'beneficiário, CPF, protocolo' },
                 { icon: AlarmClock,    label: 'Prazos',         desc: 'título, cliente (pendentes)' },
                 { icon: Calendar,      label: 'Agenda',         desc: 'futuros: audiências, reuniões' },
                 { icon: CheckSquare,   label: 'Tarefas',        desc: 'título, descrição' },
+                { icon: DollarSign,    label: 'Financeiro',     desc: 'título do acordo, cliente' },
+                { icon: FolderOpen,    label: 'Cloud',          desc: 'nome da pasta, cliente' },
               ].map(({ icon: Icon, label, desc }) => (
                 <div key={label} className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
                   <Icon className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />

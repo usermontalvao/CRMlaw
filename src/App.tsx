@@ -1696,7 +1696,13 @@ useEffect(() => {
                 }}
               />
             )}
-            {activeModule === 'cloud' && <CloudModule onNavigateToModule={handleNavigateToModule} />}
+            {activeModule === 'cloud' && (
+              <CloudModule
+                onNavigateToModule={handleNavigateToModule}
+                initialFolderId={moduleParams['cloud'] ? JSON.parse(moduleParams['cloud']).folderId : undefined}
+                onParamConsumed={() => clearModuleParams('cloud')}
+              />
+            )}
             {activeModule === 'processos' && (
               <ProcessesModule
                 forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}

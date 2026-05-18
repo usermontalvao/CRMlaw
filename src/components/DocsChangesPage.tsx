@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.123': { name: 'Café Busca Completa', emoji: '🗃️' },
   '1.10.122': { name: 'Café Prazo Certo', emoji: '⏰' },
   '1.10.121': { name: 'Café Busca Total', emoji: '🔭' },
   '1.10.120': { name: 'Café Partes Identificadas', emoji: '👥' },
@@ -822,6 +823,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.123',
+    date: '18/05/2026',
+    summary: 'Busca global completa: Financeiro e Cloud integrados; partes nos processos; Cloud com navegação direta para pasta.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'feature', title: 'Busca global — Financeiro (acordos)', description: 'A busca ⌘K pesquisa acordos pelo título e nome do cliente. Exibe valor total. Clicar navega para o módulo Financeiro.' },
+          { type: 'feature', title: 'Busca global — Cloud (pastas raiz)', description: 'A busca ⌘K pesquisa pastas raiz do Cloud pelo nome e cliente vinculado. Clicar abre o Cloud diretamente dentro da pasta encontrada.' },
+          { type: 'improvement', title: 'Processos — partes visíveis nos resultados de busca', description: 'Os resultados de processo agora mostram as partes (Polo Ativo × Polo Passivo) no subtítulo quando disponíveis, extraídas das intimações DJEN já carregadas. Facilita identificar de quem é o processo sem precisar abri-lo.' },
+        ],
+      },
+      {
+        moduleId: 'Cloud',
+        changes: [
+          { type: 'improvement', title: 'Navegação direta para pasta via busca global', description: 'CloudModule aceita prop initialFolderId — ao clicar em uma pasta nos resultados da busca ⌘K, o Cloud abre diretamente dentro dessa pasta.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.122',
     date: '18/05/2026',
