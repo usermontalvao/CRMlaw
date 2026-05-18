@@ -38,6 +38,7 @@ import {
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
 import { NotificationBell } from './components/NotificationBell';
+import { GlobalSearchModal } from './components/GlobalSearchModal';
 import SessionWarning from './components/SessionWarning';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
@@ -423,6 +424,21 @@ const MainApp: React.FC = () => {
       document.removeEventListener('keydown', handleEsc);
     };
   }, [profileMenuOpen]);
+
+  // #9 — Busca global ⌘K
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+
+  // Atalho de teclado ⌘K / Ctrl+K
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setGlobalSearchOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
 
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
@@ -1546,7 +1562,18 @@ useEffect(() => {
                     </span>
                   )}
                 </button>
-                <NotificationBell 
+                {/* #9 — Botão busca global ⌘K */}
+                <button
+                  onClick={() => setGlobalSearchOpen(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  title="Busca global (⌘K)"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Buscar</span>
+                  <kbd className="hidden lg:inline text-[9px] px-1 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">⌘K</kbd>
+                </button>
+
+                <NotificationBell
                   onNavigateToModule={(moduleKey: string, params?: any) => {
                     safeNavigateTo(moduleKey as any, params);
                   }}
@@ -1804,6 +1831,13 @@ useEffect(() => {
       <Suspense fallback={null}>
         <ChatFloatingWidget />
       </Suspense>
+
+      {/* #9 — Modal de busca global ⌘K */}
+      <GlobalSearchModal
+        open={globalSearchOpen}
+        onClose={() => setGlobalSearchOpen(false)}
+        onNavigate={(module, params) => safeNavigateTo(module as any, params as any)}
+      />
     </div>
     </CacheProvider>
   );

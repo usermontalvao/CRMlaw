@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.119': { name: 'Café Busca Global', emoji: '🔍' },
   '1.10.118': { name: 'Café Cron Inteligente', emoji: '🤖' },
   '1.10.117': { name: 'Café Comarca Limpa', emoji: '📍' },
   '1.10.116': { name: 'Café Comarca Detectada', emoji: '🏛️' },
@@ -818,6 +819,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.119',
+    date: '18/05/2026',
+    summary: 'Melhorias #5-9: comarca editável, badge não lidas, timeline agrupada, resumo IA e busca global ⌘K.',
+    modules: [
+      {
+        moduleId: 'Processes',
+        changes: [
+          { type: 'improvement', title: '#5 — Vara/Comarca editável inline', description: 'Campo Vara/Comarca no card de detalhes do processo agora tem botão de edição (aparece no hover). Clique → input inline → salva com Enter ou ✓ sem abrir o formulário completo.' },
+          { type: 'improvement', title: '#6 — Badge "Nova" para intimações não lidas', description: 'Processos com intimações DJEN não lidas exibem badge laranja "Nova" na lista (mobile e desktop). Carregado em uma query única ao abrir o módulo.' },
+          { type: 'improvement', title: '#8 — Resumo IA do processo', description: 'Botão "Gerar resumo IA" no card de detalhes analisa as últimas 8 movimentações do DJEN e retorna 3 bullets: situação atual, última ação, próximo passo recomendado.' },
+        ],
+      },
+      {
+        moduleId: 'Timeline',
+        changes: [
+          { type: 'improvement', title: '#7 — Timeline agrupada por tipo de movimentação', description: 'Toggle "Agrupar por tipo" no painel de filtros agrupa os eventos em seções (Intimações, Despachos, Decisões, Sentença, Recursos…) facilitando a leitura em processos com muitas movimentações.' },
+        ],
+      },
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'improvement', title: '#9 — Busca global ⌘K / Ctrl+K', description: 'Modal de busca global acessível por ⌘K (Mac) ou Ctrl+K (Windows). Pesquisa simultaneamente processos (número, comarca, advogado), clientes (nome, CPF, e-mail) e intimações não lidas. Navegação por ↑↓ e Enter. Botão na topbar.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.118',
     date: '18/05/2026',

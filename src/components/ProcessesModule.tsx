@@ -24,6 +24,10 @@ import {
   ChevronRight,
   ChevronUp,
   Sparkles,
+  MapPin,
+  Check,
+  Zap,
+  Bell,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
@@ -31,6 +35,7 @@ import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
 import { settingsService } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
+import { djenLocalService } from '../services/djenLocal.service';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
@@ -367,6 +372,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'details'>('list');
   const [selectedProcessForView, setSelectedProcessForView] = useState<Process | null>(null);
+  // #5 — Comarca editável inline
+  const [editingCourtFor, setEditingCourtFor] = useState<string | null>(null);
+  const [courtDraft, setCourtDraft] = useState('');
+  const [savingCourt, setSavingCourt] = useState(false);
+  // #6 — Badge de não lidas
+  const [processesWithUnread, setProcessesWithUnread] = useState<Set<string>>(new Set());
+  // #8 — Resumo IA do processo
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [loadingAiSummary, setLoadingAiSummary] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -554,6 +568,46 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     fetchProcesses();
   }, []);
+
+  // #6 — Carregar processos com intimações não lidas
+  useEffect(() => {
+    djenLocalService.getUnreadProcessIds().then(setProcessesWithUnread).catch(() => {});
+  }, []);
+
+  // #5 — Salvar comarca editada
+  const saveCourtEdit = async () => {
+    if (!selectedProcessForView || !editingCourtFor) return;
+    setSavingCourt(true);
+    try {
+      await processService.updateProcess(selectedProcessForView.id, { court: courtDraft });
+      setSelectedProcessForView(prev => prev ? { ...prev, court: courtDraft } : prev);
+      setProcesses(prev => prev.map(p => p.id === selectedProcessForView.id ? { ...p, court: courtDraft } : p));
+      setEditingCourtFor(null);
+    } catch { /* silencioso */ } finally {
+      setSavingCourt(false);
+    }
+  };
+
+  // #8 — Gerar resumo IA do processo
+  const generateProcessSummary = async (proc: Process) => {
+    if (loadingAiSummary) return;
+    setLoadingAiSummary(true);
+    setAiSummary(null);
+    try {
+      const events = await processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? '');
+      if (events.length === 0) { setAiSummary('Sem movimentações registradas para resumir.'); return; }
+      const snippet = events.slice(0, 8).map((e, i) =>
+        `${i + 1}. [${e.date?.slice(0, 10)}] ${e.title}: ${e.aiAnalysis?.summary || e.description?.slice(0, 200) || ''}`
+      ).join('\n');
+      const result = await aiService.generateText(
+        'Você é assistente jurídico. Responda SEMPRE em português. Seja conciso e objetivo.',
+        `Processo: ${proc.process_code}\nMovimentações recentes:\n${snippet}\n\nGere um resumo em exatamente 3 bullets (•) cobrindo: 1) situação atual, 2) última ação relevante, 3) próximo passo recomendado. Máximo 20 palavras por bullet.`,
+        300
+      );
+      setAiSummary(result);
+    } catch { setAiSummary('Erro ao gerar resumo. Tente novamente.'); }
+    finally { setLoadingAiSummary(false); }
+  };
 
   // Verificar processos arquivados com prazos pendentes
   useEffect(() => {
@@ -2392,11 +2446,11 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
           <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 sm:p-8">
             {/* Grid de dados — card unificado com células divididas */}
-            <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden mb-8">
+            <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden mb-6">
               <div className="grid grid-cols-2 lg:grid-cols-3 divide-x divide-y divide-slate-100 dark:divide-zinc-800">
+                {/* Campos estáticos */}
                 {[
                   { label: 'Distribuído em', value: formatDate(selectedProcessForView.distributed_at) },
-                  { label: 'Vara / Comarca', value: selectedProcessForView.court || 'Não informado' },
                   { label: 'Área', value: practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area },
                   { label: 'Advogado responsável', value: selectedProcessForView.responsible_lawyer || 'Não informado' },
                   {
@@ -2412,7 +2466,66 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{f.value}</div>
                   </div>
                 ))}
+
+                {/* #5 — Vara / Comarca — editável inline */}
+                <div className="px-5 py-4">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 flex items-center gap-1">
+                    <MapPin className="w-2.5 h-2.5" /> Vara / Comarca
+                  </div>
+                  {editingCourtFor === selectedProcessForView.id ? (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <input
+                        autoFocus
+                        value={courtDraft}
+                        onChange={e => setCourtDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveCourtEdit(); if (e.key === 'Escape') setEditingCourtFor(null); }}
+                        className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                        placeholder="Ex: Juizado Especial Cível - Nova Friburgo"
+                      />
+                      <button onClick={saveCourtEdit} disabled={savingCourt}
+                        className="p-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50">
+                        {savingCourt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      </button>
+                      <button onClick={() => setEditingCourtFor(null)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 group">
+                      <span className="text-sm font-medium text-slate-900 dark:text-white">
+                        {selectedProcessForView.court || <span className="text-slate-400 italic text-xs">Não informado</span>}
+                      </span>
+                      <button
+                        onClick={() => { setEditingCourtFor(selectedProcessForView.id); setCourtDraft(selectedProcessForView.court || ''); }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                        title="Editar vara/comarca">
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
+
+            {/* #8 — Resumo IA do processo */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Resumo Inteligente</span>
+                <button
+                  onClick={() => generateProcessSummary(selectedProcessForView)}
+                  disabled={loadingAiSummary}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition disabled:opacity-50"
+                >
+                  {loadingAiSummary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                  {loadingAiSummary ? 'Analisando...' : 'Gerar resumo IA'}
+                </button>
+              </div>
+              {aiSummary && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                  {aiSummary}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-6">
@@ -3288,7 +3401,13 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                       <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
                         <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={40} />
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs sm:text-sm font-medium text-gray-900 mb-1 truncate">{client?.full_name || 'Cliente removido'}</div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">{client?.full_name || 'Cliente removido'}</div>
+                            {/* #6 — Badge não lidas */}
+                            {processesWithUnread.has(process.id) && (
+                              <span className="flex-shrink-0 w-2 h-2 rounded-full bg-orange-500 ring-2 ring-white" title="Intimações não lidas" />
+                            )}
+                          </div>
                           <div className="text-[10px] sm:text-xs font-mono text-gray-700 break-all">{process.process_code}</div>
                           {process.court && <div className="text-xs text-gray-500 mb-2">{process.court}</div>}
                         </div>
@@ -3381,8 +3500,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                                  {/* #6 — Badge não lidas (desktop) */}
+                                  {processesWithUnread.has(process.id) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold" title="Intimações não lidas">
+                                      <Bell className="w-2.5 h-2.5" /> Nova
+                                    </span>
+                                  )}
+                                </div>
                                 {process.djen_has_data && (
                                   <div className="flex items-center gap-1">
                                     <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">

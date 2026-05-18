@@ -28,6 +28,7 @@ import {
   ClipboardList,
   ExternalLink,
   Users,
+  Layers,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
@@ -374,6 +375,8 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   const [filterGrau, setFilterGrau] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [showSummaryDetails, setShowSummaryDetails] = useState(false);
+  // #7 — Agrupamento por fase
+  const [groupByPhase, setGroupByPhase] = useState(false);
 
   // Buscar e analisar automaticamente
   // PRIORIZA banco local (djen_comunicacoes_local) com IA já pronta pelo cron
@@ -505,6 +508,20 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
     const matchesSearch = !searchTerm || matchesNormalizedSearch(searchTerm, [event.title, event.description || '']);
     return matchesType && matchesGrau && matchesSearch;
   });
+
+  // #7 — Agrupamento por fase
+  const EVENT_PHASE_MAP: Record<string, string> = {
+    citacao: 'Citação', despacho: 'Despacho / Instrução', decisao: 'Decisões',
+    intimacao: 'Intimações', sentenca: 'Sentença', recurso: 'Recursos', outro: 'Outros',
+  };
+  const groupedEvents = groupByPhase
+    ? filteredEvents.reduce<Record<string, TimelineEvent[]>>((acc, ev) => {
+        const phase = EVENT_PHASE_MAP[ev.type] ?? 'Outros';
+        if (!acc[phase]) acc[phase] = [];
+        acc[phase].push(ev);
+        return acc;
+      }, {})
+    : null;
 
   // Contadores
   const urgentCount = events.filter(e => e.aiAnalysis?.urgency === 'critica' || e.aiAnalysis?.urgency === 'alta').length;
@@ -653,6 +670,19 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
 
             
           </div>
+
+          {/* #7 — Toggle agrupamento por fase */}
+          <button
+            onClick={() => setGroupByPhase(g => !g)}
+            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg border text-[10px] font-semibold transition ${
+              groupByPhase
+                ? 'bg-amber-500 text-white border-amber-500'
+                : 'bg-white dark:bg-zinc-800 text-slate-600 border-slate-200 dark:border-zinc-700 hover:bg-slate-50'
+            }`}
+          >
+            <span>Agrupar por tipo</span>
+            <Layers className="w-3 h-3" />
+          </button>
 
           {/* Resumos - Colapsável */}
           <button
@@ -848,10 +878,67 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
           </div>
         ) : (
           <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-[#f97316]/30 via-slate-200 to-transparent" />
+            {/* Timeline line — oculta no modo agrupado */}
+            {!groupByPhase && (
+              <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-[#f97316]/30 via-slate-200 to-transparent" />
+            )}
 
-            {/* Events */}
+            {/* #7 — Modo agrupado por tipo */}
+            {groupByPhase && groupedEvents ? (
+              <div className="space-y-6">
+                {Object.entries(groupedEvents).map(([phase, phaseEvents]) => (
+                  <div key={phase}>
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                      <Layers className="w-3.5 h-3.5 text-amber-500" />
+                      <span className="text-xs font-bold uppercase tracking-widest text-slate-500">{phase}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold">{phaseEvents.length}</span>
+                      <div className="flex-1 h-px bg-slate-100" />
+                    </div>
+                    <div className="space-y-2">
+                      {phaseEvents.map((event) => {
+                        const isExpanded = expandedEvents.has(event.id);
+                        const hasAI = !!event.aiAnalysis;
+                        return (
+                          <div key={event.id} className={`group rounded-xl border shadow-sm transition-all ${
+                            hasAI && event.aiAnalysis?.urgency === 'critica' ? 'bg-red-50/60 border-red-200' :
+                            hasAI && event.aiAnalysis?.urgency === 'alta' ? 'bg-amber-50/60 border-amber-200' :
+                            event.type === 'sentenca' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200'
+                          } ${isExpanded ? 'shadow-md' : 'hover:shadow-md'}`}>
+                            <div className="px-4 py-3 cursor-pointer" onClick={() => toggleExpand(event.id)}>
+                              <div className="flex items-center justify-between gap-3 mb-1">
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                  <span>{formatDate(event.date)}</span>
+                                  {event.grauRecursal && <><span className="text-slate-300">·</span><span>{event.grauRecursal}</span></>}
+                                  {event.aiAnalysis?.actionRequired && <span className="text-red-500">•</span>}
+                                </div>
+                                {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                              </div>
+                              <h3 className="text-sm font-medium text-slate-800 leading-relaxed">
+                                {event.title === 'Notificação' || event.title === 'Intimação' || event.title === 'Despacho'
+                                  ? (event.description?.substring(0, 120)?.replace(/<[^>]*>/g, '')?.trim() + '...' || event.title)
+                                  : event.title}
+                              </h3>
+                              {hasAI && event.aiAnalysis?.summary && !isExpanded && (
+                                <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{event.aiAnalysis.summary}</p>
+                              )}
+                            </div>
+                            {isExpanded && (
+                              <div className="px-4 pb-4 border-t border-slate-100">
+                                {hasAI && event.aiAnalysis?.summary && <p className="text-sm text-slate-600 mt-3 mb-3">{event.aiAnalysis.summary}</p>}
+                                <div className="bg-slate-50 rounded-xl p-3 max-h-40 overflow-y-auto">
+                                  <p className="text-xs text-slate-500 whitespace-pre-wrap">{cleanHtmlContent(event.description) || 'Conteúdo não disponível'}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+            /* Modo cronológico (padrão) */
             <div className="space-y-3">
               {filteredEvents.map((event, index) => {
                 const Icon = getEventIcon(event.type);
@@ -989,6 +1076,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                 );
               })}
             </div>
+            )}
           </div>
         )}
         </div>

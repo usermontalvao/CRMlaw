@@ -634,6 +634,19 @@ class DjenLocalService {
     return this.updateComunicacao(id, { process_id: processId, lida: false });
   }
   /**
+   * Retorna IDs de processos que têm comunicações não lidas (para badge na lista)
+   */
+  async getUnreadProcessIds(): Promise<Set<string>> {
+    const { data } = await supabase
+      .from(this.tableName)
+      .select('process_id')
+      .eq('lida', false)
+      .eq('ativo', true)
+      .not('process_id', 'is', null);
+    return new Set((data ?? []).map((r: any) => r.process_id).filter(Boolean));
+  }
+
+  /**
    * Agrupa comunicações por cliente
    */
   async agruparPorCliente(): Promise<Map<string, DjenComunicacaoLocal[]>> {
