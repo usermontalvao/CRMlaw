@@ -390,23 +390,17 @@ export const PostModal: React.FC<PostModalProps> = ({
   if (!isOpen) return null;
 
   const modalContent = (
-    <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center aero-backdrop"
       onClick={onClose}
     >
-      <div 
-        className="w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+      <div
+        className="aero-modal w-full max-w-2xl max-h-[90vh] rounded-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
-        style={{ 
-          colorScheme: 'light',
-          backgroundColor: '#ffffff',
-          color: '#1e293b'
-        }}
       >
         {/* Header */}
-        <div 
-          className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
+        <div
+          className="aero-modal-inner flex items-center justify-between px-4 py-3 border-b border-white/30 dark:border-white/10 flex-shrink-0"
         >
           <div className="flex items-center gap-3">
             {onBackToFeed && (
@@ -433,13 +427,13 @@ export const PostModal: React.FC<PostModalProps> = ({
         </div>
 
         {/* Conteúdo */}
-        <div className="flex-1 overflow-y-auto" style={{ backgroundColor: '#ffffff' }}>
+        <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-20" style={{ backgroundColor: '#ffffff' }}>
+            <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-20" style={{ backgroundColor: '#ffffff', color: '#64748b' }}>
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
               <p>{error}</p>
               <button
                 onClick={onClose}
@@ -451,7 +445,7 @@ export const PostModal: React.FC<PostModalProps> = ({
           ) : post ? (
             <>
               {/* Autor do post */}
-              <div className="p-4" style={{ backgroundColor: '#ffffff' }}>
+              <div className="p-4" style={{ backgroundColor: 'rgba(255,255,255,0.55)' }}>
                 <div className="flex items-start gap-3">
                   <button
                     onClick={() => onNavigateToProfile?.(post.author?.user_id || '')}
@@ -805,7 +799,7 @@ export const PostModal: React.FC<PostModalProps> = ({
 
               {/* Seção de comentários - só mostra se não está banido */}
               {!post.banned_at && (
-              <div style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.30)', backgroundColor: 'rgba(248,250,252,0.50)' }}>
                 {/* Lista de comentários */}
                 <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
                   {loadingComments ? (
@@ -826,7 +820,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                           <Avatar src={c.avatar_url} name={c.name} size="sm" />
                         </button>
                         <div className="flex-1">
-                          <div className="rounded-2xl px-3 py-2 shadow-sm" style={{ backgroundColor: '#ffffff' }}>
+                          <div className="rounded-2xl px-3 py-2 shadow-sm" style={{ backgroundColor: 'rgba(255,255,255,0.55)' }}>
                             <button
                               onClick={() => onNavigateToProfile?.(c.user_id)}
                               className="text-sm font-semibold hover:underline"
@@ -860,7 +854,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                 </div>
 
                 {/* Input de comentário */}
-                <div className="p-4 relative" style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                <div className="p-4 relative" style={{ borderTop: '1px solid rgba(255,255,255,0.30)', backgroundColor: 'rgba(255,255,255,0.50)' }}>
                   {/* Dropdown de menções */}
                   {showMentionDropdown && allProfiles.length > 0 && (
                     <div className="absolute left-4 right-4 bottom-full mb-2 bg-white rounded-lg border border-slate-200 shadow-lg z-[100] max-h-48 overflow-y-auto">
@@ -910,7 +904,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         }}
                         placeholder="Escreva um comentário... Use @ para mencionar"
                         className="flex-1 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 border border-transparent focus:border-blue-500"
-                        style={{ backgroundColor: '#f1f5f9', color: '#1e293b' }}
+                        style={{ backgroundColor: 'rgba(241,245,249,0.70)', color: '#1e293b' }}
                         disabled={submittingComment}
                       />
                       <button

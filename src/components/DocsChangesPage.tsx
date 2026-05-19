@@ -47,6 +47,8 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.129': { name: 'Café Vidro Aero', emoji: '🪟' },
+  '1.10.128': { name: 'Café Vidro Aero Inicial', emoji: '🌈' },
   '1.10.125': { name: 'Café Barra Animada', emoji: '✨' },
   '1.10.124': { name: 'Café Busca Relâmpago', emoji: '⚡' },
   '1.10.123': { name: 'Café Busca Completa', emoji: '🗃️' },
@@ -825,6 +827,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.129',
+    date: '19/05/2026',
+    summary: 'Aero glass morphism completo: todos modais com efeito vidro Apple+Windows7 — gradientes multi-camadas, brilhos inset, reflexos diagonais e backdroPs com vinheta.',
+    modules: [
+      {
+        moduleId: 'UI',
+        changes: [
+          { type: 'feature', title: 'Sistema de glass morphism Aero/Apple', description: 'Implementação de efeito vidro sofisticado em todos modais combinando Windows 7 Aero e Apple design. Inclui: backdrop com vinheta radial (ellipse 140% 110%), blur 8px + saturate 140%, modal com gradiente multi-camada linear (3 stops: branco 55%, branco 30%, creme 36%), blur 60px + saturate 190%, pseudo-elemento ::before com overlay para shine diagonal.' },
+          { type: 'feature', title: 'Inset highlights e reflexos Aero', description: 'Implementação clássica de Windows 7 Aero com inset box-shadow na parte superior do modal para efeito de brilho de vidro real. Combina highlight branco (0 1px 3px), glow interno (0 0 12px rgba), reflexo subtil e halo externo sutil.' },
+          { type: 'feature', title: 'Suporte dark mode para glass effects', description: 'Glass morphism adapta-se a dark mode com tint azulada apropriada, redução de opacidade em bordas (white/30 em light, white/10 em dark), sombras ajustadas para visibilidade mantendo efeito de profundidade.' },
+          { type: 'improvement', title: 'GlobalSearchModal redesenhado com glass', description: 'Modal de busca global com efeito vidro completo: .gs-search-frame com gradiente e backdrop-filter, .gs-card com gradiente hover e inset shadows, .gs-chip-btn com gradiente âmbar em estado ativo, filtros com visual aprimorado.' },
+          { type: 'improvement', title: 'Aplicado glass morphism a todos modais', description: 'Padronização de glass effect em: LeadModal, ProfileModal, PostModal, FinancialModal, SignUpModal. Todos usam classes .aero-modal, .aero-backdrop, .aero-modal-inner com estilo consistente.' },
+          { type: 'improvement', title: 'Compactação visual interna de modais', description: 'Redução de padding e margins em headers, footers, seções e elementos individuais. Ícones reduzidos de 20px a 16px, text de 13px a 12px. Modal widths mantidas em valores originais (max-w-2xl, max-w-3xl, max-w-4xl) para não prejudicar legibilidade.' },
+          { type: 'fix', title: 'Filter chip "Processos" não aparecia em resultados via cliente', description: 'Correção no GlobalSearchModal: processo-via-cliente (resultados encontrados por nome de cliente) agora mapeia corretamente para tipo "processo" na geração de chips de filtro, garantindo que chip "Processos" apareça quando qualquer tipo de resultado de processo existe.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.128',
     date: '19/05/2026',

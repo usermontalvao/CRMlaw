@@ -646,6 +646,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     due_date: '',
     priority: 'alta' as DeadlinePriority,
     notify_days_before: '3',
+    responsible_id: '',
   });
   const exigencySubmittingRef = useRef(false);
   const [sourceSignatureId, setSourceSignatureId] = useState<string | null>(null);
@@ -850,6 +851,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       due_date: '',
       priority: 'alta',
       notify_days_before: '3',
+      responsible_id: '',
     });
 
     setExigencyModal({
@@ -2188,6 +2190,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       due_date: '',
       priority: 'alta',
       notify_days_before: '3',
+      responsible_id: '',
     });
   };
 
@@ -2320,19 +2323,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     if (!exigencyModal) return;
     const title = exigencyForm.title.trim();
     if (!title) {
-      alert('Informe o título do prazo.');
+      toast.error('Informe o título do prazo.');
       return;
     }
     if (!exigencyForm.due_date) {
-      alert('Informe a data de vencimento.');
+      toast.error('Informe a data de vencimento.');
+      return;
+    }
+    if (!exigencyForm.responsible_id) {
+      toast.error('Selecione um responsável pelo prazo.');
       return;
     }
 
+    let succeeded = false;
     try {
       exigencySubmittingRef.current = true;
       const requirement = requirements.find((req) => req.id === exigencyModal.requirementId) || null;
       if (!requirement) {
-        alert('Requerimento não encontrado.');
+        toast.error('Requerimento não encontrado.');
         return;
       }
 
@@ -2348,7 +2356,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         requirement_id: requirement.id,
         client_id: requirement.client_id ?? null,
         process_id: null,
-        responsible_id: null,
+        responsible_id: exigencyForm.responsible_id || null,
         notify_days_before: parseInt(exigencyForm.notify_days_before || '3', 10) || 3,
       };
 
@@ -2361,10 +2369,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setRequirements((prev) =>
         prev.map((req) =>
           req.id === requirement.id
-            ? {
-                ...req,
-                exigency_due_date: dueDateIso,
-              }
+            ? { ...req, exigency_due_date: dueDateIso }
             : req,
         ),
       );
@@ -2378,13 +2383,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       );
 
       await handleReload();
-      alert('Prazo criado e enviado para o módulo de prazos.');
-      handleCloseExigencyModal();
+      succeeded = true;
+      toast.success('Prazo criado', 'Exigência enviada para o módulo de Prazos.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Não foi possível criar o prazo de exigência.');
+      toast.error(err.message || 'Não foi possível criar o prazo de exigência.');
     } finally {
       exigencySubmittingRef.current = false;
+      if (succeeded) handleCloseExigencyModal();
     }
   };
 
@@ -3004,6 +3010,52 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               className="input-field"
             />
           </div>
+
+          {members.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-slate-700 block mb-2">
+                Responsável <span className="text-red-500">*</span>
+                {exigencyForm.responsible_id && (
+                  <span className="ml-2 text-xs font-normal text-orange-600">
+                    {members.find((m) => m.id === exigencyForm.responsible_id)?.name || ''}
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {members.map((m) => {
+                  const isSelected = exigencyForm.responsible_id === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => handleExigencyFormChange('responsible_id', isSelected ? '' : m.id)}
+                      className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                        isSelected
+                          ? 'ring-2 ring-offset-2 ring-orange-500'
+                          : 'ring-1 ring-transparent hover:ring-slate-300'
+                      }`}
+                      title={m.name || m.email || ''}
+                    >
+                      {m.avatar_url ? (
+                        <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-sm font-semibold text-orange-700">
+                          {(m.name || m.email || '?')[0].toUpperCase()}
+                        </div>
+                      )}
+                      {isSelected && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M2 6l3 3 5-5" />
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
@@ -3017,7 +3069,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           <button
             type="button"
             onClick={handleCreateExigencyDeadline}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition disabled:opacity-60"
             disabled={exigencySubmittingRef.current}
           >
             {exigencySubmittingRef.current && <Loader2 className="w-4 h-4 animate-spin" />}

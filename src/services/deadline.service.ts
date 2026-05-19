@@ -6,64 +6,117 @@ import type {
   DeadlineFilters,
   DeadlineStatus,
 } from '../types/deadline.types';
-import { matchesNormalizedSearch } from '../utils/search';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
+// Cache em memória por chave de filtros server-side (eq + date ranges).
+// O filtro client-side (search) é aplicado sobre os dados em cache.
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+interface DeadlineCacheEntry {
+  data: Deadline[];
+  timestamp: number;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 class DeadlineService {
   private tableName = 'deadlines';
 
+  private _cache = new Map<string, DeadlineCacheEntry>();
+
+  private getCacheKey(serverFilters: Record<string, unknown>): string {
+    return JSON.stringify(serverFilters);
+  }
+
+  private isCacheValid(key: string): boolean {
+    const entry = this._cache.get(key);
+    return !!entry && Date.now() - entry.timestamp < CACHE_DURATION;
+  }
+
+  /** Invalida todo o cache. Chamado em qualquer mutação. */
+  invalidateCache(): void {
+    this._cache.clear();
+  }
+
+  /**
+   * Lista prazos com filtros opcionais.
+   *
+   * Todos os filtros de eq/range determinam a chave de cache.
+   * O filtro `search` é aplicado client-side sobre os dados em cache.
+   */
   async listDeadlines(filters?: DeadlineFilters): Promise<Deadline[]> {
-    let query = supabase
-      .from(this.tableName)
-      .select('*')
-      .order('due_date', { ascending: true });
+    // Separar search (client-side) dos demais filtros (server-side)
+    const { search, ...serverFilters } = filters ?? {};
+    const cacheKey = this.getCacheKey(serverFilters);
 
-    if (filters?.status) {
-      query = query.eq('status', filters.status);
+    let rows: Deadline[];
+
+    if (this.isCacheValid(cacheKey)) {
+      rows = this._cache.get(cacheKey)!.data;
+    } else {
+      let query = supabase
+        .from(this.tableName)
+        .select('*')
+        .order('due_date', { ascending: true });
+
+      if (serverFilters.status) {
+        query = query.eq('status', serverFilters.status as string);
+      }
+
+      if (serverFilters.priority) {
+        query = query.eq('priority', serverFilters.priority as string);
+      }
+
+      if (serverFilters.type) {
+        query = query.eq('type', serverFilters.type as string);
+      }
+
+      if (serverFilters.process_id) {
+        query = query.eq('process_id', serverFilters.process_id as string);
+      }
+
+      if (serverFilters.requirement_id) {
+        query = query.eq('requirement_id', serverFilters.requirement_id as string);
+      }
+
+      if (serverFilters.client_id) {
+        query = query.eq('client_id', serverFilters.client_id as string);
+      }
+
+      if (serverFilters.responsible_id) {
+        query = query.eq('responsible_id', serverFilters.responsible_id as string);
+      }
+
+      if (serverFilters.due_date_from) {
+        query = query.gte('due_date', serverFilters.due_date_from as string);
+      }
+
+      if (serverFilters.due_date_to) {
+        query = query.lte('due_date', serverFilters.due_date_to as string);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Erro ao listar prazos:', error);
+        throw new Error(error.message);
+      }
+
+      rows = (data ?? []) as Deadline[];
+      this._cache.set(cacheKey, { data: rows, timestamp: Date.now() });
     }
 
-    if (filters?.priority) {
-      query = query.eq('priority', filters.priority);
+    // ── Filtro client-side ────────────────────────────────────────────────────
+    if (search) {
+      const normalizedSearch = normalizeSearchText(search);
+      if (normalizedSearch) {
+        return rows.filter((item) =>
+          matchesNormalizedSearch(normalizedSearch, [item.title, item.description])
+        );
+      }
     }
 
-    if (filters?.type) {
-      query = query.eq('type', filters.type);
-    }
-
-    if (filters?.process_id) {
-      query = query.eq('process_id', filters.process_id);
-    }
-
-    if (filters?.requirement_id) {
-      query = query.eq('requirement_id', filters.requirement_id);
-    }
-
-    if (filters?.client_id) {
-      query = query.eq('client_id', filters.client_id);
-    }
-
-    if (filters?.responsible_id) {
-      query = query.eq('responsible_id', filters.responsible_id);
-    }
-
-    if (filters?.due_date_from) {
-      query = query.gte('due_date', filters.due_date_from);
-    }
-
-    if (filters?.due_date_to) {
-      query = query.lte('due_date', filters.due_date_to);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Erro ao listar prazos:', error);
-      throw new Error(error.message);
-    }
-
-    const rows = data ?? [];
-    return filters?.search
-      ? rows.filter((item) => matchesNormalizedSearch(filters.search || '', [item.title, item.description]))
-      : rows;
+    return rows;
   }
 
   async getDeadlineById(id: string): Promise<Deadline | null> {
@@ -102,6 +155,7 @@ class DeadlineService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -123,6 +177,7 @@ class DeadlineService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -148,6 +203,7 @@ class DeadlineService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -161,6 +217,8 @@ class DeadlineService {
       console.error('Erro ao deletar prazo:', error);
       throw new Error(error.message);
     }
+
+    this.invalidateCache();
   }
 
   async getUpcomingDeadlines(daysAhead: number = 7): Promise<Deadline[]> {

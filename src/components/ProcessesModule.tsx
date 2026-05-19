@@ -860,13 +860,18 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
     }
   }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
-  const appliedEntityIdRef = useRef(false);
+  const appliedEntityIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!entityId || processes.length === 0) return;
-    if (appliedEntityIdRef.current) return;
-    appliedEntityIdRef.current = true;
+    if (appliedEntityIdRef.current === entityId) return; // já aberto este processo
+    appliedEntityIdRef.current = entityId;
     const process = processes.find((p) => p.id === entityId);
     if (process) {
+      // Se já está com o detalhe aberto, fechar primeiro para garantir re-montagem do conteúdo
+      if (viewMode === 'details') {
+        setSelectedProcessForView(null);
+        setViewMode('list');
+      }
       handleViewProcess(process); // chama a versão completa: carrega parties, signatures, etc.
       onParamConsumed?.();
     }
@@ -1511,6 +1516,8 @@ Regras:
     setStaySectionExpanded(false);
     setStayScheduleError(null);
     setStayScheduleSuccess(null);
+    // Reseta o ref para que uma nova navegação via busca global funcione normalmente
+    appliedEntityIdRef.current = null;
   };
 
   const createStayPrescriptionCalendarEvent = async (params: {

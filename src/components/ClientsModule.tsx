@@ -265,11 +265,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           outdated.add(client.id);
         }
       });
-      // Atualizar estatísticas (totais)
-      const total = await clientService.countClients();
-      const active = await clientService.countClients({ status: 'ativo' });
-      const pessoaFisica = await clientService.countClients({ client_type: 'pessoa_fisica' });
-      const pessoaJuridica = await clientService.countClients({ client_type: 'pessoa_juridica' });
+      // Atualizar estatísticas — usa listClients({}) em cache (1 request, sem round-trips extras)
+      const allData = await clientService.listClients({});
+      const total = allData.length;
+      const active = allData.filter((c) => c.status === 'ativo').length;
+      const pessoaFisica = allData.filter((c) => c.client_type === 'pessoa_fisica').length;
+      const pessoaJuridica = allData.filter((c) => c.client_type === 'pessoa_juridica').length;
 
       let visibleClients = data;
       if (showIncompleteOnly) visibleClients = visibleClients.filter((client) => missing.has(client.id));

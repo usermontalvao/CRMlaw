@@ -536,13 +536,13 @@ export default function ProfileModal({
   const content = (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
       <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        className="aero-backdrop absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+      <div className="aero-modal relative w-full max-w-4xl max-h-[92vh] rounded-2xl flex flex-col overflow-hidden">
+        <div className="h-1.5 w-full bg-orange-500 flex-shrink-0" />
+        <div className="aero-modal-inner px-5 sm:px-8 py-4 border-b border-white/30 dark:border-white/10 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               Perfil do Usuário
@@ -559,9 +559,9 @@ export default function ProfileModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+        <div className="flex-1 overflow-y-auto">
           {/* Tabs Navigation */}
-          <div className="border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900">
+          <div className="border-b border-white/30 dark:border-white/10 bg-white/40 dark:bg-black/20">
             <nav className="flex space-x-8 px-8" aria-label="Tabs">
               {[
                 { id: 'dados', label: 'Dados Pessoais', icon: User },

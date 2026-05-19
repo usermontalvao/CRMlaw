@@ -25,13 +25,13 @@ export const LeadModal: React.FC<LeadModalProps> = ({
   const content = (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
       <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        className="aero-backdrop absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+      <div className="aero-modal relative w-full max-w-2xl max-h-[92vh] rounded-2xl flex flex-col overflow-hidden">
+        <div className="h-1.5 w-full bg-orange-500 flex-shrink-0" />
+        <div className="aero-modal-inner px-5 sm:px-7 py-4 border-b border-white/30 dark:border-white/10 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               Formulário
@@ -48,8 +48,8 @@ export const LeadModal: React.FC<LeadModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
-          <form onSubmit={onSubmit} className="p-8 space-y-5">
+        <div className="flex-1 overflow-y-auto">
+          <form onSubmit={onSubmit} className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 Nome completo <span className="text-red-500">*</span>
@@ -111,7 +111,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({
           </form>
         </div>
 
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+        <div className="aero-modal-inner border-t border-white/30 dark:border-white/10 px-4 sm:px-6 py-3 flex-shrink-0">
           <div className="flex justify-end items-center gap-4">
             <button
               type="button"

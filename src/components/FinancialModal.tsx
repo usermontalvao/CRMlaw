@@ -40,9 +40,9 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-          <p className="text-center text-slate-600">Carregando...</p>
+      <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50">
+        <div className="aero-modal rounded-2xl p-6 max-w-md w-full mx-4">
+          <p className="text-center text-slate-700 dark:text-slate-300">Carregando...</p>
         </div>
       </div>
     );
@@ -50,9 +50,9 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (!agreement) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-          <p className="text-center text-slate-600">Acordo não encontrado</p>
+      <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50">
+        <div className="aero-modal rounded-2xl p-6 max-w-md w-full mx-4">
+          <p className="text-center text-slate-700 dark:text-slate-300">Acordo não encontrado</p>
           <button
             onClick={onClose}
             className="mt-4 w-full px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800"
@@ -65,10 +65,10 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50 p-4">
+      <div className="aero-modal rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 aero-modal-inner border-b border-white/30 dark:border-white/10 px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-900">Detalhes do Acordo</h2>
           <button
             onClick={onClose}

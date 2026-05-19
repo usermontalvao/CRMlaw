@@ -9,6 +9,19 @@ import type { ClientFilters } from '../types/client.types.js';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
+// ─── Cache ────────────────────────────────────────────────────────────────────
+// Cache em memória por chave de filtros server-side (status, client_type).
+// Filtros client-side (search, sort_order) são aplicados sobre os dados em cache,
+// evitando round-trips ao Supabase a cada digitação de busca.
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+interface ClientCacheEntry {
+  data: Client[];
+  timestamp: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const isBlankValue = (value: unknown) => value === null || value === undefined || String(value).trim() === '';
 
 const clientMergeFields: Array<keyof CreateClientDTO> = [
@@ -37,61 +50,92 @@ const clientMergeFields: Array<keyof CreateClientDTO> = [
 export class ClientService {
   private tableName = 'clients';
 
+  // Cache: Map keyed by server-side filter JSON
+  private _cache = new Map<string, ClientCacheEntry>();
+
+  /** Gera a chave de cache usando apenas os filtros enviados ao Supabase. */
+  private getCacheKey(serverFilters: Record<string, unknown>): string {
+    return JSON.stringify(serverFilters);
+  }
+
+  private isCacheValid(key: string): boolean {
+    const entry = this._cache.get(key);
+    return !!entry && Date.now() - entry.timestamp < CACHE_DURATION;
+  }
+
+  /** Invalida todo o cache. Chamado em qualquer mutação (create/update/delete/merge). */
+  invalidateCache(): void {
+    this._cache.clear();
+  }
+
   /**
-   * Lista todos os clientes com filtros opcionais
+   * Lista todos os clientes com filtros opcionais.
+   *
+   * Filtros server-side (status, client_type) determinam a chave de cache.
+   * Filtros client-side (search, sort_order) são aplicados sobre o cache,
+   * permitindo buscas instantâneas sem round-trip ao Supabase.
    */
   async listClients(filters?: ClientFilters): Promise<Client[]> {
-    try {
-      let query = supabase.from(this.tableName).select('*');
+    // Separar filtros: server-side vs client-side
+    const { search, sort_order, ...serverFilters } = filters ?? {};
+    const cacheKey = this.getCacheKey(serverFilters);
 
-      // Aplicar filtros
-      if (filters?.status) {
-        query = query.eq('status', filters.status);
-      }
+    let rows: Client[];
 
-      if (filters?.client_type) {
-        query = query.eq('client_type', filters.client_type);
-      }
+    if (this.isCacheValid(cacheKey)) {
+      rows = this._cache.get(cacheKey)!.data;
+    } else {
+      try {
+        let query = supabase.from(this.tableName).select('*');
 
-      // Busca sem ordenação no banco — vamos ordenar client-side para suportar
-      // prioridade de status (ativo > suspenso > inativo) + nome alfabético.
-      query = query.order('full_name', { ascending: true });
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Erro ao listar clientes:', error);
-        throw new Error(`Erro ao listar clientes: ${error.message}`);
-      }
-
-      let rows = (data as Client[]) || [];
-
-      // Filtro de texto client-side (accent-insensitive)
-      if (filters?.search) {
-        const normalizedSearch = normalizeSearchText(filters.search);
-        if (normalizedSearch) {
-          rows = rows.filter((client) =>
-            matchesNormalizedSearch(normalizedSearch, [client.full_name, client.cpf_cnpj, client.email])
-          );
+        if (serverFilters.status) {
+          query = query.eq('status', serverFilters.status as string);
         }
+        if (serverFilters.client_type) {
+          query = query.eq('client_type', serverFilters.client_type as string);
+        }
+
+        query = query.order('full_name', { ascending: true });
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error('Erro ao listar clientes:', error);
+          throw new Error(`Erro ao listar clientes: ${error.message}`);
+        }
+
+        rows = (data as Client[]) ?? [];
+        this._cache.set(cacheKey, { data: rows, timestamp: Date.now() });
+      } catch (error) {
+        console.error('Erro ao listar clientes:', error);
+        throw error;
       }
-
-      // Ordenação: ativo > suspenso > inativo, depois nome A-Z (ou Z-A se oldest)
-      const statusOrder = (s: string) => (s === 'ativo' ? 0 : s === 'suspenso' ? 1 : 2);
-      const nameAsc = filters?.sort_order !== 'oldest';
-      rows.sort((a, b) => {
-        const statusDiff = statusOrder(a.status) - statusOrder(b.status);
-        if (statusDiff !== 0) return statusDiff;
-        const nameA = (a.full_name || '').toLowerCase();
-        const nameB = (b.full_name || '').toLowerCase();
-        return nameAsc ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-      });
-
-      return rows;
-    } catch (error) {
-      console.error('Erro ao listar clientes:', error);
-      throw error;
     }
+
+    // ── Filtros client-side ───────────────────────────────────────────────────
+    let result = rows;
+
+    if (search) {
+      const normalizedSearch = normalizeSearchText(search);
+      if (normalizedSearch) {
+        result = result.filter((client) =>
+          matchesNormalizedSearch(normalizedSearch, [client.full_name, client.cpf_cnpj, client.email])
+        );
+      }
+    }
+
+    // Ordenação: ativo > suspenso > inativo, depois nome A-Z (ou Z-A)
+    const statusOrder = (s: string) => (s === 'ativo' ? 0 : s === 'suspenso' ? 1 : 2);
+    const nameAsc = sort_order !== 'oldest';
+    result = [...result].sort((a, b) => {
+      const statusDiff = statusOrder(a.status) - statusOrder(b.status);
+      if (statusDiff !== 0) return statusDiff;
+      const nameA = (a.full_name || '').toLowerCase();
+      const nameB = (b.full_name || '').toLowerCase();
+      return nameAsc ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+    });
+
+    return result;
   }
 
   /**
@@ -200,10 +244,6 @@ export class ClientService {
         throw new Error('Nenhum contato duplicado encontrado para mesclagem');
       }
 
-      // Sort all clients by recency (most recently updated first).
-      // This means: for any field where multiple records have data, we pick
-      // the value from the most recently updated record (recency wins conflicts).
-      // For fields only one record has, it gets filled in regardless (complementary merge).
       const allClients = [target, ...sources].sort(
         (a, b) =>
           new Date(b.updated_at || b.created_at || '0').getTime() -
@@ -213,18 +253,16 @@ export class ClientService {
       const mergedPayload: Partial<CreateClientDTO> = {};
 
       for (const field of clientMergeFields) {
-        // Skip notes — handled separately below
         if (field === 'notes') continue;
         for (const client of allClients) {
           const candidate = client[field];
           if (!isBlankValue(candidate)) {
             mergedPayload[field] = candidate as any;
-            break; // first non-blank from recency-sorted list wins
+            break;
           }
         }
       }
 
-      // Merge notes: concatenate all unique non-blank notes separated by " | "
       const notes = allClients
         .map((c) => String(c.notes || '').trim())
         .filter(Boolean);
@@ -237,11 +275,6 @@ export class ClientService {
         mergedPayload.status = target.status || 'ativo';
       }
 
-      // ── Step 1: clear unique-constrained fields on ALL sources FIRST ──────────
-      // This must happen before we update the target, because the target may
-      // be receiving a cpf_cnpj / email that is currently held by a source.
-      // Postgres would throw a unique violation if both rows hold the same value
-      // even briefly.
       for (const source of sources) {
         const { error: clearError } = await supabase
           .from(this.tableName)
@@ -259,7 +292,6 @@ export class ClientService {
         }
       }
 
-      // ── Step 2: update the target with the merged data ────────────────────────
       const { data: updatedTarget, error: updateError } = await supabase
         .from(this.tableName)
         .update({
@@ -274,7 +306,6 @@ export class ClientService {
         throw new Error(`Erro ao atualizar cliente principal: ${updateError.message}`);
       }
 
-      // ── Step 3: inactivate sources and record the merge note ──────────────────
       for (const source of sources) {
         const mergeNote = `Mesclado com ${updatedTarget.full_name} (${updatedTarget.id}) em ${new Date().toLocaleString('pt-BR')}`;
         const sourceNotes = [source.notes, mergeNote]
@@ -296,6 +327,7 @@ export class ClientService {
         }
       }
 
+      this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, {
         action: 'merge',
@@ -316,12 +348,10 @@ export class ClientService {
    */
   async createClient(clientData: CreateClientDTO): Promise<Client> {
     try {
-      // Normalizar nome para maiúsculas
       if (clientData.full_name) {
         clientData = { ...clientData, full_name: clientData.full_name.toUpperCase() };
       }
 
-      // Validar se CPF/CNPJ já existe (se fornecido)
       if (clientData.cpf_cnpj) {
         const existing = await this.getClientByCpfCnpj(clientData.cpf_cnpj);
         if (existing) {
@@ -343,10 +373,8 @@ export class ClientService {
         throw new Error(`Erro ao criar cliente: ${error.message}`);
       }
 
-      // Invalida cache do dashboard para forçar recarregamento
+      this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
-      
-      // Dispara evento global de mudança de clientes
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'create', client: data });
 
       return data;
@@ -361,18 +389,15 @@ export class ClientService {
    */
   async updateClient(id: string, updates: Partial<CreateClientDTO>): Promise<Client> {
     try {
-      // Normalizar nome para maiúsculas
       if (updates.full_name) {
         updates = { ...updates, full_name: updates.full_name.toUpperCase() };
       }
 
-      // Verificar se o cliente existe
       const existing = await this.getClientById(id);
       if (!existing) {
         throw new Error('Cliente não encontrado');
       }
 
-      // Validar CPF/CNPJ único (se estiver sendo atualizado)
       if (updates.cpf_cnpj && updates.cpf_cnpj !== existing.cpf_cnpj) {
         const duplicate = await this.getClientByCpfCnpj(updates.cpf_cnpj);
         if (duplicate && duplicate.id !== id) {
@@ -392,10 +417,8 @@ export class ClientService {
         throw new Error(`Erro ao atualizar cliente: ${error.message}`);
       }
 
-      // Invalida cache do dashboard para forçar recarregamento
+      this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
-      
-      // Dispara evento global de mudança de clientes
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', client: data });
 
       return data;
@@ -420,10 +443,8 @@ export class ClientService {
         throw new Error(`Erro ao deletar cliente: ${error.message}`);
       }
 
-      // Invalida cache do dashboard para forçar recarregamento
+      this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
-      
-      // Dispara evento global de mudança de clientes
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
     } catch (error) {
       console.error('Erro ao deletar cliente:', error);
@@ -432,7 +453,8 @@ export class ClientService {
   }
 
   /**
-   * Conta o total de clientes com filtros opcionais
+   * Conta o total de clientes com filtros opcionais.
+   * Mantido para compatibilidade — prefira derivar contagens do listClients() em cache.
    */
   async countClients(filters?: ClientFilters): Promise<number> {
     try {
@@ -462,7 +484,6 @@ export class ClientService {
 
   /**
    * Define ou remove a foto de perfil do cliente (path no Storage).
-   * Requer coluna photo_path na tabela clients.
    */
   async setClientPhoto(id: string, photoPath: string | null): Promise<void> {
     const { error } = await supabase
@@ -474,15 +495,12 @@ export class ClientService {
       throw new Error(`Erro ao salvar foto do perfil: ${error.message}`);
     }
 
+    this.invalidateCache();
     localStorage.removeItem('crm-dashboard-cache');
     this.clearClientPhotoCache(id);
     events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', id });
   }
 
-  /**
-   * Remove a entrada de foto de um cliente do cache compartilhado
-   * (usado por useClientPhotos), forçando re-resolução em todos os módulos.
-   */
   private clearClientPhotoCache(id: string): void {
     try {
       const KEY = 'jurius.clientPhotoCache.v1';
@@ -498,11 +516,6 @@ export class ClientService {
     }
   }
 
-  /**
-   * Exclui (oculta) uma foto coletada em assinatura do perfil/galeria do
-   * cliente — NÃO apaga a prova jurídica da assinatura, apenas marca o path
-   * como excluído para que não apareça em nenhum módulo.
-   */
   async excludeClientPhoto(id: string, photoPath: string): Promise<string[]> {
     const { data, error: fetchErr } = await supabase
       .from(this.tableName)
@@ -520,7 +533,6 @@ export class ClientService {
       excluded_photo_paths: nextExcluded,
       updated_at: new Date().toISOString(),
     };
-    // Se a foto excluída era a de perfil, desvincula
     if ((data as any)?.photo_path === photoPath) {
       update.photo_path = null;
     }
@@ -528,6 +540,7 @@ export class ClientService {
     if (error) {
       throw new Error(`Erro ao excluir foto: ${error.message}`);
     }
+    this.invalidateCache();
     localStorage.removeItem('crm-dashboard-cache');
     this.clearClientPhotoCache(id);
     events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', id });
@@ -544,9 +557,6 @@ export class ClientService {
     }
 
     try {
-      // Busca todos os clientes e filtra client-side com normalização de acentos.
-      // Não usamos ILIKE direto no Supabase porque PostgreSQL ILIKE é case-insensitive
-      // mas NÃO é accent-insensitive: "fabiola" não casa com "Fabíola" no banco.
       const { data, error } = await supabase
         .from(this.tableName)
         .select('id, full_name, email, phone, mobile, status, client_type')
@@ -565,7 +575,6 @@ export class ClientService {
         matchesNormalizedSearch(normalizedSearch, [client.full_name, client.email, client.phone, client.mobile])
       );
 
-      // Deduplica por nome normalizado, priorizando o registro com mais dados
       const seen = new Map<string, typeof filtered[number]>();
       for (const client of filtered) {
         const key = normalizeSearchText(client.full_name);
@@ -581,7 +590,6 @@ export class ClientService {
 
       const deduped = Array.from(seen.values());
 
-      // Ordena: nomes que começam com o termo pesquisado primeiro
       const normalizedName = (c: typeof deduped[number]) => normalizeSearchText(c.full_name);
       deduped.sort((a, b) => {
         const aStarts = normalizedName(a).startsWith(normalizedSearch);

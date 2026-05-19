@@ -35,32 +35,63 @@ interface SearchData {
 }
 
 let _cache: { data: SearchData; fetchedAt: number } | null = null;
+let _inflight: Promise<SearchData> | null = null; // deduplicação: evita 2 fetches simultâneos
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 async function getSearchData(force = false): Promise<SearchData> {
   if (!force && _cache && Date.now() - _cache.fetchedAt < CACHE_TTL) {
     return _cache.data;
   }
-  const [processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures] =
-    await Promise.all([
-      processService.listProcesses(),
-      clientService.listClients(),
-      djenLocalService.listComunicacoes({}),
-      requirementService.listRequirements().catch(() => []),
-      calendarService.listEvents().catch(() => [] as Awaited<ReturnType<typeof calendarService.listEvents>>),
-      taskService.listTasks().catch(() => []),
-      deadlineService.listDeadlines().catch(() => []),
-      financialService.listAgreements().catch(() => []),
-      cloudService.listFolders(null, false).catch(() => [] as Awaited<ReturnType<typeof cloudService.listFolders>>),
-      signatureService.listRequests().catch(() => [] as Awaited<ReturnType<typeof signatureService.listRequests>>),
-    ]);
-  const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures };
-  _cache = { data, fetchedAt: Date.now() };
-  return data;
+
+  // Se já há uma requisição em andamento (ex: priming + busca simultâneos), reutilizá-la
+  if (_inflight) return _inflight;
+
+  // Invalidar caches dos services para garantir dados frescos após idle
+  processService.invalidateCache();
+  clientService.invalidateCache();
+  requirementService.invalidateCache();
+  deadlineService.invalidateCache();
+
+  _inflight = Promise.all([
+    processService.listProcesses().catch(() => [] as Awaited<ReturnType<typeof processService.listProcesses>>),
+    clientService.listClients().catch(() => [] as Client[]),
+    djenLocalService.listComunicacoes({}).catch(() => [] as Awaited<ReturnType<typeof djenLocalService.listComunicacoes>>),
+    requirementService.listRequirements().catch(() => []),
+    calendarService.listEvents().catch(() => [] as Awaited<ReturnType<typeof calendarService.listEvents>>),
+    taskService.listTasks().catch(() => []),
+    deadlineService.listDeadlines().catch(() => []),
+    financialService.listAgreements().catch(() => []),
+    cloudService.listFolders(null, false).catch(() => [] as Awaited<ReturnType<typeof cloudService.listFolders>>),
+    signatureService.listRequests().catch(() => [] as Awaited<ReturnType<typeof signatureService.listRequests>>),
+  ]).then(([processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures]) => {
+    const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures };
+    _cache = { data, fetchedAt: Date.now() };
+    _inflight = null;
+    return data;
+  }).catch((err) => {
+    _inflight = null;
+    throw err;
+  });
+
+  return _inflight;
 }
 
 // Invalidar cache ao abrir (pre-warm na abertura)
 export function invalidateSearchCache() { _cache = null; }
+
+// Invalida automaticamente o cache quando o tab fica visível após longa inatividade (>4 min)
+let _hiddenAt = 0;
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      _hiddenAt = Date.now();
+    } else if (_hiddenAt > 0 && Date.now() - _hiddenAt > 4 * 60 * 1000) {
+      // Ficou escondido por mais de 4 minutos → forçar refresh na próxima busca
+      _cache = null;
+      _hiddenAt = 0;
+    }
+  });
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -595,12 +626,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     .map(type => ({ type, cfg: TYPE_CONFIG[type], items: permitted.filter(r => r.type === type) }))
     .filter(g => g.items.length > 0);
 
-  // Chips de filtro: "Tudo" + tipos presentes (agrupa processo + processo-via-cliente)
+  // Chips de filtro: "Tudo" + tipos presentes (agrupa processo + processo-via-cliente num único chip)
+  const uniqueFilterTypes = [
+    ...new Set(allGroups.map(g => g.type === 'processo-via-cliente' ? 'processo' : g.type)),
+  ] as ResultType[];
   const filterDefs: { key: ResultType | 'all'; label: string; icon: React.ElementType }[] = [
     { key: 'all', label: 'Tudo', icon: Sparkles },
-    ...allGroups
-      .filter(g => g.type !== 'processo-via-cliente')
-      .map(g => ({ key: g.type, label: g.cfg.group, icon: g.cfg.icon })),
+    ...uniqueFilterTypes.map(type => ({
+      key: type,
+      label: TYPE_CONFIG[type].group,
+      icon: TYPE_CONFIG[type].icon,
+    })),
   ];
   const countFor = (k: ResultType | 'all') =>
     k === 'all'
@@ -629,383 +665,293 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const showResults = !isEmpty && results.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[8vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[6vh]" onClick={onClose}>
       <style>{`
         @keyframes gsOverlayIn { from { opacity:0 } to { opacity:1 } }
         @keyframes gsModalIn {
-          from { opacity:0; transform:translateY(-20px) scale(.95) }
-          to   { opacity:1; transform:translateY(0)    scale(1)   }
+          from { opacity:0; transform:translateY(-16px) scale(.97) }
+          to   { opacity:1; transform:translateY(0) scale(1) }
         }
-        @keyframes gsGlow { 0%,100% { opacity:.5 } 50% { opacity:1 } }
-        .gs-overlay { animation: gsOverlayIn .22s ease-out }
-        .gs-modal   { animation: gsModalIn .30s cubic-bezier(.16,1,.3,1) }
+        .gs-overlay { animation: gsOverlayIn .2s ease-out }
+        .gs-modal   { animation: gsModalIn .28s cubic-bezier(.16,1,.3,1) }
         .gs-chips   { scrollbar-width:none; -ms-overflow-style:none }
         .gs-chips::-webkit-scrollbar { display:none }
+        .gs-scroll::-webkit-scrollbar { width:5px }
+        .gs-scroll::-webkit-scrollbar-track { background:transparent }
+        .gs-scroll::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.08); border-radius:10px }
 
-        /* ── Glass module cards ── */
+        /* ── Glass quick-access cards ── */
         .gs-card {
-          background: rgba(255,255,255,0.60);
-          border: 1px solid rgba(255,255,255,0.80);
-          backdrop-filter: blur(12px) saturate(160%);
-          -webkit-backdrop-filter: blur(12px) saturate(160%);
+          position: relative;
+          background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.32) 100%);
+          border: 1px solid rgba(255,255,255,0.65);
           box-shadow:
-            0 2px 10px -2px rgba(15,23,42,0.08),
-            inset 0 1.5px 0 rgba(255,255,255,1),
-            inset 1px 0 rgba(255,255,255,0.7);
-          transition: all .18s cubic-bezier(.16,1,.3,1);
+            inset 0 1px 0 rgba(255,255,255,0.85),
+            0 1px 2px rgba(15,23,42,0.04);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          transition: all .22s cubic-bezier(.4,0,.2,1);
         }
         .gs-card:hover {
-          background: rgba(254,243,199,0.72);
-          border-color: rgba(251,191,36,0.55);
-          transform: translateY(-1px) scale(1.015);
+          background: linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,247,237,0.55) 100%);
+          border-color: rgba(245,158,11,0.45);
+          transform: translateY(-1px);
           box-shadow:
-            0 8px 24px -4px rgba(245,158,11,0.22),
-            inset 0 1.5px 0 rgba(255,255,255,1),
-            inset 1px 0 rgba(255,255,255,0.7);
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 6px 20px -4px rgba(245,158,11,0.18),
+            0 2px 6px rgba(15,23,42,0.06);
+        }
+        .gs-card:active { transform: scale(0.98); }
+
+        /* ── Search input frame (vidro claro sobre vidro) ── */
+        .gs-search-frame {
+          background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.32) 100%);
+          border: 1px solid rgba(255,255,255,0.70);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.90),
+            inset 0 -1px 0 rgba(255,255,255,0.20),
+            0 1px 2px rgba(15,23,42,0.04);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+        }
+        .gs-search-frame:focus-within {
+          border-color: rgba(245,158,11,0.55);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 0 0 3px rgba(245,158,11,0.12),
+            0 4px 14px -2px rgba(245,158,11,0.18);
         }
 
-        /* ── Glass filter chips ── */
+        /* ── Filter pills ── */
         .gs-chip-btn {
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          transition: all .13s ease;
+          transition: all .15s ease;
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
         }
         .gs-chip-btn.gs-active {
-          background: rgb(245,158,11) !important;
-          border-color: rgba(251,191,36,0.6) !important;
+          background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
           color: white !important;
           box-shadow:
-            0 2px 14px -2px rgba(245,158,11,0.5),
-            inset 0 1.5px 0 rgba(255,255,255,0.35);
+            inset 0 1px 0 rgba(255,255,255,0.4),
+            0 6px 16px -4px rgba(245,158,11,0.55),
+            0 2px 4px rgba(245,158,11,0.20) !important;
+          border-color: rgba(245,158,11,0.6) !important;
         }
 
         /* ── Result rows ── */
-        .gs-result { transition: background .08s ease; }
-        .gs-result:hover { background: rgba(255,255,255,0.72) !important; }
-        .gs-result.gs-sel  { background: rgba(254,243,199,0.55) !important; }
+        .gs-result {
+          transition: background .12s ease, border-color .12s ease;
+          border-left: 3px solid transparent;
+        }
+        .gs-result:hover {
+          background: linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.40) 100%) !important;
+        }
+        .gs-result.gs-sel {
+          background: linear-gradient(90deg, rgba(254,243,199,0.45) 0%, rgba(255,255,255,0.20) 100%) !important;
+          border-left-color: #f59e0b !important;
+        }
 
-        /* ── Recent search pills ── */
+        /* ── Recent pills ── */
         .gs-recent-pill {
-          background: rgba(255,255,255,0.62);
-          border: 1px solid rgba(255,255,255,0.80);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          box-shadow: 0 1px 4px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,1);
-          transition: all .14s ease;
+          background: linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.40) 100%);
+          border: 1px solid rgba(255,255,255,0.65);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          transition: all .15s ease;
         }
         .gs-recent-pill:hover {
-          background: rgba(254,243,199,0.80);
-          border-color: rgba(251,191,36,0.5);
+          background: linear-gradient(180deg, rgba(254,243,199,0.85) 0%, rgba(253,230,138,0.55) 100%);
+          border-color: rgba(251,191,36,0.55);
           color: rgb(120,53,15);
-          box-shadow: 0 3px 10px -2px rgba(245,158,11,0.18), inset 0 1px 0 rgba(255,255,255,1);
         }
 
-        /* ── Kbd glass keys ── */
+        /* ── Kbd keys ── */
         .gs-kbd {
-          background: rgba(255,255,255,0.70);
-          border: 1px solid rgba(203,213,225,0.60);
-          backdrop-filter: blur(4px);
-          -webkit-backdrop-filter: blur(4px);
+          background: linear-gradient(180deg, rgba(255,255,255,0.90) 0%, rgba(241,245,249,0.75) 100%);
+          border: 1px solid rgba(203,213,225,0.55);
           box-shadow:
-            0 1px 3px rgba(15,23,42,0.07),
-            inset 0 1.5px 0 rgba(255,255,255,1),
-            inset 0 -1px 0 rgba(15,23,42,0.06);
+            inset 0 1px 0 rgba(255,255,255,0.95),
+            0 1px 2px rgba(15,23,42,0.08);
         }
       `}</style>
 
-      {/* ── Overlay: cor apenas, SEM backdrop-filter ──
-           O backdrop-filter fica no modal para que ele froste o conteúdo real da página */}
+      {/* Overlay */}
       <div
-        className="gs-overlay absolute inset-0"
-        style={{ background: 'rgba(10,18,38,0.42)' }}
+        className="gs-overlay absolute inset-0 aero-backdrop"
       />
 
-      {/* Ambient amber glow atrás do modal */}
+      {/* ═══════════════════════════════════
+          MODAL — Aero / Apple Glass Panel
+          ═══════════════════════════════════ */}
       <div
-        className="absolute pointer-events-none"
-        style={{
-          top: 'calc(8vh - 60px)', left: '50%', transform: 'translateX(-50%)',
-          width: 800, height: 300,
-          background: 'radial-gradient(ellipse, rgba(245,158,11,0.16) 0%, transparent 68%)',
-          animation: 'gsGlow 3.5s ease-in-out infinite',
-          filter: 'blur(40px)',
-        }}
-      />
-
-      {/* ════════════════════════════════════════════════
-          MODAL — painel de vidro Aero
-          Shell quase transparente, frost real sobre a página
-          ════════════════════════════════════════════════ */}
-      <div
-        className="gs-modal relative w-full max-w-3xl mx-4 rounded-[20px] flex flex-col max-h-[82vh]"
-        style={{
-          /* Vidro: pouco branco + blur forte = frosted glass real */
-          background: 'rgba(255,255,255,0.14)',
-          backdropFilter: 'blur(64px) saturate(200%) brightness(115%)',
-          WebkitBackdropFilter: 'blur(64px) saturate(200%) brightness(115%)',
-
-          /* Borda de vidro: branca e fina */
-          border: '1px solid rgba(255,255,255,0.42)',
-
-          /* Sombras: profundidade + highlights de vidro inset */
-          boxShadow: [
-            /* ── Highlights inset — ASSINATURA do Aero ── */
-            'inset 0 2px 0 rgba(255,255,255,0.95)',   /* topo brilhante */
-            'inset 1.5px 0 rgba(255,255,255,0.60)',   /* esquerda brilhante */
-            'inset -1px 0 rgba(255,255,255,0.30)',    /* direita sutil */
-            'inset 0 -1px 0 rgba(255,255,255,0.20)',  /* baixo sutil */
-            /* ── Borda externa escura ── */
-            '0 0 0 1px rgba(0,0,0,0.18)',
-            /* ── Sombra profunda ── */
-            '0 40px 120px -16px rgba(0,0,0,0.65)',
-            '0 16px 48px -8px rgba(0,0,0,0.32)',
-            /* ── Glow âmbar ── */
-            '0 0 80px -20px rgba(245,158,11,0.22)',
-          ].join(', '),
-
-          /* Clip sem overflow:hidden para não interferir no backdrop-filter */
-          clipPath: 'inset(0 round 20px)',
-        }}
+        className="gs-modal aero-modal relative w-full max-w-3xl mx-4 rounded-[22px] flex flex-col max-h-[85vh] overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        {/* ── Reflexo de vidro — camada de luz diagonal ──
-             Imita a reflexão característica do Aero sobre o vidro */}
-        <div
-          className="absolute inset-0 pointer-events-none rounded-[20px]"
-          style={{ zIndex: 30 }}
-        >
-          {/* Brilho diagonal topo-esquerdo */}
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'linear-gradient(148deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 28%, transparent 52%)',
-            borderRadius: 'inherit',
-          }} />
-          {/* Linha de reflexo na borda superior */}
-          <div style={{
-            position: 'absolute', top: 2, left: 12, right: 12, height: 1,
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.9) 20%, rgba(255,255,255,1) 50%, rgba(255,255,255,0.9) 80%, transparent)',
-            borderRadius: 2,
-          }} />
-          {/* Glint no canto superior direito */}
-          <div style={{
-            position: 'absolute', top: 0, right: 0, width: 120, height: 80,
-            background: 'radial-gradient(ellipse at top right, rgba(255,255,255,0.22) 0%, transparent 70%)',
-          }} />
-        </div>
-
-        {/* ── Faixa âmbar: luz refratada no topo do vidro ── */}
-        <div className="flex-shrink-0" style={{
-          height: 3,
-          background: 'linear-gradient(90deg, transparent 0%, rgba(253,230,138,0.5) 10%, rgba(251,191,36,0.92) 32%, rgba(245,158,11,1) 50%, rgba(251,191,36,0.92) 68%, rgba(253,230,138,0.5) 90%, transparent 100%)',
-          boxShadow: '0 0 12px 1px rgba(245,158,11,0.4)',
-        }} />
-
-        {/* ── Input — painel mais opaco para conforto de digitação ── */}
-        <div
-          className="flex items-center gap-3 px-5 py-3.5 flex-shrink-0"
-          style={{
-            background: 'rgba(255,255,255,0.86)',
-            borderBottom: '1px solid rgba(255,255,255,0.50)',
-          }}
-        >
-          <div className="relative flex-shrink-0">
-            {loading
-              ? <Loader2 className="w-[19px] h-[19px] text-amber-500 animate-spin" />
-              : <Search className="w-[19px] h-[19px] text-amber-500" />
-            }
-          </div>
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Buscar clientes, processos, prazos, documentos…"
-            className="flex-1 text-[14px] text-slate-800 placeholder-slate-400 bg-transparent outline-none font-normal"
-          />
-          <div className="flex items-center gap-2">
-            {priming && !loading && (
-              <span className="flex items-center gap-1 text-[10px] text-amber-500 font-medium">
-                <Zap className="w-3 h-3" /> indexando…
-              </span>
-            )}
-            {query && (
-              <button
-                onClick={() => setQuery('')}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
-                style={{ background: 'rgba(241,245,249,0.8)' }}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="hidden sm:inline-flex px-2 py-1 text-[10px] font-semibold text-slate-500 rounded-md transition-colors"
-              style={{
-                background: 'rgba(255,255,255,0.80)',
-                border: '1px solid rgba(203,213,225,0.65)',
-                boxShadow: '0 1px 3px rgba(15,23,42,0.07), inset 0 1.5px 0 rgba(255,255,255,1)',
-              }}
-            >
-              ESC
-            </button>
-          </div>
-        </div>
-
-        {/* ── Chips de filtro — vidro semitransparente ── */}
-        {showResults && filters.length > 1 && (
-          <div
-            className="gs-chips flex items-center gap-1.5 px-5 py-2 overflow-x-auto flex-shrink-0"
-            style={{
-              background: 'rgba(255,255,255,0.55)',
-              borderBottom: '1px solid rgba(255,255,255,0.48)',
-            }}
-          >
-            {filters.map(f => {
-              const active = f.key === activeFilter;
-              const FIcon = f.icon;
-              return (
+        {/* ── Search header ── */}
+        <div className="relative z-10 px-5 pt-4 pb-3 border-b border-white/40 flex-shrink-0">
+          <div className="gs-search-frame flex items-center gap-3 rounded-xl px-4 py-2.5">
+            <div className="flex-shrink-0">
+              {loading
+                ? <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
+                : <Search className="w-5 h-5 text-amber-500" />
+              }
+            </div>
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Buscar clientes, processos, prazos, documentos…"
+              className="flex-1 text-[15px] text-gray-800 placeholder-gray-400 bg-transparent outline-none font-medium"
+            />
+            <div className="flex items-center gap-2">
+              {priming && !loading && (
+                <span className="flex items-center gap-1 text-[10px] text-amber-500 font-medium">
+                  <Zap className="w-3 h-3" /> indexando…
+                </span>
+              )}
+              {query && (
                 <button
-                  key={f.key}
-                  onClick={() => { setActiveFilter(f.key); setSelected(0); }}
-                  className={`gs-chip-btn${active ? ' gs-active' : ''} group inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap`}
-                  style={!active ? {
-                    background: 'rgba(255,255,255,0.72)',
-                    border: '1px solid rgba(203,213,225,0.55)',
-                    color: 'rgb(100,116,139)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,1)',
-                  } : {}}
+                  onClick={() => setQuery('')}
+                  className="text-gray-400 hover:text-gray-600 p-1 hover:bg-white/50 rounded-lg transition-colors"
                 >
-                  <FIcon className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-400 group-hover:text-amber-500'}`} />
-                  {f.label}
-                  <span
-                    className={`tabular-nums text-[10px] px-1 rounded-full ${active ? 'bg-white/25 text-white' : 'text-slate-400'}`}
-                    style={!active ? { background: 'rgba(203,213,225,0.45)' } : {}}
-                  >
-                    {f.count}
-                  </span>
+                  <X className="w-4 h-4" />
                 </button>
-              );
-            })}
+              )}
+              <button
+                onClick={onClose}
+                className="hidden sm:inline-flex px-2.5 py-1 text-[11px] font-semibold text-gray-500 rounded-lg hover:bg-white/60 transition-colors"
+                style={{
+                  background: 'rgba(255,255,255,0.70)',
+                  border: '1px solid rgba(203,213,225,0.45)',
+                  boxShadow: '0 1px 3px rgba(15,23,42,0.06)',
+                }}
+              >
+                ESC
+              </button>
+            </div>
           </div>
-        )}
+
+          {/* Filter pills */}
+          {showResults && filters.length > 1 && (
+            <div className="gs-chips flex items-center gap-2 mt-3 overflow-x-auto">
+              {filters.map(f => {
+                const active = f.key === activeFilter;
+                const FIcon = f.icon;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => { setActiveFilter(f.key); setSelected(0); }}
+                    className={`gs-chip-btn${active ? ' gs-active' : ''} inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-semibold whitespace-nowrap`}
+                    style={!active ? {
+                      background: 'rgba(255,255,255,0.55)',
+                      border: '1px solid rgba(255,255,255,0.45)',
+                      color: 'rgb(107,114,128)',
+                    } : {}}
+                  >
+                    <FIcon className={`w-3.5 h-3.5 ${active ? 'text-white' : 'text-gray-400'}`} />
+                    {f.label}
+                    <span className={`tabular-nums text-[11px] px-1.5 py-0.5 rounded-full ${active ? 'bg-white/25 text-white' : 'bg-gray-200/60 text-gray-500'}`}>
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* ── Body ── */}
-        <div
-          className="flex flex-1 min-h-0"
-          style={{ borderTop: (!showResults || filters.length <= 1) ? '1px solid rgba(255,255,255,0.45)' : undefined }}
-        >
-          {/* Coluna esquerda */}
-          <div
-            className={`flex-1 min-w-0 overflow-y-auto ${showResults && previewItem ? 'sm:border-r' : ''}`}
-            style={{
-              background: 'rgba(255,255,255,0.82)',
-              borderColor: 'rgba(255,255,255,0.50)',
-            }}
-          >
+        <div className="relative z-10 flex flex-1 min-h-0">
+
+          {/* Left: results list */}
+          <div className={`flex-1 min-w-0 overflow-y-auto gs-scroll ${showResults && previewItem ? 'sm:border-r border-white/30' : ''}`}>
             {showResults ? (
-              <div className="py-1.5">
+              <div className="py-2">
                 {grouped.map(({ type, cfg, items }) => (
                   <div key={type}>
-                    {/* Header do grupo */}
-                    <div className="flex items-center gap-2 px-5 pt-3 pb-1">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">{cfg.group}</span>
-                      <span className="text-[9px] text-slate-300 tabular-nums">{items.length}</span>
-                      <div className="flex-1 h-px" style={{ background: 'rgba(203,213,225,0.50)' }} />
+                    {/* Section header */}
+                    <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{cfg.group}</span>
+                      <span className="text-[10px] font-bold text-gray-300 tabular-nums">{items.length}</span>
+                      <div className="flex-1 h-px bg-gray-200/70" />
                     </div>
 
-                    {items.map(r => {
-                      const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
-                      const isSelected = fi === safeSelected;
-                      const Icon = cfg.icon;
-                      const iconCls = TYPE_ICON_COLOR[r.type];
-                      return (
-                        <button
-                          key={`${r.type}-${r.id}`}
-                          onClick={() => handleSelect(r)}
-                          onMouseEnter={() => setSelected(fi)}
-                          className={`gs-result${isSelected ? ' gs-sel' : ''} relative w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left`}
-                        >
-                          {/* Barra âmbar de seleção */}
-                          {isSelected && (
-                            <div
-                              className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full"
-                              style={{ background: 'linear-gradient(180deg, #fbbf24, #f59e0b)' }}
-                            />
-                          )}
-
-                          {/* Ícone */}
-                          <span
-                            className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${iconCls} ${isSelected ? 'scale-105' : ''} transition-transform`}
-                            style={{
-                              boxShadow: isSelected
-                                ? '0 3px 10px -2px rgba(245,158,11,0.25), inset 0 1.5px 0 rgba(255,255,255,0.85)'
-                                : 'inset 0 1.5px 0 rgba(255,255,255,0.85)',
-                            }}
+                    <div className="space-y-0.5 px-3">
+                      {items.map(r => {
+                        const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
+                        const isSelected = fi === safeSelected;
+                        const Icon = cfg.icon;
+                        const iconCls = TYPE_ICON_COLOR[r.type];
+                        return (
+                          <button
+                            key={`${r.type}-${r.id}`}
+                            onClick={() => handleSelect(r)}
+                            onMouseEnter={() => setSelected(fi)}
+                            className={`gs-result${isSelected ? ' gs-sel' : ''} w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left`}
                           >
-                            <Icon className="w-[18px] h-[18px]" />
-                          </span>
+                            {/* Icon */}
+                            <span className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-white/60 ${iconCls}`}>
+                              <Icon className="w-4 h-4" />
+                            </span>
 
-                          {/* Texto */}
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-[13px] font-medium truncate ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>
-                              <Highlight text={r.title} query={query} />
-                            </div>
-                            {r.subtitle && (
-                              <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                                <Highlight text={r.subtitle} query={query} />
+                            {/* Text */}
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-[13px] font-semibold truncate ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
+                                <Highlight text={r.title} query={query} />
                               </div>
-                            )}
-                          </div>
+                              {r.subtitle && (
+                                <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                                  <Highlight text={r.subtitle} query={query} />
+                                </div>
+                              )}
+                            </div>
 
-                          {/* Meta + chevron */}
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {r.meta && (
-                              <span
-                                className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-md font-medium ${isSelected ? 'bg-amber-100 text-amber-700' : 'text-slate-500'}`}
-                                style={!isSelected ? { background: 'rgba(203,213,225,0.40)' } : {}}
-                              >
-                                {r.meta}
-                              </span>
-                            )}
-                            <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-amber-500' : 'text-slate-300'}`} />
-                          </div>
-                        </button>
-                      );
-                    })}
+                            {/* Meta + chevron */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {r.meta && (
+                                <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+                                  isSelected
+                                    ? 'bg-amber-50 text-amber-600 border-amber-200/60'
+                                    : 'bg-white/60 text-gray-400 border-white/50'
+                                }`}>
+                                  {r.meta}
+                                </span>
+                              )}
+                              <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-amber-500' : 'text-gray-300'}`} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
 
             ) : noResults ? (
-              <div className="py-16 flex flex-col items-center justify-center gap-3 h-full">
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background: 'rgba(255,255,255,0.75)',
-                    border: '1px solid rgba(255,255,255,0.88)',
-                    boxShadow: '0 4px 16px -4px rgba(15,23,42,0.10), inset 0 2px 0 rgba(255,255,255,1)',
-                  }}
-                >
-                  <Search className="w-5 h-5 text-slate-300" />
+              <div className="py-16 flex flex-col items-center justify-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-white/60 border border-white/50 flex items-center justify-center">
+                  <Search className="w-5 h-5 text-gray-300" />
                 </div>
                 <div className="text-center">
-                  <p className="text-sm text-slate-400">Nenhum resultado para</p>
-                  <p className="text-sm font-semibold text-slate-600 mt-0.5">"{query}"</p>
-                  <p className="text-[11px] text-slate-400 mt-2">Tente outro nome, número ou CPF</p>
+                  <p className="text-sm text-gray-400">Nenhum resultado para</p>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5">"{query}"</p>
+                  <p className="text-[11px] text-gray-400 mt-2">Tente outro nome, número ou CPF</p>
                 </div>
               </div>
 
             ) : isEmpty ? (
               <div className="py-1">
-                {/* Recentes */}
+                {/* Recent searches */}
                 {recentSearches.length > 0 && (
-                  <div className="px-5 pt-4 pb-1">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1.5">
+                  <div className="px-5 pt-3 pb-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
                         <Clock className="w-3 h-3" /> Recentes
                       </span>
                       <button
                         onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
-                        className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+                        className="text-[11px] text-amber-500 hover:text-amber-600 font-medium transition-colors"
                       >
                         Limpar
                       </button>
@@ -1015,9 +961,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                         <button
                           key={r}
                           onClick={() => setQuery(r)}
-                          className="gs-recent-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] text-slate-500"
+                          className="gs-recent-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] text-gray-500"
                         >
-                          <Search className="w-3 h-3 opacity-50" />
+                          <Search className="w-3 h-3 opacity-40" />
                           {r}
                         </button>
                       ))}
@@ -1025,14 +971,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                   </div>
                 )}
 
-                {/* Acesso rápido */}
+                {/* Quick access grid */}
                 <div className="px-5 pt-3 pb-4">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.14em] mb-2.5 flex items-center gap-1.5">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5 flex items-center gap-1.5">
                     <LayoutGrid className="w-3 h-3" /> Acesso rápido
                   </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {([
-                      { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',          module: 'clientes',      color: 'text-slate-500 bg-slate-100'    },
+                      { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',          module: 'clientes',      color: 'text-slate-600 bg-slate-100'    },
                       { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes',     module: 'processos',     color: 'text-amber-600 bg-amber-50'     },
                       { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, protocolo',     module: 'requerimentos', color: 'text-purple-600 bg-purple-50'   },
                       { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente',             module: 'prazos',        color: 'text-red-500 bg-red-50'         },
@@ -1049,15 +995,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                           onClick={() => { onNavigate(module, undefined); onClose(); }}
                           className="gs-card flex items-center gap-2.5 p-3 rounded-xl text-left group"
                         >
-                          <span
-                            className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${color} group-hover:scale-110 transition-transform`}
-                            style={{ boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.85)' }}
-                          >
+                          <span className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${color} group-hover:scale-105 transition-transform`}>
                             <Icon className="w-4 h-4" />
                           </span>
                           <div className="min-w-0">
-                            <div className="text-[12px] font-semibold text-slate-600 group-hover:text-amber-800 leading-none mb-0.5 truncate transition-colors">{label}</div>
-                            <div className="text-[10px] text-slate-400 leading-tight truncate">{desc}</div>
+                            <div className="text-[12px] font-semibold text-gray-700 group-hover:text-gray-900 leading-none mb-0.5 truncate">{label}</div>
+                            <div className="text-[10px] text-gray-400 leading-tight truncate">{desc}</div>
                           </div>
                         </button>
                       ))}
@@ -1067,110 +1010,100 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             ) : null}
           </div>
 
-          {/* ── Preview pane — painel de vidro mais profundo ── */}
+          {/* Right: detail preview panel */}
           {showResults && previewItem && previewCfg && (
             <div
-              className="hidden sm:flex w-[260px] flex-shrink-0 flex-col p-5"
+              className="hidden sm:flex w-[260px] flex-shrink-0 flex-col items-center justify-between p-5"
               style={{
-                background: 'rgba(240,246,255,0.88)',
-                borderLeft: '1px solid rgba(255,255,255,0.65)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,247,237,0.30) 100%)',
+                borderLeft: '1px solid rgba(255,255,255,0.50)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
               }}
             >
-              {/* Ícone grande */}
-              <div
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${TYPE_ICON_COLOR[previewItem.type]}`}
-                style={{
-                  boxShadow: '0 6px 20px -6px rgba(15,23,42,0.14), inset 0 2px 0 rgba(255,255,255,1)',
-                }}
-              >
-                <previewCfg.icon className="w-7 h-7" />
-              </div>
-
-              {/* Badge tipo */}
-              <span
-                className="inline-flex self-start items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2"
-                style={{
-                  background: 'rgba(255,255,255,0.82)',
-                  border: '1px solid rgba(255,255,255,0.90)',
-                  boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,1), 0 1px 4px rgba(15,23,42,0.07)',
-                }}
-              >
-                {previewCfg.label}
-              </span>
-
-              {/* Título */}
-              <h3 className="text-[15px] font-semibold text-slate-900 leading-snug mb-1 break-words">
-                {previewItem.title}
-              </h3>
-
-              {previewItem.subtitle && (
-                <p className="text-[12px] text-slate-500 leading-relaxed break-words">
-                  {previewItem.subtitle}
-                </p>
-              )}
-
-              {/* Meta chip */}
-              {previewItem.meta && (
+              <div className="w-full flex flex-col items-center text-center">
+                {/* Big icon */}
                 <div
-                  className="mt-3 inline-flex self-start items-center gap-1.5 text-[11px] font-medium text-slate-600 px-2 py-1 rounded-lg"
-                  style={{
-                    background: 'rgba(255,255,255,0.82)',
-                    border: '1px solid rgba(255,255,255,0.85)',
-                    boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,1)',
-                  }}
+                  className={`w-20 h-20 rounded-2xl flex items-center justify-center mb-8 bg-white/80 ${TYPE_ICON_COLOR[previewItem.type]}`}
+                  style={{ boxShadow: '0 8px 24px -6px rgba(0,0,0,0.10)' }}
                 >
-                  {previewItem.meta}
+                  <previewCfg.icon className="w-9 h-9" />
                 </div>
-              )}
 
-              {/* Botão Abrir */}
-              <div className="mt-auto pt-4">
-                <button
-                  onClick={() => handleSelect(previewItem)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-white text-[12px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: 'linear-gradient(145deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%)',
-                    boxShadow: '0 6px 22px -4px rgba(245,158,11,0.6), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.12)',
-                  }}
-                >
-                  Abrir
-                  <CornerDownLeft className="w-3.5 h-3.5" />
-                </button>
+                {/* Type badge */}
+                <span className="inline-flex items-center px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest text-gray-500 bg-white/60 border border-white/50 mb-4">
+                  {previewCfg.label}
+                </span>
+
+                {/* Title */}
+                <h3 className="text-[17px] font-bold text-gray-800 leading-snug mb-2 break-words">
+                  {previewItem.title}
+                </h3>
+
+                {previewItem.subtitle && (
+                  <p className="text-[13px] font-semibold text-gray-500 leading-relaxed break-words">
+                    {previewItem.subtitle}
+                  </p>
+                )}
+
+                {previewItem.meta && (
+                  <div className="mt-4 inline-flex items-center text-[12px] font-semibold text-gray-600 px-3 py-1.5 rounded-lg bg-white/60 border border-white/50">
+                    {previewItem.meta}
+                  </div>
+                )}
               </div>
+
+              {/* Open button */}
+              <button
+                onClick={() => handleSelect(previewItem)}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-white text-[13px] font-bold transition-all hover:opacity-90 active:scale-[0.98] mt-6"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #ea8c00 100%)',
+                  boxShadow: '0 8px 24px -4px rgba(245,158,11,0.50)',
+                }}
+              >
+                Abrir
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           )}
         </div>
 
-        {/* ── Footer — vidro fosco ── */}
+        {/* ── Footer ── */}
         <div
-          className="px-5 py-2.5 flex items-center gap-3 text-[10px] text-slate-400 flex-shrink-0"
+          className="relative z-10 px-5 py-2 flex items-center justify-between text-[11px] text-gray-500 flex-shrink-0"
           style={{
-            background: 'rgba(248,250,253,0.88)',
-            borderTop: '1px solid rgba(255,255,255,0.65)',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.40) 100%)',
+            borderTop: '1px solid rgba(255,255,255,0.45)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
           }}
         >
-          <span className="flex items-center gap-1">
-            <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">↑↓</kbd>
-            navegar
-          </span>
-          {showResults && filters.length > 1 && (
-            <span className="flex items-center gap-1">
-              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">Tab</kbd>
-              filtrar
+          <div className="flex items-center gap-5">
+            <span className="flex items-center gap-1.5">
+              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">↑↓</kbd>
+              navegar
             </span>
-          )}
-          <span className="flex items-center gap-1">
-            <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">↵</kbd>
-            abrir
-          </span>
-          {flatResults.length > 0 && (
-            <span className="text-slate-400 tabular-nums font-medium">
-              {flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}
+            {showResults && filters.length > 1 && (
+              <span className="flex items-center gap-1.5">
+                <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">Tab</kbd>
+                filtrar
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">↵</kbd>
+              abrir
             </span>
-          )}
-          <span className="ml-auto inline-flex items-center gap-1 text-slate-300 text-[9px]">
-            <Sparkles className="w-3 h-3 text-amber-400" /> ⌘K · Ctrl+K
-          </span>
+            {flatResults.length > 0 && (
+              <span className="text-gray-400 tabular-nums">
+                {flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 text-gray-400 text-[10px]">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>⌘K · Ctrl+K</span>
+          </div>
         </div>
       </div>
     </div>

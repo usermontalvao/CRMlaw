@@ -7,49 +7,116 @@ import type {
   RequirementStatus,
   RequirementStatusHistoryEntry,
 } from '../types/requirement.types';
+import { normalizeSearchText } from '../utils/search';
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
+// Cache em memória por chave de filtros server-side (eq exactos).
+// Filtros client-side (protocol, beneficiary, cpf via ilike) são aplicados
+// sobre os dados em cache, evitando round-trips por digitação de busca.
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+interface RequirementCacheEntry {
+  data: Requirement[];
+  timestamp: number;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 class RequirementService {
   private tableName = 'requirements';
   private statusHistoryTableName = 'requirement_status_history';
 
+  private _cache = new Map<string, RequirementCacheEntry>();
+
+  private getCacheKey(serverFilters: Record<string, unknown>): string {
+    return JSON.stringify(serverFilters);
+  }
+
+  private isCacheValid(key: string): boolean {
+    const entry = this._cache.get(key);
+    return !!entry && Date.now() - entry.timestamp < CACHE_DURATION;
+  }
+
+  /** Invalida todo o cache. Chamado em qualquer mutação. */
+  invalidateCache(): void {
+    this._cache.clear();
+  }
+
+  /**
+   * Lista requerimentos com filtros opcionais.
+   *
+   * Filtros server-side (status, benefit_type, client_id) determinam a chave de cache.
+   * Filtros client-side (protocol, beneficiary, cpf) são aplicados sobre o cache,
+   * permitindo buscas instantâneas sem round-trip ao Supabase.
+   */
   async listRequirements(filters?: RequirementFilters): Promise<Requirement[]> {
-    let query = supabase
-      .from(this.tableName)
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Separar filtros: server-side (eq) vs client-side (ilike)
+    const { protocol, beneficiary, cpf, ...serverFilters } = filters ?? {};
+    const cacheKey = this.getCacheKey(serverFilters);
 
-    if (filters?.status) {
-      query = query.eq('status', filters.status);
+    let rows: Requirement[];
+
+    if (this.isCacheValid(cacheKey)) {
+      rows = this._cache.get(cacheKey)!.data;
+    } else {
+      let query = supabase
+        .from(this.tableName)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (serverFilters.status) {
+        query = query.eq('status', serverFilters.status as string);
+      }
+
+      if (serverFilters.benefit_type) {
+        query = query.eq('benefit_type', serverFilters.benefit_type as string);
+      }
+
+      if (serverFilters.client_id) {
+        query = query.eq('client_id', serverFilters.client_id as string);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Erro ao listar requerimentos:', error);
+        throw new Error(error.message);
+      }
+
+      rows = (data ?? []) as Requirement[];
+      this._cache.set(cacheKey, { data: rows, timestamp: Date.now() });
     }
 
-    if (filters?.protocol) {
-      query = query.ilike('protocol', `%${filters.protocol}%`);
+    // ── Filtros client-side (ilike → includes normalizado) ────────────────────
+    let result = rows;
+
+    if (protocol) {
+      const term = normalizeSearchText(protocol);
+      if (term) {
+        result = result.filter((r) =>
+          normalizeSearchText(r.protocol ?? '').includes(term)
+        );
+      }
     }
 
-    if (filters?.beneficiary) {
-      query = query.ilike('beneficiary', `%${filters.beneficiary}%`);
+    if (beneficiary) {
+      const term = normalizeSearchText(beneficiary);
+      if (term) {
+        result = result.filter((r) =>
+          normalizeSearchText(r.beneficiary ?? '').includes(term)
+        );
+      }
     }
 
-    if (filters?.cpf) {
-      query = query.ilike('cpf', `%${filters.cpf}%`);
+    if (cpf) {
+      const term = normalizeSearchText(cpf);
+      if (term) {
+        result = result.filter((r) =>
+          normalizeSearchText(r.cpf ?? '').includes(term)
+        );
+      }
     }
 
-    if (filters?.benefit_type) {
-      query = query.eq('benefit_type', filters.benefit_type);
-    }
-
-    if (filters?.client_id) {
-      query = query.eq('client_id', filters.client_id);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Erro ao listar requerimentos:', error);
-      throw new Error(error.message);
-    }
-
-    return data ?? [];
+    return result;
   }
 
   async getRequirementById(id: string): Promise<Requirement | null> {
@@ -94,6 +161,7 @@ class RequirementService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -119,6 +187,7 @@ class RequirementService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -140,6 +209,7 @@ class RequirementService {
       throw new Error(error.message);
     }
 
+    this.invalidateCache();
     return data;
   }
 
@@ -153,6 +223,8 @@ class RequirementService {
       console.error('Erro ao deletar requerimento:', error);
       throw new Error(error.message);
     }
+
+    this.invalidateCache();
   }
 
   async listStatusHistory(requirementId: string): Promise<RequirementStatusHistoryEntry[]> {
