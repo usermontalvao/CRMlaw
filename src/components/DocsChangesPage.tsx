@@ -826,6 +826,32 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.128',
+    date: '19/05/2026',
+    summary: 'Busca global — efeito vidro Aero (glassmorphism): modal translúcido com backdrop-filter real, reflexos inset, faixa âmbar de refração e painéis internos em camadas.',
+    modules: [
+      {
+        moduleId: 'UI',
+        changes: [
+          { type: 'improvement', title: 'Busca global — Aero glass effect', description: 'Modal redesenhado com glassmorphism real: shell com rgba(255,255,255,0.14) + backdrop-filter blur(64px) sobre o conteúdo da página, inset highlights brancos (assinatura do Windows 7 Aero), reflexo diagonal topo-esquerda, linha de luz na borda superior, glow âmbar pulsante e painéis internos em camadas de opacidade distintas para legibilidade.' },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.127',
+    date: '19/05/2026',
+    summary: 'Busca global super barra: dois painéis, chips de filtro com contagem, preview ao vivo, histórico de buscas recentes, acesso rápido aos módulos e navegação por teclado completa.',
+    modules: [
+      {
+        moduleId: 'UI',
+        changes: [
+          { type: 'improvement', title: 'Busca global — super barra com painel duplo', description: 'Modal de busca completamente redesenhado: layout dois painéis (lista + preview ao vivo), chips de filtro por tipo com contagem, highlight âmbar nas correspondências, histórico de buscas recentes por usuário, grid de acesso rápido aos módulos e navegação completa por teclado (↑↓, Tab para filtros, Enter para abrir).' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.126',
     date: '19/05/2026',
     summary: 'Sistema de solicitação de acesso a módulos: fluxo completo admin/usuário, contagem regressiva no sidebar, acesso em tempo real via Realtime.',
@@ -833,10 +859,10 @@ const releases: ReleaseNote[] = [
       {
         moduleId: 'Permissões',
         changes: [
-          { type: 'new', title: 'Solicitação de acesso a módulos', description: 'Usuários sem permissão podem solicitar acesso a módulos restritos com justificativa. Admins aprovam ou negam via painel em Configurações → Solicitações.' },
-          { type: 'new', title: 'Acesso temporário por horas ou dias', description: 'Admin pode conceder acesso permanente ou temporário (1–72h / 1–365 dias). O módulo expira automaticamente sem intervenção manual.' },
-          { type: 'new', title: 'Sidebar com contagem regressiva', description: 'Módulos com acesso temporário aparecem em cyan no sidebar com contagem regressiva ao vivo (ex: "2h 14m" → "47m 23s"). Após expirar, o acesso é revogado imediatamente sem precisar recarregar a página.' },
-          { type: 'new', title: 'Realtime: acesso instantâneo pós-aprovação', description: 'Quando admin aprova, o módulo fica acessível ao usuário imediatamente via Supabase Realtime — sem precisar recarregar a página.' },
+          { type: 'feature', title: 'Solicitação de acesso a módulos', description: 'Usuários sem permissão podem solicitar acesso a módulos restritos com justificativa. Admins aprovam ou negam via painel em Configurações → Solicitações.' },
+          { type: 'feature', title: 'Acesso temporário por horas ou dias', description: 'Admin pode conceder acesso permanente ou temporário (1–72h / 1–365 dias). O módulo expira automaticamente sem intervenção manual.' },
+          { type: 'feature', title: 'Sidebar com contagem regressiva', description: 'Módulos com acesso temporário aparecem em cyan no sidebar com contagem regressiva ao vivo (ex: "2h 14m" → "47m 23s"). Após expirar, o acesso é revogado imediatamente sem precisar recarregar a página.' },
+          { type: 'feature', title: 'Realtime: acesso instantâneo pós-aprovação', description: 'Quando admin aprova, o módulo fica acessível ao usuário imediatamente via Supabase Realtime — sem precisar recarregar a página.' },
           { type: 'improvement', title: 'Painel contextual de acesso negado', description: 'Tela de módulo bloqueado agora exibe estado contextual: sem solicitação, pendente, negado (com motivo) ou expirado — cada um com cor e mensagem específica.' },
           { type: 'improvement', title: 'Notificações de acesso no dashboard', description: 'Banner persistente para notificações de acesso negado. Desaparece apenas quando o usuário marca como lido (persistido no banco).' },
           { type: 'fix', title: 'Clique em notificação de negação navegava para lugar nenhum', description: 'module_key não era incluído no metadata da notificação de negação. Corrigido no serviço e em notificações existentes via patch retroativo no banco.' },

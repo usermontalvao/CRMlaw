@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Search, X, FileText, Users, Loader2, ChevronRight, ArrowRight,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
-  Clock, Zap, Gavel, PenTool,
+  Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
@@ -156,7 +156,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="bg-amber-100 text-amber-900 rounded px-0.5 not-italic">{text.slice(idx, idx + query.length)}</mark>
+      <mark className="bg-amber-100 text-amber-800 rounded px-0.5 not-italic font-semibold">{text.slice(idx, idx + query.length)}</mark>
       {text.slice(idx + query.length)}
     </>
   );
@@ -215,8 +215,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const [priming, setPriming] = useState(false);
   const [selected, setSelected] = useState(0);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<ResultType | 'all'>('all');
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset filtro ao mudar a query
+  useEffect(() => { setActiveFilter('all'); setSelected(0); }, [query]);
 
   // Reset + pre-warm cache on open
   useEffect(() => {
@@ -224,6 +228,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       setQuery('');
       setResults([]);
       setSelected(0);
+      setActiveFilter('all');
       setRecentSearches(loadRecent(userId));
       setTimeout(() => inputRef.current?.focus(), 60);
       // Pre-warm cache in background if stale
@@ -534,13 +539,25 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (filters.length > 1) {
+          const idx = filters.findIndex(f => f.key === activeFilter);
+          const next = e.shiftKey
+            ? (idx - 1 + filters.length) % filters.length
+            : (idx + 1) % filters.length;
+          setActiveFilter(filters[next].key);
+          setSelected(0);
+        }
+        return;
+      }
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, flatResults.length - 1)); }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
       if (e.key === 'Enter' && flatResults[selected]) handleSelect(flatResults[selected]);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, results, selected]);
+  }, [open, results, selected, activeFilter]);
 
   const handleSelect = (result: SearchResult) => {
     if (query.trim().length >= 2) saveRecent(userId, query.trim());
@@ -558,175 +575,602 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
   if (!open) return null;
 
-  // Group
-  const grouped = GROUP_ORDER
-    .map(type => ({
-      type,
-      cfg: TYPE_CONFIG[type],
-      items: permitted.filter(r => r.type === type),
-    }))
+  // Cor do ícone por tipo
+  const TYPE_ICON_COLOR: Record<ResultType, string> = {
+    cliente:                'text-slate-500 bg-slate-100',
+    processo:               'text-amber-600 bg-amber-50',
+    'processo-via-cliente': 'text-amber-600 bg-amber-50',
+    intimacao:              'text-orange-600 bg-orange-50',
+    requerimento:           'text-purple-600 bg-purple-50',
+    prazo:                  'text-red-500 bg-red-50',
+    agenda:                 'text-teal-600 bg-teal-50',
+    tarefa:                 'text-sky-600 bg-sky-50',
+    financeiro:             'text-emerald-600 bg-emerald-50',
+    cloud:                  'text-indigo-600 bg-indigo-50',
+    assinatura:             'text-violet-600 bg-violet-50',
+  };
+
+  // Contagem por tipo (respeitando dedupe de processo-via-cliente no grupo processo)
+  const allGroups = GROUP_ORDER
+    .map(type => ({ type, cfg: TYPE_CONFIG[type], items: permitted.filter(r => r.type === type) }))
     .filter(g => g.items.length > 0);
+
+  // Chips de filtro: "Tudo" + tipos presentes (agrupa processo + processo-via-cliente)
+  const filterDefs: { key: ResultType | 'all'; label: string; icon: React.ElementType }[] = [
+    { key: 'all', label: 'Tudo', icon: Sparkles },
+    ...allGroups
+      .filter(g => g.type !== 'processo-via-cliente')
+      .map(g => ({ key: g.type, label: g.cfg.group, icon: g.cfg.icon })),
+  ];
+  const countFor = (k: ResultType | 'all') =>
+    k === 'all'
+      ? permitted.length
+      : k === 'processo'
+      ? permitted.filter(r => r.type === 'processo' || r.type === 'processo-via-cliente').length
+      : permitted.filter(r => r.type === k).length;
+  const filters = filterDefs.map(f => ({ ...f, count: countFor(f.key) }));
+
+  // Grupos visíveis conforme filtro ativo
+  const grouped = allGroups.filter(g => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'processo') return g.type === 'processo' || g.type === 'processo-via-cliente';
+    return g.type === activeFilter;
+  });
 
   const flatResults = grouped.flatMap(g => g.items);
   const flatIdx = new Map(flatResults.map((r, i) => [`${r.type}:${r.id}`, i]));
+  const safeSelected = Math.min(selected, Math.max(0, flatResults.length - 1));
+  const previewItem = flatResults[safeSelected];
 
   const isEmpty = query.trim().length === 0;
   const noResults = query.trim().length >= 2 && !loading && permitted.length === 0;
 
+  const previewCfg = previewItem ? TYPE_CONFIG[previewItem.type] : null;
+  const showResults = !isEmpty && results.length > 0;
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[8vh]" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <style>{`
+        @keyframes gsOverlayIn { from { opacity:0 } to { opacity:1 } }
+        @keyframes gsModalIn {
+          from { opacity:0; transform:translateY(-20px) scale(.95) }
+          to   { opacity:1; transform:translateY(0)    scale(1)   }
+        }
+        @keyframes gsGlow { 0%,100% { opacity:.5 } 50% { opacity:1 } }
+        .gs-overlay { animation: gsOverlayIn .22s ease-out }
+        .gs-modal   { animation: gsModalIn .30s cubic-bezier(.16,1,.3,1) }
+        .gs-chips   { scrollbar-width:none; -ms-overflow-style:none }
+        .gs-chips::-webkit-scrollbar { display:none }
+
+        /* ── Glass module cards ── */
+        .gs-card {
+          background: rgba(255,255,255,0.60);
+          border: 1px solid rgba(255,255,255,0.80);
+          backdrop-filter: blur(12px) saturate(160%);
+          -webkit-backdrop-filter: blur(12px) saturate(160%);
+          box-shadow:
+            0 2px 10px -2px rgba(15,23,42,0.08),
+            inset 0 1.5px 0 rgba(255,255,255,1),
+            inset 1px 0 rgba(255,255,255,0.7);
+          transition: all .18s cubic-bezier(.16,1,.3,1);
+        }
+        .gs-card:hover {
+          background: rgba(254,243,199,0.72);
+          border-color: rgba(251,191,36,0.55);
+          transform: translateY(-1px) scale(1.015);
+          box-shadow:
+            0 8px 24px -4px rgba(245,158,11,0.22),
+            inset 0 1.5px 0 rgba(255,255,255,1),
+            inset 1px 0 rgba(255,255,255,0.7);
+        }
+
+        /* ── Glass filter chips ── */
+        .gs-chip-btn {
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          transition: all .13s ease;
+        }
+        .gs-chip-btn.gs-active {
+          background: rgb(245,158,11) !important;
+          border-color: rgba(251,191,36,0.6) !important;
+          color: white !important;
+          box-shadow:
+            0 2px 14px -2px rgba(245,158,11,0.5),
+            inset 0 1.5px 0 rgba(255,255,255,0.35);
+        }
+
+        /* ── Result rows ── */
+        .gs-result { transition: background .08s ease; }
+        .gs-result:hover { background: rgba(255,255,255,0.72) !important; }
+        .gs-result.gs-sel  { background: rgba(254,243,199,0.55) !important; }
+
+        /* ── Recent search pills ── */
+        .gs-recent-pill {
+          background: rgba(255,255,255,0.62);
+          border: 1px solid rgba(255,255,255,0.80);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          box-shadow: 0 1px 4px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,1);
+          transition: all .14s ease;
+        }
+        .gs-recent-pill:hover {
+          background: rgba(254,243,199,0.80);
+          border-color: rgba(251,191,36,0.5);
+          color: rgb(120,53,15);
+          box-shadow: 0 3px 10px -2px rgba(245,158,11,0.18), inset 0 1px 0 rgba(255,255,255,1);
+        }
+
+        /* ── Kbd glass keys ── */
+        .gs-kbd {
+          background: rgba(255,255,255,0.70);
+          border: 1px solid rgba(203,213,225,0.60);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          box-shadow:
+            0 1px 3px rgba(15,23,42,0.07),
+            inset 0 1.5px 0 rgba(255,255,255,1),
+            inset 0 -1px 0 rgba(15,23,42,0.06);
+        }
+      `}</style>
+
+      {/* ── Overlay: cor apenas, SEM backdrop-filter ──
+           O backdrop-filter fica no modal para que ele froste o conteúdo real da página */}
       <div
-        className="relative w-full max-w-2xl mx-4 bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-[82vh]"
+        className="gs-overlay absolute inset-0"
+        style={{ background: 'rgba(10,18,38,0.42)' }}
+      />
+
+      {/* Ambient amber glow atrás do modal */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: 'calc(8vh - 60px)', left: '50%', transform: 'translateX(-50%)',
+          width: 800, height: 300,
+          background: 'radial-gradient(ellipse, rgba(245,158,11,0.16) 0%, transparent 68%)',
+          animation: 'gsGlow 3.5s ease-in-out infinite',
+          filter: 'blur(40px)',
+        }}
+      />
+
+      {/* ════════════════════════════════════════════════
+          MODAL — painel de vidro Aero
+          Shell quase transparente, frost real sobre a página
+          ════════════════════════════════════════════════ */}
+      <div
+        className="gs-modal relative w-full max-w-3xl mx-4 rounded-[20px] flex flex-col max-h-[82vh]"
+        style={{
+          /* Vidro: pouco branco + blur forte = frosted glass real */
+          background: 'rgba(255,255,255,0.14)',
+          backdropFilter: 'blur(64px) saturate(200%) brightness(115%)',
+          WebkitBackdropFilter: 'blur(64px) saturate(200%) brightness(115%)',
+
+          /* Borda de vidro: branca e fina */
+          border: '1px solid rgba(255,255,255,0.42)',
+
+          /* Sombras: profundidade + highlights de vidro inset */
+          boxShadow: [
+            /* ── Highlights inset — ASSINATURA do Aero ── */
+            'inset 0 2px 0 rgba(255,255,255,0.95)',   /* topo brilhante */
+            'inset 1.5px 0 rgba(255,255,255,0.60)',   /* esquerda brilhante */
+            'inset -1px 0 rgba(255,255,255,0.30)',    /* direita sutil */
+            'inset 0 -1px 0 rgba(255,255,255,0.20)',  /* baixo sutil */
+            /* ── Borda externa escura ── */
+            '0 0 0 1px rgba(0,0,0,0.18)',
+            /* ── Sombra profunda ── */
+            '0 40px 120px -16px rgba(0,0,0,0.65)',
+            '0 16px 48px -8px rgba(0,0,0,0.32)',
+            /* ── Glow âmbar ── */
+            '0 0 80px -20px rgba(245,158,11,0.22)',
+          ].join(', '),
+
+          /* Clip sem overflow:hidden para não interferir no backdrop-filter */
+          clipPath: 'inset(0 round 20px)',
+        }}
         onClick={e => e.stopPropagation()}
       >
-        {/* ── Input ── */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 flex-shrink-0">
-          {loading ? <Loader2 className="w-4.5 h-4.5 text-amber-500 animate-spin flex-shrink-0" /> : <Search className="w-4.5 h-4.5 text-slate-400 flex-shrink-0" />}
+        {/* ── Reflexo de vidro — camada de luz diagonal ──
+             Imita a reflexão característica do Aero sobre o vidro */}
+        <div
+          className="absolute inset-0 pointer-events-none rounded-[20px]"
+          style={{ zIndex: 30 }}
+        >
+          {/* Brilho diagonal topo-esquerdo */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(148deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 28%, transparent 52%)',
+            borderRadius: 'inherit',
+          }} />
+          {/* Linha de reflexo na borda superior */}
+          <div style={{
+            position: 'absolute', top: 2, left: 12, right: 12, height: 1,
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.9) 20%, rgba(255,255,255,1) 50%, rgba(255,255,255,0.9) 80%, transparent)',
+            borderRadius: 2,
+          }} />
+          {/* Glint no canto superior direito */}
+          <div style={{
+            position: 'absolute', top: 0, right: 0, width: 120, height: 80,
+            background: 'radial-gradient(ellipse at top right, rgba(255,255,255,0.22) 0%, transparent 70%)',
+          }} />
+        </div>
+
+        {/* ── Faixa âmbar: luz refratada no topo do vidro ── */}
+        <div className="flex-shrink-0" style={{
+          height: 3,
+          background: 'linear-gradient(90deg, transparent 0%, rgba(253,230,138,0.5) 10%, rgba(251,191,36,0.92) 32%, rgba(245,158,11,1) 50%, rgba(251,191,36,0.92) 68%, rgba(253,230,138,0.5) 90%, transparent 100%)',
+          boxShadow: '0 0 12px 1px rgba(245,158,11,0.4)',
+        }} />
+
+        {/* ── Input — painel mais opaco para conforto de digitação ── */}
+        <div
+          className="flex items-center gap-3 px-5 py-3.5 flex-shrink-0"
+          style={{
+            background: 'rgba(255,255,255,0.86)',
+            borderBottom: '1px solid rgba(255,255,255,0.50)',
+          }}
+        >
+          <div className="relative flex-shrink-0">
+            {loading
+              ? <Loader2 className="w-[19px] h-[19px] text-amber-500 animate-spin" />
+              : <Search className="w-[19px] h-[19px] text-amber-500" />
+            }
+          </div>
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Nome, processo, beneficiário, compromisso, pasta..."
-            className="flex-1 text-sm text-slate-900 placeholder-slate-400 bg-transparent outline-none"
+            placeholder="Buscar clientes, processos, prazos, documentos…"
+            className="flex-1 text-[14px] text-slate-800 placeholder-slate-400 bg-transparent outline-none font-normal"
           />
           <div className="flex items-center gap-2">
             {priming && !loading && (
-              <span className="flex items-center gap-1 text-[10px] text-slate-300">
-                <Zap className="w-3 h-3" /> aquecendo...
+              <span className="flex items-center gap-1 text-[10px] text-amber-500 font-medium">
+                <Zap className="w-3 h-3" /> indexando…
               </span>
             )}
             {query && (
-              <button onClick={() => setQuery('')} className="text-slate-300 hover:text-slate-500 p-0.5 transition">
+              <button
+                onClick={() => setQuery('')}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
+                style={{ background: 'rgba(241,245,249,0.8)' }}
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
-            <kbd className="hidden sm:inline-flex px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-slate-100 rounded border border-slate-200">Esc</kbd>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-0.5">
-              <X className="w-4 h-4" />
+            <button
+              onClick={onClose}
+              className="hidden sm:inline-flex px-2 py-1 text-[10px] font-semibold text-slate-500 rounded-md transition-colors"
+              style={{
+                background: 'rgba(255,255,255,0.80)',
+                border: '1px solid rgba(203,213,225,0.65)',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.07), inset 0 1.5px 0 rgba(255,255,255,1)',
+              }}
+            >
+              ESC
             </button>
           </div>
         </div>
 
-        {/* ── Body ── */}
-        {!isEmpty && results.length > 0 ? (
-          <div className="overflow-y-auto flex-1 py-2">
-            {grouped.map(({ type, cfg, items }) => (
-              <div key={type}>
-                <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
-                  <cfg.icon className={`w-3 h-3 ${cfg.color.split(' ')[0]}`} />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{cfg.group}</span>
-                  <span className="text-[10px] text-slate-300 tabular-nums">({items.length})</span>
-                </div>
-                {items.map(r => {
-                  const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
-                  const isSelected = fi === selected;
-                  const Icon = cfg.icon;
-                  return (
-                    <button
-                      key={`${r.type}-${r.id}`}
-                      onClick={() => handleSelect(r)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
-                    >
-                      <span className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border ${cfg.color} ${cfg.border}`}>
-                        <Icon className="w-4 h-4" />
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-slate-900 truncate">
-                          <Highlight text={r.title} query={query} />
-                        </div>
-                        {r.subtitle && (
-                          <div className="text-xs text-slate-400 truncate mt-0.5">
-                            <Highlight text={r.subtitle} query={query} />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {r.meta && <span className="text-[10px] text-slate-400 tabular-nums">{r.meta}</span>}
-                        {isSelected
-                          ? <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
-                          : <ChevronRight className="w-3.5 h-3.5 text-slate-300" />}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        ) : noResults ? (
-          <div className="py-12 text-center text-sm text-slate-400 flex-1">
-            <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
-            Nenhum resultado para <strong>"{query}"</strong>
-          </div>
-        ) : isEmpty ? (
-          <div className="flex-1 overflow-y-auto">
-            {/* Buscas recentes */}
-            {recentSearches.length > 0 && (
-              <div className="px-4 pt-4 pb-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" /> Buscas recentes
-                  </span>
-                  <button
-                    onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
-                    className="text-[10px] text-slate-300 hover:text-slate-500 transition"
+        {/* ── Chips de filtro — vidro semitransparente ── */}
+        {showResults && filters.length > 1 && (
+          <div
+            className="gs-chips flex items-center gap-1.5 px-5 py-2 overflow-x-auto flex-shrink-0"
+            style={{
+              background: 'rgba(255,255,255,0.55)',
+              borderBottom: '1px solid rgba(255,255,255,0.48)',
+            }}
+          >
+            {filters.map(f => {
+              const active = f.key === activeFilter;
+              const FIcon = f.icon;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => { setActiveFilter(f.key); setSelected(0); }}
+                  className={`gs-chip-btn${active ? ' gs-active' : ''} group inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap`}
+                  style={!active ? {
+                    background: 'rgba(255,255,255,0.72)',
+                    border: '1px solid rgba(203,213,225,0.55)',
+                    color: 'rgb(100,116,139)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,1)',
+                  } : {}}
+                >
+                  <FIcon className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-400 group-hover:text-amber-500'}`} />
+                  {f.label}
+                  <span
+                    className={`tabular-nums text-[10px] px-1 rounded-full ${active ? 'bg-white/25 text-white' : 'text-slate-400'}`}
+                    style={!active ? { background: 'rgba(203,213,225,0.45)' } : {}}
                   >
-                    Limpar
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {recentSearches.map(r => (
-                    <button
-                      key={r}
-                      onClick={() => setQuery(r)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-amber-50 hover:text-amber-700 text-xs text-slate-600 transition border border-transparent hover:border-amber-200"
-                    >
-                      <Search className="w-3 h-3 opacity-50" />
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* O que você pode buscar */}
-            <div className="px-4 pt-3 pb-5">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">O que você pode buscar</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600">
-                {([
-                  { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',              module: 'clientes' },
-                  { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes',         module: 'processos' },
-                  { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, CPF, protocolo',    module: 'requerimentos' },
-                  { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente (pendentes)',      module: 'prazos' },
-                  { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões (futuros)',   module: 'agenda' },
-                  { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição',               module: 'tarefas' },
-                  { icon: DollarSign,    label: 'Financeiro',    desc: 'título do acordo, cliente',       module: 'financeiro' },
-                  { icon: FolderOpen,    label: 'Cloud',         desc: 'nome da pasta, cliente',          module: 'cloud' },
-                  { icon: PenTool,       label: 'Assinaturas',   desc: 'nome do documento, cliente',      module: 'assinaturas' },
-                ] as { icon: React.ElementType; label: string; desc: string; module: string }[])
-                  .filter(item => canSeeModule(item.module))
-                  .map(({ icon: Icon, label, desc }) => (
-                  <div key={label} className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                    <Icon className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="font-semibold text-slate-700 leading-none mb-0.5">{label}</div>
-                      <div className="text-slate-400 leading-tight">{desc}</div>
+                    {f.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Body ── */}
+        <div
+          className="flex flex-1 min-h-0"
+          style={{ borderTop: (!showResults || filters.length <= 1) ? '1px solid rgba(255,255,255,0.45)' : undefined }}
+        >
+          {/* Coluna esquerda */}
+          <div
+            className={`flex-1 min-w-0 overflow-y-auto ${showResults && previewItem ? 'sm:border-r' : ''}`}
+            style={{
+              background: 'rgba(255,255,255,0.82)',
+              borderColor: 'rgba(255,255,255,0.50)',
+            }}
+          >
+            {showResults ? (
+              <div className="py-1.5">
+                {grouped.map(({ type, cfg, items }) => (
+                  <div key={type}>
+                    {/* Header do grupo */}
+                    <div className="flex items-center gap-2 px-5 pt-3 pb-1">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">{cfg.group}</span>
+                      <span className="text-[9px] text-slate-300 tabular-nums">{items.length}</span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(203,213,225,0.50)' }} />
                     </div>
+
+                    {items.map(r => {
+                      const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
+                      const isSelected = fi === safeSelected;
+                      const Icon = cfg.icon;
+                      const iconCls = TYPE_ICON_COLOR[r.type];
+                      return (
+                        <button
+                          key={`${r.type}-${r.id}`}
+                          onClick={() => handleSelect(r)}
+                          onMouseEnter={() => setSelected(fi)}
+                          className={`gs-result${isSelected ? ' gs-sel' : ''} relative w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left`}
+                        >
+                          {/* Barra âmbar de seleção */}
+                          {isSelected && (
+                            <div
+                              className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full"
+                              style={{ background: 'linear-gradient(180deg, #fbbf24, #f59e0b)' }}
+                            />
+                          )}
+
+                          {/* Ícone */}
+                          <span
+                            className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${iconCls} ${isSelected ? 'scale-105' : ''} transition-transform`}
+                            style={{
+                              boxShadow: isSelected
+                                ? '0 3px 10px -2px rgba(245,158,11,0.25), inset 0 1.5px 0 rgba(255,255,255,0.85)'
+                                : 'inset 0 1.5px 0 rgba(255,255,255,0.85)',
+                            }}
+                          >
+                            <Icon className="w-[18px] h-[18px]" />
+                          </span>
+
+                          {/* Texto */}
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-[13px] font-medium truncate ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>
+                              <Highlight text={r.title} query={query} />
+                            </div>
+                            {r.subtitle && (
+                              <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                                <Highlight text={r.subtitle} query={query} />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Meta + chevron */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {r.meta && (
+                              <span
+                                className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-md font-medium ${isSelected ? 'bg-amber-100 text-amber-700' : 'text-slate-500'}`}
+                                style={!isSelected ? { background: 'rgba(203,213,225,0.40)' } : {}}
+                              >
+                                {r.meta}
+                              </span>
+                            )}
+                            <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-amber-500' : 'text-slate-300'}`} />
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        ) : null}
 
-        {/* ── Footer ── */}
-        <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-4 text-[10px] text-slate-400 flex-shrink-0 bg-white">
-          <span><kbd className="bg-slate-100 px-1.5 rounded">↑↓</kbd> navegar</span>
-          <span><kbd className="bg-slate-100 px-1.5 rounded">Enter</kbd> abrir</span>
-          <span><kbd className="bg-slate-100 px-1.5 rounded">Esc</kbd> fechar</span>
-          {flatResults.length > 0 && (
-            <span className="text-slate-300">{flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}</span>
+            ) : noResults ? (
+              <div className="py-16 flex flex-col items-center justify-center gap-3 h-full">
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                  style={{
+                    background: 'rgba(255,255,255,0.75)',
+                    border: '1px solid rgba(255,255,255,0.88)',
+                    boxShadow: '0 4px 16px -4px rgba(15,23,42,0.10), inset 0 2px 0 rgba(255,255,255,1)',
+                  }}
+                >
+                  <Search className="w-5 h-5 text-slate-300" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-slate-400">Nenhum resultado para</p>
+                  <p className="text-sm font-semibold text-slate-600 mt-0.5">"{query}"</p>
+                  <p className="text-[11px] text-slate-400 mt-2">Tente outro nome, número ou CPF</p>
+                </div>
+              </div>
+
+            ) : isEmpty ? (
+              <div className="py-1">
+                {/* Recentes */}
+                {recentSearches.length > 0 && (
+                  <div className="px-5 pt-4 pb-1">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" /> Recentes
+                      </span>
+                      <button
+                        onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
+                        className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {recentSearches.map(r => (
+                        <button
+                          key={r}
+                          onClick={() => setQuery(r)}
+                          className="gs-recent-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] text-slate-500"
+                        >
+                          <Search className="w-3 h-3 opacity-50" />
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Acesso rápido */}
+                <div className="px-5 pt-3 pb-4">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.14em] mb-2.5 flex items-center gap-1.5">
+                    <LayoutGrid className="w-3 h-3" /> Acesso rápido
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {([
+                      { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',          module: 'clientes',      color: 'text-slate-500 bg-slate-100'    },
+                      { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes',     module: 'processos',     color: 'text-amber-600 bg-amber-50'     },
+                      { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, protocolo',     module: 'requerimentos', color: 'text-purple-600 bg-purple-50'   },
+                      { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente',             module: 'prazos',        color: 'text-red-500 bg-red-50'         },
+                      { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões',        module: 'agenda',        color: 'text-teal-600 bg-teal-50'       },
+                      { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição',           module: 'tarefas',       color: 'text-sky-600 bg-sky-50'         },
+                      { icon: DollarSign,    label: 'Financeiro',    desc: 'acordo, cliente',             module: 'financeiro',    color: 'text-emerald-600 bg-emerald-50' },
+                      { icon: FolderOpen,    label: 'Cloud',         desc: 'pasta, cliente',              module: 'cloud',         color: 'text-indigo-600 bg-indigo-50'   },
+                      { icon: PenTool,       label: 'Assinaturas',   desc: 'documento, cliente',          module: 'assinaturas',   color: 'text-violet-600 bg-violet-50'   },
+                    ] as { icon: React.ElementType; label: string; desc: string; module: string; color: string }[])
+                      .filter(item => canSeeModule(item.module))
+                      .map(({ icon: Icon, label, desc, color, module }) => (
+                        <button
+                          key={label}
+                          onClick={() => { onNavigate(module, undefined); onClose(); }}
+                          className="gs-card flex items-center gap-2.5 p-3 rounded-xl text-left group"
+                        >
+                          <span
+                            className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${color} group-hover:scale-110 transition-transform`}
+                            style={{ boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.85)' }}
+                          >
+                            <Icon className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-600 group-hover:text-amber-800 leading-none mb-0.5 truncate transition-colors">{label}</div>
+                            <div className="text-[10px] text-slate-400 leading-tight truncate">{desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* ── Preview pane — painel de vidro mais profundo ── */}
+          {showResults && previewItem && previewCfg && (
+            <div
+              className="hidden sm:flex w-[260px] flex-shrink-0 flex-col p-5"
+              style={{
+                background: 'rgba(240,246,255,0.88)',
+                borderLeft: '1px solid rgba(255,255,255,0.65)',
+              }}
+            >
+              {/* Ícone grande */}
+              <div
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${TYPE_ICON_COLOR[previewItem.type]}`}
+                style={{
+                  boxShadow: '0 6px 20px -6px rgba(15,23,42,0.14), inset 0 2px 0 rgba(255,255,255,1)',
+                }}
+              >
+                <previewCfg.icon className="w-7 h-7" />
+              </div>
+
+              {/* Badge tipo */}
+              <span
+                className="inline-flex self-start items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2"
+                style={{
+                  background: 'rgba(255,255,255,0.82)',
+                  border: '1px solid rgba(255,255,255,0.90)',
+                  boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,1), 0 1px 4px rgba(15,23,42,0.07)',
+                }}
+              >
+                {previewCfg.label}
+              </span>
+
+              {/* Título */}
+              <h3 className="text-[15px] font-semibold text-slate-900 leading-snug mb-1 break-words">
+                {previewItem.title}
+              </h3>
+
+              {previewItem.subtitle && (
+                <p className="text-[12px] text-slate-500 leading-relaxed break-words">
+                  {previewItem.subtitle}
+                </p>
+              )}
+
+              {/* Meta chip */}
+              {previewItem.meta && (
+                <div
+                  className="mt-3 inline-flex self-start items-center gap-1.5 text-[11px] font-medium text-slate-600 px-2 py-1 rounded-lg"
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(255,255,255,0.85)',
+                    boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,1)',
+                  }}
+                >
+                  {previewItem.meta}
+                </div>
+              )}
+
+              {/* Botão Abrir */}
+              <div className="mt-auto pt-4">
+                <button
+                  onClick={() => handleSelect(previewItem)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-white text-[12px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  style={{
+                    background: 'linear-gradient(145deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%)',
+                    boxShadow: '0 6px 22px -4px rgba(245,158,11,0.6), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.12)',
+                  }}
+                >
+                  Abrir
+                  <CornerDownLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
           )}
-          <span className="ml-auto font-mono opacity-50">⌘K · Ctrl+K</span>
+        </div>
+
+        {/* ── Footer — vidro fosco ── */}
+        <div
+          className="px-5 py-2.5 flex items-center gap-3 text-[10px] text-slate-400 flex-shrink-0"
+          style={{
+            background: 'rgba(248,250,253,0.88)',
+            borderTop: '1px solid rgba(255,255,255,0.65)',
+          }}
+        >
+          <span className="flex items-center gap-1">
+            <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">↑↓</kbd>
+            navegar
+          </span>
+          {showResults && filters.length > 1 && (
+            <span className="flex items-center gap-1">
+              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">Tab</kbd>
+              filtrar
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <kbd className="gs-kbd px-1.5 py-0.5 rounded text-slate-500 text-[10px]">↵</kbd>
+            abrir
+          </span>
+          {flatResults.length > 0 && (
+            <span className="text-slate-400 tabular-nums font-medium">
+              {flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <span className="ml-auto inline-flex items-center gap-1 text-slate-300 text-[9px]">
+            <Sparkles className="w-3 h-3 text-amber-400" /> ⌘K · Ctrl+K
+          </span>
         </div>
       </div>
     </div>
