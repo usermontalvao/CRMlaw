@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.124': { name: 'Café Busca Relâmpago', emoji: '⚡' },
   '1.10.123': { name: 'Café Busca Completa', emoji: '🗃️' },
   '1.10.122': { name: 'Café Prazo Certo', emoji: '⏰' },
   '1.10.121': { name: 'Café Busca Total', emoji: '🔭' },
@@ -823,6 +824,30 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.124',
+    date: '18/05/2026',
+    summary: 'Busca global relâmpago: cache 5 min, resultados instantâneos, highlight, buscas recentes, navbar renovada.',
+    modules: [
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'improvement', title: 'Cache 5 minutos — resultados instantâneos', description: 'Os dados (processos, clientes, intimações, requerimentos, agenda, tarefas, prazos, acordos, pastas) são carregados uma vez e reutilizados por 5 minutos. A partir da segunda busca a resposta é imediata. O cache é pré-aquecido em background ao abrir o modal.' },
+          { type: 'improvement', title: 'Buscas recentes', description: 'Ao abrir o modal com campo vazio, as últimas 6 buscas são exibidas como chips clicáveis. Um clique restaura a busca. Botão "Limpar" remove o histórico.' },
+          { type: 'improvement', title: 'Highlight do termo buscado', description: 'O texto que casou com a busca é destacado em âmbar nos títulos e subtítulos de todos os resultados, facilitando a identificação rápida.' },
+          { type: 'improvement', title: 'Score de relevância — melhores resultados primeiro', description: 'Os resultados são ordenados por score: match exato (20), palavra exata (10), começa com (5), contém (2). Intimações só casam no texto se a query tiver 4+ chars e a palavra começar exatamente — elimina falsos positivos.' },
+          { type: 'improvement', title: 'Dedup de agenda por título+data+cliente', description: 'Eventos repetidos (mesma data, título e cliente) são colapsados em um único resultado, eliminando duplicatas como "Perícia social - Jane Leandro × 2".' },
+          { type: 'improvement', title: 'Debounce reduzido para 200ms', description: 'Com o cache, o debounce baixou de 280ms para 200ms sem custo de rede — os resultados aparecem mais rápido ao digitar.' },
+        ],
+      },
+      {
+        moduleId: 'UI',
+        changes: [
+          { type: 'improvement', title: 'Navbar — campo de busca substituído pelo ⌘K', description: 'O campo de busca limitado da topbar (que só buscava clientes) foi substituído pelo botão de busca global "Buscar em tudo… ⌘K". No mobile, aparece como ícone de lupa. A busca global cobre todas as 9 categorias.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.123',
     date: '18/05/2026',

@@ -1440,112 +1440,25 @@ useEffect(() => {
               )}
               
               <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
-                <div className="hidden lg:block relative w-48 xl:w-64">
-                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
-                    <Search className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    onFocus={() => setSearchOpen(true)}
-                    onKeyDown={handleSearchKeyDown}
-                    placeholder={searchTerm.startsWith('@') ? '@ Buscar colaborador...' : 'Buscar clientes...'}
-                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                  />
-                  {searchOpen && (searchLoading || clientSearchResults.length > 0 || collaboratorSearchResults.length > 0 || searchTerm.trim().length >= 2) && (
-                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 max-h-72 overflow-y-auto text-sm">
-                      {searchLoading && (
-                        <div className="px-3 py-2 text-slate-500">Buscando...</div>
-                      )}
-                      {!searchLoading && searchTerm.startsWith('@') && collaboratorSearchResults.length === 0 && searchTerm.trim().length >= 2 && (
-                        <div className="px-3 py-2 text-slate-400">
-                          Nenhum colaborador encontrado para "{searchTerm}"
-                        </div>
-                      )}
-                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.length === 0 && searchTerm.trim().length >= 2 && (
-                        <>
-                          <div className="px-3 py-2 text-slate-400 border-b border-slate-100">
-                            Nenhum cliente encontrado para "{searchTerm}"
-                          </div>
-                          <button
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              setClientPrefill({ full_name: searchTerm.trim() });
-                              setSearchOpen(false);
-                              setSearchTerm('');
-                              navigateTo('clientes');
-                            }}
-                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
-                          >
-                            <span className="text-lg">+</span>
-                            <div>
-                              <p className="text-sm font-semibold">Adicionar Novo Cliente</p>
-                              <p className="text-xs text-slate-500">Criar cadastro para "{searchTerm}"</p>
-                            </div>
-                          </button>
-                        </>
-                      )}
-                      {!searchLoading && searchTerm.startsWith('@') && collaboratorSearchResults.map((collaborator) => (
-                        <button
-                          key={collaborator.id}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => handleCollaboratorSearchSelect(collaborator.user_id)}
-                          className="w-full text-left px-3 py-2 hover:bg-blue-50 transition"
-                        >
-                          <div className="flex items-center gap-2">
-                            {collaborator.avatar_url ? (
-                              <img src={collaborator.avatar_url} alt={collaborator.name} className="w-6 h-6 rounded-full object-cover" />
-                            ) : (
-                              <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
-                                <span className="text-xs font-semibold text-slate-600">
-                                  {collaborator.name.charAt(0).toUpperCase()}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 truncate">@{collaborator.name}</p>
-                              <p className="text-xs text-slate-500 truncate">{collaborator.email || collaborator.role}</p>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.map((client) => {
-                        const primaryPhone = client.phone || client.mobile || '';
-                        return (
-                          <button
-                            key={client.id}
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => handleClientSearchSelect(client.id)}
-                            className="w-full text-left px-3 py-2 hover:bg-amber-50 transition"
-                          >
-                            <p className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</p>
-                            <p className="text-xs text-slate-500 truncate">{client.email || primaryPhone || 'Sem contato cadastrado'}</p>
-                          </button>
-                        );
-                      })}
-                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.length > 0 && (
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            setClientPrefill({ full_name: searchTerm.trim() });
-                            setSearchOpen(false);
-                            setSearchTerm('');
-                            navigateTo('clientes');
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
-                        >
-                          <span className="text-lg">+</span>
-                          <span className="text-sm font-semibold">Adicionar Novo Cliente</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
+                {/* Busca global — substitui o campo de busca antigo */}
+                <button
+                  onClick={() => setGlobalSearchOpen(true)}
+                  className="hidden lg:flex items-center gap-2 w-52 xl:w-64 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-400 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-colors text-left"
+                  title="Busca global (⌘K / Ctrl+K)"
+                >
+                  <Search className="w-4 h-4 flex-shrink-0" />
+                  <span className="flex-1">Buscar em tudo...</span>
+                  <kbd className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono text-slate-400">⌘K</kbd>
+                </button>
+                {/* Botão mobile de busca global (sm e menores) */}
+                <button
+                  onClick={() => setGlobalSearchOpen(true)}
+                  className="flex lg:hidden items-center justify-center p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  title="Busca global (⌘K)"
+                >
+                  <Search className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
                 <button
                   onClick={() => navigateTo('tarefas')}
                   className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
@@ -1561,16 +1474,6 @@ useEffect(() => {
                       {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
                     </span>
                   )}
-                </button>
-                {/* #9 — Botão busca global ⌘K */}
-                <button
-                  onClick={() => setGlobalSearchOpen(true)}
-                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                  title="Busca global (⌘K)"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span className="hidden lg:inline">Buscar</span>
-                  <kbd className="hidden lg:inline text-[9px] px-1 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">⌘K</kbd>
                 </button>
 
                 <NotificationBell
