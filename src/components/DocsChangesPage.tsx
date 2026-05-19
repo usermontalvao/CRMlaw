@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.125': { name: 'Café Barra Animada', emoji: '✨' },
   '1.10.124': { name: 'Café Busca Relâmpago', emoji: '⚡' },
   '1.10.123': { name: 'Café Busca Completa', emoji: '🗃️' },
   '1.10.122': { name: 'Café Prazo Certo', emoji: '⏰' },
@@ -824,6 +825,26 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.125',
+    date: '18/05/2026',
+    summary: 'Barra de busca animada com shimmer e glow; intimações removidas dos resultados; processos não batem mais por nome do advogado.',
+    modules: [
+      {
+        moduleId: 'UI',
+        changes: [
+          { type: 'improvement', title: 'Barra de busca — animação shimmer + glow âmbar', description: 'A barra "Buscar em tudo..." na topbar tem animação de glow pulsante âmbar idle e shimmer dourado que percorre a barra. Ao hover: scale, borda âmbar sólida e shimmer acelerado. Tamanho aumentado (w-72 xl:w-96).' },
+        ],
+      },
+      {
+        moduleId: 'Infrastructure',
+        changes: [
+          { type: 'fix', title: 'Intimações removidas dos resultados de busca', description: 'Intimações DJEN não são mais exibidas na busca global. Os dados ainda são carregados internamente para extrair polo_ativo/polo_passivo e enriquecer os resultados de processos — sem custo extra de request.' },
+          { type: 'fix', title: 'Processos não batem mais por nome do advogado', description: 'Pesquisar o nome do advogado responsável retornava TODOS os seus processos. O campo responsible_lawyer foi removido da busca de processos — agora só batem por número e comarca, eliminando resultados irrelevantes.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.124',
     date: '18/05/2026',

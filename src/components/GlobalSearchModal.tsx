@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Search, X, FileText, Users, Gavel, Loader2, ChevronRight, ArrowRight,
+  Search, X, FileText, Users, Loader2, ChevronRight, ArrowRight,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
-  Clock, Zap,
+  Clock, Zap, Gavel,
 } from 'lucide-react';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
@@ -97,9 +97,10 @@ const TYPE_CONFIG: Record<ResultType, {
   cloud:                 { label: 'Pasta',        icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',   border: 'border-indigo-200',  group: 'Cloud'         },
 };
 
+// Intimações removidas da exibição (ainda carregadas para extrair partes dos processos)
 const GROUP_ORDER: ResultType[] = [
   'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo',
-  'intimacao', 'agenda', 'tarefa', 'financeiro', 'cloud',
+  'agenda', 'tarefa', 'financeiro', 'cloud',
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -247,15 +248,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         return [clientName, court].filter(Boolean).join(' · ') || undefined;
       };
 
-      // ── Processos ─────────────────────────────────────────────────────────
-      // Não incluir processos apenas por nome do advogado se já há cliente com esse nome
+      // ── Processos (só número e comarca — advogado removido para evitar
+      //    retornar TODOS os casos do usuário logado ao buscar seu próprio nome)
       const processResults: SearchResult[] = processes
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
           const sc = topScore([p.process_code ?? '', p.court ?? ''], q2);
-          // Advogado conta menos (pode ser a mesma pessoa que o usuário logado)
-          const lawyerSc = topScore([p.responsible_lawyer ?? ''], q2) > 0 ? 1 : 0;
-          return { p, client, s: Math.max(sc, lawyerSc) };
+          return { p, client, s: sc };
         })
         .filter(x => x.s > 0)
         .sort((a, b) => b.s - a.s)
@@ -294,30 +293,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           };
         });
 
-      // ── Intimações (polo_ativo/polo_passivo priority over texto) ──────────
-      const intimacaoResults: SearchResult[] = intimacoes
-        .map(i => {
-          // Score mais alto para polo fields, baixo para texto (evita falsos positivos)
-          const poloSc = topScore([i.polo_ativo ?? '', i.polo_passivo ?? '', i.numero_processo ?? ''], q2);
-          // Só busca no texto se o query tiver 4+ chars e aparecer no início (word boundary)
-          const textoSc = q2.length >= 4 ? (() => {
-            const t = nrm((i.texto ?? '').slice(0, 200));
-            return t.split(/\s+/).some(w => w.startsWith(nq)) ? 1 : 0;
-          })() : 0;
-          return { i, s: Math.max(poloSc, topScore([i.tipo_documento ?? '', i.nome_classe ?? ''], q2), textoSc) };
-        })
-        .filter(x => x.s > 0)
-        .sort((a, b) => b.s - a.s)
-        .slice(0, 5)
-        .map(({ i, s }) => ({
-          id: i.id, type: 'intimacao' as const,
-          title: i.numero_processo ?? 'Intimação',
-          subtitle: [i.polo_ativo, i.polo_passivo].filter(Boolean).join(' × ') || i.tipo_documento || undefined,
-          meta: fmtDate(i.data_disponibilizacao),
-          score: s,
-          navModule: 'intimacoes',
-          navParams: undefined,
-        }));
+      // Intimações são carregadas apenas para construir o mapa de partes —
+      // não são exibidas como resultado de busca (removidas a pedido do usuário).
 
       // ── Requerimentos ─────────────────────────────────────────────────────
       const reqResults: SearchResult[] = requirements
@@ -459,7 +436,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
         ...clientResults, ...processResults, ...processViaClientResults,
-        ...reqResults, ...prazoResults, ...intimacaoResults,
+        ...reqResults, ...prazoResults,
         ...agendaResults, ...tarefaResults, ...financeiroResults, ...cloudResults,
       ];
       const seen = new Set<string>();
@@ -643,7 +620,6 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                 {[
                   { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail' },
                   { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes' },
-                  { icon: Gavel,         label: 'Intimações',    desc: 'polo, número do processo' },
                   { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, CPF, protocolo' },
                   { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente (pendentes)' },
                   { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões (futuros)' },

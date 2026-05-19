@@ -1440,15 +1440,15 @@ useEffect(() => {
               )}
               
               <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
-                {/* Busca global — substitui o campo de busca antigo */}
+                {/* Busca global — barra animada */}
                 <button
                   onClick={() => setGlobalSearchOpen(true)}
-                  className="hidden lg:flex items-center gap-2 w-52 xl:w-64 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-400 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-colors text-left"
+                  className="search-bar-idle hidden lg:flex items-center gap-2.5 w-72 xl:w-96 px-4 py-2.5 rounded-xl border bg-white text-sm text-slate-400 text-left"
                   title="Busca global (⌘K / Ctrl+K)"
                 >
-                  <Search className="w-4 h-4 flex-shrink-0" />
-                  <span className="flex-1">Buscar em tudo...</span>
-                  <kbd className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono text-slate-400">⌘K</kbd>
+                  <Search className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                  <span className="flex-1 font-medium">Buscar em tudo...</span>
+                  <kbd className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded-md border border-slate-200 font-mono text-slate-400 flex-shrink-0">⌘K</kbd>
                 </button>
                 {/* Botão mobile de busca global (sm e menores) */}
                 <button
