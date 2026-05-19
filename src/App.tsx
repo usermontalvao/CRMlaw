@@ -34,6 +34,14 @@ import {
   Filter,
   List,
   LayoutGrid,
+  Lock,
+  ShieldOff,
+  Copy,
+  CheckCheck,
+  ArrowLeft,
+  Send,
+  Clock,
+  MessageSquare,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -175,6 +183,631 @@ const CloudModuleFallback = () => (
   </div>
 );
 
+// ── AccessDeniedScreen ────────────────────────────────────────────────────────
+const MODULE_META: Record<string, { label: string; desc: string; Icon: React.ElementType }> = {
+  leads:         { label: 'Leads',                desc: 'captação e gestão de leads',            Icon: Target },
+  clientes:      { label: 'Clientes',             desc: 'cadastro e histórico de clientes',       Icon: Users },
+  documentos:    { label: 'Documentos',           desc: 'contratos e modelos',                    Icon: FileText },
+  cloud:         { label: 'Cloud',                desc: 'armazenamento de arquivos',              Icon: Cloud },
+  assinaturas:   { label: 'Assinaturas Digitais', desc: 'coleta de assinaturas eletrônicas',      Icon: PenTool },
+  processos:     { label: 'Processos',            desc: 'acompanhamento processual',              Icon: Briefcase },
+  requerimentos: { label: 'Requerimentos',        desc: 'petições e requerimentos',               Icon: Library },
+  prazos:        { label: 'Prazos',               desc: 'controle de prazos judiciais',           Icon: AlarmClock },
+  intimacoes:    { label: 'Intimações',           desc: 'comunicações judiciais eletrônicas',     Icon: Bell },
+  financeiro:    { label: 'Financeiro',           desc: 'honorários, acordos e pagamentos',       Icon: PiggyBank },
+  agenda:        { label: 'Agenda',               desc: 'compromissos e audiências',              Icon: Calendar },
+  tarefas:       { label: 'Tarefas',              desc: 'atividades e pendências',                Icon: CheckSquare },
+  chat:          { label: 'Mensagens',            desc: 'comunicação interna',                    Icon: MessageCircle },
+  peticoes:      { label: 'Editor de Petições',   desc: 'redação e formatação de petições',       Icon: Newspaper },
+  configuracoes: { label: 'Configurações',        desc: 'ajustes do sistema',                     Icon: Settings },
+};
+
+const AccessDeniedScreen: React.FC<{
+  moduleKey: string;
+  userRole: string;
+  userId: string;
+  userName: string;
+  onGoHome: () => void;
+}> = ({ moduleKey, userRole, userId, userName, onGoHome }) => {
+  const meta = MODULE_META[moduleKey] ?? { label: moduleKey, desc: 'este módulo', Icon: Scale };
+  const { Icon } = meta;
+
+  type ReqState = 'checking' | 'none' | 'pending' | 'denied' | 'approved_expired';
+  const [reqState, setReqState] = useState<ReqState>('checking');
+  const [lastRequest, setLastRequest] = useState<any | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [justification, setJustification] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const loadState = useCallback(async () => {
+    if (!userId) { setReqState('none'); return; }
+    try {
+      const { accessRequestService } = await import('./services/accessRequest.service');
+      const reqs = await accessRequestService.listByRequester(userId);
+      const forModule = reqs
+        .filter(r => r.module_key === moduleKey)
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      const pending = forModule.find((r: any) => r.status === 'pending');
+      if (pending) { setReqState('pending'); setLastRequest(pending); return; }
+
+      const approved = forModule.find((r: any) => r.status === 'approved');
+      if (approved?.expires_at && new Date(approved.expires_at) < new Date()) {
+        setReqState('approved_expired'); setLastRequest(approved); return;
+      }
+
+      const denied = forModule.find((r: any) => r.status === 'denied');
+      if (denied) { setReqState('denied'); setLastRequest(denied); return; }
+
+      setReqState('none');
+    } catch { setReqState('none'); }
+  }, [userId, moduleKey]);
+
+  useEffect(() => { loadState(); }, [loadState]);
+
+  const handleSendRequest = async () => {
+    if (!justification.trim()) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const { accessRequestService } = await import('./services/accessRequest.service');
+      const req = await accessRequestService.createRequest({
+        requester_id: userId,
+        requester_name: userName,
+        requester_role: userRole,
+        module_key: moduleKey,
+        module_label: meta.label,
+        justification: justification.trim(),
+      });
+      await accessRequestService.notifyAdmins(req.id, userName, meta.label);
+      setReqState('pending');
+      setLastRequest(req);
+      setShowModal(false);
+      setJustification('');
+    } catch (e: any) {
+      setSendError(e?.message ?? 'Erro ao enviar solicitação.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Helpers
+  const fmtDate = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+
+  const grantedDuration = (req: any): string => {
+    if (!req?.expires_at) return 'permanente';
+    const diffMs = new Date(req.expires_at).getTime() - new Date(req.resolved_at || req.created_at).getTime();
+    const h = diffMs / 3_600_000;
+    if (h < 23) return `${Math.round(h)} hora${Math.round(h) !== 1 ? 's' : ''}`;
+    const d = Math.round(h / 24);
+    return `${d} dia${d !== 1 ? 's' : ''}`;
+  };
+
+  // ── Right-panel content by state ──────────────────────────────────────
+  const renderRightPanel = () => {
+    // DENIED
+    if (reqState === 'denied') return (
+      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-5 h-5 rounded-md bg-red-100 flex items-center justify-center">
+            <ShieldOff className="w-3 h-3 text-red-500" />
+          </div>
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-red-400">Acesso Negado</span>
+        </div>
+
+        <h1 className="text-[1.85rem] font-extrabold text-slate-900 leading-[1.15] mb-3">
+          Sua solicitação<br />foi <span className="text-red-500">negada</span>.
+        </h1>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-0.5 bg-red-400 rounded-full" />
+          <div className="w-2 h-0.5 bg-slate-200 rounded-full" />
+        </div>
+
+        <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm">
+          O administrador analisou sua solicitação de acesso ao módulo{' '}
+          <span className="font-semibold text-slate-700">{meta.label}</span> e optou por não conceder a permissão.
+        </p>
+
+        {lastRequest?.admin_notes && (
+          <div className="flex items-start gap-3 px-4 py-3.5 bg-red-50 border border-red-200 rounded-2xl mb-4">
+            <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <MessageSquare className="w-3.5 h-3.5 text-red-500" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-1">Motivo informado</p>
+              <p className="text-sm text-red-800 leading-relaxed">{lastRequest.admin_notes}</p>
+            </div>
+          </div>
+        )}
+
+        {lastRequest?.resolved_at && (
+          <p className="text-xs text-slate-400 mb-8">
+            Decidido em {fmtDate(lastRequest.resolved_at)}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={onGoHome}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Ir ao Dashboard
+          </button>
+          <button onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md shadow-amber-200/60">
+            <Send className="w-3.5 h-3.5" />
+            Solicitar novamente
+          </button>
+        </div>
+      </div>
+    );
+
+    // APPROVED EXPIRED
+    if (reqState === 'approved_expired') return (
+      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center">
+            <Clock className="w-3 h-3 text-amber-600" />
+          </div>
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-500">Acesso Expirado</span>
+        </div>
+
+        <h1 className="text-[1.85rem] font-extrabold text-slate-900 leading-[1.15] mb-3">
+          Seu acesso<br />temporário <span className="text-amber-500">expirou</span>.
+        </h1>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-0.5 bg-amber-400 rounded-full" />
+          <div className="w-2 h-0.5 bg-slate-200 rounded-full" />
+        </div>
+
+        <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm">
+          Você havia recebido acesso ao módulo{' '}
+          <span className="font-semibold text-slate-700">{meta.label}</span> por um período determinado que já se encerrou.
+        </p>
+
+        <div className="flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-2xl mb-4">
+          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Clock className="w-3.5 h-3.5 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-1">Acesso concedido</p>
+            <p className="text-sm text-amber-800 font-semibold">por {grantedDuration(lastRequest)}</p>
+            {lastRequest?.expires_at && (
+              <p className="text-xs text-amber-600 mt-0.5">Expirou em {fmtDate(lastRequest.expires_at)}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 mt-2">
+          <button onClick={onGoHome}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Ir ao Dashboard
+          </button>
+          <button onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md shadow-amber-200/60">
+            <Send className="w-3.5 h-3.5" />
+            Solicitar renovação
+          </button>
+        </div>
+      </div>
+    );
+
+    // PENDING
+    if (reqState === 'pending') return (
+      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center">
+            <Clock className="w-3 h-3 text-amber-600" />
+          </div>
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-500">Em Análise</span>
+        </div>
+
+        <h1 className="text-[1.85rem] font-extrabold text-slate-900 leading-[1.15] mb-3">
+          Solicitação<br /><span className="text-amber-500">aguardando</span><br />aprovação.
+        </h1>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-0.5 bg-amber-400 rounded-full" />
+          <div className="w-2 h-0.5 bg-slate-200 rounded-full" />
+        </div>
+
+        <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm">
+          Sua solicitação de acesso ao módulo{' '}
+          <span className="font-semibold text-slate-700">{meta.label}</span> foi enviada e está sendo analisada pelo administrador. Você receberá uma notificação assim que houver uma decisão.
+        </p>
+
+        {lastRequest?.created_at && (
+          <div className="flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-2xl mb-6">
+            <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-1">Enviado em</p>
+              <p className="text-sm text-amber-800">{fmtDate(lastRequest.created_at)}</p>
+              {lastRequest.justification && (
+                <p className="text-xs text-amber-600 mt-1 italic">"{lastRequest.justification}"</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <button onClick={onGoHome}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md w-fit">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Ir ao Dashboard
+        </button>
+      </div>
+    );
+
+    // NONE / CHECKING — default
+    return (
+      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-5 h-5 rounded-md bg-red-100 flex items-center justify-center">
+            <ShieldOff className="w-3 h-3 text-red-500" />
+          </div>
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Acesso Restrito</span>
+        </div>
+
+        <h1 className="text-[2rem] font-extrabold text-slate-900 leading-[1.1] mb-3">
+          Você não tem<br />permissão para<br />este módulo.
+        </h1>
+
+        <p className="sm:hidden text-sm text-slate-500 mb-2">
+          Módulo: <span className="font-semibold text-slate-700">{meta.label}</span> — {meta.desc}
+        </p>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-0.5 bg-amber-400 rounded-full" />
+          <div className="w-2 h-0.5 bg-slate-200 rounded-full" />
+        </div>
+
+        <p className="text-sm text-slate-500 leading-relaxed mb-8 max-w-sm">
+          O seu cargo de <span className="font-semibold text-slate-700">{userRole}</span> não inclui acesso ao módulo de{' '}
+          <span className="font-medium text-slate-700">{meta.desc}</span>. Para exercer atividades aqui, solicite ao administrador — você pode enviar uma justificativa pelo botão abaixo.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={onGoHome}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Ir ao Dashboard
+          </button>
+
+          {reqState !== 'checking' && (
+            <button onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.97] text-white text-sm font-bold transition-all shadow-md shadow-amber-200/60">
+              <Send className="w-3.5 h-3.5" />
+              Solicitar acesso
+            </button>
+          )}
+        </div>
+
+        <p className="mt-10 text-[11px] text-slate-300 leading-relaxed max-w-xs">
+          Acesso concedido pelo administrador pode ser temporário (por prazo definido) ou permanente.
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <>
+    {/* ── Tela principal: split full-height ──────────────────────────── */}
+    <div className="flex min-h-[72vh] select-none overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+
+      {/* ══ Painel esquerdo — visual (45%) ═══════════════════════════════ */}
+      <div className="relative hidden sm:flex flex-col items-center justify-center w-[45%] flex-shrink-0 overflow-hidden bg-[#0f172a]">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0f172a] to-[#020617]" />
+        <div className="absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+
+        {/* Glow color changes by state */}
+        <div className={`absolute w-80 h-80 rounded-full blur-3xl top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-700 ${
+          reqState === 'denied' ? 'bg-red-500/10'
+          : reqState === 'approved_expired' ? 'bg-amber-500/10'
+          : reqState === 'pending' ? 'bg-amber-400/10'
+          : 'bg-amber-500/10'
+        }`} />
+
+        <div className="relative z-10 flex flex-col items-center gap-7 px-10">
+          <div className="relative">
+            <div className="w-36 h-36 rounded-3xl border border-white/8 bg-white/4 flex items-center justify-center backdrop-blur-sm shadow-2xl">
+              <Icon className="w-16 h-16 text-white/20" />
+            </div>
+            <div className={`absolute -bottom-3 -right-3 w-10 h-10 rounded-full flex items-center justify-center shadow-xl border-[3px] border-[#0f172a] transition-colors duration-500 ${
+              reqState === 'denied' ? 'bg-red-500'
+              : reqState === 'pending' || reqState === 'approved_expired' ? 'bg-amber-500'
+              : 'bg-amber-500'
+            }`}>
+              {reqState === 'denied'
+                ? <ShieldOff className="w-4 h-4 text-white" />
+                : reqState === 'pending'
+                ? <Clock className="w-4 h-4 text-white" />
+                : reqState === 'approved_expired'
+                ? <Clock className="w-4 h-4 text-white" />
+                : <Lock className="w-4 h-4 text-white" />}
+            </div>
+            <div className="absolute inset-0 rounded-3xl ring-1 ring-amber-400/15 scale-110" />
+          </div>
+
+          <div className="text-center">
+            <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-amber-400/60 mb-2">Módulo</p>
+            <p className="text-2xl font-bold text-white leading-tight">{meta.label}</p>
+            <p className="text-xs text-slate-500 mt-1.5 font-medium">{meta.desc}</p>
+          </div>
+
+          <div className="flex items-center gap-3 w-full px-4">
+            <div className="flex-1 h-px bg-white/8" />
+            <Lock className="w-3 h-3 text-white/20" />
+            <div className="flex-1 h-px bg-white/8" />
+          </div>
+
+          <div className="text-center">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Seu perfil</p>
+            <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/8 border border-white/10 text-white/70 text-sm font-semibold">
+              {userRole}
+            </span>
+          </div>
+
+          {/* State indicator on left panel */}
+          <div className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${
+            reqState === 'denied' ? 'bg-red-500/10 border-red-500/20 text-red-400'
+            : reqState === 'pending' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            : reqState === 'approved_expired' ? 'bg-amber-400/10 border-amber-400/20 text-amber-400'
+            : 'bg-white/5 border-white/10 text-white/30'
+          }`}>
+            {reqState === 'denied' ? '✕ Negado'
+            : reqState === 'pending' ? '⏳ Em análise'
+            : reqState === 'approved_expired' ? '⌛ Expirado'
+            : '🔒 Sem permissão'}
+          </div>
+        </div>
+      </div>
+
+      {/* ══ Painel direito — conteúdo dinâmico ═══════════════════════════ */}
+      {renderRightPanel()}
+    </div>
+
+    {/* ── Modal de solicitação ─────────────────────────────────────────── */}
+    {showModal && (
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" />
+        <div
+          className="relative bg-white rounded-3xl shadow-2xl w-full max-w-[400px] overflow-hidden"
+          onClick={e => e.stopPropagation()}
+          style={{ boxShadow: '0 32px 64px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.06)' }}
+        >
+          <button
+            onClick={() => setShowModal(false)}
+            className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition"
+          >
+            <X className="w-3.5 h-3.5 text-slate-500" />
+          </button>
+
+          <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400" />
+
+          <div className="pt-8 pb-6 px-8 flex flex-col items-center text-center">
+            <div className="relative mb-5">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm">
+                <Icon className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center border-[2px] border-white">
+                <Lock className="w-2.5 h-2.5 text-amber-400" />
+              </div>
+            </div>
+            <h2 className="text-base font-bold text-slate-900 mb-0.5">Solicitar acesso</h2>
+            <p className="text-xs text-slate-400">
+              Módulo <span className="font-semibold text-slate-600">{meta.label}</span>
+            </p>
+          </div>
+
+          <div className="px-7 pb-2">
+            <p className="text-xs text-slate-500 leading-relaxed mb-5">
+              Descreva por que precisa acessar este módulo. O administrador receberá uma notificação e poderá liberar o acesso de forma <span className="font-medium text-slate-700">temporária ou permanente</span>.
+            </p>
+
+            <label className="block text-[10.5px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Justificativa <span className="text-red-400">*</span>
+            </label>
+            <textarea
+              className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-3 text-sm text-slate-800 placeholder-slate-300 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300/50 focus:border-amber-400 transition-all leading-relaxed"
+              rows={4}
+              placeholder={`Por que precisa acessar ${meta.label}?`}
+              value={justification}
+              onChange={e => setJustification(e.target.value)}
+              maxLength={500}
+              autoFocus
+            />
+            <div className="flex justify-end mt-1 mb-1">
+              <span className={`text-[10px] tabular-nums ${justification.length > 450 ? 'text-amber-500 font-medium' : 'text-slate-300'}`}>
+                {justification.length}/500
+              </span>
+            </div>
+
+            {sendError && (
+              <div className="flex items-center gap-2 mt-1 px-3 py-2.5 bg-red-50 border border-red-100 rounded-xl">
+                <X className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                <p className="text-xs text-red-600">{sendError}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5 px-7 py-5">
+            <button
+              onClick={() => setShowModal(false)}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSendRequest}
+              disabled={!justification.trim() || sending}
+              className="flex-[2] inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold transition-all shadow-md shadow-amber-100"
+            >
+              {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              {sending ? 'Enviando...' : 'Enviar solicitação'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+};
+
+// ── SearchBarTypewriter ────────────────────────────────────────────────────────
+const TYPEWRITER_PHRASES = [
+  'Maria das Graças Oliveira',
+  'Requerimento 37363535',
+  '1018454-17.2024.8.19.0001',
+  'Audiência 15/06',
+  'Prazo recursal',
+  'José Ribeiro da Silva',
+  'Acordo R$ 12.500',
+  'Contrato Pedro Alves',
+];
+
+const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const [display, setDisplay] = useState('');
+  const stateRef = useRef({ phraseIdx: 0, charIdx: 0, erasing: false });
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const tick = () => {
+      const st = stateRef.current;
+      const phrase = TYPEWRITER_PHRASES[st.phraseIdx];
+
+      if (!st.erasing) {
+        if (st.charIdx < phrase.length) {
+          st.charIdx++;
+          setDisplay(phrase.slice(0, st.charIdx));
+          timerRef.current = setTimeout(tick, 62);
+        } else {
+          // Full phrase shown — pause then erase
+          timerRef.current = setTimeout(() => {
+            st.erasing = true;
+            tick();
+          }, 1800);
+        }
+      } else {
+        if (st.charIdx > 0) {
+          st.charIdx--;
+          setDisplay(phrase.slice(0, st.charIdx));
+          timerRef.current = setTimeout(tick, 28);
+        } else {
+          // All erased — next phrase
+          st.phraseIdx = (st.phraseIdx + 1) % TYPEWRITER_PHRASES.length;
+          st.erasing = false;
+          timerRef.current = setTimeout(tick, 320);
+        }
+      }
+    };
+
+    timerRef.current = setTimeout(tick, 900);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  return (
+    <button
+      onClick={onClick}
+      className="hidden lg:flex items-center gap-3 w-80 xl:w-[440px] px-5 py-[10px] rounded-full bg-white border border-slate-200/70 shadow-[0_1px_6px_rgba(32,33,36,0.1)] hover:shadow-[0_2px_14px_rgba(251,146,60,0.16)] hover:border-amber-300/50 transition-all duration-300 group cursor-text select-none"
+      title="Busca global (⌘K / Ctrl+K)"
+    >
+      {/* Ícone */}
+      <Search className="w-[17px] h-[17px] flex-shrink-0 text-amber-400 group-hover:text-amber-500 transition-colors duration-200" />
+
+      {/* Texto animado */}
+      <span className="flex-1 text-[13px] text-slate-400 font-normal truncate leading-none">
+        {display}<span className="search-cursor" />
+      </span>
+
+      {/* Separador + atalho */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="w-px h-4 bg-slate-200 group-hover:bg-amber-200/60 transition-colors" />
+        <kbd className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 group-hover:bg-amber-50 text-slate-400 group-hover:text-amber-600 border border-slate-200 group-hover:border-amber-200 font-mono transition-all duration-200 leading-none">
+          ⌘K
+        </kbd>
+      </div>
+    </button>
+  );
+};
+
+// ── Sidebar module button with optional temporary-access countdown ────────────
+const SidebarModuleBtn: React.FC<{
+  moduleKey: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  isActive: boolean;
+  onClick: () => void;
+  expiresAt?: string | null;
+}> = ({ label, Icon, isActive, onClick, expiresAt }) => {
+  const [countdown, setCountdown] = useState<string | null>(null);
+  const isTemporary = !!expiresAt;
+
+  useEffect(() => {
+    if (!expiresAt) { setCountdown(null); return; }
+    const compute = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (diff <= 0) { setCountdown('Expirado'); return; }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      if (h > 0) setCountdown(`${h}h ${m}m`);
+      else if (m > 0) setCountdown(`${m}m ${s}s`);
+      else setCountdown(`${s}s`);
+    };
+    compute();
+    const id = setInterval(compute, 1_000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative flex flex-col items-center py-2 px-1 rounded-lg transition-colors ${
+        isActive
+          ? 'text-amber-500'
+          : isTemporary
+          ? 'text-cyan-400 hover:text-cyan-300 hover:bg-slate-800/50'
+          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+      }`}
+    >
+      {/* Barra lateral esquerda */}
+      {isActive && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />
+      )}
+      {isTemporary && !isActive && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-cyan-400 rounded-r" />
+      )}
+
+      {/* Ícone + ponto indicador */}
+      <div className="relative">
+        <Icon className="w-5 h-5" />
+        {isTemporary && !isActive && (
+          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-cyan-400 rounded-full ring-1 ring-slate-900" />
+        )}
+      </div>
+
+      <span className="text-[9px] mt-0.5 leading-tight">{label}</span>
+
+      {/* Contagem regressiva */}
+      {isTemporary && countdown && (
+        <span
+          className={`text-[8px] font-mono leading-tight ${
+            isActive ? 'text-amber-400/80' : 'text-cyan-400/80'
+          }`}
+        >
+          {countdown}
+        </span>
+      )}
+    </button>
+  );
+};
+
 const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
@@ -182,8 +815,24 @@ const MainApp: React.FC = () => {
   const [cloudMobileSearchTerm, setCloudMobileSearchTerm] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
-  const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin } = usePermissions();
-  
+  const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin, overrides } = usePermissions();
+
+  // Retorna expires_at caso o módulo tenha acesso temporário via override
+  const getOverrideExpiry = useCallback((moduleKey: string): string | null => {
+    if (isAdmin) return null;
+    const ov = overrides.find(o => o.module === moduleKey && !!o.expires_at);
+    return ov?.expires_at ?? null;
+  }, [isAdmin, overrides]);
+  const [sidebarPendingCount, setSidebarPendingCount] = useState(0);
+
+  // Carregar contagem de solicitações pendentes para badge no sidebar
+  useEffect(() => {
+    if (!isAdmin) return;
+    import('./services/accessRequest.service').then(({ accessRequestService }) => {
+      accessRequestService.getPendingCount().then(setSidebarPendingCount).catch(() => {});
+    });
+  }, [isAdmin]);
+
   // Estados para o seletor de mês do módulo Prazos
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -374,32 +1023,15 @@ const MainApp: React.FC = () => {
   }, [permissionGuardedModules, canAccessModule]);
 
   const safeNavigateTo = useCallback((moduleKey: ModuleName, params?: Record<string, string>) => {
-    if (!permissionsLoading && !hasModuleAccess(moduleKey)) {
-      setProfileError('Você não tem permissão para acessar este módulo.');
-      navigateTo('dashboard');
-      return;
-    }
+    // Navega normalmente — o módulo renderizará AccessDeniedScreen se não houver permissão
     navigateTo(moduleKey, params);
-  }, [permissionsLoading, hasModuleAccess, navigateTo]);
+  }, [navigateTo]);
 
   const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
     safeNavigateTo(moduleKey as ModuleName, params);
   };
 
-  // Guard de permissões - redireciona apenas uma vez se não tiver acesso
-  const permissionCheckDoneRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (permissionsLoading) return;
-    // Evita loop: só verifica se mudou de módulo
-    if (permissionCheckDoneRef.current === activeModule) return;
-    permissionCheckDoneRef.current = activeModule;
-    
-    if (!hasModuleAccess(activeModule)) {
-      setProfileError('Você não tem permissão para acessar este módulo.');
-      permissionCheckDoneRef.current = 'dashboard';
-      navigateTo('dashboard');
-    }
-  }, [activeModule, permissionsLoading, hasModuleAccess, navigateTo]);
+  // Guard de permissões — sem redirecionamento; AccessDeniedScreen é renderizado no slot do módulo
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1091,159 +1723,135 @@ useEffect(() => {
           </button>
 
           {!permissionsLoading && canAccessModule('leads') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="leads"
+              label="Leads"
+              Icon={Target}
+              isActive={activeModule === 'leads'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('leads'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'leads' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'leads' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Target className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Leads</span>
-            </button>
+              expiresAt={getOverrideExpiry('leads')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('clientes') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="clientes"
+              label="Clientes"
+              Icon={Users}
+              isActive={activeModule === 'clientes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'clientes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'clientes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Users className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Clientes</span>
-            </button>
+              expiresAt={getOverrideExpiry('clientes')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('documentos') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="documentos"
+              label="Documentos"
+              Icon={Library}
+              isActive={activeModule === 'documentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'documentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'documentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Library className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Documentos</span>
-            </button>
+              expiresAt={getOverrideExpiry('documentos')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('cloud') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="cloud"
+              label="Cloud"
+              Icon={Cloud}
+              isActive={activeModule === 'cloud'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'cloud' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'cloud' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Cloud className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Cloud</span>
-            </button>
+              expiresAt={getOverrideExpiry('cloud')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('assinaturas') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="assinaturas"
+              label="Assinaturas"
+              Icon={PenTool}
+              isActive={activeModule === 'assinaturas'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <PenTool className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Assinaturas</span>
-            </button>
+              expiresAt={getOverrideExpiry('assinaturas')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('processos') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="processos"
+              label="Processos"
+              Icon={Scale}
+              isActive={activeModule === 'processos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'processos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Scale className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Processos</span>
-            </button>
+              expiresAt={getOverrideExpiry('processos')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('requerimentos') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="requerimentos"
+              label="Requerimentos"
+              Icon={Briefcase}
+              isActive={activeModule === 'requerimentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'requerimentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'requerimentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Briefcase className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Requerimentos</span>
-            </button>
+              expiresAt={getOverrideExpiry('requerimentos')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('prazos') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="prazos"
+              label="Prazos"
+              Icon={AlarmClock}
+              isActive={activeModule === 'prazos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'prazos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'prazos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <AlarmClock className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Prazos</span>
-            </button>
+              expiresAt={getOverrideExpiry('prazos')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('intimacoes') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="intimacoes"
+              label="Intimações"
+              Icon={Bell}
+              isActive={activeModule === 'intimacoes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'intimacoes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'intimacoes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Bell className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Intimações</span>
-            </button>
+              expiresAt={getOverrideExpiry('intimacoes')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('financeiro') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="financeiro"
+              label="Financeiro"
+              Icon={PiggyBank}
+              isActive={activeModule === 'financeiro'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'financeiro' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'financeiro' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <PiggyBank className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Financeiro</span>
-            </button>
+              expiresAt={getOverrideExpiry('financeiro')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('agenda') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="agenda"
+              label="Agenda"
+              Icon={Calendar}
+              isActive={activeModule === 'agenda'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'agenda' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'agenda' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <Calendar className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Agenda</span>
-            </button>
+              expiresAt={getOverrideExpiry('agenda')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('chat') && (
-            <button
+            <SidebarModuleBtn
+              moduleKey="chat"
+              label="Chat"
+              Icon={MessageCircle}
+              isActive={activeModule === 'chat'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'chat' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'chat' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <MessageCircle className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Chat</span>
-            </button>
+              expiresAt={getOverrideExpiry('chat')}
+            />
           )}
 
           {!permissionsLoading && canAccessModule('peticoes') && (
@@ -1264,10 +1872,15 @@ useEffect(() => {
 
           <button
             onClick={() => { setIsMobileNavOpen(false); navigateTo('perfil'); }}
-            className="flex flex-col items-center py-2.5 px-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors"
+            className="relative flex flex-col items-center py-2.5 px-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors"
           >
             <UserCog className="w-5 h-5" />
             <span className="text-[9px] mt-1">Perfil</span>
+            {isAdmin && sidebarPendingCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                {sidebarPendingCount > 9 ? '9+' : sidebarPendingCount}
+              </span>
+            )}
           </button>
         </nav>
       </aside>
@@ -1440,16 +2053,8 @@ useEffect(() => {
               )}
               
               <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
-                {/* Busca global — barra animada */}
-                <button
-                  onClick={() => setGlobalSearchOpen(true)}
-                  className="search-bar-idle hidden lg:flex items-center gap-2.5 w-72 xl:w-96 px-4 py-2.5 rounded-xl border bg-white text-sm text-slate-400 text-left"
-                  title="Busca global (⌘K / Ctrl+K)"
-                >
-                  <Search className="w-4 h-4 flex-shrink-0 text-amber-400" />
-                  <span className="flex-1 font-medium">Buscar em tudo...</span>
-                  <kbd className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded-md border border-slate-200 font-mono text-slate-400 flex-shrink-0">⌘K</kbd>
-                </button>
+                {/* Busca global — barra com typewriter */}
+                <SearchBarTypewriter onClick={() => setGlobalSearchOpen(true)} />
                 {/* Botão mobile de busca global (sm e menores) */}
                 <button
                   onClick={() => setGlobalSearchOpen(true)}
@@ -1560,22 +2165,37 @@ useEffect(() => {
         {/* Main Content */}
         <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
-              <span>{profileBanner}</span>
-              <button onClick={() => setProfileBanner(null)} className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold uppercase">
-                Fechar
+            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm">
+              <CheckCheck className="w-4 h-4 flex-shrink-0 text-emerald-500" />
+              <span className="flex-1 font-medium">{profileBanner}</span>
+              <button onClick={() => setProfileBanner(null)} className="text-emerald-400 hover:text-emerald-600 flex-shrink-0">
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
           {profileError && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-              {profileError}
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+              <span className="flex-1">{profileError}</span>
+              <button onClick={() => setProfileError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0 mt-0.5">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
           {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
           <Suspense fallback={activeModule === 'cloud' ? <CloudModuleFallback /> : <div className="min-h-[200px]" />}>
+            {/* Tela de acesso restrito — exibida quando o usuário não tem permissão para o módulo ativo */}
+            {!permissionsLoading && !hasModuleAccess(activeModule) && activeModule !== 'dashboard' && activeModule !== 'perfil' ? (
+              <AccessDeniedScreen
+                moduleKey={activeModule}
+                userRole={profile.role ?? 'Usuário'}
+                userId={user?.id ?? ''}
+                userName={profile.name ?? 'Usuário'}
+                onGoHome={() => navigateTo('dashboard')}
+              />
+            ) : (
+            <>
             {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} params={moduleParams['dashboard'] ? JSON.parse(moduleParams['dashboard']) : undefined} />}
             {activeModule === 'feed' && <Feed onNavigateToModule={handleNavigateToModule} params={moduleParams['feed'] ? JSON.parse(moduleParams['feed']) : undefined} />}
             {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
@@ -1696,14 +2316,25 @@ useEffect(() => {
                 onParamConsumed={() => clearModuleParams('assinaturas')}
               />
             )}
-            {activeModule === 'configuracoes' && <SettingsModule />}
+            {activeModule === 'configuracoes' && (
+              <SettingsModule
+                initialSection={
+                  moduleParams['configuracoes']
+                    ? (JSON.parse(moduleParams['configuracoes']).section as any)
+                    : undefined
+                }
+                onParamConsumed={() => clearModuleParams('configuracoes')}
+              />
+            )}
             {activeModule === 'cron' && <CronEndpoint />}
             {activeModule === 'perfil' && (
-              <UserProfilePage 
+              <UserProfilePage
                 userId={moduleParams['perfil'] ? JSON.parse(moduleParams['perfil']).userId : undefined}
                 onClose={() => navigateTo('dashboard')}
                 onNavigateToModule={(moduleKey, params) => navigateTo(moduleKey as any, params)}
               />
+            )}
+            </>
             )}
           </Suspense>
         </main>

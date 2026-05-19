@@ -28,6 +28,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
+import { AccessRequestsAdmin } from './AccessRequestsAdmin';
+import { accessRequestService } from '../services/accessRequest.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import {
   settingsService,
@@ -52,7 +54,8 @@ type SettingsSection =
   | 'notifications'
   | 'preferences'
   | 'security'
-  | 'audit';
+  | 'audit'
+  | 'access_requests';
 
 const ROLES = [
   {
@@ -117,14 +120,26 @@ const MODULES = [
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
-const SettingsModule: React.FC = () => {
+const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsumed?: () => void }> = ({
+  initialSection,
+  onParamConsumed,
+}) => {
   const { user } = useAuth();
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<SettingsSection>('identity');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'identity');
+
+  // Consumir o param de seção inicial uma vez
+  useEffect(() => {
+    if (initialSection) {
+      setActiveSection(initialSection);
+      onParamConsumed?.();
+    }
+  }, [initialSection]);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pendingAccessCount, setPendingAccessCount] = useState(0);
 
   // Identity
   const [identity, setIdentity] = useState<OfficeIdentity>({
@@ -267,6 +282,18 @@ const SettingsModule: React.FC = () => {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  // Carregar contagem de solicitações pendentes (para badge no sidebar)
+  useEffect(() => {
+    if (!isAdmin) return;
+    accessRequestService.getPendingCount().then(setPendingAccessCount).catch(() => {});
+  }, [isAdmin]);
+
+  // Atualizar badge quando sair da seção de solicitações (após aprovar/negar)
+  useEffect(() => {
+    if (!isAdmin || activeSection === 'access_requests') return;
+    accessRequestService.getPendingCount().then(setPendingAccessCount).catch(() => {});
+  }, [activeSection, isAdmin]);
 
   const loadSettings = useCallback(async () => {
     if (!hasConfigAccess) return;
@@ -524,6 +551,7 @@ const SettingsModule: React.FC = () => {
 
   const sections = [
     { key: 'identity', label: 'Identidade', icon: Building2, description: 'Dados do escritório' },
+    { key: 'access_requests', label: 'Solicitações', icon: ShieldCheck, description: 'Pedidos de acesso' },
     { key: 'users', label: 'Usuários', icon: Users, description: 'Equipe e acessos' },
     { key: 'roles', label: 'Permissões', icon: Shield, description: 'Papéis e módulos' },
     { key: 'djen', label: 'DJEN', icon: FileText, description: 'Monitoramento' },
@@ -582,26 +610,37 @@ const SettingsModule: React.FC = () => {
               <p className="text-sm font-semibold text-slate-900">Seções</p>
               <p className="text-xs text-slate-500">Integração total</p>
             </div>
-            <nav className="p-2 space-y-1">
-              {sections.map((section) => (
-                <button
-                  key={section.key}
-                  onClick={() => setActiveSection(section.key)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition ${
-                    activeSection === section.key
-                      ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <section.icon
-                    className={`w-4 h-4 ${activeSection === section.key ? 'text-amber-600' : 'text-slate-400'}`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{section.label}</p>
-                    <p className="text-xs text-slate-400 truncate">{section.description}</p>
-                  </div>
-                </button>
-              ))}
+            <nav className="p-2 space-y-1 max-h-[70vh] overflow-y-auto">
+              {sections.map((section) => {
+                const isActive = activeSection === section.key;
+                const showBadge = section.key === 'access_requests' && pendingAccessCount > 0;
+                return (
+                  <button
+                    key={section.key}
+                    onClick={() => setActiveSection(section.key)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition ${
+                      isActive
+                        ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-sm'
+                        : showBadge
+                        ? 'text-slate-700 bg-amber-50/40 hover:bg-amber-50 border border-amber-100'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <section.icon
+                      className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-amber-600' : showBadge ? 'text-amber-500' : 'text-slate-400'}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{section.label}</p>
+                      <p className="text-xs text-slate-400 truncate">{section.description}</p>
+                    </div>
+                    {showBadge && (
+                      <span className="flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">
+                        {pendingAccessCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </nav>
           </div>
         </aside>
@@ -1238,6 +1277,12 @@ const SettingsModule: React.FC = () => {
                         Salvar Preferências
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {activeSection === 'access_requests' && (
+                  <div className="p-6">
+                    <AccessRequestsAdmin />
                   </div>
                 )}
 

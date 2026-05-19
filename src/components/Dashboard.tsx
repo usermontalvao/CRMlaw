@@ -34,6 +34,7 @@ import {
   User,
   GripVertical,
   RotateCcw,
+  ShieldAlert,
 } from 'lucide-react';
 import { ResponsiveGridLayout, verticalCompactor } from 'react-grid-layout';
 import { useContainerWidth } from 'react-grid-layout/react';
@@ -349,6 +350,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [userAuthId, setUserAuthId] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('');
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  // Solicitações de acesso pendentes (visível só para admin)
+  const [pendingAccessCount, setPendingAccessCount] = useState(0);
+  const [accessBannerDismissed, setAccessBannerDismissed] = useState(false);
+  // Notificações de acesso negado não lidas (visível para não-admin, persiste até marcar como lida no DB)
+  const [userDeniedNotifs, setUserDeniedNotifs] = useState<Array<{ id: string; module_label: string; module_key: string; admin_notes?: string | null }>>([]);
 
   const [layouts, setLayouts] = useState<RLayouts>(() => {
     try {
@@ -675,6 +682,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const pendingProcesses = processes.filter(p => p.status === 'andamento' || p.status === 'distribuido');
 
   const isAdmin = userRole.toLowerCase().includes('admin');
+
+  // Carregar contagem de solicitações pendentes (só admin)
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAccessBannerDismissed(false);
+    import('../services/accessRequest.service').then(({ accessRequestService }) => {
+      accessRequestService.getPendingCount().then(count => setPendingAccessCount(count)).catch(() => {});
+    });
+  }, [isAdmin]);
+
+  // Carregar notificações de acesso negado não lidas (só não-admin)
+  useEffect(() => {
+    if (isAdmin || !userAuthId) return;
+    import('../services/userNotification.service').then(({ userNotificationService }) => {
+      userNotificationService.listNotifications(userAuthId, /* unreadOnly */ true).then(notifs => {
+        const denied = notifs.filter(n =>
+          n.type === 'access_request_resolved' &&
+          n.metadata?.status === 'denied' &&
+          n.metadata?.module_key
+        );
+        setUserDeniedNotifs(denied.map(n => {
+          // Extrair motivo da mensagem: "...foi negada. Motivo: XYZ"
+          const motivoMatch = (n.message || '').match(/Motivo:\s*(.+)$/);
+          return {
+            id: n.id,
+            module_label: (n.metadata?.module_label as string) || n.message?.match(/"([^"]+)"/)?.[1] || (n.metadata?.module_key as string),
+            module_key: n.metadata?.module_key as string,
+            admin_notes: motivoMatch ? motivoMatch[1].trim() : null,
+          };
+        }));
+      }).catch(() => {});
+    });
+  }, [isAdmin, userAuthId]);
 
   const upcomingDeadlines = deadlines
     .filter(d => d.status === 'pendente' && d.due_date && (isAdmin || !userProfileId || d.responsible_id === userProfileId))
@@ -1038,6 +1078,80 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       </div>
+
+      {/* Banner de solicitações de acesso pendentes (apenas admin) */}
+      {isAdmin && pendingAccessCount > 0 && !accessBannerDismissed && (
+        <div className="mx-1 mb-3">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-amber-200 border-l-4 border-l-amber-400 shadow-sm">
+            <ShieldAlert className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800 leading-tight">
+                {pendingAccessCount === 1
+                  ? '1 solicitação de acesso aguardando aprovação'
+                  : `${pendingAccessCount} solicitações de acesso aguardando aprovação`}
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigateToModule?.('configuracoes', { section: 'access_requests' })}
+              className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition"
+            >
+              Gerenciar
+            </button>
+            <button
+              onClick={() => setAccessBannerDismissed(true)}
+              className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition"
+              title="Fechar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Notificações de acesso negado não lidas (visível para não-admin — persiste até marcar como lida) */}
+      {!isAdmin && userDeniedNotifs.length > 0 && (
+        <div className="mx-1 mb-3 space-y-2">
+          {userDeniedNotifs.map(notif => (
+            <div key={notif.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-red-200 border-l-4 border-l-red-400 shadow-sm">
+              <ShieldAlert className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800 leading-tight">
+                  Acesso ao módulo <span className="font-bold">{notif.module_label}</span> foi negado
+                </p>
+                {notif.admin_notes && (
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">Motivo: {notif.admin_notes}</p>
+                )}
+              </div>
+              <button
+                onClick={async () => {
+                  // Marcar como lida no banco e navegar
+                  import('../services/userNotification.service').then(({ userNotificationService }) => {
+                    userNotificationService.markAsRead(notif.id).catch(() => {});
+                  });
+                  setUserDeniedNotifs(prev => prev.filter(n => n.id !== notif.id));
+                  onNavigateToModule?.(notif.module_key);
+                }}
+                className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition"
+              >
+                Ver detalhes
+              </button>
+              <button
+                onClick={async () => {
+                  // Marcar como lida no banco — não volta mais
+                  import('../services/userNotification.service').then(({ userNotificationService }) => {
+                    userNotificationService.markAsRead(notif.id).catch(() => {});
+                  });
+                  setUserDeniedNotifs(prev => prev.filter(n => n.id !== notif.id));
+                }}
+                className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition"
+                title="Marcar como visto"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Draggable / Resizable Widget Grid */}
       <div ref={gridContainerRef} className="w-full" style={{ width: '100%' }}>

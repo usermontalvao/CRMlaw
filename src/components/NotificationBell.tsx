@@ -441,6 +441,17 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       } else {
         onNavigateToModule('feed');
       }
+    } else if (notification.type === 'access_request') {
+      // Admin recebeu solicitação de acesso → abre Configurações > Solicitações
+      console.log('➡️ Navegando para configuracoes > access_requests');
+      onNavigateToModule('configuracoes', { section: 'access_requests' });
+    } else if (notification.type === 'access_request_resolved') {
+      // Usuário foi notificado da resolução → abre o módulo que foi solicitado se tiver
+      const moduleKey = notification.metadata?.module_key;
+      console.log('➡️ Solicitação resolvida, module_key:', moduleKey);
+      if (moduleKey) {
+        onNavigateToModule(moduleKey as any);
+      }
     } else if (notification.type === 'process_created' || notification.type === 'process_updated' || notification.process_id) {
       console.log('➡️ Navegando para processos');
       onNavigateToModule('processos');

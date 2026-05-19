@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Search, X, FileText, Users, Loader2, ChevronRight, ArrowRight,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
-  Clock, Zap, Gavel,
+  Clock, Zap, Gavel, PenTool,
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -13,6 +15,7 @@ import { taskService } from '../services/task.service';
 import { deadlineService } from '../services/deadline.service';
 import { financialService } from '../services/financial.service';
 import { cloudService } from '../services/cloud.service';
+import { signatureService } from '../services/signature.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
 
@@ -28,6 +31,7 @@ interface SearchData {
   deadlines: Awaited<ReturnType<typeof deadlineService.listDeadlines>>;
   agreements: Awaited<ReturnType<typeof financialService.listAgreements>>;
   rootFolders: Awaited<ReturnType<typeof cloudService.listFolders>>;
+  signatures: Awaited<ReturnType<typeof signatureService.listRequests>>;
 }
 
 let _cache: { data: SearchData; fetchedAt: number } | null = null;
@@ -37,7 +41,7 @@ async function getSearchData(force = false): Promise<SearchData> {
   if (!force && _cache && Date.now() - _cache.fetchedAt < CACHE_TTL) {
     return _cache.data;
   }
-  const [processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders] =
+  const [processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures] =
     await Promise.all([
       processService.listProcesses(),
       clientService.listClients(),
@@ -48,8 +52,9 @@ async function getSearchData(force = false): Promise<SearchData> {
       deadlineService.listDeadlines().catch(() => []),
       financialService.listAgreements().catch(() => []),
       cloudService.listFolders(null, false).catch(() => [] as Awaited<ReturnType<typeof cloudService.listFolders>>),
+      signatureService.listRequests().catch(() => [] as Awaited<ReturnType<typeof signatureService.listRequests>>),
     ]);
-  const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders };
+  const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures };
   _cache = { data, fetchedAt: Date.now() };
   return data;
 }
@@ -61,7 +66,7 @@ export function invalidateSearchCache() { _cache = null; }
 
 type ResultType =
   | 'cliente' | 'processo' | 'processo-via-cliente' | 'intimacao'
-  | 'requerimento' | 'prazo' | 'agenda' | 'tarefa' | 'financeiro' | 'cloud';
+  | 'requerimento' | 'prazo' | 'agenda' | 'tarefa' | 'financeiro' | 'cloud' | 'assinatura';
 
 interface SearchResult {
   id: string;
@@ -95,12 +100,13 @@ const TYPE_CONFIG: Record<ResultType, {
   tarefa:                { label: 'Tarefa',       icon: CheckSquare,   color: 'text-sky-600 bg-sky-50',         border: 'border-sky-200',     group: 'Tarefas'       },
   financeiro:            { label: 'Financeiro',   icon: DollarSign,    color: 'text-emerald-600 bg-emerald-50', border: 'border-emerald-200', group: 'Financeiro'    },
   cloud:                 { label: 'Pasta',        icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',   border: 'border-indigo-200',  group: 'Cloud'         },
+  assinatura:            { label: 'Assinatura',   icon: PenTool,       color: 'text-violet-600 bg-violet-50',   border: 'border-violet-200',  group: 'Assinaturas'   },
 };
 
 // Intimações removidas da exibição (ainda carregadas para extrair partes dos processos)
 const GROUP_ORDER: ResultType[] = [
   'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo',
-  'agenda', 'tarefa', 'financeiro', 'cloud',
+  'agenda', 'tarefa', 'financeiro', 'cloud', 'assinatura',
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -156,20 +162,53 @@ function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-const RECENT_KEY = 'globalSearch_recent';
 const MAX_RECENT = 6;
 
-function loadRecent(): string[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+// Chave por usuário — histórico isolado por conta
+function recentKey(userId?: string) {
+  return userId ? `globalSearch_recent_${userId}` : 'globalSearch_recent_anon';
 }
-function saveRecent(q: string) {
-  const prev = loadRecent().filter(r => r !== q);
-  localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...prev].slice(0, MAX_RECENT)));
+function loadRecent(userId?: string): string[] {
+  try { return JSON.parse(localStorage.getItem(recentKey(userId)) || '[]'); } catch { return []; }
 }
+function saveRecent(userId: string | undefined, q: string) {
+  const key = recentKey(userId);
+  const prev = loadRecent(userId).filter(r => r !== q);
+  localStorage.setItem(key, JSON.stringify([q, ...prev].slice(0, MAX_RECENT)));
+}
+
+// Mapa ResultType → chave do módulo (para checar permissão)
+// Os nomes devem bater com a coluna `module` da tabela role_permissions
+const TYPE_MODULE: Record<string, string> = {
+  cliente:              'clientes',
+  processo:             'processos',
+  'processo-via-cliente': 'processos',
+  intimacao:            'intimacoes',
+  requerimento:         'requerimentos',
+  prazo:                'prazos',
+  agenda:               'agenda',
+  tarefa:               'tarefas',
+  financeiro:           'financeiro',
+  cloud:                'documentos',
+  assinatura:           'assinaturas',
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onClose, onNavigate }) => {
+  const { user } = useAuth();
+  const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
+
+  // Verifica permissão: admins veem tudo; outros respeitam canView().
+  // Se as permissões ainda estão carregando, libera tudo (será re-filtrado ao carregar).
+  const canSeeModule = useCallback((moduleKey: string) => {
+    if (isAdmin) return true;
+    if (permissionsLoading) return true;
+    return canView(moduleKey);
+  }, [isAdmin, canView, permissionsLoading]);
+
+  const userId = user?.id;
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -185,7 +224,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       setQuery('');
       setResults([]);
       setSelected(0);
-      setRecentSearches(loadRecent());
+      setRecentSearches(loadRecent(userId));
       setTimeout(() => inputRef.current?.focus(), 60);
       // Pre-warm cache in background if stale
       if (!_cache || Date.now() - _cache.fetchedAt >= CACHE_TTL) {
@@ -204,7 +243,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       const nq = nrm(q2);
       const today = new Date().toISOString().slice(0, 10);
 
-      const { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders } =
+      const { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures } =
         await getSearchData();
 
       const clientById = new Map<string, Client>(clients.map(c => [c.id, c]));
@@ -236,8 +275,6 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           navParams: { mode: 'details', entityId: c.id },
         }));
 
-      const matchedClientIds = new Set(clientResults.map(r => r.id));
-
       // Helper: subtitle do processo priorizando partes
       const buildProcessSubtitle = (pid: string, clientName?: string | null, court?: string | null) => {
         const p = partiesByProcessId.get(pid);
@@ -266,20 +303,23 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           meta: p.status,
           score: s,
           navModule: 'processos',
-          navParams: { searchQuery: p.process_code ?? '' },
+          navParams: { entityId: p.id }, // abre o modal diretamente
         }));
 
       // ── Processos via cliente ─────────────────────────────────────────────
+      // Sem filtro de matchedClientIds — se o cliente bate na busca, TODOS os
+      // seus processos devem aparecer (inclusive quando o card do cliente já aparece)
       const processViaClientResults: SearchResult[] = processes
         .filter(p => {
-          if (!p.client_id || matchedClientIds.has(p.client_id)) return false;
+          if (!p.client_id) return false;
           const client = clientById.get(p.client_id);
           return client && topScore([client.full_name ?? ''], q2) > 0;
         })
-        .slice(0, 4)
+        .slice(0, 6)
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
           const parties = partiesByProcessId.get(p.id);
+          const clientScore = topScore([client?.full_name ?? ''], q2);
           return {
             id: p.id, type: 'processo-via-cliente' as const,
             title: p.process_code ?? 'Processo',
@@ -287,9 +327,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
               ? [parties.polo_ativo, parties.polo_passivo].filter(Boolean).join(' × ')
               : `${client?.full_name ?? ''}${p.court ? ' · ' + p.court : ''}`,
             meta: p.status,
-            score: 3,
+            score: Math.max(3, clientScore - 2), // herda score do cliente, levemente menor
             navModule: 'processos',
-            navParams: { searchQuery: p.process_code ?? '' },
+            navParams: { entityId: p.id }, // abre o modal diretamente
           };
         });
 
@@ -433,11 +473,37 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           navParams: { folderId: f.id },
         }));
 
+      // ── Assinaturas ───────────────────────────────────────────────────────
+      const STATUS_LABELS: Record<string, string> = {
+        pending: 'Pendente', signed: 'Assinado', expired: 'Expirado', cancelled: 'Cancelado',
+      };
+      const assinaturaResults: SearchResult[] = signatures
+        .map(r => {
+          const client = r.client_id ? clientById.get(r.client_id) : undefined;
+          return {
+            r, client,
+            s: topScore([r.document_name ?? '', r.client_name ?? '', client?.full_name ?? ''], q2),
+          };
+        })
+        .filter(x => x.s > 0)
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 4)
+        .map(({ r, client, s }) => ({
+          id: r.id, type: 'assinatura' as const,
+          title: r.document_name ?? 'Documento',
+          subtitle: (client?.full_name ?? r.client_name) || undefined,
+          meta: STATUS_LABELS[r.status] ?? r.status,
+          score: s,
+          navModule: 'assinaturas',
+          navParams: { mode: 'details', requestId: r.id },
+        }));
+
       // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
         ...clientResults, ...processResults, ...processViaClientResults,
         ...reqResults, ...prazoResults,
         ...agendaResults, ...tarefaResults, ...financeiroResults, ...cloudResults,
+        ...assinaturaResults,
       ];
       const seen = new Set<string>();
       const deduped = merged.filter(r => {
@@ -447,6 +513,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         return true;
       });
 
+      // Armazena resultados brutos — o filtro de permissão é aplicado no render
+      // via useMemo para reagir automaticamente quando as permissões terminam de carregar
       setResults(deduped);
       setSelected(0);
     } finally {
@@ -475,11 +543,18 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   }, [open, results, selected]);
 
   const handleSelect = (result: SearchResult) => {
-    if (query.trim().length >= 2) saveRecent(query.trim());
-    setRecentSearches(loadRecent());
+    if (query.trim().length >= 2) saveRecent(userId, query.trim());
+    setRecentSearches(loadRecent(userId));
     onNavigate(result.navModule, result.navParams);
     onClose();
   };
+
+  // Filtro de permissão aplicado no render — reage automaticamente quando
+  // permissionsLoading muda de true→false sem precisar rebuscar
+  const permitted = useMemo(
+    () => results.filter(r => canSeeModule(TYPE_MODULE[r.type] ?? r.navModule)),
+    [results, canSeeModule],
+  );
 
   if (!open) return null;
 
@@ -488,7 +563,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     .map(type => ({
       type,
       cfg: TYPE_CONFIG[type],
-      items: results.filter(r => r.type === type),
+      items: permitted.filter(r => r.type === type),
     }))
     .filter(g => g.items.length > 0);
 
@@ -496,7 +571,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const flatIdx = new Map(flatResults.map((r, i) => [`${r.type}:${r.id}`, i]));
 
   const isEmpty = query.trim().length === 0;
-  const noResults = query.trim().length >= 2 && !loading && results.length === 0;
+  const noResults = query.trim().length >= 2 && !loading && permitted.length === 0;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[8vh]" onClick={onClose}>
@@ -593,7 +668,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                     <Clock className="w-3 h-3" /> Buscas recentes
                   </span>
                   <button
-                    onClick={() => { localStorage.removeItem(RECENT_KEY); setRecentSearches([]); }}
+                    onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
                     className="text-[10px] text-slate-300 hover:text-slate-500 transition"
                   >
                     Limpar
@@ -617,16 +692,19 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             <div className="px-4 pt-3 pb-5">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">O que você pode buscar</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600">
-                {[
-                  { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail' },
-                  { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes' },
-                  { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, CPF, protocolo' },
-                  { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente (pendentes)' },
-                  { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões (futuros)' },
-                  { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição' },
-                  { icon: DollarSign,    label: 'Financeiro',    desc: 'título do acordo, cliente' },
-                  { icon: FolderOpen,    label: 'Cloud',         desc: 'nome da pasta, cliente' },
-                ].map(({ icon: Icon, label, desc }) => (
+                {([
+                  { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',              module: 'clientes' },
+                  { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes',         module: 'processos' },
+                  { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, CPF, protocolo',    module: 'requerimentos' },
+                  { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente (pendentes)',      module: 'prazos' },
+                  { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões (futuros)',   module: 'agenda' },
+                  { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição',               module: 'tarefas' },
+                  { icon: DollarSign,    label: 'Financeiro',    desc: 'título do acordo, cliente',       module: 'financeiro' },
+                  { icon: FolderOpen,    label: 'Cloud',         desc: 'nome da pasta, cliente',          module: 'cloud' },
+                  { icon: PenTool,       label: 'Assinaturas',   desc: 'nome do documento, cliente',      module: 'assinaturas' },
+                ] as { icon: React.ElementType; label: string; desc: string; module: string }[])
+                  .filter(item => canSeeModule(item.module))
+                  .map(({ icon: Icon, label, desc }) => (
                   <div key={label} className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                     <Icon className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
                     <div>

@@ -13,10 +13,18 @@ interface PermissionsCache {
   [module: string]: Permission;
 }
 
+// Overrides individuais de módulo (acesso concedido pelo admin fora do cargo)
+interface ModuleOverride {
+  module: string;
+  can_view: boolean;
+  expires_at: string | null;
+}
+
 export const usePermissions = () => {
   const { user } = useAuth();
   const [userRole, setUserRole] = useState<string>('');
   const [permissions, setPermissions] = useState<PermissionsCache>({});
+  const [overrides, setOverrides] = useState<ModuleOverride[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Normaliza o cargo para comparação
@@ -47,15 +55,16 @@ export const usePermissions = () => {
 
         const roleValue = profile?.role || '';
         setUserRole(roleValue);
-        if (roleValue) {
-          await loadPermissions(normalizeRole(roleValue));
-        } else {
-          setPermissions({});
-        }
+
+        await Promise.all([
+          roleValue ? loadPermissions(normalizeRole(roleValue)) : Promise.resolve(),
+          loadOverrides(user.id),
+        ]);
       } catch (err) {
         console.error('Erro ao carregar cargo do usuário:', err);
         setUserRole('');
         setPermissions({});
+        setOverrides([]);
       } finally {
         setLoading(false);
       }
@@ -63,6 +72,79 @@ export const usePermissions = () => {
 
     loadUserRole();
   }, [user?.id]);
+
+  // Carrega overrides individuais do usuário (acesso extra concedido pelo admin)
+  const loadOverrides = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_module_overrides')
+        .select('module, can_view, expires_at')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      // Filtrar overrides expirados
+      const now = new Date();
+      const active = (data ?? []).filter(ov =>
+        !ov.expires_at || new Date(ov.expires_at) > now
+      );
+      setOverrides(active as ModuleOverride[]);
+    } catch (err) {
+      console.error('Erro ao carregar overrides de módulo:', err);
+      setOverrides([]);
+    }
+  };
+
+  // Realtime: recarregar overrides quando admin inserir/atualizar/deletar
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`user-module-overrides-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_module_overrides',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          loadOverrides(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  // Expiração automática: agenda um timeout para remover overrides vencidos sem precisar recarregar a página
+  useEffect(() => {
+    const temporaries = overrides.filter(ov => ov.expires_at);
+    if (!temporaries.length || !user?.id) return;
+
+    // Pega a expiração mais próxima
+    const nearest = temporaries
+      .map(ov => new Date(ov.expires_at!).getTime())
+      .sort((a, b) => a - b)[0];
+
+    const delay = nearest - Date.now();
+
+    if (delay <= 0) {
+      // Já expirou — filtra agora mesmo
+      setOverrides(prev => prev.filter(ov => !ov.expires_at || new Date(ov.expires_at) > new Date()));
+      return;
+    }
+
+    // Dispara 500 ms após a expiração para garantir que o timestamp já passou
+    const id = setTimeout(() => {
+      setOverrides(prev => prev.filter(ov => !ov.expires_at || new Date(ov.expires_at) > new Date()));
+    }, delay + 500);
+
+    return () => clearTimeout(id);
+  }, [overrides, user?.id]);
 
   // Carrega todas as permissões do cargo
   const loadPermissions = async (role: string) => {
@@ -99,6 +181,12 @@ export const usePermissions = () => {
       // Administrador tem todas as permissões
       if (isAdmin) return true;
 
+      // Verificar override individual (acesso extra concedido pelo admin)
+      if (action === 'view') {
+        const override = overrides.find(ov => ov.module === module);
+        if (override?.can_view) return true;
+      }
+
       const modulePerm = permissions[module];
       if (!modulePerm) return false;
 
@@ -115,7 +203,7 @@ export const usePermissions = () => {
           return false;
       }
     },
-    [permissions, isAdmin]
+    [permissions, overrides, isAdmin]
   );
 
   // Verifica se pode visualizar um módulo
@@ -152,6 +240,8 @@ export const usePermissions = () => {
     canEdit,
     canDelete,
     permissions,
+    overrides,
+    reloadOverrides: () => user?.id ? loadOverrides(user.id) : Promise.resolve(),
   };
 };
 

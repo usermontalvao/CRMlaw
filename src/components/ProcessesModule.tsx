@@ -29,10 +29,13 @@ import {
   Zap,
   Bell,
   Users,
+  PenTool,
+  ExternalLink,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
+import { signatureService } from '../services/signature.service';
 import { profileService } from '../services/profile.service';
 import { settingsService } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
@@ -51,6 +54,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
+import type { SignatureRequest } from '../types/signature.types';
 import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
 import { events, SYSTEM_EVENTS } from '../utils/events';
@@ -385,6 +389,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [loadingAiSummary, setLoadingAiSummary] = useState(false);
   // Partes do processo (polo_ativo / polo_passivo das intimações)
   const [processParties, setProcessParties] = useState<{ polo_ativo: string | null; polo_passivo: string | null } | null>(null);
+  const [loadingParties, setLoadingParties] = useState(false);
+  // Assinaturas vinculadas ao processo
+  const [processSignatures, setProcessSignatures] = useState<SignatureRequest[]>([]);
+  const [loadingSignatures, setLoadingSignatures] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -526,16 +534,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     return baseList.filter((process) => {
       const client = allClientsMap.get(process.client_id);
-      const processCode = process.process_code || '';
 
       const practiceAreaLabel =
         PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
 
+      // Nota: responsible_lawyer propositalmente excluído do composite —
+      // em escritórios monoadvo o nome do advogado está em todos os processos
+      // e polui a busca por cliente/código/área.
       const composite = [
+        client?.full_name,
         process.process_code,
         process.court,
-        process.responsible_lawyer,
-        client?.full_name,
         practiceAreaLabel,
         process.notes,
       ]
@@ -609,13 +618,53 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     try {
       const events = await processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? '');
       if (events.length === 0) { setAiSummary('Sem movimentações registradas para resumir.'); return; }
-      const snippet = events.slice(0, 8).map((e, i) =>
-        `${i + 1}. [${e.date?.slice(0, 10)}] ${e.title}: ${e.aiAnalysis?.summary || e.description?.slice(0, 200) || ''}`
-      ).join('\n');
+
+      // Monta timeline rica com até 12 eventos
+      const timeline = events.slice(0, 12).map((e) => {
+        const date = e.date?.slice(0, 10) ?? '';
+        const type = e.type ? e.type.toUpperCase() : 'MOVIMENTAÇÃO';
+        const body = e.aiAnalysis?.summary || e.description?.slice(0, 500) || '';
+        return `[${date}] ${type} — ${e.title}\n${body}`;
+      }).join('\n\n---\n\n');
+
+      // Partes identificadas (podem vir de processParties ou da intimação)
+      const clientName = clientMap.get(proc.client_id)?.full_name || 'Não identificado';
+      const areaLabel  = PRACTICE_AREAS.find(a => a.key === proc.practice_area)?.label || proc.practice_area || 'Não informada';
+      const poloAtivo  = processParties?.polo_ativo  || clientName;
+      const poloPassivo = processParties?.polo_passivo || 'Não identificado';
+
       const result = await aiService.generateText(
-        'Você é assistente jurídico. Responda SEMPRE em português. Seja conciso e objetivo.',
-        `Processo: ${proc.process_code}\nMovimentações recentes:\n${snippet}\n\nGere um resumo em exatamente 3 bullets (•) cobrindo: 1) situação atual, 2) última ação relevante, 3) próximo passo recomendado. Máximo 20 palavras por bullet.`,
-        300
+        `Você é um advogado sênior experiente em análise processual brasileira. Sua tarefa é gerar um resumo estratégico e prático do processo, focado em informações úteis para o advogado responsável. Responda SEMPRE em português brasileiro formal. Seja técnico, direto e específico — nunca genérico. Use os fatos concretos do processo.`,
+        `DADOS DO PROCESSO:
+Número: ${proc.process_code || 'Não informado'}
+Cliente (Polo Ativo): ${poloAtivo}
+Parte Contrária (Polo Passivo): ${poloPassivo}
+Área: ${areaLabel}
+Status: ${proc.status || 'Não informado'}
+Vara/Tribunal: ${proc.court || 'Não informado'}
+Distribuído em: ${proc.distributed_at ? new Date(proc.distributed_at).toLocaleDateString('pt-BR') : 'Não informado'}
+
+HISTÓRICO PROCESSUAL (do mais recente ao mais antigo):
+${timeline}
+
+TAREFA:
+Gere um resumo estratégico com EXATAMENTE estas 4 seções, usando este formato literal:
+
+**Situação Atual**
+• [Descreva objetivamente a fase processual atual e o que está pendente]
+
+**Últimas Movimentações Relevantes**
+• [Movimentação mais recente e seu impacto prático]
+• [Segunda movimentação mais relevante, se houver]
+
+**Pontos de Atenção**
+• [Riscos, prazos críticos, decisões desfavoráveis ou questões processuais pendentes]
+
+**Próximo Passo Recomendado**
+• [Ação concreta e específica que o advogado deve tomar agora]
+
+REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informações. Cada bullet = máximo 2 linhas.`,
+        700
       );
       setAiSummary(result);
     } catch { setAiSummary('Erro ao gerar resumo. Tente novamente.'); }
@@ -811,18 +860,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
+  const appliedEntityIdRef = useRef(false);
   useEffect(() => {
-    if (entityId && processes.length > 0) {
-      const process = processes.find((p) => p.id === entityId);
-      if (process) {
-        setSelectedProcessForView(process);
-        setViewMode('details');
-        if (onParamConsumed) {
-          onParamConsumed();
-        }
-      }
+    if (!entityId || processes.length === 0) return;
+    if (appliedEntityIdRef.current) return;
+    appliedEntityIdRef.current = true;
+    const process = processes.find((p) => p.id === entityId);
+    if (process) {
+      handleViewProcess(process); // chama a versão completa: carrega parties, signatures, etc.
+      onParamConsumed?.();
     }
-  }, [entityId, processes, onParamConsumed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityId, processes]);
 
   useEffect(() => {
     let active = true;
@@ -874,7 +923,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   }, [user, members]);
 
   useEffect(() => {
-    if (selectedProcessForView && viewMode === 'details') {
+    if (selectedProcessForView && viewMode === 'details' && selectedProcessForView.process_code) {
       loadTimeline(selectedProcessForView.process_code);
     } else {
       setTimeline([]);
@@ -1320,47 +1369,125 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setNoteError(null);
     setAiSummary(null);
     setProcessParties(null);
+    setLoadingParties(false);
+    setProcessSignatures([]);
+    // Carregar assinaturas do cliente vinculadas a este processo ou ao cliente
+    if (process.client_id) {
+      setLoadingSignatures(true);
+      signatureService.listRequests()
+        .then(all => {
+          // Prioridade: vinculadas ao número do processo; fallback: todas do cliente
+          const byProcess = all.filter(s => s.process_number === process.process_code && process.process_code);
+          const byClient  = all.filter(s => s.client_id === process.client_id);
+          // Se há assinaturas com process_number preenchido, mostra só essas;
+          // caso contrário, mostra todas do cliente
+          setProcessSignatures(byProcess.length > 0 ? byProcess : byClient);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingSignatures(false));
+    }
     // Carregar partes do processo a partir das intimações vinculadas
+    await loadProcessParties(process.id, false);
+  };
+
+  // Extrai e persiste partes do processo (polo ativo/passivo)
+  // force=true ignora cache do DB e re-extrai
+  const loadProcessParties = async (processId: string, force: boolean) => {
+    setLoadingParties(true);
     try {
-      const comuns = await djenLocalService.listComunicacoes({ process_id: process.id });
+      const comuns = await djenLocalService.listComunicacoes({ process_id: processId });
       if (comuns.length === 0) return;
 
-      // 1) Tentar polo_ativo/polo_passivo já gravados
-      const withPolo = comuns.find(c => c.polo_ativo || c.polo_passivo);
-      if (withPolo) {
-        setProcessParties({ polo_ativo: withPolo.polo_ativo ?? null, polo_passivo: withPolo.polo_passivo ?? null });
-        return;
+      // Helper: persiste as partes encontradas no primeiro registro da intimação
+      const persistParties = async (id: string, ativo: string | null, passivo: string | null) => {
+        try {
+          await djenLocalService.updateComunicacao(id, { polo_ativo: ativo, polo_passivo: passivo });
+        } catch { /* silently ignore persist errors */ }
+      };
+
+      // 1) Tentar polo_ativo/polo_passivo já gravados (somente se não for rebusca forçada)
+      if (!force) {
+        const withPolo = comuns.find(c => c.polo_ativo || c.polo_passivo);
+        if (withPolo) {
+          setProcessParties({ polo_ativo: withPolo.polo_ativo ?? null, polo_passivo: withPolo.polo_passivo ?? null });
+          return;
+        }
       }
 
       // 2) Tentar via djen_destinatarios (joinados)
       for (const c of comuns) {
         const dests = c.djen_destinatarios ?? [];
-        if (dests.length === 0) continue;
-        const ativo = dests
-          .filter(d => d.polo && /ativo|autor|requerente/i.test(d.polo))
-          .map(d => d.nome).join(', ') || null;
-        const passivo = dests
-          .filter(d => d.polo && /passivo|r[eé]u|requerido/i.test(d.polo))
-          .map(d => d.nome).join(', ') || null;
-        if (ativo || passivo) {
+        if (dests.length > 0) {
+          const ativo = dests
+            .filter(d => d.polo && /ativo|autor|requerente/i.test(d.polo))
+            .map(d => d.nome).join(', ') || null;
+          const passivo = dests
+            .filter(d => d.polo && /passivo|r[eé]u|requerido/i.test(d.polo))
+            .map(d => d.nome).join(', ') || null;
+          if (ativo || passivo) {
+            setProcessParties({ polo_ativo: ativo, polo_passivo: passivo });
+            await persistParties(c.id, ativo, passivo);
+            return;
+          }
+        }
+
+        // 3) Extrair do texto — tenta regex rápida primeiro, depois IA
+        const texto = c.texto ?? '';
+        if (!texto) continue;
+
+        const cleanPartyName = (raw: string): string =>
+          raw
+            .replace(/^(?:AUTORA?|REQUERENTE|R[ÉE]U[AS]?|REQUERIDA?|LITISCONSORTE|PARTE)\s*:\s*/i, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const quickAtivo = texto.match(
+          /POLO\s+ATIVO\s*:?\s*(?:AUTORA?|REQUERENTE)?\s*:?\s*(.+?)(?=\s*POLO\s+PASSIVO)/i
+        );
+        const quickPassivo = texto.match(
+          /POLO\s+PASSIVO\s*:?\s*(?:R[ÉE]U[AS]?|REQUERIDA?)?\s*:?\s*([A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕÇ][A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕÇa-záéíóúàâêîôûãõç0-9\s.,'&-]{2,80}?)(?=\s*(?:Vistos|Nos\s+termos|Tendo\s+em|Procedo|INTIMAÇÃO|$|\.))/i
+        );
+
+        if (quickAtivo || quickPassivo) {
+          const ativo   = quickAtivo   ? cleanPartyName(quickAtivo[1])   : null;
+          const passivo = quickPassivo ? cleanPartyName(quickPassivo[1]) : null;
           setProcessParties({ polo_ativo: ativo, polo_passivo: passivo });
+          await persistParties(c.id, ativo, passivo);
           return;
         }
-        // 3) Extrair do texto: "Autor: X Réu: Y" patterns
-        const texto = c.texto ?? '';
-        const autorMatch = texto.match(/(?:Autor|Polo Ativo|Requerente)[:\s]+([^\n\r|–•]{3,80})/i);
-        const reuMatch = texto.match(/(?:R[eé]u|Polo Passivo|Requerido)[:\s]+([^\n\r|–•]{3,80})/i);
-        if (autorMatch || reuMatch) {
-          setProcessParties({
-            polo_ativo: autorMatch ? autorMatch[1].trim() : null,
-            polo_passivo: reuMatch ? reuMatch[1].trim() : null,
-          });
-          return;
+
+        // 4) IA como fallback — chamada UMA única vez, resultado salvo no DB
+        if (aiService.isEnabled()) {
+          try {
+            const snippet = texto.substring(0, 1500);
+            const raw = await aiService.generateText(
+              `Você é um analisador de documentos jurídicos brasileiros.
+Extraia APENAS os nomes das partes do processo a partir do texto fornecido.
+Retorne SOMENTE um JSON válido no formato:
+{"polo_ativo":"NOME DO AUTOR OU NULL","polo_passivo":"NOME DO RÉU OU NULL"}
+Regras:
+- Use null (sem aspas) se não encontrar
+- Retorne APENAS o nome, sem qualificações (ex: "BANCO BRADESCO S.A." e não "REU: BANCO BRADESCO S.A. Nos termos...")
+- Não inclua texto jurídico, apenas nomes de pessoas ou empresas`,
+              `Texto da intimação:\n${snippet}`,
+              200
+            );
+            const jsonMatch = raw.match(/\{[\s\S]*?"polo_ativo"[\s\S]*?\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              const aiAtivo   = parsed.polo_ativo   && parsed.polo_ativo   !== 'NULL' ? String(parsed.polo_ativo).trim()   : null;
+              const aiPassivo = parsed.polo_passivo && parsed.polo_passivo !== 'NULL' ? String(parsed.polo_passivo).trim() : null;
+              if (aiAtivo || aiPassivo) {
+                setProcessParties({ polo_ativo: aiAtivo, polo_passivo: aiPassivo });
+                await persistParties(c.id, aiAtivo, aiPassivo); // salva → próxima abertura não gasta IA
+                return;
+              }
+            }
+          } catch { /* IA falhou — continua sem partes */ }
         }
       }
-    } catch {
-      // silently fail
-    }
+    } catch { /* silently fail */ }
+    finally { setLoadingParties(false); }
   };
 
   const handleOpenTimeline = (process: Process) => {
@@ -1378,6 +1505,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setViewMode('list');
     setNoteDraft('');
     setNoteError(null);
+    setProcessSignatures([]);
     setStayBaseDate('');
     setStayReason('prescricao');
     setStaySectionExpanded(false);
@@ -2565,12 +2693,35 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </div>
 
             {/* Partes do processo */}
-            {processParties && (
-              <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
-                <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+            <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+              <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
                   <Users className="w-3.5 h-3.5 text-slate-400" />
                   <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Partes do Processo</span>
                 </div>
+                <button
+                  onClick={() => loadProcessParties(selectedProcessForView.id, true)}
+                  disabled={loadingParties}
+                  title="Rebuscar partes (força nova extração)"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition disabled:opacity-40"
+                >
+                  {loadingParties
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <RefreshCw className="w-3 h-3" />}
+                  {loadingParties ? 'Buscando...' : 'Rebuscar'}
+                </button>
+              </div>
+              {loadingParties && !processParties && (
+                <div className="px-4 py-3 text-xs text-slate-400 flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Identificando partes...
+                </div>
+              )}
+              {!loadingParties && !processParties && (
+                <div className="px-4 py-3 text-xs text-slate-400">
+                  Partes não identificadas. Clique em <span className="font-semibold">Rebuscar</span> para tentar extrair das intimações.
+                </div>
+              )}
+              {processParties && (
                 <div className="divide-y divide-slate-100">
                   {processParties.polo_ativo && (
                     <div className="px-4 py-3 flex items-start gap-3">
@@ -2585,8 +2736,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* #8 — Resumo IA do processo */}
             <div className="mb-6">
@@ -2602,8 +2753,59 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </button>
               </div>
               {aiSummary && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                  {aiSummary}
+                <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+                  {/* Cabeçalho do bloco */}
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700">
+                    <Zap className="w-3 h-3 text-amber-400" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Análise IA</span>
+                  </div>
+                  {/* Conteúdo parseado */}
+                  <div className="px-4 py-4 space-y-4">
+                    {aiSummary.split(/\n(?=\*\*)/g).map((block, bi) => {
+                      const titleMatch = block.match(/^\*\*(.+?)\*\*/);
+                      if (!titleMatch) {
+                        // bloco sem título (introdução livre)
+                        return block.trim() ? (
+                          <p key={bi} className="text-xs text-slate-600 leading-relaxed">{block.trim()}</p>
+                        ) : null;
+                      }
+                      const sectionTitle = titleMatch[1];
+                      const body = block.replace(/^\*\*.+?\*\*\n?/, '').trim();
+                      // Cor do badge por seção
+                      const sectionColors: Record<string, string> = {
+                        'Situação Atual':                   'bg-blue-50 text-blue-700 border-blue-100',
+                        'Últimas Movimentações Relevantes': 'bg-amber-50 text-amber-700 border-amber-100',
+                        'Pontos de Atenção':                'bg-red-50 text-red-700 border-red-100',
+                        'Próximo Passo Recomendado':        'bg-emerald-50 text-emerald-700 border-emerald-100',
+                      };
+                      const dotColors: Record<string, string> = {
+                        'Situação Atual':                   'bg-blue-400',
+                        'Últimas Movimentações Relevantes': 'bg-amber-400',
+                        'Pontos de Atenção':                'bg-red-400',
+                        'Próximo Passo Recomendado':        'bg-emerald-400',
+                      };
+                      const badgeCls = sectionColors[sectionTitle] ?? 'bg-slate-50 text-slate-700 border-slate-100';
+                      const dotCls  = dotColors[sectionTitle]  ?? 'bg-slate-400';
+                      const bullets = body.split('\n').filter(l => l.trim());
+                      return (
+                        <div key={bi}>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider mb-2 ${badgeCls}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} />
+                            {sectionTitle}
+                          </span>
+                          <div className="space-y-1.5 pl-1">
+                            {bullets.map((line, li) => (
+                              <p key={li} className="text-[12.5px] text-slate-700 leading-relaxed">
+                                {line.replace(/^•\s*/, '').trim()
+                                  ? <><span className="text-slate-300 mr-1.5">›</span>{line.replace(/^•\s*/, '').trim()}</>
+                                  : null}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -2743,6 +2945,68 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     </div>
                   )}
                 </>
+              )}
+            </div>
+
+            {/* ── Assinaturas Digitais ────────────────────────────────────── */}
+            <div className="mt-6 pt-6 border-t border-slate-200">
+              <div className="flex items-center gap-2 mb-3">
+                <PenTool className="w-3.5 h-3.5 text-violet-500" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Assinaturas Digitais</span>
+                {processSignatures.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums bg-violet-100 text-violet-700">{processSignatures.length}</span>
+                )}
+              </div>
+
+              {loadingSignatures ? (
+                <div className="flex items-center gap-2 py-4 text-xs text-slate-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando assinaturas...
+                </div>
+              ) : processSignatures.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center">
+                  <PenTool className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">Nenhuma assinatura digital vinculada a este processo.</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                  {processSignatures.map(sig => {
+                    const statusCfg: Record<string, { label: string; cls: string }> = {
+                      pending:   { label: 'Pendente',  cls: 'bg-amber-100 text-amber-700' },
+                      signed:    { label: 'Assinado',  cls: 'bg-emerald-100 text-emerald-700' },
+                      expired:   { label: 'Expirado',  cls: 'bg-red-100 text-red-600' },
+                      cancelled: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-500' },
+                    };
+                    const sc = statusCfg[sig.status] ?? { label: sig.status, cls: 'bg-slate-100 text-slate-500' };
+                    return (
+                      <button
+                        key={sig.id}
+                        onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { mode: 'details', requestId: sig.id } })}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50/50 text-left transition-colors group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                          <PenTool className="w-4 h-4 text-violet-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-800 truncate">{sig.document_name}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{new Date(sig.created_at).toLocaleDateString('pt-BR')}</div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sc.cls}`}>{sc.label}</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-violet-400 transition-colors" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {processSignatures.length > 0 && (
+                <button
+                  onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas' })}
+                  className="mt-2 w-full text-center text-[11px] font-semibold text-violet-500 hover:text-violet-700 transition py-1"
+                >
+                  Ver todas as assinaturas →
+                </button>
               )}
             </div>
 

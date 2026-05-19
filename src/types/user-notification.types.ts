@@ -1,7 +1,7 @@
 // Tipos para notificações individuais de usuários
 
-export type UserNotificationType = 
-  | 'deadline_assigned' 
+export type UserNotificationType =
+  | 'deadline_assigned'
   | 'appointment_assigned'
   | 'process_created'
   | 'process_updated'
@@ -15,7 +15,9 @@ export type UserNotificationType =
   | 'mention'
   | 'feed_like'
   | 'feed_comment'
-  | 'chat_message';
+  | 'chat_message'
+  | 'access_request'
+  | 'access_request_resolved';
 
 export interface UserNotification {
   id: string;

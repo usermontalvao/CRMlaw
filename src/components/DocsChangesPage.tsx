@@ -826,6 +826,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.126',
+    date: '19/05/2026',
+    summary: 'Sistema de solicitação de acesso a módulos: fluxo completo admin/usuário, contagem regressiva no sidebar, acesso em tempo real via Realtime.',
+    modules: [
+      {
+        moduleId: 'Permissões',
+        changes: [
+          { type: 'new', title: 'Solicitação de acesso a módulos', description: 'Usuários sem permissão podem solicitar acesso a módulos restritos com justificativa. Admins aprovam ou negam via painel em Configurações → Solicitações.' },
+          { type: 'new', title: 'Acesso temporário por horas ou dias', description: 'Admin pode conceder acesso permanente ou temporário (1–72h / 1–365 dias). O módulo expira automaticamente sem intervenção manual.' },
+          { type: 'new', title: 'Sidebar com contagem regressiva', description: 'Módulos com acesso temporário aparecem em cyan no sidebar com contagem regressiva ao vivo (ex: "2h 14m" → "47m 23s"). Após expirar, o acesso é revogado imediatamente sem precisar recarregar a página.' },
+          { type: 'new', title: 'Realtime: acesso instantâneo pós-aprovação', description: 'Quando admin aprova, o módulo fica acessível ao usuário imediatamente via Supabase Realtime — sem precisar recarregar a página.' },
+          { type: 'improvement', title: 'Painel contextual de acesso negado', description: 'Tela de módulo bloqueado agora exibe estado contextual: sem solicitação, pendente, negado (com motivo) ou expirado — cada um com cor e mensagem específica.' },
+          { type: 'improvement', title: 'Notificações de acesso no dashboard', description: 'Banner persistente para notificações de acesso negado. Desaparece apenas quando o usuário marca como lido (persistido no banco).' },
+          { type: 'fix', title: 'Clique em notificação de negação navegava para lugar nenhum', description: 'module_key não era incluído no metadata da notificação de negação. Corrigido no serviço e em notificações existentes via patch retroativo no banco.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.125',
     date: '18/05/2026',
     summary: 'Barra de busca animada com shimmer e glow; intimações removidas dos resultados; processos não batem mais por nome do advogado.',

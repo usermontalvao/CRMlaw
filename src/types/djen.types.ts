@@ -150,4 +150,6 @@ export interface UpdateDjenComunicacaoDTO {
   lida_em?: string | null;
   client_id?: string | null;
   process_id?: string | null;
+  polo_ativo?: string | null;
+  polo_passivo?: string | null;
 }

@@ -661,8 +661,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       currentViewerDocIdRef.current = doc.id;
       
       // Verificar tipo de arquivo
-      const isDocx = doc.path.toLowerCase().endsWith('.docx');
-      const isImg = isImagePath(doc.path);
+      const isDocx = (doc.path ?? '').toLowerCase().endsWith('.docx');
+      const isImg = doc.path ? isImagePath(doc.path) : false;
       setIsDocxFile(isDocx);
       setIsImageFile(isImg);
 
@@ -774,10 +774,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       console.log('📎 Anexos salvos no estado:', prefillData.attachmentPaths);
       
       // Detectar tipo do documento atual
-      const currentDocPath = docs[0].path;
+      const currentDocPath = docs[0]?.path ?? '';
       const isDocx = currentDocPath.toLowerCase().endsWith('.docx');
       setIsDocxFile(isDocx);
-      setIsImageFile(isImagePath(currentDocPath));
+      setIsImageFile(currentDocPath ? isImagePath(currentDocPath) : false);
       
       // Configurar signatário com dados do cliente
       setSigners([{
@@ -3348,7 +3348,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   // WIZARD
   if (wizardStep !== 'list') {
     const canProceedUpload = selectedDocumentName || uploadedFile || selectedGenDocIds.length > 0;
-    const canProceedSigners = signers.every((s) => s.name.trim());
+    const canProceedSigners = signers.every((s) => (s.name ?? '').trim());
     const steps = [
       { key: 'upload', label: 'Documento', icon: FileText },
       { key: 'signers', label: 'Signatários', icon: Users },
