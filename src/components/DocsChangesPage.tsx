@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.130': { name: 'Café Terminal Glass', emoji: '⌨️' },
   '1.10.129': { name: 'Café Vidro Aero', emoji: '🪟' },
   '1.10.128': { name: 'Café Vidro Aero Inicial', emoji: '🌈' },
   '1.10.125': { name: 'Café Barra Animada', emoji: '✨' },
@@ -827,6 +828,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.130',
+    date: '19/05/2026',
+    summary: 'Command Palette com integração real: "/" abre painel de comandos VS Code-style com 23 ações que abrem diretamente o modal de criação de cada módulo.',
+    modules: [
+      {
+        moduleId: 'Busca Global',
+        changes: [
+          { type: 'feature', title: 'Command Palette com "/" (barra)', description: 'Digitar "/" na barra de busca ativa o modo de comandos: ícone muda para Terminal laranja, placeholder atualiza, chips de filtro somem e painel de preview é ocultado. ESC retorna ao modo de busca normal.' },
+          { type: 'feature', title: 'Integração real com modais de criação', description: 'Os comandos "Criar" agora abrem diretamente o formulário do módulo correspondente: Novo Cliente → modal de cadastro, Novo Processo → formulário de processo, Novo Prazo → modal de prazo, Nova Tarefa → form de tarefa, Novo Evento → agenda com create, Novo Acordo → modal financeiro, Novo Requerimento → formulário INSS.' },
+          { type: 'feature', title: '23 comandos agrupados em 3 categorias', description: 'Criar (8): Cliente, Processo, Prazo, Tarefa, Evento, Acordo, Requerimento, Assinatura. Navegar (11): ir para cada módulo. Sistema (4): Alternar tema, Limpar histórico, Recarregar dados, Copiar URL.' },
+          { type: 'feature', title: 'Busca fuzzy nos comandos', description: 'Filtro em tempo real dentro do palette: "/novo" mostra apenas comandos de criação, "/agenda" filtra para navegação de agenda. Busca em label, descrição e keywords de cada comando.' },
+          { type: 'improvement', title: 'Navegação por teclado no palette', description: '↑↓ navega pelos comandos, Enter executa, Escape fecha. Highlight laranja no item selecionado com hover interativo via mouse.' },
+          { type: 'fix', title: 'Corrigido forceCreate para módulo Tarefas', description: 'O parâmetro de navegação para abrir nova tarefa usava chave "tasks" inconsistente — corrigido para "tarefas" alinhando com o padrão de todos os outros módulos.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.129',
     date: '19/05/2026',

@@ -2290,8 +2290,8 @@ useEffect(() => {
             )}
             {activeModule === 'tarefas' && (
               <TasksModule 
-                focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
-                onParamConsumed={() => clearModuleParams('tasks')}
+                focusNewTask={moduleParams['tarefas'] ? JSON.parse(moduleParams['tarefas']).mode === 'create' : false}
+                onParamConsumed={() => clearModuleParams('tarefas')}
                 onPendingTasksChange={(count) => setPendingTasksCount(Number.isFinite(count) ? count : 0)}
               />
             )}
