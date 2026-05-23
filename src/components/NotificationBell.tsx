@@ -28,22 +28,43 @@ interface NotificationBellProps {
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
 }
 
+// AudioContext compartilhado — criado/resumido só após gesto do usuário
+let sharedAudioContext: AudioContext | null = null;
+
+const getAudioContext = (): AudioContext | null => {
+  try {
+    if (!sharedAudioContext) {
+      sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    // Tenta retomar se suspenso (navegador pode suspender após inatividade)
+    if (sharedAudioContext.state === 'suspended') {
+      sharedAudioContext.resume().catch(() => {});
+    }
+    // Bloqueia se ainda não foi liberado pelo browser (sem gesto do usuário ainda)
+    if (sharedAudioContext.state === 'running') return sharedAudioContext;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 // Função para tocar som de notificação usando Web Audio API
 const playNotificationSound = () => {
   try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioContext = getAudioContext();
+    if (!audioContext) return; // sem gesto do usuário ainda — silencioso
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
-    
+
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
-    
+
     oscillator.frequency.value = 800;
     oscillator.type = 'sine';
-    
+
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-    
+
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.3);
   } catch {}
@@ -244,12 +265,28 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   });
   const panelRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
+  const isInitialLoadRef = useRef(true); // evita som na carga inicial da página
   const [popupNotifications, setPopupNotifications] = useState<UserNotification[]>([]);
   const processedNotificationIds = useRef<Set<string>>(new Set());
   const processedNotificationKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     pushNotifications.initialize().catch(() => {});
+  }, []);
+
+  // Desbloqueia AudioContext no primeiro gesto do usuário (política do navegador)
+  useEffect(() => {
+    const unlock = () => {
+      if (sharedAudioContext && sharedAudioContext.state === 'suspended') {
+        sharedAudioContext.resume().catch(() => {});
+      }
+    };
+    window.addEventListener('click', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
   }, []);
 
   const normalizeRoleKey = useCallback((role?: string | null) => {
@@ -339,11 +376,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const normalized = dedupeNotifications(data).slice(0, 50);
       const filtered = canSeeIntimacoes ? normalized : normalized.filter((n) => !isIntimationNotification(n));
 
-      // Tocar som se há novas notificações
-      if (filtered.filter(n => !n.read).length > prevCountRef.current && soundEnabled) {
+      const unreadCount = filtered.filter(n => !n.read).length;
+      // Só toca som em novas notificações APÓS a carga inicial (evita AudioContext bloqueado)
+      if (!isInitialLoadRef.current && unreadCount > prevCountRef.current && soundEnabled) {
         playSound();
       }
-      prevCountRef.current = filtered.filter(n => !n.read).length;
+      isInitialLoadRef.current = false;
+      prevCountRef.current = unreadCount;
 
       setNotifications(filtered); // Limitar a 50
     } catch (err) {

@@ -46,6 +46,8 @@ export interface Process {
   djen_synced?: boolean | null;
   djen_last_sync?: string | null;
   djen_has_data?: boolean | null;
+  datajud_cache?: any | null;
+  datajud_synced_at?: string | null;
   created_at: string;
   updated_at: string;
 }

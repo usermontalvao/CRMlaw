@@ -43,6 +43,7 @@ import { djenLocalService } from '../services/djenLocal.service';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
+import { fetchDatajudMovimentos } from '../services/datajud.service';
 import { deadlineService } from '../services/deadline.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { calendarService } from '../services/calendar.service';
@@ -610,61 +611,95 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  // #8 — Gerar resumo IA do processo
+  // #8 — Gerar resumo IA do processo (vê TODO o andamento: DJEN + DataJud)
   const generateProcessSummary = async (proc: Process) => {
     if (loadingAiSummary) return;
     setLoadingAiSummary(true);
     setAiSummary(null);
     try {
-      const events = await processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? '');
-      if (events.length === 0) { setAiSummary('Sem movimentações registradas para resumir.'); return; }
+      // Busca DJEN e DataJud em paralelo
+      const [djenEvents, djResult] = await Promise.allSettled([
+        processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? ''),
+        proc.process_code ? fetchDatajudMovimentos(proc.process_code) : Promise.resolve(null),
+      ]);
 
-      // Monta timeline rica com até 12 eventos
-      const timeline = events.slice(0, 12).map((e) => {
-        const date = e.date?.slice(0, 10) ?? '';
+      const events = djenEvents.status === 'fulfilled' ? djenEvents.value : [];
+      if (events.length === 0 && (djResult.status !== 'fulfilled' || !djResult.value?.processo?.movimentos?.length)) {
+        setAiSummary('Sem movimentações registradas para resumir.');
+        return;
+      }
+
+      // Timeline DJEN — todos os eventos com análise IA quando disponível
+      const toDayKey = (d: string) => {
+        if (!d) return '';
+        if (d.includes('T')) return d.slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        if (/^\d{2}\/\d{2}\/\d{4}/.test(d)) { const [dd,mm,yyyy] = d.split('/'); return `${yyyy}-${mm}-${dd}`; }
+        return d;
+      };
+
+      const djenTimeline = events.map((e) => {
+        const date = toDayKey(e.date);
         const type = e.type ? e.type.toUpperCase() : 'MOVIMENTAÇÃO';
-        const body = e.aiAnalysis?.summary || e.description?.slice(0, 500) || '';
-        return `[${date}] ${type} — ${e.title}\n${body}`;
-      }).join('\n\n---\n\n');
+        const body = e.aiAnalysis?.summary || e.description?.replace(/<[^>]*>/g, '').slice(0, 300) || '';
+        return `[${date}] ${type} — ${e.title}${body ? `\n${body}` : ''}`;
+      }).join('\n\n');
 
-      // Partes identificadas (podem vir de processParties ou da intimação)
+      // Timeline DataJud — movimentações do CNJ (complementa DJEN)
+      let datajudTimeline = '';
+      if (djResult.status === 'fulfilled' && djResult.value?.processo?.movimentos?.length) {
+        const movs = djResult.value.processo.movimentos.map(m =>
+          `[${m.dataHora.slice(0, 10)}] ${m.nome}`
+        ).join('\n');
+        datajudTimeline = `\n\nMOVIMENTAÇÕES CNJ (DataJud — ${djResult.value.processo.movimentos.length} total):\n${movs}`;
+      }
+
       const clientName = clientMap.get(proc.client_id)?.full_name || 'Não identificado';
       const areaLabel  = PRACTICE_AREAS.find(a => a.key === proc.practice_area)?.label || proc.practice_area || 'Não informada';
       const poloAtivo  = processParties?.polo_ativo  || clientName;
       const poloPassivo = processParties?.polo_passivo || 'Não identificado';
 
+      // Data de ajuizamento do DataJud se disponível
+      const dataAjuizamento = (djResult.status === 'fulfilled' && djResult.value?.processo?.dataAjuizamento)
+        ? new Date(djResult.value.processo.dataAjuizamento).toLocaleDateString('pt-BR')
+        : (proc.distributed_at ? new Date(proc.distributed_at).toLocaleDateString('pt-BR') : 'Não informado');
+
       const result = await aiService.generateText(
-        `Você é um advogado sênior experiente em análise processual brasileira. Sua tarefa é gerar um resumo estratégico e prático do processo, focado em informações úteis para o advogado responsável. Responda SEMPRE em português brasileiro formal. Seja técnico, direto e específico — nunca genérico. Use os fatos concretos do processo.`,
-        `DADOS DO PROCESSO:
-Número: ${proc.process_code || 'Não informado'}
-Cliente (Polo Ativo): ${poloAtivo}
-Parte Contrária (Polo Passivo): ${poloPassivo}
-Área: ${areaLabel}
-Status: ${proc.status || 'Não informado'}
-Vara/Tribunal: ${proc.court || 'Não informado'}
-Distribuído em: ${proc.distributed_at ? new Date(proc.distributed_at).toLocaleDateString('pt-BR') : 'Não informado'}
+        `Você é um advogado sênior brasileiro especialista em análise processual. Leia os dados do processo com atenção cirúrgica antes de escrever qualquer coisa. Responda SEMPRE em português brasileiro formal, técnico e direto.
 
-HISTÓRICO PROCESSUAL (do mais recente ao mais antigo):
-${timeline}
+REGRAS ABSOLUTAS — violá-las invalida a resposta:
+1. NUNCA atribua uma ação a uma parte (recorreu, peticionou, pagou, etc.) sem que o texto do evento EXPLICITAMENTE nomeie quem a praticou. Se não souber quem fez, escreva "uma das partes" ou "a parte não identificada no texto".
+2. O polo ativo (autor/requerente) é quem INICIOU o processo. O polo passivo (réu/requerido) é quem foi acionado. Na maioria dos casos, quando há sentença favorável ao polo ativo, é o POLO PASSIVO que recorre.
+3. NUNCA invente datas, valores, decisões ou prazos que não estejam nos dados.
+4. Cite sempre a data real do evento que embasa cada afirmação.
+5. Seja específico: diga O QUÊ foi decidido, não apenas "há uma decisão".`,
+        `PROCESSO: ${proc.process_code || 'Não informado'}
+POLO ATIVO (autor/requerente, nosso cliente): ${poloAtivo}
+POLO PASSIVO (réu/requerido): ${poloPassivo}
+ÁREA: ${areaLabel} | VARA/TRIBUNAL: ${proc.court || 'Não informado'} | DISTRIBUÍDO: ${dataAjuizamento}
 
-TAREFA:
-Gere um resumo estratégico com EXATAMENTE estas 4 seções, usando este formato literal:
+═══ HISTÓRICO PROCESSUAL — DJEN (do mais recente ao mais antigo) ═══
+${djenTimeline || 'Sem publicações no DJEN.'}
+${datajudTimeline}
+═══════════════════════════════════════════════════════════
+
+TAREFA: leia TODO o histórico acima, identifique a sequência real de fatos e gere um resumo com EXATAMENTE estas 4 seções (use os marcadores literais):
 
 **Situação Atual**
-• [Descreva objetivamente a fase processual atual e o que está pendente]
+• [O que foi decidido até agora e em que fase o processo está — cite a última movimentação com data]
 
 **Últimas Movimentações Relevantes**
-• [Movimentação mais recente e seu impacto prático]
-• [Segunda movimentação mais relevante, se houver]
+• [Descreva a movimentação mais recente, quem a praticou SE explícito no texto, e qual o efeito prático]
+• [Segunda movimentação relevante, se houver]
 
 **Pontos de Atenção**
-• [Riscos, prazos críticos, decisões desfavoráveis ou questões processuais pendentes]
+• [Riscos concretos, prazos identificados no texto, decisões desfavoráveis ao polo ativo]
 
 **Próximo Passo Recomendado**
-• [Ação concreta e específica que o advogado deve tomar agora]
+• [Ação concreta e adequada ao tipo de juízo (JE, Vara Cível, TJ etc.) — cite o fundamento legal se relevante]
 
-REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informações. Cada bullet = máximo 2 linhas.`,
-        700
+Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
+        1000
       );
       setAiSummary(result);
     } catch { setAiSummary('Erro ao gerar resumo. Tente novamente.'); }
@@ -936,16 +971,26 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
     }
   }, [selectedProcessForView?.id, viewMode]);
 
-  const handleReload = async () => {
+  const handleReload = async (statusOverride?: { processId: string; status: ProcessStatus }) => {
     try {
       setLoading(true);
       const data = await processService.listProcesses();
-      setProcesses(data);
+      // Aplica override de status na lista (DB pode não ter persistido ainda)
+      const patchedData = statusOverride
+        ? data.map(p => p.id === statusOverride.processId ? { ...p, status: statusOverride.status } : p)
+        : data;
+      setProcesses(patchedData);
       if (selectedProcessForView) {
-        const updated = data.find((item) => item.id === selectedProcessForView.id);
+        const updated = patchedData.find((item) => item.id === selectedProcessForView.id);
         if (updated) {
           const fullProcess = await processService.getProcessById(updated.id);
-          setSelectedProcessForView(fullProcess ?? updated);
+          const result = fullProcess ?? updated;
+          // Garante que o status novo não seja sobrescrito pelo valor antigo do banco
+          if (statusOverride && result.id === statusOverride.processId) {
+            setSelectedProcessForView({ ...result, status: statusOverride.status });
+          } else {
+            setSelectedProcessForView(result);
+          }
         }
       }
     } catch (err: any) {
@@ -1042,8 +1087,10 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
     };
   };
 
-  const handleSearchDjen = async () => {
-    const processNumber = formData.process_code.replace(/\D/g, '');
+  // Aceita código explícito para chamada automática (onChange antes de setState assentar)
+  const handleSearchDjen = async (overrideCode?: string) => {
+    const codeToSearch = overrideCode ?? formData.process_code;
+    const processNumber = codeToSearch.replace(/\D/g, '');
 
     if (processNumber.length < 20) {
       setError('Número do processo inválido. Deve ter 20 dígitos.');
@@ -1054,42 +1101,61 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
       setSearchingDjen(true);
       setError(null);
 
-      const yearMatch = formData.process_code.match(/\d{7}-\d{2}\.(\d{4})\./);
+      const yearMatch = codeToSearch.match(/\d{7}-\d{2}\.(\d{4})\./);
       const year = yearMatch ? yearMatch[1] : null;
 
-      const searchParams: any = {
-        numeroProcesso: processNumber,
-        itensPorPagina: 100,
-      };
+      const djenParams: any = { numeroProcesso: processNumber, itensPorPagina: 100 };
+      if (year) djenParams.dataDisponibilizacaoInicio = `${year}-01-01`;
 
-      if (year) {
-        searchParams.dataDisponibilizacaoInicio = `${year}-01-01`;
+      // Busca DJEN e DataJud em paralelo
+      const [djenResult, djResult] = await Promise.allSettled([
+        djenService.consultarComunicacoes(djenParams),
+        fetchDatajudMovimentos(codeToSearch),
+      ]);
+
+      // Extrai dados do DataJud (fonte primária para metadados do processo)
+      const djUpdates: { distributed_at?: string; court?: string } = {};
+      if (djResult.status === 'fulfilled' && djResult.value.processo) {
+        const proc = djResult.value.processo;
+        if (proc.dataAjuizamento) {
+          djUpdates.distributed_at = proc.dataAjuizamento.slice(0, 10);
+        }
+        if (proc.orgaoJulgador?.nome) {
+          djUpdates.court = proc.orgaoJulgador.nome;
+        }
       }
 
-      const response = await djenService.consultarComunicacoes(searchParams);
-
-      if (response.items && response.items.length > 0) {
-        const firstItem = response.items[0];
-
+      // Aplica dados do DJEN (vara, área)
+      if (djenResult.status === 'fulfilled' && djenResult.value.items?.length > 0) {
+        const firstItem = djenResult.value.items[0];
         setDjenData(firstItem);
-
         setFormData((prev) => ({
           ...prev,
-          court: firstItem.nomeOrgao || prev.court,
+          // DataJud tem prioridade para vara se vier; DJEN como fallback
+          court: djUpdates.court || firstItem.nomeOrgao || prev.court,
           practice_area: mapClasseToArea(firstItem.nomeClasse) || prev.practice_area,
+          ...(djUpdates.distributed_at && !prev.distributed_at
+            ? { distributed_at: djUpdates.distributed_at }
+            : {}),
         }));
       } else {
+        // Sem dados no DJEN — aplica só o que veio do DataJud
+        if (Object.keys(djUpdates).length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            ...(djUpdates.court ? { court: djUpdates.court } : {}),
+            ...(djUpdates.distributed_at && !prev.distributed_at
+              ? { distributed_at: djUpdates.distributed_at }
+              : {}),
+          }));
+        }
         setError(
           'Nenhuma comunicação encontrada no DJEN para este processo. Possíveis motivos: processo muito recente, sem publicações ainda, ou tribunal não integrado ao DJEN.',
         );
-
-        setDjenData({
-          _noData: true,
-          message: 'Processo consultado mas sem comunicações no DJEN',
-        });
+        setDjenData({ _noData: true, message: 'Processo consultado mas sem comunicações no DJEN' });
       }
     } catch (err: any) {
-      setError(`Erro ao buscar dados no DJEN: ${err.message || 'Erro desconhecido'}`);
+      setError(`Erro ao buscar dados: ${err.message || 'Erro desconhecido'}`);
     } finally {
       setSearchingDjen(false);
     }
@@ -1391,16 +1457,77 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
         .catch(() => {})
         .finally(() => setLoadingSignatures(false));
     }
-    // Carregar partes do processo a partir das intimações vinculadas
-    await loadProcessParties(process.id, false);
+    // Carregar partes do processo a partir das intimações vinculadas (ou DJEN direto)
+    await loadProcessParties(process.id, false, process.process_code);
   };
 
   // Extrai e persiste partes do processo (polo ativo/passivo)
   // force=true ignora cache do DB e re-extrai
-  const loadProcessParties = async (processId: string, force: boolean) => {
+  const loadProcessParties = async (processId: string, force: boolean, processCode?: string) => {
     setLoadingParties(true);
+    // Limpa nomes vindos do DJEN — remove prefixo "Nome:", endereço/CPF/CNPJ concatenados
+    const cleanDjenNome = (nome: string): string =>
+      nome
+        .replace(/^Nome:\s*/i, '')                                              // remove prefixo "Nome: "
+        .replace(/\s*[-–]?\s*(Endere[çc]o|CPF|CNPJ|RG|CEP|Tel(?:efone)?|E[-\s]?mail)\s*:.*/i, '') // corta em Endereço/CPF/etc
+        .replace(/\s*[-–]\s*$/, '')                                             // remove traço final solto
+        .replace(/\s+/g, ' ')
+        .trim();
+
     try {
       const comuns = await djenLocalService.listComunicacoes({ process_id: processId });
+
+      // ── Se não há dados locais, consulta DJEN direto e extrai destinatários ──
+      if (comuns.length === 0 && processCode) {
+        const digits = processCode.replace(/\D/g, '');
+        if (digits.length === 20) {
+          try {
+            const yearMatch = processCode.match(/\d{7}-\d{2}\.(\d{4})\./);
+            const resp = await djenService.consultarComunicacoes({
+              numeroProcesso: digits,
+              itensPorPagina: 100,
+              dataDisponibilizacaoInicio: yearMatch ? `${yearMatch[1]}-01-01` : undefined,
+            });
+            if (resp.items?.length > 0) {
+
+              // Agrega destinatários de todas as comunicações
+              const allDests = resp.items.flatMap(c => c.destinatarios ?? []);
+              const ativo = [...new Set(
+                allDests
+                  .filter(d => /ativo|autor|requerente/i.test(d.polo ?? ''))
+                  .map(d => cleanDjenNome(d.nome?.trim() ?? ''))
+                  .filter(Boolean)
+              )].join(', ') || null;
+              const passivo = [...new Set(
+                allDests
+                  .filter(d => /passivo|r[eé]u|requerido/i.test(d.polo ?? ''))
+                  .map(d => cleanDjenNome(d.nome?.trim() ?? ''))
+                  .filter(Boolean)
+              )].join(', ') || null;
+
+              // Se não veio polo nos destinatários, tenta pelo texto das intimações
+              if (!ativo && !passivo) {
+                for (const item of resp.items) {
+                  const t = item.texto ?? '';
+                  const qa = t.match(/POLO\s+ATIVO\s*:?\s*(.+?)(?=\s*POLO\s+PASSIVO)/i);
+                  const qp = t.match(/POLO\s+PASSIVO\s*:?\s*([A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕÇ][^\n.]{2,80}?)(?=\s*(?:Vistos|INTIMAÇÃO|$|\.))/i);
+                  if (qa || qp) {
+                    setProcessParties({ polo_ativo: qa?.[1]?.trim() || null, polo_passivo: qp?.[1]?.trim() || null });
+                    return;
+                  }
+                }
+              }
+
+              if (ativo || passivo) {
+                setProcessParties({ polo_ativo: ativo, polo_passivo: passivo });
+                return;
+              }
+            }
+          } catch { /* DJEN direto falhou — continua sem partes */ }
+        }
+        return; // sem dados locais nem via DJEN
+      }
+
       if (comuns.length === 0) return;
 
       // Helper: persiste as partes encontradas no primeiro registro da intimação
@@ -1414,7 +1541,11 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
       if (!force) {
         const withPolo = comuns.find(c => c.polo_ativo || c.polo_passivo);
         if (withPolo) {
-          setProcessParties({ polo_ativo: withPolo.polo_ativo ?? null, polo_passivo: withPolo.polo_passivo ?? null });
+          // Aplica limpeza mesmo no cache — garante que dados antigos sujos são exibidos corretamente
+          setProcessParties({
+            polo_ativo:  withPolo.polo_ativo  ? cleanDjenNome(withPolo.polo_ativo)  : null,
+            polo_passivo: withPolo.polo_passivo ? cleanDjenNome(withPolo.polo_passivo) : null,
+          });
           return;
         }
       }
@@ -1425,10 +1556,10 @@ REGRAS: Use apenas fatos do processo. Cite datas reais. Não invente informaçõ
         if (dests.length > 0) {
           const ativo = dests
             .filter(d => d.polo && /ativo|autor|requerente/i.test(d.polo))
-            .map(d => d.nome).join(', ') || null;
+            .map(d => cleanDjenNome(d.nome ?? '')).filter(Boolean).join(', ') || null;
           const passivo = dests
             .filter(d => d.polo && /passivo|r[eé]u|requerido/i.test(d.polo))
-            .map(d => d.nome).join(', ') || null;
+            .map(d => cleanDjenNome(d.nome ?? '')).filter(Boolean).join(', ') || null;
           if (ativo || passivo) {
             setProcessParties({ polo_ativo: ativo, polo_passivo: passivo });
             await persistParties(c.id, ativo, passivo);
@@ -2334,14 +2465,21 @@ Regras:
               <div className="flex gap-2">
                 <input
                   value={formData.process_code}
-                  onChange={(e) => handleFormChange('process_code', e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleFormChange('process_code', val);
+                    // Pesquisa automática ao completar 20 dígitos (novo processo)
+                    if (!selectedProcess && !searchingDjen && val.replace(/\D/g, '').length >= 20) {
+                      handleSearchDjen(val);
+                    }
+                  }}
                   className={`${inputStyle} flex-1`}
                   placeholder="0001234-56.2024.8.26.0100"
                   required
                 />
                 <button
                   type="button"
-                  onClick={handleSearchDjen}
+                  onClick={() => handleSearchDjen()}
                   disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
                   className="px-3 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm"
                 >
@@ -2707,7 +2845,7 @@ Regras:
                   <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Partes do Processo</span>
                 </div>
                 <button
-                  onClick={() => loadProcessParties(selectedProcessForView.id, true)}
+                  onClick={() => loadProcessParties(selectedProcessForView.id, true, selectedProcessForView.process_code)}
                   disabled={loadingParties}
                   title="Rebuscar partes (força nova extração)"
                   className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition disabled:opacity-40"
@@ -2732,13 +2870,13 @@ Regras:
                 <div className="divide-y divide-slate-100">
                   {processParties.polo_ativo && (
                     <div className="px-4 py-3 flex items-start gap-3">
-                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex-shrink-0">Polo Ativo</span>
+                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 flex-shrink-0">Polo Ativo</span>
                       <span className="text-sm text-slate-800 font-medium leading-snug">{processParties.polo_ativo}</span>
                     </div>
                   )}
                   {processParties.polo_passivo && (
                     <div className="px-4 py-3 flex items-start gap-3">
-                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-600 border border-slate-300 flex-shrink-0">Polo Passivo</span>
+                      <span className="mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">Polo Passivo</span>
                       <span className="text-sm text-slate-800 font-medium leading-snug">{processParties.polo_passivo}</span>
                     </div>
                   )}
@@ -2746,7 +2884,7 @@ Regras:
               )}
             </div>
 
-            {/* #8 — Resumo IA do processo */}
+            {/* #8b — Resumo IA do processo */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Resumo Inteligente</span>
@@ -4089,8 +4227,17 @@ Regras:
                 setTimelineClientName(null);
               }}
               onStatusUpdated={(newStatus) => {
-                // Atualizar a lista de processos quando o status mudar
-                handleReload();
+                const override = timelineProcessId
+                  ? { processId: timelineProcessId, status: newStatus as ProcessStatus }
+                  : undefined;
+                // Atualiza badge imediatamente (antes do reload para não piscar)
+                if (override && selectedProcessForView?.id === timelineProcessId) {
+                  setSelectedProcessForView(prev =>
+                    prev ? { ...prev, status: newStatus as ProcessStatus } : prev
+                  );
+                }
+                // Recarrega lista preservando o novo status (evita race com dado antigo do banco)
+                handleReload(override);
               }}
             />
           </div>

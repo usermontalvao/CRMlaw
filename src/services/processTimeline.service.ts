@@ -14,6 +14,7 @@ export interface TimelineEvent {
   grauRecursal?: string;
   hash?: string;
   rawData?: DjenComunicacao;
+  source?: 'djen' | 'datajud'; // origem do evento
   aiAnalysis?: {
     summary: string;
     urgency: 'baixa' | 'media' | 'alta' | 'critica';
@@ -244,9 +245,10 @@ class ProcessTimelineService {
   async fetchTimelineFromDatabase(processId: string, processCode: string): Promise<TimelineEvent[]> {
     try {
       // Buscar comunicações do banco local vinculadas ao processo
+      // Inclui destinatários e advogados para exibir partes e órgão
       const { data: comunicacoes, error } = await supabase
         .from('djen_comunicacoes')
-        .select('*')
+        .select(`*, djen_destinatarios (id, nome, polo), djen_advogados (id, nome, numero_oab, uf_oab)`)
         .eq('process_id', processId)
         .order('data_disponibilizacao', { ascending: false });
 
@@ -295,6 +297,8 @@ class ProcessTimelineService {
             numeroProcessoMascara: item.numero_processo_mascara,
             siglaTribunal: item.sigla_tribunal,
             nomeOrgao: item.nome_orgao,
+            nomeClasse: item.nome_classe,
+            codigoClasse: item.codigo_classe,
             texto: item.texto,
             tipoComunicacao: item.tipo_comunicacao,
             tipoDocumento: item.tipo_documento,
@@ -302,6 +306,17 @@ class ProcessTimelineService {
             meiocompleto: item.meio_completo,
             link: item.link,
             datadisponibilizacao: item.data_disponibilizacao,
+            // Partes do processo vindas do banco
+            destinatarios: (item.djen_destinatarios ?? []).map((d: any) => ({
+              nome: d.nome,
+              polo: d.polo,
+              comunicacao_id: item.numero_comunicacao,
+            })),
+            // Advogados
+            destinatarioadvogados: (item.djen_advogados ?? []).map((a: any) => ({
+              id: a.id,
+              advogado: { nome: a.nome, numero_oab: a.numero_oab, uf_oab: a.uf_oab },
+            })),
           } as unknown as DjenComunicacao,
           aiAnalysis,
         };
@@ -611,19 +626,32 @@ Regras:
   }
 
   /**
-   * Detecta o grau recursal baseado no órgão ou conteúdo
+   * Detecta o grau recursal exclusivamente pelo nome do órgão julgador.
+   * NÃO usa o texto do documento — sentenças de 1ª instância citam STJ/STF
+   * como jurisprudência, o que causaria falsos positivos.
    */
-  private detectGrauRecursal(orgao?: string, texto?: string): string | undefined {
-    const combined = ((orgao || '') + ' ' + (texto || '')).toLowerCase();
-    
-    if (combined.includes('stf') || combined.includes('supremo tribunal federal')) return 'STF';
-    if (combined.includes('stj') || combined.includes('superior tribunal de justiça')) return 'STJ';
-    if (combined.includes('tst') || combined.includes('tribunal superior do trabalho')) return 'TST';
-    if (combined.includes('trt') || combined.includes('tribunal regional do trabalho')) return 'TRT';
-    if (combined.includes('tj') || combined.includes('tribunal de justiça') || combined.includes('2º grau') || combined.includes('segundo grau')) return '2º Grau';
-    if (combined.includes('turma recursal')) return 'Turma Recursal';
-    if (combined.includes('1º grau') || combined.includes('primeiro grau') || combined.includes('vara')) return '1º Grau';
-    
+  private detectGrauRecursal(orgao?: string, _texto?: string): string | undefined {
+    const o = (orgao || '').toLowerCase();
+    if (!o) return undefined;
+
+    // Instâncias superiores (matching exato antes de tj/trt genéricos)
+    if (o.includes('supremo tribunal federal') || /\bstf\b/.test(o)) return 'STF';
+    if (o.includes('superior tribunal de justiça') || /\bstj\b/.test(o)) return 'STJ';
+    if (o.includes('tribunal superior do trabalho') || /\btst\b/.test(o)) return 'TST';
+    if (o.includes('tribunal regional do trabalho') || /\btrt\b/.test(o)) return 'TRT';
+
+    // Turma Recursal (JE 2ª instância)
+    if (o.includes('turma recursal')) return 'Turma Recursal';
+
+    // Tribunal de Justiça / 2º Grau
+    if (o.includes('tribunal de justiça') || o.includes('câmara') || o.includes('2º grau') || o.includes('segundo grau')) return '2º Grau';
+
+    // 1ª instância / JE
+    if (o.includes('1º grau') || o.includes('primeiro grau') || o.includes('vara') || o.includes('juizado')) return '1º Grau';
+
+    // Juizado Especial sem especificar grau → JE
+    if (/\bje\b/.test(o)) return 'JE';
+
     return undefined;
   }
 

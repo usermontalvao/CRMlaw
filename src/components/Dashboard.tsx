@@ -354,6 +354,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   // Solicitações de acesso pendentes (visível só para admin)
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
   const [accessBannerDismissed, setAccessBannerDismissed] = useState(false);
+  // Chave DataJud inválida (visível só para admin)
+  const [datajudKeyInvalid, setDatajudKeyInvalid] = useState(false);
+  const [datajudKeyBannerDismissed, setDatajudKeyBannerDismissed] = useState(false);
   // Notificações de acesso negado não lidas (visível para não-admin, persiste até marcar como lida no DB)
   const [userDeniedNotifs, setUserDeniedNotifs] = useState<Array<{ id: string; module_label: string; module_key: string; admin_notes?: string | null }>>([]);
 
@@ -689,6 +692,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     setAccessBannerDismissed(false);
     import('../services/accessRequest.service').then(({ accessRequestService }) => {
       accessRequestService.getPendingCount().then(count => setPendingAccessCount(count)).catch(() => {});
+    });
+  }, [isAdmin]);
+
+  // Verificar se a chave DataJud está inválida (só admin)
+  useEffect(() => {
+    if (!isAdmin) return;
+    import('../services/settings.service').then(({ settingsService }) => {
+      settingsService.getDatajudKeyConfig()
+        .then(cfg => setDatajudKeyInvalid(cfg.invalid))
+        .catch(() => {});
     });
   }, [isAdmin]);
 
@@ -1099,6 +1112,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             </button>
             <button
               onClick={() => setAccessBannerDismissed(true)}
+              className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition"
+              title="Fechar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de chave DataJud inválida (apenas admin) */}
+      {isAdmin && datajudKeyInvalid && !datajudKeyBannerDismissed && (
+        <div className="mx-1 mb-3">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-red-200 border-l-4 border-l-red-500 shadow-sm">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800 leading-tight">
+                Chave de API DataJud (CNJ) inválida ou expirada
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                As consultas de movimentações processuais estão falhando. Atualize a chave em Configurações → DJEN.
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigateToModule?.('configuracoes', { section: 'djen' })}
+              className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition"
+            >
+              Atualizar chave
+            </button>
+            <button
+              onClick={() => setDatajudKeyBannerDismissed(true)}
               className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition"
               title="Fechar"
             >

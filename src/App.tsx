@@ -1821,6 +1821,7 @@ useEffect(() => {
             />
           )}
 
+
           {!permissionsLoading && canAccessModule('financeiro') && (
             <SidebarModuleBtn
               moduleKey="financeiro"

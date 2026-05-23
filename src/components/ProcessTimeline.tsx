@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Clock,
   FileText,
@@ -34,6 +34,7 @@ import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { processService } from '../services/process.service';
 import type { ProcessStatus } from '../types/process.types';
+import { fetchDatajudMovimentos, categorizarMovimento, getTribunalNome, type DatajudComplemento } from '../services/datajud.service';
 
 interface ProcessTimelineProps {
   processCode: string;
@@ -45,6 +46,19 @@ interface ProcessTimelineProps {
   onAddAppointment?: (event: TimelineEvent) => void;
   onAddToCalendar?: (event: TimelineEvent) => void;
 }
+
+// Mapeamento de estágio detectado → ProcessStatus (usado para sincronizar badge do detalhe)
+const STAGE_KEY_TO_STATUS: Record<string, ProcessStatus> = {
+  distribuicao: 'distribuido',
+  citacao: 'citacao',
+  conciliacao: 'conciliacao',
+  contestacao: 'contestacao',
+  instrucao: 'instrucao',
+  sentenca: 'sentenca',
+  recurso: 'recurso',
+  transito: 'andamento',
+  execucao: 'cumprimento',
+};
 
 // Estágios do processo com detecção inteligente
 const PROCESS_STAGES = [
@@ -201,9 +215,13 @@ const detectCurrentStage = (events: TimelineEvent[]): number => {
   const eventTypes = events.map(e => e.type);
   const titles = events.map(e => e.title.toLowerCase());
   const descriptions = events.map(e => (e.description || '').toLowerCase());
+  const graus = events.map(e => e.grauRecursal || '');
 
-  // Prioridade: verificar tipos de eventos primeiro
-  if (eventTypes.includes('recurso')) return 6;
+  // Fase recursal: grau recursal indica instância superior (Turma Recursal = JE 2ª inst, TRT/TST = trabalhista, STJ/STF)
+  const GRAUS_RECURSO = ['Turma Recursal', 'STJ', 'STF', 'TST', 'TRT'];
+  const hasGrauRecurso = graus.some(g => GRAUS_RECURSO.includes(g));
+  if (hasGrauRecurso || eventTypes.includes('recurso')) return 6;
+
   if (eventTypes.includes('sentenca')) return 5;
   if (eventTypes.includes('citacao')) return 1;
 
@@ -364,19 +382,136 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   onAddToCalendar,
 }) => {
   const [statusUpdated, setStatusUpdated] = useState<string | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [djenEvents, setDjenEvents]   = useState<TimelineEvent[]>([]);
+  const [djEvents,   setDjEvents]     = useState<TimelineEvent[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [analyzing, setAnalyzing]     = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
+  const [datajudCachedAt, setDatajudCachedAt] = useState<Date | null>(null);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
-  const [currentStage, setCurrentStage] = useState(0);
-  const [filterType, setFilterType] = useState('todos');
-  const [filterGrau, setFilterGrau] = useState('todos');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [currentStage, setCurrentStage]     = useState(0);
+  const [filterType,  setFilterType]  = useState('todos');
+  const [filterGrau,  setFilterGrau]  = useState('todos');
+  const [searchTerm,  setSearchTerm]  = useState('');
   const [showSummaryDetails, setShowSummaryDetails] = useState(false);
-  // #7 — Agrupamento por fase
   const [groupByPhase, setGroupByPhase] = useState(false);
+
+  // ── Informações do processo extraídas do DJEN ────────────────────────────
+  interface ProcessInfo {
+    orgao: string | null;
+    tribunal: string | null;
+    classe: string | null;
+    poloAtivo: string[];
+    poloPassivo: string[];
+    advogados: { nome: string; oab: string }[];
+  }
+  const [processInfo, setProcessInfo] = useState<ProcessInfo | null>(null);
+
+  // ── Extrai informações do processo das comunicações DJEN ─────────────────
+  // Fonte: nomeOrgao, siglaTribunal, nomeClasse, destinatarios — tudo do DJEN
+  // NÃO depende do DataJud (que tem lag)
+  const extractProcessInfoFromEvents = (evts: TimelineEvent[]): ProcessInfo => {
+    // Usa o evento mais recente com rawData como referência de orgão/tribunal/classe
+    const ref = evts.find(e => e.rawData?.nomeOrgao) ?? evts[0];
+    const orgao  = ref?.rawData?.nomeOrgao || ref?.orgao || null;
+    const tribunal = ref?.rawData?.siglaTribunal || null;
+    const classe = (ref?.rawData as any)?.nomeClasse || null;
+
+    // Agrega partes de TODOS os eventos (DJEN pode distribuir em várias publicações)
+    const poloAtivoSet  = new Set<string>();
+    const poloPassivoSet = new Set<string>();
+    const advSet = new Map<string, { nome: string; oab: string }>();
+
+    for (const ev of evts) {
+      const dests = ev.rawData?.destinatarios ?? [];
+      for (const d of dests) {
+        const polo = (d.polo ?? '').toLowerCase();
+        if (polo.includes('ativo') || polo.includes('autor') || polo.includes('requerente')) {
+          if (d.nome) poloAtivoSet.add(d.nome.trim());
+        } else if (polo.includes('passivo') || polo.includes('réu') || polo.includes('reo') || polo.includes('requerido')) {
+          if (d.nome) poloPassivoSet.add(d.nome.trim());
+        } else if (d.nome) {
+          // polo desconhecido: tenta heurística pelo clientName
+          if (clientName && d.nome.toLowerCase().includes(clientName.split(' ')[0].toLowerCase())) {
+            poloAtivoSet.add(d.nome.trim());
+          } else {
+            poloPassivoSet.add(d.nome.trim());
+          }
+        }
+      }
+      const advs = ev.rawData?.destinatarioadvogados ?? [];
+      for (const da of advs) {
+        const a = da.advogado;
+        if (a?.nome) {
+          const key = a.numero_oab ? `${a.numero_oab}/${a.uf_oab}` : a.nome;
+          advSet.set(key, { nome: a.nome, oab: key });
+        }
+      }
+    }
+
+    return {
+      orgao,
+      tribunal,
+      classe,
+      poloAtivo:  Array.from(poloAtivoSet),
+      poloPassivo: Array.from(poloPassivoSet),
+      advogados:  Array.from(advSet.values()),
+    };
+  };
+
+  // ── Normaliza qualquer formato de data para YYYY-MM-DD ───────────────────
+  // DJEN API retorna DD/MM/YYYY; DataJud retorna ISO "YYYY-MM-DDT..."
+  const toDayKey = (d: string): string => {
+    if (!d) return '';
+    if (d.includes('T')) return d.slice(0, 10);                    // ISO com tempo
+    if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);     // YYYY-MM-DD
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(d)) {                         // DD/MM/YYYY (DJEN)
+      const [dd, mm, yyyy] = d.split('/');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return d;
+  };
+
+  const safeTime = (d: string): number => {
+    const iso = toDayKey(d);
+    const t = new Date(iso).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
+  const events = useMemo(() => {
+    // DataJud: enriquece eventos DJEN que coincidem na data (mesmo dia), ou adiciona os que não têm par
+    const result = djenEvents.map(e => ({ ...e })); // cópia para não mutar estado
+    const usedDjenIdx = new Set<number>(); // rastreia slots DJEN já consumidos
+    const usedDj = new Set<string>();
+
+    for (const dj of djEvents) {
+      const djDay = toDayKey(dj.date);
+      // Procura evento DJEN no mesmo dia que ainda não foi consumido
+      const idx = result.findIndex((e, i) =>
+        toDayKey(e.date) === djDay && !usedDjenIdx.has(i)
+      );
+      if (idx !== -1) {
+        usedDj.add(dj.id);
+        usedDjenIdx.add(idx);
+        // Enriquece o evento DJEN: título DataJud é mais específico
+        const existing = result[idx];
+        if (['Notificação','Intimação','Despacho','Outro'].includes(existing.title) || !existing.title) {
+          existing.title = dj.title;
+        }
+        existing.source = 'datajud';
+        // Mantém descrição DJEN mas adiciona orgão DataJud se útil
+        if (dj.orgao && !existing.description?.includes(dj.orgao)) {
+          existing.description = [existing.description, dj.orgao].filter(Boolean).join('\n\n');
+        }
+      }
+    }
+
+    // Adiciona DataJud sem par DJEN
+    const extras = djEvents.filter(dj => !usedDj.has(dj.id));
+
+    return [...result, ...extras].sort((a, b) => safeTime(b.date) - safeTime(a.date));
+  }, [djenEvents, djEvents]);
 
   // Buscar e analisar automaticamente
   // PRIORIZA banco local (djen_comunicacoes_local) com IA já pronta pelo cron
@@ -415,21 +550,24 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         );
       }
       
-      setEvents(data);
+      // Buscar movimentações DataJud e fundir (em paralelo, silencioso)
+      setDjenEvents(data);
+      if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
       const stage = detectCurrentStage(data);
       setCurrentStage(stage);
 
-      // Atualizar status (via serviço — detecção mais robusta) e comarca
+      // Sempre notifica o pai com o estágio visual detectado (independente do autoUpdate)
+      const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
+      if (detectedStatus) onStatusUpdated?.(detectedStatus);
+
       if (processId && data.length > 0) {
         const currentProcess = await processService.getProcessById(processId);
         if (currentProcess) {
-          // Status: o serviço usa detectSuggestedStatus (últimos 5 eventos + descrições)
-          const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
-          if (newStatus) {
-            setStatusUpdated(newStatus);
-            onStatusUpdated?.(newStatus);
+          // Atualiza o DB se o status detectado difere do armazenado
+          if (detectedStatus && currentProcess.status !== detectedStatus) {
+            await processTimelineService.autoUpdateProcessStatus(processId, data);
+            setStatusUpdated(detectedStatus);
           }
-          // Comarca: preencher se ainda vazia
           if (!currentProcess.court) {
             const comarca = extractComarcaFromEvents(data);
             if (comarca) await processService.updateProcess(processId, { court: comarca });
@@ -437,20 +575,20 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         }
       }
     } catch (err: any) {
-      // Se falhar, tentar apenas buscar do DJEN
       try {
         const data = await processTimelineService.fetchProcessTimeline(processCode);
-        setEvents(data);
+        setDjenEvents(data);
+        if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
         const stage = detectCurrentStage(data);
         setCurrentStage(stage);
-
+        const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
+        if (detectedStatus) onStatusUpdated?.(detectedStatus);
         if (processId && data.length > 0) {
           const currentProcess = await processService.getProcessById(processId);
           if (currentProcess) {
-            const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
-            if (newStatus) {
-              setStatusUpdated(newStatus);
-              onStatusUpdated?.(newStatus);
+            if (detectedStatus && currentProcess.status !== detectedStatus) {
+              await processTimelineService.autoUpdateProcessStatus(processId, data);
+              setStatusUpdated(detectedStatus);
             }
             if (!currentProcess.court) {
               const comarca = extractComarcaFromEvents(data);
@@ -475,8 +613,12 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         processCode,
         (current, total) => setAnalyzeProgress({ current, total })
       );
-      setEvents(data);
-      setCurrentStage(detectCurrentStage(data));
+      setDjenEvents(data);
+      if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
+      const stage = detectCurrentStage(data);
+      setCurrentStage(stage);
+      const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
+      if (detectedStatus) onStatusUpdated?.(detectedStatus);
     } catch (err: any) {
       setError(err.message || 'Erro ao atualizar');
     } finally {
@@ -485,8 +627,94 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
     }
   };
 
+  // ── Busca DataJud separadamente (não bloqueia carregamento DJe) ───────────
+  const isInternalKey = (s: string) => /^[a-z][a-z0-9_]*$/.test(s) && s.includes('_');
+
+  const buildDjTitle = (nome: string, complementos: DatajudComplemento[] | undefined): string => {
+    if (!complementos?.length) return nome;
+    const best = complementos.find(c => c.nome && c.nome !== nome && !isInternalKey(c.nome) && isNaN(Number(c.nome)));
+    if (best) return best.nome;
+    return nome;
+  };
+
+  const CACHE_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 horas — alinhado ao cron
+
+  const fetchDatajud = async () => {
+    try {
+      // ── Tenta usar cache do banco primeiro (populado pelo cron a cada 48h) ──
+      let djResult: Awaited<ReturnType<typeof fetchDatajudMovimentos>> | null = null;
+
+      if (processId) {
+        const proc = await processService.getProcessById(processId);
+        if (proc?.datajud_cache && proc.datajud_synced_at) {
+          const age = Date.now() - new Date(proc.datajud_synced_at).getTime();
+          if (age < CACHE_MAX_AGE_MS) {
+            // Cache fresco — usa dados locais sem chamar a API.
+            // O sync pode armazenar o objeto DatajudProcesso direto (campo `tribunal` nativo)
+            // ou encapsulado em { processo, tribunal }. Suportamos os dois formatos.
+            const raw = proc.datajud_cache as any;
+            const processoObj = raw?.movimentos ? raw : raw?.processo ?? raw;
+            const tribunalStr = raw?.tribunal ?? processoObj?.tribunal ?? null;
+            djResult = { processo: processoObj, tribunal: tribunalStr };
+            setDatajudCachedAt(new Date(proc.datajud_synced_at));
+          }
+        }
+      }
+
+      // Cache ausente/expirado — busca ao vivo
+      if (!djResult) {
+        djResult = await fetchDatajudMovimentos(processCode);
+        setDatajudCachedAt(null); // ao vivo = sem badge de cache
+      }
+
+      if (!djResult.processo?.movimentos?.length) return;
+      const catMap: Record<string, TimelineEvent['type']> = {
+        sentenca: 'sentenca', decisao: 'decisao', despacho: 'despacho',
+        citacao: 'citacao', recurso: 'recurso', audiencia: 'outro',
+        arquivamento: 'outro', outro: 'outro',
+      };
+      const tribunalNome = djResult.tribunal ? getTribunalNome(djResult.tribunal) : 'DataJud';
+      const converted: TimelineEvent[] = djResult.processo!.movimentos.map((mov, i) => {
+        const title = buildDjTitle(mov.nome, mov.complementosTabelados);
+        const descParts: string[] = [];
+        if (mov.orgaoJulgador?.nomeOrgao) descParts.push(mov.orgaoJulgador.nomeOrgao);
+        mov.complementosTabelados?.forEach(c => {
+          if (!c.nome || isInternalKey(c.nome) || c.nome === title) return;
+          descParts.push(c.nome);
+        });
+        return {
+          id: `datajud-${i}-${mov.codigo}`,
+          date: mov.dataHora,
+          type: catMap[categorizarMovimento(mov.codigo, mov.nome)] ?? 'outro',
+          title,
+          description: descParts.join(' · '),
+          orgao: mov.orgaoJulgador?.nomeOrgao || tribunalNome,
+          grauRecursal: djResult.processo!.grau || undefined,
+          source: 'datajud' as const,
+        };
+      });
+      setDjEvents(converted);
+
+      // Auto-captura data de distribuição (dataAjuizamento) se o processo não tiver
+      if (processId && djResult.processo.dataAjuizamento) {
+        try {
+          const proc = await processService.getProcessById(processId);
+          if (proc && !proc.distributed_at) {
+            await processService.updateProcess(processId, {
+              distributed_at: new Date(djResult.processo.dataAjuizamento).toISOString(),
+            });
+          }
+        } catch { /* silencioso */ }
+      }
+    } catch { /* best-effort */ }
+  };
+
   useEffect(() => {
     fetchAndAnalyze();
+  }, [processCode]);
+
+  useEffect(() => {
+    fetchDatajud();
   }, [processCode]);
 
   const toggleExpand = (id: string) => {
@@ -668,8 +896,110 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
               )}
             </div>
 
-            
+            {/* Badge DataJud — quando usando cache do cron */}
+            {djEvents.length > 0 && (
+              <div className="mt-2 flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium leading-tight">
+                  DataJud ·{' '}
+                  {datajudCachedAt
+                    ? (() => {
+                        const diffMs = Date.now() - datajudCachedAt.getTime();
+                        const diffH = Math.floor(diffMs / 3600000);
+                        const diffM = Math.floor((diffMs % 3600000) / 60000);
+                        return diffH > 0 ? `${diffH}h atrás` : diffM > 0 ? `${diffM}min atrás` : 'agora';
+                      })()
+                    : 'ao vivo'}
+                </span>
+              </div>
+            )}
+
           </div>
+
+          {/* ── Dados do Processo (DJEN) ─────────────────────────────── */}
+          {processInfo && (processInfo.orgao || processInfo.poloAtivo.length > 0 || processInfo.poloPassivo.length > 0) && (
+            <div className="bg-slate-50/70 dark:bg-zinc-800/50 rounded-2xl border border-slate-200 dark:border-zinc-700 p-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-700 dark:text-white flex items-center gap-1.5">
+                <Scale className="w-3.5 h-3.5 text-[#f97316]" />
+                Dados do Processo
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-widest text-slate-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">DJEN</span>
+              </p>
+
+              {/* Órgão Julgador */}
+              {processInfo.orgao && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Órgão Julgador</p>
+                  <p className="text-xs text-slate-700 dark:text-slate-200 leading-snug">{processInfo.orgao}</p>
+                </div>
+              )}
+
+              {/* Tribunal + Classe */}
+              {(processInfo.tribunal || processInfo.classe) && (
+                <div className="flex gap-3 flex-wrap">
+                  {processInfo.tribunal && (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Tribunal</p>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-700 text-xs font-bold text-slate-700 dark:text-slate-200">{processInfo.tribunal}</span>
+                    </div>
+                  )}
+                  {processInfo.classe && (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Classe</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug truncate" title={processInfo.classe}>{processInfo.classe}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Polo Ativo */}
+              {processInfo.poloAtivo.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 mb-1 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    Polo Ativo
+                  </p>
+                  <ul className="space-y-0.5">
+                    {processInfo.poloAtivo.map((nome, i) => (
+                      <li key={i} className="text-xs text-slate-700 dark:text-slate-200 truncate" title={nome}>{nome}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Polo Passivo */}
+              {processInfo.poloPassivo.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-500 mb-1 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                    Polo Passivo
+                  </p>
+                  <ul className="space-y-0.5">
+                    {processInfo.poloPassivo.map((nome, i) => (
+                      <li key={i} className="text-xs text-slate-700 dark:text-slate-200 truncate" title={nome}>{nome}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Advogados */}
+              {processInfo.advogados.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    Advogados
+                  </p>
+                  <ul className="space-y-0.5">
+                    {processInfo.advogados.map((a, i) => (
+                      <li key={i} className="text-xs text-slate-600 dark:text-slate-300">
+                        {a.nome}
+                        {a.oab && <span className="ml-1 text-[10px] text-slate-400">({a.oab})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* #7 — Toggle agrupamento por fase */}
           <button
@@ -906,9 +1236,12 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                           } ${isExpanded ? 'shadow-md' : 'hover:shadow-md'}`}>
                             <div className="px-4 py-3 cursor-pointer" onClick={() => toggleExpand(event.id)}>
                               <div className="flex items-center justify-between gap-3 mb-1">
-                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
                                   <span>{formatDate(event.date)}</span>
                                   {event.grauRecursal && <><span className="text-slate-300">·</span><span>{event.grauRecursal}</span></>}
+                                  {event.source === 'datajud' && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200 uppercase tracking-wide">CNJ</span>
+                                  )}
                                   {event.aiAnalysis?.actionRequired && <span className="text-red-500">•</span>}
                                 </div>
                                 {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -983,12 +1316,17 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                       >
                         {/* Date + Type */}
                         <div className="flex items-center justify-between gap-3 mb-1">
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
                             <span>{formatDate(event.date)}</span>
                             <span className="text-slate-300 dark:text-slate-600">·</span>
                             <span className="font-medium">{getEventTypeLabel(event.type)}</span>
                             {event.grauRecursal && (
                               <span className="text-slate-400 dark:text-slate-500">· {event.grauRecursal}</span>
+                            )}
+                            {event.source === 'datajud' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200 uppercase tracking-wide">
+                                CNJ
+                              </span>
                             )}
                             {event.aiAnalysis?.actionRequired && (
                               <span className="text-red-500">•</span>
@@ -1001,10 +1339,17 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
 
                         {/* Title */}
                         <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-relaxed">
-                          {event.title === 'Notificação' || event.title === 'Intimação' || event.title === 'Despacho' 
+                          {event.title === 'Notificação' || event.title === 'Intimação' || event.title === 'Despacho'
                             ? (event.description?.substring(0, 120)?.replace(/<[^>]*>/g, '')?.trim() + '...' || event.title)
                             : event.title}
                         </h3>
+
+                        {/* Órgão julgador (DJEN) */}
+                        {event.orgao && (
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={event.orgao}>
+                            {event.orgao}
+                          </p>
+                        )}
 
                         {/* AI Summary - only when collapsed */}
                         {hasAI && event.aiAnalysis?.summary && !isExpanded && (

@@ -34,6 +34,7 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import {
   settingsService,
   type AuditLogEntry,
+  type DatajudKeyConfig,
   type DjenConfig,
   type NotificationConfig,
   type OfficeIdentity,
@@ -152,6 +153,15 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     logo_url: '',
   });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // DataJud API key
+  const [datajudKeyConfig, setDatajudKeyConfig] = useState<DatajudKeyConfig>({
+    key: settingsService.DATAJUD_DEFAULT_KEY,
+    invalid: false,
+    invalid_since: null,
+  });
+  const [datajudKeyVisible, setDatajudKeyVisible] = useState(false);
+  const [datajudKeySaving, setDatajudKeySaving] = useState(false);
 
   // DJEN & configs
   const [djenConfig, setDjenConfig] = useState<DjenConfig>({
@@ -298,15 +308,17 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
   const loadSettings = useCallback(async () => {
     if (!hasConfigAccess) return;
     try {
-      const [identityData, djenData, notifData, prefData, secData, allUsers] = await Promise.all([
+      const [identityData, djenData, notifData, prefData, secData, allUsers, djKeyData] = await Promise.all([
         settingsService.getOfficeIdentity(),
         settingsService.getDjenConfig(),
         settingsService.getNotificationConfig(),
         settingsService.getPreferences(),
         settingsService.getSecurityConfig(),
         settingsService.listUsers(),
+        settingsService.getDatajudKeyConfig(),
       ]);
       setIdentity(identityData);
+      setDatajudKeyConfig(djKeyData);
       
       // Integrar nomes dos advogados dos perfis com lawyers_to_monitor
       const lawyerNamesFromProfiles = allUsers
@@ -1024,6 +1036,66 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           value={djenConfig.api_timeout_seconds}
                           onChange={(e) => setDjenConfig({ ...djenConfig, api_timeout_seconds: parseInt(e.target.value) || 30 })}
                         />
+                      </div>
+                    </div>
+
+                    {/* ── Chave pública DataJud (CNJ) ── */}
+                    <div className="border-t border-slate-200 pt-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Chave de API DataJud (CNJ)</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Chave pública do CNJ para consultar movimentações processuais. Disponível em{' '}
+                            <a href="https://datajud-wiki.cnj.jus.br/api-publica/acesso" target="_blank" rel="noopener noreferrer" className="text-[#f97316] hover:underline">datajud-wiki.cnj.jus.br</a>.
+                          </p>
+                        </div>
+                        {datajudKeyConfig.invalid && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex-shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                            Chave inválida
+                          </span>
+                        )}
+                      </div>
+                      {datajudKeyConfig.invalid && datajudKeyConfig.invalid_since && (
+                        <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                          A chave falhou em {new Date(datajudKeyConfig.invalid_since).toLocaleString('pt-BR')}. Atualize-a abaixo e salve.
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type={datajudKeyVisible ? 'text' : 'password'}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono pr-10"
+                            value={datajudKeyConfig.key}
+                            onChange={(e) => setDatajudKeyConfig({ ...datajudKeyConfig, key: e.target.value, invalid: false, invalid_since: null })}
+                            placeholder="Cole aqui a chave pública do CNJ"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setDatajudKeyVisible(v => !v)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                          >
+                            {datajudKeyVisible ? 'ocultar' : 'ver'}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={datajudKeySaving}
+                          onClick={async () => {
+                            setDatajudKeySaving(true);
+                            try {
+                              await settingsService.setDatajudKey(datajudKeyConfig.key);
+                              // Recarrega para refletir invalid=false
+                              const fresh = await settingsService.getDatajudKeyConfig();
+                              setDatajudKeyConfig(fresh);
+                            } finally {
+                              setDatajudKeySaving(false);
+                            }
+                          }}
+                          className="px-4 py-2 bg-[#f97316] text-white rounded-lg text-sm font-semibold hover:bg-orange-700 disabled:opacity-60 flex-shrink-0"
+                        >
+                          {datajudKeySaving ? 'Salvando…' : 'Salvar chave'}
+                        </button>
                       </div>
                     </div>
 

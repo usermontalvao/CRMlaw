@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.131': { name: 'Café DataJud Express', emoji: '⚖️' },
   '1.10.130': { name: 'Café Terminal Glass', emoji: '⌨️' },
   '1.10.129': { name: 'Café Vidro Aero', emoji: '🪟' },
   '1.10.128': { name: 'Café Vidro Aero Inicial', emoji: '🌈' },
@@ -828,6 +829,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.131',
+    date: '20/05/2026',
+    summary: 'Integração DataJud: movimentações processuais do CNJ diretamente no detalhe do processo, com sugestão de prazo em um clique.',
+    modules: [
+      {
+        moduleId: 'Processos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Movimentações DataJud no detalhe do processo',
+            description: 'Novo bloco "Movimentações DataJud" no modal de detalhes do processo. Clique em "Consultar DataJud" para buscar as movimentações processuais diretamente na API pública do CNJ (todos os tribunais: TJ, TRF, TRT, STJ, STM, TSE, TRE). Os movimentos são exibidos do mais recente ao mais antigo com ícone por categoria (sentença, decisão, despacho, audiência, citação/intimação, recurso, arquivamento).',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Sugestão de prazo a partir de movimentação',
+            description: 'Em movimentações relevantes (decisões, sentenças, citações, audiências), aparece o botão "Sugerir prazo". Ao clicar, um painel inline pré-preenchido é exibido com o título e data sugerida (+15 dias). O usuário pode ajustar e confirmar — prazo NÃO é criado automaticamente, apenas sob confirmação explícita.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Detecção automática de tribunal pelo número CNJ',
+            description: 'O sistema interpreta o número CNJ (20 dígitos) e detecta automaticamente o tribunal correto (posição 13 = segmento J, posições 14-15 = código TT). Suporte completo a todos os 27 TJs estaduais, 6 TRFs federais, 24 TRTs trabalhistas, TREs eleitorais, STJ, STM, TST e TSE.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.130',
     date: '19/05/2026',

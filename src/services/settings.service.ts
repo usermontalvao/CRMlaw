@@ -63,6 +63,12 @@ export interface ModulesConfig {
   tasks_enabled: boolean;
 }
 
+export interface DatajudKeyConfig {
+  key: string;           // chave pública CNJ (ex: cDZHYzl...)
+  invalid: boolean;      // true quando a última chamada retornou 401/403
+  invalid_since: string | null; // ISO datetime da primeira falha
+}
+
 export interface SystemSetting {
   id: string;
   key: string;
@@ -127,15 +133,14 @@ class SettingsService {
       .from('system_settings')
       .select('value')
       .eq('key', key)
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null;
-      console.error('Erro ao buscar configuração:', error);
-      throw new Error(error.message);
+      return null; // silencia erros de chave não encontrada
     }
 
-    return data?.value as T;
+    return data?.value as T ?? null;
   }
 
   /**
@@ -213,6 +218,45 @@ class SettingsService {
    */
   async updateDjenConfig(config: DjenConfig, userName?: string): Promise<void> {
     await this.updateSetting('djen_config', config, userName);
+  }
+
+  // ── Chave pública DataJud (CNJ) ────────────────────────────────────────────
+
+  /** Chave pública CNJ padrão (fallback quando nenhuma configurada) */
+  readonly DATAJUD_DEFAULT_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';
+
+  async getDatajudKeyConfig(): Promise<DatajudKeyConfig> {
+    const value = await this.getSetting<DatajudKeyConfig>('datajud_key_config');
+    return value ?? { key: this.DATAJUD_DEFAULT_KEY, invalid: false, invalid_since: null };
+  }
+
+  async setDatajudKey(key: string, userName?: string): Promise<void> {
+    const current = await this.getDatajudKeyConfig();
+    await this.updateSetting<DatajudKeyConfig>(
+      'datajud_key_config',
+      { ...current, key: key.trim(), invalid: false, invalid_since: null },
+      userName,
+    );
+  }
+
+  /** Chamado automaticamente pelo datajud.service quando recebe 401/403 */
+  async markDatajudKeyInvalid(): Promise<void> {
+    const current = await this.getDatajudKeyConfig();
+    if (current.invalid) return; // já marcado, evita loop
+    await this.updateSetting<DatajudKeyConfig>('datajud_key_config', {
+      ...current,
+      invalid: true,
+      invalid_since: current.invalid_since ?? new Date().toISOString(),
+    });
+  }
+
+  async clearDatajudKeyInvalid(): Promise<void> {
+    const current = await this.getDatajudKeyConfig();
+    await this.updateSetting<DatajudKeyConfig>('datajud_key_config', {
+      ...current,
+      invalid: false,
+      invalid_since: null,
+    });
   }
 
   /**
