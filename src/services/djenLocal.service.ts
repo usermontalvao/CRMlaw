@@ -633,6 +633,29 @@ class DjenLocalService {
   async vincularProcesso(id: string, processId: string): Promise<DjenComunicacaoLocal> {
     return this.updateComunicacao(id, { process_id: processId, lida: false });
   }
+
+  /**
+   * Retorna o nome_orgao mais recente do DJEN para cada process_id informado.
+   * Útil para exibir a vara real (extraída do DJE) em vez do campo court do processo.
+   */
+  async getOrgaoByProcessIds(processIds: string[]): Promise<Map<string, string>> {
+    if (!processIds.length) return new Map();
+    const { data } = await supabase
+      .from(this.tableName)
+      .select('process_id, nome_orgao, data_disponibilizacao')
+      .in('process_id', processIds)
+      .eq('ativo', true)
+      .not('nome_orgao', 'is', null)
+      .order('data_disponibilizacao', { ascending: false });
+
+    const result = new Map<string, string>();
+    for (const row of data ?? []) {
+      if (row.process_id && row.nome_orgao && !result.has(row.process_id)) {
+        result.set(row.process_id, row.nome_orgao);
+      }
+    }
+    return result;
+  }
   /**
    * Retorna IDs de processos que têm comunicações não lidas (para badge na lista)
    */

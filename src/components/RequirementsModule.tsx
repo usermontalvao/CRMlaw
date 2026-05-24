@@ -41,6 +41,9 @@ import {
   Zap,
   RefreshCw,
   Download,
+  Archive,
+  ArchiveRestore,
+  Scale,
 } from 'lucide-react';
 import { formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
@@ -62,6 +65,7 @@ import { profileService } from '../services/profile.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { processService } from '../services/process.service';
+import { djenLocalService } from '../services/djenLocal.service';
 import type { Requirement, RequirementStatus, BenefitType, RequirementStatusHistoryEntry } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
 import ClientForm from './ClientForm';
@@ -565,9 +569,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<RequirementFormData>(emptyForm);
   const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterProtocol, setFilterProtocol] = useState('');
   const [filterBeneficiary, setFilterBeneficiary] = useState('');
   const [filterCPF, setFilterCPF] = useState('');
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [filterBenefitType, setFilterBenefitType] = useState<BenefitType | ''>('');
   const [filterOnlyMsRisk, setFilterOnlyMsRisk] = useState(false);
   const [activeStatusTab, setActiveStatusTab] = useState<RequirementStatus | 'todos'>('todos');
@@ -600,6 +607,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   });
   const [loadingLinkedProcesses, setLoadingLinkedProcesses] = useState(false);
   const [requirementsWithMs, setRequirementsWithMs] = useState<Set<string>>(new Set());
+  const [requirementsMsMap, setRequirementsMsMap] = useState<Map<string, { process_code: string; court: string | null; djenOrgao: string | null }>>(new Map());
   const [requirementsWithProcess, setRequirementsWithProcess] = useState<Set<string>>(new Set());
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
@@ -714,6 +722,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       // Atualizar lista de requerimentos com MS
       if (ms && !requirementsWithMs.has(selectedRequirementForView.id)) {
         setRequirementsWithMs(prev => new Set([...prev, selectedRequirementForView.id]));
+        setRequirementsMsMap(prev => new Map([...prev, [selectedRequirementForView.id, { process_code: ms.process_code ?? '', court: ms.court ?? null }]]));
       }
 
       // Atualizar lista de requerimentos indeferidos com processo
@@ -1339,30 +1348,61 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     try {
       const allProcesses = await processService.listProcesses();
       const msProcesses = allProcesses.filter(p => p.requirement_role === 'ms' && p.requirement_id);
-      const requirementIdsWithMs = new Set(msProcesses.map(p => p.requirement_id!));
-      setRequirementsWithMs(requirementIdsWithMs);
+
+      // Busca nome_orgao do DJEN para cada processo MS (vara real, não o campo court)
+      const msProcessIds = msProcesses.map(p => p.id);
+      const djenOrgaoMap = await djenLocalService.getOrgaoByProcessIds(msProcessIds);
+
+      // Mapa: requirement_id → { process_code, court, djenOrgao }
+      // djenOrgao tem prioridade sobre court para exibir a vara
+      const msMap = new Map(msProcesses.map(p => [
+        p.requirement_id!,
+        {
+          process_code: p.process_code ?? '',
+          court: p.court ?? null,
+          djenOrgao: djenOrgaoMap.get(p.id) ?? null,
+        },
+      ]));
+
+      setRequirementsWithMs(new Set(msProcesses.map(p => p.requirement_id!)));
+      setRequirementsMsMap(msMap);
     } catch (err) {
       console.error('Erro ao buscar processos MS:', err);
     }
   };
 
+  // Separar ativos e arquivados
+  const activeRequirements = useMemo(() => requirements.filter((r) => !r.archived), [requirements]);
+  const archivedRequirements = useMemo(() => requirements.filter((r) => r.archived), [requirements]);
+
+  const applySearch = (list: Requirement[], term: string) => {
+    if (!term.trim()) return list;
+    const normalized = normalizeSearchText(term);
+    const digits = term.replace(/\D/g, '');
+    return list.filter((req) =>
+      matchesNormalizedSearch(normalized, [req.beneficiary, req.protocol ?? '']) ||
+      (digits && req.cpf.replace(/\D/g, '').includes(digits))
+    );
+  };
+
   const filteredRequirements = useMemo(() => {
-    let filtered = requirements;
+    let filtered = activeRequirements;
 
     if (activeStatusTab !== 'todos') {
       filtered = filtered.filter((req) => req.status === activeStatusTab);
     }
 
+    filtered = applySearch(filtered, searchTerm);
+
+    // filtros avançados (legado — mantidos para compatibilidade)
     if (filterProtocol.trim()) {
       const term = normalizeSearchText(filterProtocol);
       filtered = filtered.filter((req) => matchesNormalizedSearch(term, [req.protocol ?? '']));
     }
-
     if (filterBeneficiary.trim()) {
       const term = normalizeSearchText(filterBeneficiary);
       filtered = filtered.filter((req) => matchesNormalizedSearch(term, [req.beneficiary]));
     }
-
     if (filterCPF.trim()) {
       const term = filterCPF.replace(/\D/g, '');
       filtered = filtered.filter((req) => req.cpf.replace(/\D/g, '').includes(term));
@@ -1410,7 +1450,19 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
-  }, [requirements, activeStatusTab, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
+  }, [activeRequirements, activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
+
+  const filteredArchivedReqs = useMemo(
+    () => applySearch(archivedRequirements, searchTerm),
+    [archivedRequirements, searchTerm],
+  );
+
+  // Auto-expande arquivados quando a busca tem resultados lá
+  useEffect(() => {
+    if (searchTerm.trim() && filteredArchivedReqs.length > 0) {
+      setArchivedExpanded(true);
+    }
+  }, [searchTerm, filteredArchivedReqs.length]);
 
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(filteredRequirements.length / pageSize));
@@ -1422,7 +1474,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
   const statusCounts = useMemo(() => {
     const counts: Record<RequirementStatus | 'todos', number> = {
-      todos: requirements.length,
+      todos: activeRequirements.length,
       aguardando_confeccao: 0,
       em_analise: 0,
       em_exigencia: 0,
@@ -1432,12 +1484,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       ajuizado: 0,
     };
 
-    requirements.forEach((req) => {
+    activeRequirements.forEach((req) => {
       counts[req.status]++;
     });
 
     return counts;
-  }, [requirements]);
+  }, [activeRequirements]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1652,6 +1704,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         }
       }
       await autoUpdatePericiaStatuses(data);
+      await fetchRequirementsWithMs(); // Manter mapa MS atualizado
 
       // Carregar processos para requerimentos indeferidos
       const indeferidos = data.filter(req => req.status === 'indeferido');
@@ -1679,7 +1732,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeStatusTab, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
+  }, [activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
 
   useEffect(() => {
     if (!selectedRequirementForView?.id) {
@@ -1971,6 +2024,29 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     } catch (err: any) {
       setError(err.message || 'Não foi possível remover o requerimento.');
       toast.error(err.message || 'Não foi possível remover o requerimento.');
+    }
+  };
+
+  const handleArchiveRequirement = async (id: string, archived: boolean) => {
+    if (archived) {
+      const req = requirements.find((r) => r.id === id);
+      const confirmed = await confirmDelete({
+        title: 'Arquivar requerimento',
+        entityName: req?.protocol || req?.beneficiary || undefined,
+        message: 'Deseja arquivar este requerimento? Ele ficará visível na seção "Arquivados" e poderá ser restaurado a qualquer momento.',
+        confirmLabel: 'Arquivar',
+      });
+      if (!confirmed) return;
+    }
+    setArchivingId(id);
+    try {
+      const updated = await requirementService.archiveRequirement(id, archived);
+      setRequirements((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      toast.success(archived ? 'Requerimento arquivado' : 'Requerimento restaurado');
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível arquivar o requerimento.');
+    } finally {
+      setArchivingId(null);
     }
   };
 
@@ -3748,7 +3824,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   })() : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       {schedulePromptId && (
         <div className="bg-cyan-50 border border-cyan-200 text-cyan-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -3763,157 +3839,177 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       )}
 
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-r from-blue-50 via-white to-amber-50" />
-        <div className="relative p-3 sm:p-4">
-        <div className="flex items-center justify-between gap-2 mb-2 sm:hidden">
-          <button
-            type="button"
-            onClick={() => setMobileControlsOpen((prev) => !prev)}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700"
-          >
-            {mobileControlsOpen ? 'Ocultar controles' : 'Mostrar controles'}
-            <ChevronDown className={`w-3 h-3 transition-transform ${mobileControlsOpen ? 'rotate-180' : ''}`} />
-          </button>
-          <button
-            onClick={() => handleOpenModal(undefined)}
-            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white"
-          >
-            <Plus className="w-3 h-3" /> Novo
-          </button>
-        </div>
+      {/* ── Painel de controle ─────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        {/* Barra de acento laranja no topo */}
+        <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400" />
 
-        <div className={`${mobileControlsOpen ? 'block' : 'hidden'} sm:block`}>
-          <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <button
-                onClick={() => setActiveStatusTab('todos')}
-                className={`inline-flex items-center rounded-lg px-2.5 py-1.5 text-[11px] font-semibold leading-none transition ${
-                  activeStatusTab === 'todos'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                Todos ({statusCounts.todos})
-              </button>
-              {STATUS_OPTIONS.map((status) => (
-                <button
-                  key={status.key}
-                  onClick={() => setActiveStatusTab(status.key)}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium leading-none transition ${
-                    activeStatusTab === status.key
-                      ? `${status.badge} shadow-sm`
-                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {status.icon && <status.icon className="h-3 w-3" />}
-                  <span className="whitespace-nowrap">{status.label.replace('Aguardando ', '')} ({statusCounts[status.key]})</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-              <button
-                onClick={handleExportExcel}
-                disabled={exportingExcel}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-green-500/40 bg-green-50/50 px-2.5 text-[11px] font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"
-              >
-                {exportingExcel ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileSpreadsheet className="h-3 w-3" />}
-                Excel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleOpenMsTemplateModal}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-50/50 px-2.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-50"
-                title="Gerenciar modelo Word (DOCX) para o MS"
-              >
-                <Settings className="h-3 w-3" />
-                Gerenciar MS
-              </button>
-
-              <button
-                onClick={() => handleOpenModal(undefined)}
-                className="hidden sm:inline-flex h-8 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white hover:bg-blue-700"
-              >
-                <Plus className="h-3 w-3" />
-                Novo Requerimento
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Filtros avançados</span>
+        <div className="p-4 sm:p-5">
+          {/* Mobile toggle */}
+          <div className="flex items-center justify-between gap-2 mb-3 sm:hidden">
             <button
               type="button"
-              onClick={() => setShowFilters((prev) => !prev)}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
+              onClick={() => setMobileControlsOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
             >
-              {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
-              <ChevronDown className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+              <Settings className="w-3.5 h-3.5" />
+              {mobileControlsOpen ? 'Ocultar filtros' : 'Filtros e busca'}
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileControlsOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              onClick={() => handleOpenModal(undefined)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" /> Novo
             </button>
           </div>
 
-          {showFilters && (
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={filterProtocol}
-                  onChange={(event) => setFilterProtocol(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Protocolo"
-                />
-              </div>
-
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={filterBeneficiary}
-                  onChange={(event) => setFilterBeneficiary(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Beneficiário"
-                />
-              </div>
-
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={filterCPF}
-                  onChange={(event) => setFilterCPF(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="CPF"
-                />
-              </div>
-
-              <select
-                value={filterBenefitType}
-                onChange={(event) => setFilterBenefitType(event.target.value as BenefitType | '')}
-                className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Todos os tipos</option>
-                {BENEFIT_TYPES.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
+          <div className={`${mobileControlsOpen ? 'block' : 'hidden'} sm:block space-y-4`}>
+            {/* Linha 1: status tabs + botões de ação */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              {/* Status tabs */}
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setActiveStatusTab('todos')}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold leading-none transition-all duration-150 ${
+                    activeStatusTab === 'todos'
+                      ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
+                      : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Todos
+                  <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-black px-1.5 min-w-[1.25rem] h-4 ${
+                    activeStatusTab === 'todos' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>{statusCounts.todos}</span>
+                </button>
+                {STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status.key}
+                    onClick={() => setActiveStatusTab(status.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold leading-none transition-all duration-150 ${
+                      activeStatusTab === status.key
+                        ? `${status.badge} shadow-md`
+                        : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                    }`}
+                  >
+                    {status.icon && <status.icon className="h-3 w-3" />}
+                    <span className="whitespace-nowrap hidden sm:inline">{status.label.replace('Aguardando ', '')}</span>
+                    <span className="whitespace-nowrap sm:hidden">{status.label.split(' ')[0]}</span>
+                    {statusCounts[status.key] > 0 && (
+                      <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-black px-1.5 min-w-[1.25rem] h-4 ${
+                        activeStatusTab === status.key ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>{statusCounts[status.key]}</span>
+                    )}
+                  </button>
                 ))}
-              </select>
+              </div>
 
-              <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={filterOnlyMsRisk}
-                  onChange={(e) => setFilterOnlyMsRisk(e.target.checked)}
-                  className="accent-red-600"
-                />
-                Somente risco MS (90+)
-              </label>
+              {/* Botões de ação */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 disabled:opacity-50 transition-all"
+                >
+                  {exportingExcel ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileSpreadsheet className="h-3 w-3" />}
+                  Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenMsTemplateModal}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 hover:border-amber-300 transition-all"
+                  title="Gerenciar modelo Word (DOCX) para o MS"
+                >
+                  <Settings className="h-3 w-3" />
+                  <span className="hidden sm:inline">Gerenciar MS</span>
+                  <span className="sm:hidden">MS</span>
+                </button>
+                <button
+                  onClick={() => handleOpenModal(undefined)}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-[11px] font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Novo Requerimento
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Linha 2: busca */}
+            <div className="relative group">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+                <Search className="w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por beneficiário, protocolo ou CPF..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 focus:bg-white transition-all"
+              />
+              {searchTerm ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : null}
+            </div>
+
+            {/* Linha 3: filtros avançados */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowFilters((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition-colors"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+                {showFilters ? 'Ocultar filtros avançados' : 'Filtros avançados'}
+              </button>
+
+              {showFilters && (
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 animate-in slide-in-from-top-1 duration-150">
+                  {[
+                    { value: filterProtocol, onChange: (v: string) => setFilterProtocol(v), placeholder: 'Protocolo' },
+                    { value: filterBeneficiary, onChange: (v: string) => setFilterBeneficiary(v), placeholder: 'Beneficiário' },
+                    { value: filterCPF, onChange: (v: string) => setFilterCPF(v), placeholder: 'CPF' },
+                  ].map(({ value, onChange, placeholder }) => (
+                    <div key={placeholder} className="relative">
+                      <Search className="absolute left-2.5 top-1/2 w-3 h-3 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-7 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
+                        placeholder={placeholder}
+                      />
+                    </div>
+                  ))}
+                  <select
+                    value={filterBenefitType}
+                    onChange={(e) => setFilterBenefitType(e.target.value as BenefitType | '')}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
+                  >
+                    <option value="">Todos os tipos</option>
+                    {BENEFIT_TYPES.map((type) => (
+                      <option key={type.key} value={type.key}>{type.label}</option>
+                    ))}
+                  </select>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={filterOnlyMsRisk}
+                      onChange={(e) => setFilterOnlyMsRisk(e.target.checked)}
+                      className="accent-orange-500 w-3.5 h-3.5"
+                    />
+                    Somente risco MS (90+ dias)
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3924,184 +4020,284 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {loading ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-16 flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-          <p className="text-slate-600">Carregando requerimentos...</p>
+        /* Skeleton loader */
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+          <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400 animate-pulse" />
+          <div className="divide-y divide-slate-100">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-6 py-4 animate-pulse">
+                <div className="w-24 h-4 bg-slate-200 rounded-full" style={{ opacity: 1 - i * 0.15 }} />
+                <div className="flex-1 h-4 bg-slate-100 rounded-full" />
+                <div className="w-28 h-6 bg-slate-200 rounded-full" />
+                <div className="w-20 h-4 bg-slate-100 rounded-full" />
+                <div className="flex gap-2">
+                  {[...Array(4)].map((_, j) => <div key={j} className="w-7 h-7 bg-slate-100 rounded-lg" />)}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : filteredRequirements.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-          <p className="text-slate-600">Nenhum requerimento encontrado.</p>
+        /* Empty state */
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-16 flex flex-col items-center gap-4 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
+            <ClipboardList className="w-8 h-8 text-slate-400" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-slate-700">Nenhum requerimento encontrado</p>
+            <p className="text-sm text-slate-400 mt-1">
+              {searchTerm ? `Sem resultados para "${searchTerm}"` : 'Crie o primeiro requerimento usando o botão acima'}
+            </p>
+          </div>
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+            >
+              <X className="w-4 h-4" /> Limpar busca
+            </button>
+          )}
         </div>
       ) : (
         <React.Fragment>
-        {/* Desktop: Tabela | Mobile: Cards */}
-        <div className="hidden lg:block bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {/* ── Desktop: Tabela ─────────────────────────────────────────────── */}
+        <div className="hidden lg:block rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] divide-y divide-gray-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Protocolo
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Beneficiário
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    CPF
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Tipo de Benefício
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Data de Entrada
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Ações
-                  </th>
+            <table className="w-full min-w-[860px] divide-y divide-slate-100">
+              <thead>
+                <tr className="bg-gradient-to-r from-slate-50 to-slate-50/60">
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Protocolo</th>
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Beneficiário</th>
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">CPF</th>
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Benefício</th>
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+                  <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Entrada</th>
+                  <th className="px-5 py-3.5 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ações</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-slate-100">
                 {paginatedRequirements.map((requirement) => {
                   const isUpdating = statusUpdatingId === requirement.id;
                   const statusConfig = getStatusConfig(requirement.status);
                   const periciaNextAt = requirement.status === 'aguardando_pericia' ? getPericiaNextAt(requirement) : null;
                   const analysisDays = requirement.status === 'em_analise' ? getAnalysisDays(requirement) : null;
-                  const showMandadoRisk = isMandadoRisk(requirement);
+                  const msJaCriado = requirementsWithMs.has(requirement.id);
+                  const showMandadoRisk = isMandadoRisk(requirement) && !msJaCriado;
                   const analysisLevel = getAnalysisAlertLevel(typeof analysisDays === 'number' ? analysisDays : null);
+
+                  // Cor da borda esquerda por status
+                  const rowAccent =
+                    requirement.status === 'em_exigencia'    ? 'border-l-[3px] border-l-amber-500'  :
+                    requirement.status === 'em_analise'      ? 'border-l-[3px] border-l-blue-500'   :
+                    requirement.status === 'aguardando_pericia' ? 'border-l-[3px] border-l-cyan-500':
+                    requirement.status === 'aguardando_confeccao' ? 'border-l-[3px] border-l-indigo-400' :
+                    requirement.status === 'deferido'        ? 'border-l-[3px] border-l-green-500'  :
+                    requirement.status === 'indeferido'      ? 'border-l-[3px] border-l-red-500'    :
+                    requirement.status === 'ajuizado'        ? 'border-l-[3px] border-l-slate-500'  : '';
+
                   return (
-                    <tr key={requirement.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-mono text-gray-900">{requirement.protocol}</div>
+                    <tr
+                      key={requirement.id}
+                      className={`group hover:bg-orange-50/40 transition-colors duration-100 ${rowAccent}`}
+                    >
+                      {/* Protocolo */}
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 group-hover:bg-orange-100/60 px-2 py-1 rounded-md transition-colors">
+                          {requirement.protocol || '—'}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-[200px]">
-                        <div className="truncate">{requirement.beneficiary}</div>
+
+                      {/* Beneficiário */}
+                      <td className="px-5 py-4 max-w-[200px]">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{requirement.beneficiary}</p>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{requirement.cpf}</div>
+
+                      {/* CPF */}
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="text-xs text-slate-500 font-mono">{requirement.cpf}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{getBenefitTypeLabel(requirement.benefit_type)}</div>
+
+                      {/* Benefício */}
+                      <td className="px-5 py-4">
+                        <span className="text-xs text-slate-600">{getBenefitTypeLabel(requirement.benefit_type)}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+
+                      {/* Status */}
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
                           {statusConfig?.icon && (
-                            <statusConfig.icon 
-                              className={`w-4 h-4 ${
-                                statusConfig.key === 'em_exigencia' ? 'animate-pulse text-amber-500 drop-shadow-sm' :
-                                statusConfig.key === 'aguardando_pericia' ? 'animate-bounce text-cyan-500 drop-shadow-sm' :
-                                statusConfig.key === 'aguardando_confeccao' ? 'animate-pulse text-indigo-500 drop-shadow-sm' :
-                                statusConfig.key === 'deferido' ? 'animate-pulse text-green-500 drop-shadow-sm' :
-                                'text-slate-600'
-                              }`} 
-                            />
+                            <statusConfig.icon className={`w-3.5 h-3.5 shrink-0 ${
+                              statusConfig.key === 'em_exigencia'       ? 'text-amber-500 animate-pulse'  :
+                              statusConfig.key === 'aguardando_pericia' ? 'text-cyan-500 animate-bounce'  :
+                              statusConfig.key === 'aguardando_confeccao' ? 'text-indigo-400 animate-pulse':
+                              statusConfig.key === 'deferido'           ? 'text-green-500'                :
+                              'text-slate-500'
+                            }`} />
                           )}
                           <select
                             value={requirement.status}
                             onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
                             disabled={isUpdating}
-                            className={`text-xs font-semibold px-3 py-1 rounded-full border-0 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition ${
+                            className={`text-xs font-bold px-2.5 py-1 rounded-full border-0 ring-1 ring-inset ring-white/30 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-60 transition-all ${
                               statusConfig?.badge ?? 'bg-slate-200 text-slate-700'
                             }`}
                           >
                             {STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
                             ))}
                           </select>
-                          {isUpdating && (
-                            <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                          )}
+                          {isUpdating && <Loader2 className="w-3.5 h-3.5 text-orange-500 animate-spin" />}
                         </div>
+
+                        {/* Sub-info de status */}
                         {requirement.status === 'em_exigencia' && (
-                          <p className="text-amber-600 text-xs font-medium mt-2">
+                          <p className="text-amber-600 text-[11px] font-semibold mt-1.5 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
                             Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
                           </p>
                         )}
                         {requirement.status === 'aguardando_pericia' && periciaNextAt && (
-                          <p className="text-cyan-700 text-xs font-medium mt-2">
-                            Próxima perícia: {formatDateTime(periciaNextAt)}
+                          <p className="text-cyan-700 text-[11px] font-semibold mt-1.5 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {formatDateTime(periciaNextAt)}
                           </p>
                         )}
                         {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (
-                          <div className={`text-xs font-medium mt-2 ${showMandadoRisk ? 'text-red-600' : 'text-slate-600'} leading-tight break-words max-w-[300px]`}>
+                          <div className="mt-1.5">
                             {showMandadoRisk && (
-                              <div className="flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md border border-red-200">
-                                <AlertTriangle className="w-3 h-3 flex-shrink-0 text-red-500" />
-                                <span className="text-red-700 font-medium">
-                                  Mandado de segurança — {analysisDays} dias
-                                </span>
+                              <div className="inline-flex items-center gap-1 bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                MS — {analysisDays}d
                               </div>
                             )}
                             {!showMandadoRisk && analysisLevel === 'high' && (
-                              <div className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md border border-orange-200">
-                                <AlertTriangle className="w-3 h-3 flex-shrink-0 text-orange-500" />
-                                <span className="text-orange-700 font-medium">Atenção — {analysisDays} dias</span>
+                              <div className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                Atenção — {analysisDays}d
                               </div>
                             )}
                             {!showMandadoRisk && analysisLevel === 'medium' && (
-                              <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200">
-                                <AlertTriangle className="w-3 h-3 flex-shrink-0 text-yellow-600" />
-                                <span className="text-yellow-800 font-medium">Alerta — {analysisDays} dias</span>
+                              <div className="inline-flex items-center gap-1 bg-yellow-50 border border-yellow-200 text-yellow-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                {analysisDays}d em análise
                               </div>
                             )}
                             {!showMandadoRisk && analysisLevel === 'none' && (
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                Em análise há {analysisDays} dias
-                              </span>
+                              <span className="text-[11px] text-slate-400">{analysisDays}d em análise</span>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex items-center gap-2">
-                          {formatDate(requirement.entry_date)}
-                          {requirementsWithMs.has(requirement.id) && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
-                              MS
-                            </span>
-                          )}
+
+                      {/* Data de entrada */}
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-600">{formatDate(requirement.entry_date)}</span>
+                          {msJaCriado && (() => {
+                            const msData = requirementsMsMap.get(requirement.id);
+                            const hasCode = !!(msData?.process_code);
+                            const court = msData?.djenOrgao || (msData?.court && msData.court !== 'Mandado de Segurança' ? msData.court : null);
+                            return (
+                              <div className="relative group/msbadge">
+                                {/* Badge */}
+                                <span className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm shadow-purple-400/40 cursor-default select-none">
+                                  <Scale className="w-2.5 h-2.5 shrink-0" />
+                                  MS
+                                  <span className="relative flex h-1.5 w-1.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                                  </span>
+                                </span>
+                                {/* Tooltip: pb-2 cria ponte invisível entre badge e painel */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 w-64 z-50
+                                                pointer-events-none group-hover/msbadge:pointer-events-auto
+                                                opacity-0 group-hover/msbadge:opacity-100
+                                                transition-all duration-150 scale-95 group-hover/msbadge:scale-100">
+                                  <div className="rounded-xl bg-slate-900 px-3.5 py-3 shadow-2xl shadow-black/30 text-left">
+                                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 mb-2 flex items-center gap-1.5">
+                                      <Scale className="w-3 h-3" /> Mandado de Segurança
+                                    </p>
+                                    {/* Número + copiar */}
+                                    <div className="flex items-center justify-between gap-2">
+                                      {hasCode ? (
+                                        <p className="font-mono text-xs font-semibold text-white leading-snug flex-1 break-all">{msData!.process_code}</p>
+                                      ) : (
+                                        <p className="text-xs text-slate-400 italic flex-1">Número não cadastrado</p>
+                                      )}
+                                      {hasCode && (
+                                        <button
+                                          type="button"
+                                          onClick={() => navigator.clipboard.writeText(msData!.process_code)}
+                                          className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                                          title="Copiar número"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                                          </svg>
+                                        </button>
+                                      )}
+                                    </div>
+                                    {/* Vara */}
+                                    <div className="mt-2 pt-2 border-t border-white/10">
+                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-0.5">Tramitando em</p>
+                                      {court ? (
+                                        <p className="text-[11px] text-slate-300 flex items-center gap-1">
+                                          <Scale className="w-3 h-3 text-slate-500 shrink-0" />{court}
+                                        </p>
+                                      ) : (
+                                        <p className="text-[11px] text-slate-500 italic">Vara não informada no processo</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-center">
+                                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900" />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
                           {requirement.status === 'indeferido' && requirementsWithProcess.has(requirement.id) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 border border-indigo-200 shadow-sm">
-                              <FileText className="w-3 h-3" />
-                              Processo
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <FileText className="w-2.5 h-2.5" />Proc.
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
+
+                      {/* Ações */}
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          {[
+                            { icon: MessageSquare, label: 'WhatsApp', color: 'text-green-600 hover:bg-green-50 hover:text-green-700', action: () => handleWhatsApp(requirement.phone) },
+                            { icon: Eye, label: 'Detalhes', color: 'text-slate-500 hover:bg-orange-50 hover:text-orange-600', action: () => handleViewRequirement(requirement) },
+                            { icon: Edit2, label: 'Editar', color: 'text-slate-500 hover:bg-blue-50 hover:text-blue-600', action: () => handleOpenModal(requirement) },
+                          ].map(({ icon: Icon, label, color, action }) => (
+                            <button
+                              key={label}
+                              onClick={action}
+                              title={label}
+                              className={`p-1.5 rounded-lg transition-all ${color}`}
+                            >
+                              <Icon className="w-4 h-4" />
+                            </button>
+                          ))}
                           <button
-                            onClick={() => handleWhatsApp(requirement.phone)}
-                            className="text-green-600 hover:text-green-900 transition-colors"
-                            title="WhatsApp"
+                            onClick={() => handleArchiveRequirement(requirement.id, true)}
+                            disabled={archivingId === requirement.id}
+                            title="Arquivar"
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all disabled:opacity-40"
                           >
-                            <MessageSquare className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleViewRequirement(requirement)}
-                            className="text-cyan-600 hover:text-cyan-900 transition-colors"
-                            title="Ver detalhes"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenModal(requirement)}
-                            className="text-blue-600 hover:text-blue-900 transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-5 h-5" />
+                            {archivingId === requirement.id
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <Archive className="w-4 h-4" />}
                           </button>
                           <button
                             onClick={() => handleDeleteRequirement(requirement.id)}
-                            className="text-red-600 hover:text-red-900 transition-colors"
                             title="Excluir"
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
                           >
-                            <Trash2 className="w-5 h-5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -4113,155 +4309,192 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </div>
         </div>
 
-        {/* Mobile: Cards */}
-        <div className="lg:hidden space-y-3">
+        {/* ── Mobile: Cards ──────────────────────────────────────────────── */}
+        <div className="lg:hidden space-y-2.5">
           {paginatedRequirements.map((requirement) => {
             const isUpdating = statusUpdatingId === requirement.id;
             const statusConfig = getStatusConfig(requirement.status);
             const periciaNextAt = requirement.status === 'aguardando_pericia' ? getPericiaNextAt(requirement) : null;
             const analysisDays = requirement.status === 'em_analise' ? getAnalysisDays(requirement) : null;
-            const showMandadoRisk = isMandadoRisk(requirement);
+            const msJaCriado = requirementsWithMs.has(requirement.id);
+            const showMandadoRisk = isMandadoRisk(requirement) && !msJaCriado;
             const analysisLevel = getAnalysisAlertLevel(typeof analysisDays === 'number' ? analysisDays : null);
+
+            const cardAccentColor =
+              requirement.status === 'em_exigencia'       ? 'bg-amber-500'  :
+              requirement.status === 'em_analise'         ? 'bg-blue-500'   :
+              requirement.status === 'aguardando_pericia' ? 'bg-cyan-500'   :
+              requirement.status === 'aguardando_confeccao' ? 'bg-indigo-400':
+              requirement.status === 'deferido'           ? 'bg-green-500'  :
+              requirement.status === 'indeferido'         ? 'bg-red-500'    :
+              'bg-slate-500';
+
             return (
               <div
                 key={requirement.id}
-                className="bg-white border border-gray-200 rounded-xl p-4 space-y-3"
+                className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 truncate">{requirement.beneficiary}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{requirement.protocol || 'Sem protocolo'}</p>
-                  </div>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold shrink-0 ${
-                      statusConfig?.badge ?? 'bg-slate-200 text-slate-700'
-                    } ${statusConfig?.animation ?? ''}`}
-                    style={statusConfig?.animationStyle}
-                  >
-                    {getStatusLabel(requirement.status)}
-                    {(requirement.status === 'em_analise' || isUpdating) && (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    )}
-                  </span>
-                </div>
+                {/* Barra de acento no topo */}
+                <div className={`h-1 w-full ${cardAccentColor}`} />
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-500">CPF:</span>
-                    <span className="ml-1 text-slate-700">{requirement.cpf}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Entrada:</span>
-                    <div className="flex items-center gap-1">
-                      <span className="ml-1 text-slate-700">{formatDate(requirement.entry_date)}</span>
-                      {requirementsWithMs.has(requirement.id) && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
-                          MS
-                        </span>
-                      )}
-                      {requirement.status === 'indeferido' && requirementsWithProcess.has(requirement.id) && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 border border-indigo-200 shadow-sm">
-                          <FileText className="w-3 h-3" />
-                          Processo
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-500">Benefício:</span>
-                    <span className="ml-1 text-slate-700">{getBenefitTypeLabel(requirement.benefit_type)}</span>
-                  </div>
-                  {requirement.status === 'em_exigencia' && (
-                    <div className="col-span-2">
-                      <span className="text-amber-600 font-medium">
-                        Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
-                      </span>
-                    </div>
-                  )}
-                  {requirement.status === 'aguardando_pericia' && periciaNextAt && (
-                    <div className="col-span-2">
-                      <span className="text-cyan-700 font-medium">
-                        Próxima perícia: {formatDateTime(periciaNextAt)}
-                      </span>
-                    </div>
-                  )}
-                  {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (
-                    <div className="col-span-2">
-                      <div className={`${showMandadoRisk ? 'text-red-600' : 'text-slate-600'} text-xs font-medium leading-tight break-words`}>
-                        {showMandadoRisk && (
-                          <div className="flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md border border-red-200">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-red-500" />
-                            <span className="text-red-700 font-medium">
-                              Mandado de segurança — {analysisDays} dias
-                            </span>
-                          </div>
-                        )}
-                        {!showMandadoRisk && analysisLevel === 'high' && (
-                          <div className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md border border-orange-200">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-orange-500" />
-                            <span className="text-orange-700 font-medium">Atenção — {analysisDays} dias</span>
-                          </div>
-                        )}
-                        {!showMandadoRisk && analysisLevel === 'medium' && (
-                          <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-yellow-600" />
-                            <span className="text-yellow-800 font-medium">Alerta — {analysisDays} dias</span>
-                          </div>
-                        )}
-                        {!showMandadoRisk && analysisLevel === 'none' && (
-                          <span className="inline-flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            Em análise há {analysisDays} dias
+                <div className="p-4 space-y-3">
+                  {/* Cabeçalho */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-slate-900 truncate leading-tight">{requirement.beneficiary}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[11px] text-slate-400 font-mono">{requirement.protocol || 'Sem protocolo'}</span>
+                        {msJaCriado && (() => {
+                          const msData = requirementsMsMap.get(requirement.id);
+                          const hasCode = !!(msData?.process_code);
+                          const court = msData?.court && msData.court !== 'Mandado de Segurança' ? msData.court : null;
+                          return (
+                            <div className="relative group/msbadge-m">
+                              <span className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm shadow-purple-400/40 cursor-default select-none">
+                                <Scale className="w-2.5 h-2.5 shrink-0" />
+                                MS
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                                </span>
+                              </span>
+                              {/* pb-2 = invisible bridge to keep hover alive when moving to tooltip */}
+                              <div className="absolute bottom-full left-0 pb-2 w-64 z-50
+                                              pointer-events-none group-hover/msbadge-m:pointer-events-auto
+                                              opacity-0 group-hover/msbadge-m:opacity-100
+                                              transition-all duration-150 scale-95 group-hover/msbadge-m:scale-100">
+                                <div className="rounded-xl bg-slate-900 px-3.5 py-3 shadow-2xl shadow-black/30 text-left">
+                                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 mb-2 flex items-center gap-1.5">
+                                    <Scale className="w-3 h-3" /> Mandado de Segurança
+                                  </p>
+                                  <div className="flex items-center justify-between gap-2">
+                                    {hasCode ? (
+                                      <p className="font-mono text-xs font-semibold text-white leading-snug flex-1 break-all">{msData!.process_code}</p>
+                                    ) : (
+                                      <p className="text-xs text-slate-400 italic flex-1">Número não cadastrado</p>
+                                    )}
+                                    {hasCode && (
+                                      <button type="button" onClick={() => navigator.clipboard.writeText(msData!.process_code)}
+                                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors" title="Copiar número">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 pt-2 border-t border-white/10">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-0.5">Tramitando em</p>
+                                    {court ? (
+                                      <p className="text-[11px] text-slate-300 flex items-center gap-1">
+                                        <Scale className="w-3 h-3 text-slate-500 shrink-0" />{court}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-500 italic">Vara não informada no processo</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex">
+                                  <div className="ml-3 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900" />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        {requirement.status === 'indeferido' && requirementsWithProcess.has(requirement.id) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <FileText className="w-2.5 h-2.5" />Proc.
                           </span>
                         )}
                       </div>
                     </div>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${statusConfig?.badge ?? 'bg-slate-200 text-slate-700'}`}>
+                      {statusConfig?.icon && <statusConfig.icon className="w-3 h-3" />}
+                      {getStatusLabel(requirement.status)}
+                      {isUpdating && <Loader2 className="w-3 h-3 animate-spin" />}
+                    </span>
+                  </div>
+
+                  {/* Infos */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 font-medium">CPF</span>
+                      <span className="text-slate-600 font-mono">{requirement.cpf}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 font-medium">Entrada</span>
+                      <span className="text-slate-600">{formatDate(requirement.entry_date)}</span>
+                    </div>
+                    <div className="col-span-2 flex items-center gap-1">
+                      <span className="text-slate-400 font-medium">Benefício</span>
+                      <span className="text-slate-600 truncate">{getBenefitTypeLabel(requirement.benefit_type)}</span>
+                    </div>
+                  </div>
+
+                  {/* Alertas de status */}
+                  {requirement.status === 'em_exigencia' && (
+                    <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
+                    </div>
                   )}
-                </div>
+                  {requirement.status === 'aguardando_pericia' && periciaNextAt && (
+                    <div className="flex items-center gap-1.5 bg-cyan-50 border border-cyan-200 text-cyan-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl">
+                      <Calendar className="w-3.5 h-3.5 shrink-0" />
+                      Perícia: {formatDateTime(periciaNextAt)}
+                    </div>
+                  )}
+                  {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (showMandadoRisk || analysisLevel !== 'none') && (
+                    <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl border ${
+                      showMandadoRisk ? 'bg-red-50 border-red-200 text-red-700' :
+                      analysisLevel === 'high' ? 'bg-orange-50 border-orange-200 text-orange-700' :
+                      'bg-yellow-50 border-yellow-200 text-yellow-700'
+                    }`}>
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {showMandadoRisk ? `Risco MS — ${analysisDays} dias` :
+                       analysisLevel === 'high' ? `Atenção — ${analysisDays} dias` :
+                       `Alerta — ${analysisDays} dias`}
+                    </div>
+                  )}
 
-                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                  <select
-                    value={requirement.status}
-                    onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
-                    disabled={isUpdating}
-                    className="text-xs font-medium px-2 py-1 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white"
-                  >
-                    {STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.key} value={opt.key}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Rodapé: select + ações */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                    <select
+                      value={requirement.status}
+                      onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
+                      disabled={isUpdating}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 transition-all"
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.key} value={opt.key}>{opt.label}</option>
+                      ))}
+                    </select>
 
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => handleWhatsApp(requirement.phone)}
-                      className="text-green-600 hover:text-green-700 transition-colors p-1"
-                      title="WhatsApp"
-                    >
-                      <MessageSquare className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleViewRequirement(requirement)}
-                      className="text-cyan-600 hover:text-cyan-700 transition-colors p-1"
-                      title="Ver detalhes"
-                    >
-                      <Eye className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleOpenModal(requirement)}
-                      className="text-blue-600 hover:text-blue-700 transition-colors p-1"
-                      title="Editar"
-                    >
-                      <Edit2 className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRequirement(requirement.id)}
-                      className="text-red-600 hover:text-red-700 transition-colors p-1"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {[
+                        { icon: MessageSquare, label: 'WhatsApp', cls: 'text-green-600 hover:bg-green-50', action: () => handleWhatsApp(requirement.phone) },
+                        { icon: Eye,           label: 'Detalhes', cls: 'text-slate-500 hover:bg-orange-50 hover:text-orange-600', action: () => handleViewRequirement(requirement) },
+                        { icon: Edit2,         label: 'Editar',   cls: 'text-slate-500 hover:bg-blue-50 hover:text-blue-600',   action: () => handleOpenModal(requirement) },
+                      ].map(({ icon: Icon, label, cls, action }) => (
+                        <button key={label} onClick={action} title={label} className={`p-1.5 rounded-lg transition-all ${cls}`}>
+                          <Icon className="w-4 h-4" />
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => handleArchiveRequirement(requirement.id, true)}
+                        disabled={archivingId === requirement.id}
+                        title="Arquivar"
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all disabled:opacity-40"
+                      >
+                        {archivingId === requirement.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRequirement(requirement.id)}
+                        title="Excluir"
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4272,26 +4505,128 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {filteredRequirements.length > pageSize && (
-        <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
           >
-            <span className="hidden sm:inline">Anterior</span>
-            <span className="sm:hidden">←</span>
+            ← <span className="hidden sm:inline">Anterior</span>
           </button>
-          <div className="text-xs sm:text-sm text-slate-600 text-center">
-            <span className="hidden sm:inline">Página </span>{currentPage}<span className="hidden sm:inline"> de</span><span className="sm:hidden">/</span> {totalPages}
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                  page === currentPage
+                    ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30 scale-110'
+                    : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
           </div>
           <button
             onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
             disabled={currentPage === totalPages}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
           >
-            <span className="hidden sm:inline">Próxima</span>
-            <span className="sm:hidden">→</span>
+            <span className="hidden sm:inline">Próxima</span> →
           </button>
+        </div>
+      )}
+
+      {/* ── Seção Arquivados ──────────────────────────────────────────────── */}
+      {archivedRequirements.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setArchivedExpanded((prev) => !prev)}
+            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition text-left"
+          >
+            <Archive className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-sm font-semibold text-slate-500">Arquivados</span>
+            <span className={`inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-full text-xs font-bold ${
+              searchTerm && filteredArchivedReqs.length > 0
+                ? 'bg-orange-100 text-orange-700'
+                : 'bg-slate-200 text-slate-600'
+            }`}>
+              {searchTerm ? filteredArchivedReqs.length : archivedRequirements.length}
+            </span>
+            {searchTerm && filteredArchivedReqs.length > 0 && (
+              <span className="text-xs text-orange-600 font-medium">encontrado na busca</span>
+            )}
+            <ChevronDown
+              className={`w-4 h-4 text-slate-400 ml-auto shrink-0 transition-transform duration-200 ${archivedExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {archivedExpanded && (
+            <div className="border-t border-slate-100">
+              {filteredArchivedReqs.length === 0 ? (
+                <p className="text-center text-sm text-slate-400 py-8">
+                  {searchTerm ? 'Nenhum arquivado corresponde à busca.' : 'Nenhum requerimento arquivado.'}
+                </p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredArchivedReqs.map((req) => {
+                    const statusConfig = getStatusConfig(req.status);
+                    return (
+                      <div
+                        key={req.id}
+                        className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/60 transition"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-slate-600 truncate">{req.beneficiary}</p>
+                            <span className="text-xs text-slate-400 font-mono">{req.protocol || '—'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold opacity-75 ${statusConfig?.badge ?? 'bg-slate-200 text-slate-600'}`}
+                            >
+                              {getStatusLabel(req.status)}
+                            </span>
+                            <span className="text-xs text-slate-400">{getBenefitTypeLabel(req.benefit_type)}</span>
+                            {req.entry_date && (
+                              <span className="text-xs text-slate-400">Entrada: {formatDate(req.entry_date)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleViewRequirement(req)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:bg-slate-50 transition"
+                            title="Ver detalhes"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Detalhes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleArchiveRequirement(req.id, false)}
+                            disabled={archivingId === req.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50 transition disabled:opacity-50"
+                            title="Restaurar"
+                          >
+                            {archivingId === req.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <ArchiveRestore className="w-3.5 h-3.5" />
+                            )}
+                            Restaurar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

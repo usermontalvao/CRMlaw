@@ -37,6 +37,7 @@ export interface Requirement {
   observations?: string | null;
   notes?: string | null;
   client_id?: string | null;
+  archived?: boolean;
   created_at: string;
   updated_at: string;
 }

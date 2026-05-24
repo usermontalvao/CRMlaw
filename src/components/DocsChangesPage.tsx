@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.137': { name: 'Café Vara Real', emoji: '⚖️' },
   '1.10.136': { name: 'Café Digest Semanal', emoji: '📧' },
   '1.10.135': { name: 'Café Agenda Visual', emoji: '📅' },
   '1.10.134': { name: 'Café Chat Unificado', emoji: '💬' },
@@ -834,6 +835,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.137',
+    date: '24/05/2026',
+    summary: 'Badge MS exibe vara real extraída do DJEN, confirmação ao arquivar requerimento e badge mobile atualizado.',
+    modules: [
+      {
+        moduleId: 'Requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Vara do MS badge vem do DJEN (nome_orgao)',
+            description: 'O tooltip do badge MS agora exibe o nome_orgao extraído das comunicações do Diário de Justiça Eletrônico, idêntico ao que o ProcessTimeline mostra. Fallback para o campo court do processo se não houver publicação no DJE. Método getOrgaoByProcessIds adicionado ao djenLocalService para buscar todas as varas em uma única query.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Confirmação antes de arquivar requerimento',
+            description: 'Ao clicar em "Arquivar", um modal de confirmação é exibido com a mensagem de que o requerimento ficará na seção Arquivados e pode ser restaurado a qualquer momento. Restaurar não exige confirmação.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Badge MS mobile equiparado ao desktop',
+            description: 'O badge MS no card mobile agora tem ícone Scale, ponte pb-2 para manter tooltip visível ao mover o mouse, pointer-events-auto para permitir interação, botão copiar número do processo e lógica de vara idêntica ao desktop.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.136',
     date: '24/05/2026',

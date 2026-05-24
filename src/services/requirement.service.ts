@@ -213,6 +213,23 @@ class RequirementService {
     return data;
   }
 
+  async archiveRequirement(id: string, archived: boolean): Promise<Requirement> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ archived, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao arquivar requerimento:', error);
+      throw new Error(error.message);
+    }
+
+    this.invalidateCache();
+    return data;
+  }
+
   async deleteRequirement(id: string): Promise<void> {
     const { error } = await supabase
       .from(this.tableName)
