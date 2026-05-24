@@ -7,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -3360,28 +3360,71 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   ) : (
                     /* Outros tipos: toggle público/privado */
                     <>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Visibilidade</p>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                      {/* Visibility toggle card */}
+                      <style>{`
+                        @keyframes visiBadgePop{0%{transform:scale(.7) rotate(-8deg);opacity:0}60%{transform:scale(1.12) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}}
+                        @keyframes globeSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+                        @keyframes lockShake{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}
+                        .visi-icon-public{animation:globeSpin 0.6s ease-out;}
+                        .visi-icon-private{animation:lockShake 0.4s ease-out;}
+                        .visi-badge{animation:visiBadgePop 0.32s cubic-bezier(.34,1.56,.64,1) both;}
+                      `}</style>
+                      <button
+                        type="button"
+                        onClick={() => setNewEventForm(prev => ({ ...prev, is_private: !prev.is_private, shared_with_ids: [] }))}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all duration-300 active:scale-[.98] ${
+                          newEventForm.is_private
+                            ? 'bg-amber-50 border-amber-200 shadow-[0_0_0_3px_rgba(251,191,36,.15)]'
+                            : 'bg-slate-50 border-slate-200 shadow-[0_0_0_3px_rgba(148,163,184,.10)]'
+                        }`}
+                      >
+                        {/* Ícone + texto */}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span
+                            key={String(newEventForm.is_private)}
+                            className={`visi-badge shrink-0 flex items-center justify-center w-8 h-8 rounded-full shadow-sm ${
+                              newEventForm.is_private
+                                ? 'bg-amber-100 text-amber-600'
+                                : 'bg-slate-200 text-slate-500'
+                            }`}
+                          >
                             {newEventForm.is_private
-                              ? newEventForm.shared_with_ids.length > 0
-                                ? `Privado · visível para ${newEventForm.shared_with_ids.length} pessoa(s)`
-                                : 'Privado · só você'
-                              : 'Público · todos do escritório'}
-                          </p>
+                              ? <Lock key="lock" className="visi-icon-private w-4 h-4" />
+                              : <Globe key="globe" className="visi-icon-public w-4 h-4" />}
+                          </span>
+                          <div className="min-w-0 text-left">
+                            <p className={`text-xs font-bold ${newEventForm.is_private ? 'text-amber-700' : 'text-slate-600'}`}>
+                              {newEventForm.is_private ? 'Privado' : 'Público'}
+                            </p>
+                            <p className={`text-[11px] truncate ${newEventForm.is_private ? 'text-amber-500' : 'text-slate-400'}`}>
+                              {newEventForm.is_private
+                                ? newEventForm.shared_with_ids.length > 0
+                                  ? `visível para ${newEventForm.shared_with_ids.length} pessoa(s)`
+                                  : 'só você vê este evento'
+                                : 'todos do escritório veem'}
+                            </p>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setNewEventForm(prev => ({ ...prev, is_private: !prev.is_private, shared_with_ids: [] }))}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${newEventForm.is_private ? 'bg-amber-500' : 'bg-slate-200'}`}
-                        >
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${newEventForm.is_private ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                      </div>
+                        {/* Toggle pill */}
+                        <div className="flex flex-col items-center gap-0.5 shrink-0">
+                          <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 ${newEventForm.is_private ? 'bg-amber-400' : 'bg-slate-300'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${newEventForm.is_private ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </div>
+                          <span className={`text-[9px] font-semibold whitespace-nowrap ${newEventForm.is_private ? 'text-amber-400' : 'text-slate-400'}`}>
+                            {newEventForm.is_private ? 'Tornar público' : 'Tornar privado'}
+                          </span>
+                        </div>
+                      </button>
                       {newEventForm.is_private && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Dar visibilidade a</p>
+                        <div className="mt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Compartilhar com</p>
+                            {newEventForm.shared_with_ids.length > 0 && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 animate-in fade-in duration-150">
+                                {newEventForm.shared_with_ids.length} selecionado{newEventForm.shared_with_ids.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             {[...members]
                               .filter(m => (m.user_id || m.id) !== (user?.id))

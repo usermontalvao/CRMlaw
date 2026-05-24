@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.135': { name: 'Café Agenda Visual', emoji: '📅' },
   '1.10.134': { name: 'Café Chat Unificado', emoji: '💬' },
   '1.10.133': { name: 'Chat Premium', emoji: '🎙️' },
   '1.10.132': { name: 'Presença Real', emoji: '🟢' },
@@ -832,6 +833,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.135',
+    date: '24/05/2026',
+    summary: 'Toggle de visibilidade da agenda redesenhado com card animado, ícones temáticos e contador de compartilhamento.',
+    modules: [
+      {
+        moduleId: 'Agenda',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Toggle de visibilidade com card animado e ícones',
+            description: 'O toggle público/privado virou um card clicável completo. Privado usa cadeado com fundo âmbar; público usa globo com fundo cinza. O ícone anima ao trocar (globo gira 360°, cadeado chacoalha). Badge de estado pop-in com spring ao mudar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Contador de pessoas selecionadas ao compartilhar',
+            description: 'Quando o evento é privado e há pessoas selecionadas, aparece um badge âmbar "N selecionado(s)" ao lado do título "Compartilhar com", com animação fade-in. A seção entra com slide suave ao ativar o modo privado.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.134',
     date: '23/05/2026',
