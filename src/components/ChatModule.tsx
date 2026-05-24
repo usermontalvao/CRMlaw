@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause, Phone, Video, Info } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Download, FileText, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause, Phone, Video, Info } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -179,7 +180,7 @@ const fmtAudioTime = (s: number) => {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 };
 
-const ProAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
+const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, onReady }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -205,49 +206,56 @@ const ProAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
     setCurrent(a.currentTime);
   };
   const progress = duration > 0 ? (current / duration) * 100 : 0;
-  const bars = Array.from({ length: 32 }, (_, i) => 28 + ((i * 41) % 72));
+  const bars = Array.from({ length: 32 }, (_, i) => 20 + ((i * 41 + i * i * 3) % 80));
 
   return (
-    <div className="mt-2 flex items-center gap-3 rounded-xl bg-slate-100 dark:bg-zinc-800 px-3 py-2.5 w-[240px] sm:w-[300px]">
+    <div className="mt-1 flex items-center gap-2 select-none" style={{ minWidth: '170px', maxWidth: '230px' }}>
       <audio
         ref={audioRef}
         src={src}
         preload="metadata"
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration || 0); onReady?.(); }}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrent(0); }}
         className="hidden"
       />
+      {/* Botão play/pause estilo WA */}
       <button
         type="button"
         onClick={toggle}
-        className="shrink-0 w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center shadow hover:bg-indigo-700 transition"
+        className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-[0_3px_10px_rgba(251,146,60,.5),inset_0_1px_0_rgba(255,255,255,.2)] active:scale-95 transition-transform duration-100"
         title={playing ? 'Pausar' : 'Reproduzir'}
       >
-        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+        {playing
+          ? <Pause className="w-3.5 h-3.5 text-white" />
+          : <Play className="w-3.5 h-3.5 text-white ml-0.5" />}
       </button>
       <div className="flex-1 min-w-0">
-        <div className="flex items-end gap-[2px] h-6 cursor-pointer" onClick={seek}>
+        {/* Waveform com seek */}
+        <div className="flex items-end gap-[2px] h-5 cursor-pointer" onClick={seek} title="Avançar / retroceder">
           {bars.map((h, i) => {
             const filled = (i / bars.length) * 100 <= progress;
             return (
               <div
                 key={i}
-                className={`flex-1 rounded-full transition-colors ${filled ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
-                style={{ height: `${h}%` }}
+                className="flex-1 rounded-full transition-colors duration-75"
+                style={{ height: `${h}%`, background: filled ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.35)' }}
               />
             );
           })}
         </div>
+        {/* Tempo + velocidade */}
         <div className="flex items-center justify-between mt-1">
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
+          <span className="text-[9px] text-white/55 tabular-nums font-semibold">
+            {playing || current > 0 ? fmtAudioTime(current) : fmtAudioTime(duration)}
+          </span>
           <button
             type="button"
             onClick={cycleRate}
-            className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-zinc-700 rounded px-1.5 py-0.5 hover:bg-slate-300 dark:hover:bg-zinc-600 transition"
-            title="Velocidade"
+            className="text-[8px] font-bold text-white/55 bg-white/10 hover:bg-white/20 rounded px-1 py-0.5 transition leading-none"
+            title="Velocidade de reprodução"
           >
             {rate}x
           </button>
@@ -257,7 +265,7 @@ const ProAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   );
 };
 
-const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind: 'audio' | 'image' }> = ({ attachment, kind }) => {
+const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind: 'audio' | 'image'; onMediaLoaded?: () => void }> = ({ attachment, kind, onMediaLoaded }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
 
@@ -281,38 +289,52 @@ const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind:
 
   if (!signedUrl) {
     return (
-      <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-        Carregando...
-      </div>
+      <div className="mt-2 text-xs text-white/60">Carregando...</div>
     );
   }
 
   if (kind === 'image') {
     return (
       <>
+        {/* Thumbnail — margem negativa para preencher a bolha sem frame */}
         <button
           type="button"
           onClick={() => setViewerOpen(true)}
-          className="mt-3 rounded-xl overflow-hidden bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 w-full text-left"
+          className="block p-0 border-0 bg-transparent overflow-hidden rounded-[inherit]"
+          style={{ margin: '-8px -14px', display: 'block' }}
           title="Ampliar imagem"
         >
           <img
             src={signedUrl}
-            alt={attachment.fileName}
-            className="w-full max-h-80 object-contain"
-            loading="lazy"
+            alt=""
+            className="block"
+            style={{ width: '100%', maxWidth: '260px', maxHeight: '200px', objectFit: 'cover', display: 'block' }}
+            loading="eager"
+            onLoad={() => { onMediaLoaded?.(); }}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent && !parent.querySelector('.img-error-msg')) {
+                const msg = document.createElement('span');
+                msg.className = 'img-error-msg text-xs text-white/40 italic p-3 block';
+                msg.textContent = '🖼️ Imagem indisponível';
+                parent.appendChild(msg);
+              }
+            }}
           />
         </button>
 
-        {viewerOpen && (
+        {/* Viewer em portal para escapar do backdrop-filter stacking context */}
+        {viewerOpen && createPortal(
           <div
-            className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[99999] bg-black/85 flex items-center justify-center p-4"
+            style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setViewerOpen(false)}
           >
             <div className="relative max-w-[92vw] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="absolute -top-3 -right-3 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20"
+                className="absolute -top-4 -right-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition"
                 onClick={() => setViewerOpen(false)}
                 title="Fechar"
               >
@@ -321,16 +343,17 @@ const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind:
               <img
                 src={signedUrl}
                 alt={attachment.fileName}
-                className="max-w-[92vw] max-h-[92vh] object-contain rounded-xl"
+                className="max-w-[92vw] max-h-[92vh] object-contain rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,.8)]"
               />
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     );
   }
 
-  return <ProAudioPlayer src={signedUrl} />;
+  return <ProAudioPlayer src={signedUrl} onReady={onMediaLoaded} />;
 };
 
 const ChatModule: React.FC = () => {
@@ -372,7 +395,9 @@ const ChatModule: React.FC = () => {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, { name: string; timestamp: number }>>(new Map());
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [reactions, setReactions] = useState<ChatReaction[]>([]);
@@ -401,6 +426,10 @@ const ChatModule: React.FC = () => {
   const typingChannelRef = useRef<any | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cancelRecordingRef = useRef(false);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewAudioUrlRef = useRef<string | null>(null);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
   const stableModuleRef = useRef({
     membersByUserId: new Map<string, Profile>(),
@@ -491,28 +520,49 @@ const ChatModule: React.FC = () => {
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const cleanupPreviewAudio = () => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.src = '';
+      previewAudioRef.current = null;
+    }
+    if (previewAudioUrlRef.current) {
+      URL.revokeObjectURL(previewAudioUrlRef.current);
+      previewAudioUrlRef.current = null;
+    }
+    setPreviewPlaying(false);
+  };
+
   const handleStartRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      const chunks: Blob[] = [];
+      recordingChunksRef.current = [];
+      cancelRecordingRef.current = false;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const file = new File([blob], `audio_${Date.now()}.webm`, { type: 'audio/webm' });
-        await handleUploadAttachment(file);
-        stream.getTracks().forEach((track) => track.stop());
+        try {
+          stream.getTracks().forEach((track) => track.stop());
+          if (cancelRecordingRef.current) return;
+          const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
+          const file = new File([blob], `audio_${Date.now()}.webm`, { type: 'audio/webm' });
+          await handleUploadAttachment(file);
+        } finally {
+          cancelRecordingRef.current = false;
+        }
       };
 
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
+      mediaRecorder.start(200); // timeslice 200ms — chunks frequentes
       setIsRecording(true);
+      setIsRecordingPaused(false);
       setRecordingTime(0);
 
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
@@ -523,10 +573,14 @@ const ChatModule: React.FC = () => {
   };
 
   const handleStopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    cleanupPreviewAudio();
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== 'inactive') {
+      if (mr.state === 'paused') mr.resume();
+      mr.stop();
     }
     setIsRecording(false);
+    setIsRecordingPaused(false);
     setRecordingTime(0);
     if (recordingIntervalRef.current) {
       clearInterval(recordingIntervalRef.current);
@@ -534,11 +588,68 @@ const ChatModule: React.FC = () => {
     }
   };
 
+  const handleCancelRecording = () => {
+    cleanupPreviewAudio();
+    cancelRecordingRef.current = true;
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== 'inactive') mr.stop();
+    setIsRecording(false);
+    setIsRecordingPaused(false);
+    setRecordingTime(0);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+  };
+
+  const handlePauseRecording = () => {
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') return;
+    try { mr.requestData(); } catch { /* flush */ }
+    try { mr.pause(); } catch { /* browser pode não suportar */ }
+    setIsRecordingPaused(true);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+  };
+
+  const handleResumeRecording = () => {
+    cleanupPreviewAudio();
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') return;
+    try { mr.resume(); } catch { /* ignora se não suportado */ }
+    setIsRecordingPaused(false);
+    if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+    recordingIntervalRef.current = setInterval(() => {
+      setRecordingTime((t) => t + 1);
+    }, 1000);
+  };
+
+  const handleTogglePreviewPlayback = () => {
+    if (previewAudioRef.current) {
+      const audio = previewAudioRef.current;
+      if (audio.paused) { void audio.play(); setPreviewPlaying(true); }
+      else { audio.pause(); setPreviewPlaying(false); }
+      return;
+    }
+    const chunks = recordingChunksRef.current;
+    if (chunks.length === 0) return;
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    const url = URL.createObjectURL(blob);
+    previewAudioUrlRef.current = url;
+    const audio = new Audio(url);
+    audio.onended = () => setPreviewPlaying(false);
+    previewAudioRef.current = audio;
+    void audio.play();
+    setPreviewPlaying(true);
+  };
+
   const handleToggleRecording = () => {
     if (isRecording) {
       handleStopRecording();
     } else {
-      handleStartRecording();
+      void handleStartRecording();
     }
   };
 
@@ -548,7 +659,7 @@ const ChatModule: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const renderAttachment = (msg: ChatMessage, isMine: boolean) => {
+  const renderAttachment = (msg: ChatMessage) => {
     const attachment = parseAttachment(msg.content);
     if (!attachment) return null;
 
@@ -556,100 +667,47 @@ const ChatModule: React.FC = () => {
     const isAudio = attachment.mimeType.startsWith('audio/');
     const isImage = attachment.mimeType.startsWith('image/');
 
-    if (isAudio || isImage) {
-      return (
-        <div
-          className={`rounded-xl border ${
-            isMine
-              ? 'border-white/20 bg-white/10'
-              : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-          } p-3 ${isAudio ? 'w-[260px] sm:w-[320px]' : ''}`}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-                isMine ? 'bg-white/15' : 'bg-slate-100 dark:bg-zinc-800'
-              }`}
-            >
-              {isImage ? (
-                <Image className={`w-5 h-5 ${isMine ? 'text-white' : 'text-indigo-600'}`} />
-              ) : (
-                <Mic className={`w-5 h-5 ${isMine ? 'text-white' : 'text-indigo-600'}`} />
-              )}
-            </div>
-            {!isAudio && (
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm font-semibold truncate ${isMine ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                  {attachment.fileName}
-                </p>
-                <p className={`text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                  {formatFileSize(attachment.size)}
-                  {expired ? ' • Expirado (6 meses)' : ''}
-                </p>
-              </div>
-            )}
-            <button
-              type="button"
-              disabled={expired}
-              onClick={() => handleDownloadAttachment(attachment)}
-              className={`h-9 w-9 rounded-xl flex items-center justify-center transition ${
-                expired
-                  ? 'opacity-40 cursor-not-allowed'
-                  : isMine
-                    ? 'bg-white/15 hover:bg-white/25'
-                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700'
-              }`}
-              title={expired ? 'Anexo expirado' : 'Baixar'}
-            >
-              <Download className={`w-4 h-4 ${isMine ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`} />
-            </button>
-          </div>
-          {!expired && <AttachmentSignedMedia attachment={attachment} kind={isImage ? 'image' : 'audio'} />}
-        </div>
-      );
+    if (isAudio) {
+      // Áudio: player direto na bolha (sem wrapper card) — estilo widget
+      if (expired) {
+        return (
+          <div className="text-xs text-white/50 italic mt-1">🎤 Áudio expirado (6 meses)</div>
+        );
+      }
+      return <AttachmentSignedMedia attachment={attachment} kind="audio" />;
     }
 
+    if (isImage) {
+      // Imagem: thumbnail cobre a bolha via margem negativa — estilo widget
+      if (expired) {
+        return (
+          <div className="text-xs text-white/50 italic mt-1">🖼️ Imagem expirada (6 meses)</div>
+        );
+      }
+      return <AttachmentSignedMedia attachment={attachment} kind="image" />;
+    }
+
+    // Arquivo genérico
     return (
-      <div
-        className={`rounded-xl border ${
-          isMine
-            ? 'border-white/20 bg-white/10'
-            : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-        } p-3`}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-              isMine ? 'bg-white/15' : 'bg-slate-100 dark:bg-zinc-800'
-            }`}
-          >
-            <FileText className={`w-5 h-5 ${isMine ? 'text-white' : 'text-indigo-600'}`} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className={`text-sm font-semibold truncate ${isMine ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-              {attachment.fileName}
-            </p>
-            <p className={`text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-              {formatFileSize(attachment.size)}
-              {expired ? ' • Expirado (6 meses)' : ''}
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={expired}
-            onClick={() => handleDownloadAttachment(attachment)}
-            className={`h-9 w-9 rounded-xl flex items-center justify-center transition ${
-              expired
-                ? 'opacity-40 cursor-not-allowed'
-                : isMine
-                  ? 'bg-white/15 hover:bg-white/25'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700'
-            }`}
-            title={expired ? 'Anexo expirado' : 'Baixar'}
-          >
-            <Download className={`w-4 h-4 ${isMine ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`} />
-          </button>
+      <div className="flex items-center gap-3 rounded-xl border border-white/20 bg-white/10 p-3">
+        <div className="h-10 w-10 rounded-xl flex items-center justify-center bg-white/15 shrink-0">
+          <FileText className="w-5 h-5 text-white" />
         </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold truncate text-white">{attachment.fileName}</p>
+          <p className="text-xs text-white/70">
+            {formatFileSize(attachment.size)}{expired ? ' • Expirado (6 meses)' : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={expired}
+          onClick={() => handleDownloadAttachment(attachment)}
+          className={`h-9 w-9 rounded-xl flex items-center justify-center transition shrink-0 ${expired ? 'opacity-40 cursor-not-allowed' : 'bg-white/15 hover:bg-white/25'}`}
+          title={expired ? 'Anexo expirado' : 'Baixar'}
+        >
+          <Download className="w-4 h-4 text-white" />
+        </button>
       </div>
     );
   };
@@ -763,7 +821,8 @@ const ChatModule: React.FC = () => {
     setMembersLoading(true);
     try {
       const result = await profileService.listMembers();
-      setMembers(result);
+      // Zera presence_status do banco (valor stale) — só o canal Realtime define quem está online
+      setMembers(result.map(m => ({ ...m, presence_status: 'offline' as const })));
     } catch {
       setMembers([]);
     } finally {
@@ -1586,8 +1645,8 @@ const ChatModule: React.FC = () => {
                     const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 
                     const ReplyQuote = replied ? (
-                      <div className={`mb-1.5 px-2 py-1 rounded-lg border-l-2 text-xs ${isMine ? 'bg-black/5 border-emerald-700/40' : 'bg-black/5 dark:bg-white/5 border-indigo-400'}`}>
-                        <span className="font-semibold opacity-80">{repliedAuthor?.name || 'Mensagem'}</span>
+                      <div className="mb-1.5 px-2 py-1 rounded-lg border-l-2 text-xs bg-black/15 border-white/40">
+                        <span className="font-semibold opacity-90">{repliedAuthor?.name || 'Mensagem'}</span>
                         <p className="opacity-70 truncate">{replied.deleted_at ? 'mensagem apagada' : getMessagePreview(replied.content)}</p>
                       </div>
                     ) : null;
@@ -1647,7 +1706,7 @@ const ChatModule: React.FC = () => {
                         </div>
                       </div>
                     ) : attachment ? (
-                      <div className="text-sm">{renderAttachment(msg, isMine)}</div>
+                      <div className="text-sm">{renderAttachment(msg)}</div>
                     ) : (
                       <p className="whitespace-pre-wrap break-words">{renderTextWithLinks(msg.content)}</p>
                     );
@@ -1659,15 +1718,15 @@ const ChatModule: React.FC = () => {
                         <div className="relative z-0 flex gap-2 mb-4 group animate-in fade-in slide-in-from-bottom-1 duration-200">
                           <Avatar src={author?.avatar_url} name={authorName} size="sm" className="self-end mb-1" imageClassName="object-cover shadow-sm" />
                           <div className="flex flex-col gap-1 max-w-[70%] relative">
-                            <div className={`relative p-3 rounded-2xl rounded-bl-none text-sm text-gray-800 dark:text-gray-100 ${isUnread ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 shadow-sm' : 'bg-white dark:bg-[#2a3942] border border-[#e9edef] dark:border-[#2a3942]'}`}>
+                            <div className={`relative p-[8px_14px] rounded-2xl rounded-bl-none text-sm text-white overflow-hidden ${isUnread ? 'bg-gradient-to-br from-orange-500 to-amber-600 ring-2 ring-amber-300 shadow-sm' : 'bg-gradient-to-br from-orange-500 to-amber-600 shadow-[0_4px_16px_-4px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.18)]'}`}>
                               {selectedRoom.is_public && !isDeleted && (
-                                <span className="block font-bold text-xs text-indigo-600 mb-1">{authorName}</span>
+                                <span className="block font-bold text-xs text-white/80 mb-1">{authorName}</span>
                               )}
                               {ReplyQuote}
                               {Body}
                               <div className="flex justify-end items-center gap-1 mt-1 select-none">
-                                {msg.edited_at && !isDeleted && <span className="text-[9px] text-gray-400 italic">editada</span>}
-                                <span className="text-[10px] text-gray-400">{formatTime(msg.created_at)}</span>
+                                {msg.edited_at && !isDeleted && <span className="text-[9px] text-white/70 italic">editada</span>}
+                                <span className="text-[10px] text-white/70">{formatTime(msg.created_at)}</span>
                               </div>
                               {Actions}
                               {ReactionPicker}
@@ -1684,37 +1743,21 @@ const ChatModule: React.FC = () => {
                       {daySeparator}
                       <div className="relative z-0 flex flex-col items-end gap-1 mb-2 group animate-in fade-in slide-in-from-bottom-1 duration-200">
                         <div className="relative max-w-[70%]">
-                          {attachment && !isEditing && !isDeleted ? (
-                            <>
-                              {renderAttachment(msg, true)}
-                              <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
-                                <span className="text-[10px] text-slate-200">{formatTime(msg.created_at)}</span>
-                                {seen
-                                  ? <CheckCheck className="w-3 h-3 text-sky-300" />
-                                  : delivered
-                                    ? <CheckCheck className="w-3 h-3 text-slate-200" />
-                                    : <Check className="w-3 h-3 text-slate-200" />}
-                              </div>
-                              {Actions}
-                              {ReactionPicker}
-                            </>
-                          ) : (
-                            <div className="relative bg-orange-100 dark:bg-orange-900/40 p-3 rounded-2xl rounded-br-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-gray-800 dark:text-white">
-                              {ReplyQuote}
-                              {Body}
-                              <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
-                                {msg.edited_at && !isDeleted && <span className="text-[9px] italic">editada</span>}
-                                <span className="text-[10px]">{formatTime(msg.created_at)}</span>
-                                {seen
-                                  ? <CheckCheck className="w-3 h-3 text-sky-500" />
-                                  : delivered
-                                    ? <CheckCheck className="w-3 h-3 opacity-60" />
-                                    : <Check className="w-3 h-3 opacity-60" />}
-                              </div>
-                              {Actions}
-                              {ReactionPicker}
+                          <div className="relative bg-slate-700/90 text-white p-[8px_14px] rounded-2xl rounded-br-none shadow-[0_2px_8px_rgba(0,0,0,.3)] ring-1 ring-white/[0.07] text-sm overflow-hidden">
+                            {ReplyQuote}
+                            {Body}
+                            <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
+                              {msg.edited_at && !isDeleted && <span className="text-[9px] italic">editada</span>}
+                              <span className="text-[10px]">{formatTime(msg.created_at)}</span>
+                              {seen
+                                ? <CheckCheck className="w-3 h-3 text-sky-300" />
+                                : delivered
+                                  ? <CheckCheck className="w-3 h-3 text-white/60" />
+                                  : <Check className="w-3 h-3 text-white/60" />}
                             </div>
-                          )}
+                            {Actions}
+                            {ReactionPicker}
+                          </div>
                           {ReactionsRow}
                         </div>
                       </div>
@@ -1738,6 +1781,7 @@ const ChatModule: React.FC = () => {
               </div>
 
               <footer className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] z-10">
+                <style>{`@keyframes chatWaveBar{0%,100%{transform:scaleY(.22);opacity:.45}50%{transform:scaleY(1);opacity:1}}`}</style>
                 {replyingTo && (
                   <div className="w-full md:max-w-4xl md:mx-auto mb-1.5 flex items-center justify-between gap-2 px-3 py-1.5 bg-white dark:bg-[#2a3942] border-l-2 border-amber-400 rounded-lg">
                     <div className="min-w-0">
@@ -1752,65 +1796,7 @@ const ChatModule: React.FC = () => {
                   </div>
                 )}
                 <div className="relative flex items-center gap-1.5 md:gap-2 w-full min-w-0 md:max-w-4xl md:mx-auto rounded-xl bg-white dark:bg-[#2a3942] border border-[#e9edef] dark:border-[#2a3942] px-2 py-1.5">
-                  {showEmojiPicker && (
-                    <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-3">
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Emojis</p>
-                      <div className="grid grid-cols-8 gap-1">
-                        {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
-                          <button
-                            key={e}
-                            type="button"
-                            className="h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 transition text-lg"
-                            onClick={() => handlePickEmoji(e)}
-                            aria-label={`Emoji ${e}`}
-                          >
-                            {e}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker((v) => !v)}
-                    className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
-                    title="Emoji"
-                  >
-                    <Smile className="w-5 h-5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAttachClick}
-                    disabled={!selectedRoomId || uploadingAttachment}
-                    className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 disabled:text-gray-300 disabled:hover:text-gray-300 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
-                    title="Anexar"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </button>
-                  {selectedRoom && !selectedRoom.is_public && (
-                    <button
-                      type="button"
-                      onClick={handleSendNudgeModule}
-                      disabled={nudgeCooldown || selectedRoomMember?.presence_status !== 'online'}
-                      className={`p-2 md:p-2 transition rounded-full shrink-0 ${
-                        selectedRoomMember?.presence_status !== 'online'
-                          ? 'opacity-30 cursor-not-allowed text-gray-400'
-                          : nudgeCooldown
-                            ? 'opacity-40 cursor-not-allowed text-gray-400'
-                            : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                      }`}
-                      title={
-                        selectedRoomMember?.presence_status !== 'online'
-                          ? 'Usuário offline'
-                          : nudgeCooldown
-                            ? 'Aguarde antes de chamar atenção novamente'
-                            : 'Chamar atenção'
-                      }
-                    >
-                      <span className="text-lg leading-none">👋</span>
-                    </button>
-                  )}
+                  {/* File input — sempre renderizado */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1821,89 +1807,221 @@ const ChatModule: React.FC = () => {
                       handleUploadAttachment(file);
                     }}
                   />
-                  <div className="flex-1 relative min-w-0">
-                    {mentionSuggestions.length > 0 && (
-                      <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden z-30 max-h-56 overflow-y-auto">
-                        <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Mencionar</p>
-                        {mentionSuggestions.map((mem) => {
-                          const initials = (mem.name || '?').trim().split(/\s+/).map((n) => n[0]).slice(0, 2).join('').toUpperCase();
-                          return (
-                            <button
-                              key={mem.id}
-                              type="button"
-                              onClick={() => pickMention(mem.name || '')}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-amber-50 dark:hover:bg-gray-700 transition"
-                            >
-                              {mem.avatar_url ? (
-                                <img src={mem.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold">{initials}</div>
-                              )}
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{mem.name}</p>
-                                {mem.role && <p className="text-[10px] text-gray-400 truncate">{mem.role}</p>}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <input
-                      ref={messageInputRef}
-                      type="text"
-                      value={messageText}
-                      onChange={(e) => handleMessageChange(e.target.value)}
-                      placeholder={selectedRoomId ? 'Digite uma mensagem... use @ para mencionar' : 'Selecione uma conversa...'}
-                      disabled={!selectedRoomId || isRecording}
-                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#f97316] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') { setMentionQuery(null); return; }
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          if (mentionSuggestions.length > 0) {
-                            e.preventDefault();
-                            pickMention(mentionSuggestions[0].name || '');
-                            return;
-                          }
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                    />
-                  </div>
+
                   {isRecording ? (
-                    <button
-                      type="button"
-                      onClick={handleToggleRecording}
-                      className="p-2.5 md:p-3 bg-[#e5385b] hover:bg-[#d63031] text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center animate-pulse shrink-0"
-                      title="Parar gravação"
-                    >
-                      <Square className="w-5 h-5" />
-                    </button>
+                    /* ── BARRA DE GRAVAÇÃO ── */
+                    <div className="flex items-center w-full">
+                      {isRecordingPaused ? (
+                        /* PAUSADO */
+                        <div className="flex flex-col gap-1.5 w-full py-0.5">
+                          {/* Linha 1: lixeira + waveform com play inline */}
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={handleCancelRecording}
+                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-full transition active:scale-90 shrink-0">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                            <div className="flex-1 flex items-center gap-2 rounded-xl px-3 bg-gray-100 dark:bg-zinc-700 border border-gray-200 dark:border-zinc-600" style={{ height: '36px' }}>
+                              <button type="button" onClick={handleTogglePreviewPlayback}
+                                className="shrink-0 w-6 h-6 rounded-full bg-white dark:bg-zinc-600 shadow-sm flex items-center justify-center hover:bg-orange-50 dark:hover:bg-orange-500/20 transition active:scale-90"
+                                title={previewPlaying ? 'Pausar' : 'Ouvir gravação'}>
+                                {previewPlaying
+                                  ? <Pause className="w-3 h-3 text-orange-500" />
+                                  : <Play className="w-3 h-3 text-gray-500 ml-[1px]" />}
+                              </button>
+                              <div className="flex-1 flex items-end gap-[2px]" style={{ height: '16px' }}>
+                                {Array.from({ length: 28 }, (_, i) => (
+                                  <div key={i} className="flex-1 rounded-full bg-gray-300 dark:bg-zinc-500"
+                                    style={{ height: `${18 + ((i * 43 + i * i * 7) % 82)}%` }} />
+                                ))}
+                              </div>
+                              <span className="text-[11px] font-mono text-gray-500 font-semibold tabular-nums shrink-0">
+                                {formatRecordingTime(recordingTime)}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Linha 2: Retomar + Enviar */}
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={handleResumeRecording}
+                              className="flex-1 h-8 rounded-xl bg-gray-100 dark:bg-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-600 text-gray-600 dark:text-gray-300 flex items-center justify-center gap-1.5 transition active:scale-95 text-xs font-semibold border border-gray-200 dark:border-zinc-600">
+                              <Mic className="w-3.5 h-3.5 text-red-500" />
+                              <span>Retomar</span>
+                            </button>
+                            <button type="button" onClick={handleStopRecording}
+                              className="flex-1 h-8 rounded-xl bg-[#f97316] hover:bg-[#ea580c] text-white flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition text-xs font-semibold">
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Enviar</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* GRAVANDO */
+                        <>
+                          <button type="button" onClick={handleCancelRecording}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-full transition active:scale-90 shrink-0">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <div className="flex-1 flex items-center gap-2 rounded-xl px-3 mx-1 bg-red-50 dark:bg-red-500/10 border border-red-200/60 dark:border-red-500/20" style={{ height: '38px' }}>
+                            <div className="flex-1 flex items-end gap-[2px]" style={{ height: '20px' }}>
+                              {Array.from({ length: 28 }, (_, i) => {
+                                const baseH = 18 + ((i * 43 + i * i * 7) % 82);
+                                return (
+                                  <div key={i} className="flex-1 rounded-full"
+                                    style={{
+                                      height: `${baseH}%`,
+                                      background: 'rgba(239,68,68,0.65)',
+                                      animation: `chatWaveBar ${(0.45 + (i % 5) * 0.13).toFixed(2)}s ease-in-out ${((i * 0.07) % 0.88).toFixed(2)}s infinite`,
+                                    }} />
+                                );
+                              })}
+                            </div>
+                            <span className="text-xs font-mono text-red-500 font-bold tabular-nums shrink-0">
+                              {formatRecordingTime(recordingTime)}
+                            </span>
+                          </div>
+                          <div className="shrink-0 p-1.5 bg-red-100 dark:bg-red-500/15 rounded-full ring-1 ring-red-300/60 dark:ring-red-500/25">
+                            <Mic className="w-4 h-4 text-red-500 animate-pulse" />
+                          </div>
+                          <button type="button" onClick={handlePauseRecording}
+                            className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-full transition active:scale-90 shrink-0">
+                            <Pause className="w-4 h-4" />
+                          </button>
+                          <button type="button" onClick={handleStopRecording}
+                            className="p-2.5 bg-[#f97316] hover:bg-[#ea580c] text-white rounded-full shadow-md transition active:scale-95 flex items-center justify-center shrink-0">
+                            <Send className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={handleToggleRecording}
-                      disabled={!selectedRoomId}
-                      className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
-                      title="Gravar áudio"
-                    >
-                      <Mic className="w-5 h-5" />
-                    </button>
+                    /* ── INPUT NORMAL ── */
+                    <>
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-3">
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Emojis</p>
+                          <div className="grid grid-cols-8 gap-1">
+                            {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
+                              <button
+                                key={e}
+                                type="button"
+                                className="h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 transition text-lg"
+                                onClick={() => handlePickEmoji(e)}
+                                aria-label={`Emoji ${e}`}
+                              >
+                                {e}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((v) => !v)}
+                        className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                        title="Emoji"
+                      >
+                        <Smile className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAttachClick}
+                        disabled={!selectedRoomId || uploadingAttachment}
+                        className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 disabled:text-gray-300 disabled:hover:text-gray-300 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                        title="Anexar"
+                      >
+                        <Paperclip className="w-5 h-5" />
+                      </button>
+                      {selectedRoom && !selectedRoom.is_public && (
+                        <button
+                          type="button"
+                          onClick={handleSendNudgeModule}
+                          disabled={nudgeCooldown || selectedRoomMember?.presence_status !== 'online'}
+                          className={`p-2 md:p-2 transition rounded-full shrink-0 ${
+                            selectedRoomMember?.presence_status !== 'online'
+                              ? 'opacity-30 cursor-not-allowed text-gray-400'
+                              : nudgeCooldown
+                                ? 'opacity-40 cursor-not-allowed text-gray-400'
+                                : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                          }`}
+                          title={
+                            selectedRoomMember?.presence_status !== 'online'
+                              ? 'Usuário offline'
+                              : nudgeCooldown
+                                ? 'Aguarde antes de chamar atenção novamente'
+                                : 'Chamar atenção'
+                          }
+                        >
+                          <span className="text-lg leading-none">👋</span>
+                        </button>
+                      )}
+                      <div className="flex-1 relative min-w-0">
+                        {mentionSuggestions.length > 0 && (
+                          <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden z-30 max-h-56 overflow-y-auto">
+                            <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Mencionar</p>
+                            {mentionSuggestions.map((mem) => {
+                              const initials = (mem.name || '?').trim().split(/\s+/).map((n) => n[0]).slice(0, 2).join('').toUpperCase();
+                              return (
+                                <button
+                                  key={mem.id}
+                                  type="button"
+                                  onClick={() => pickMention(mem.name || '')}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-amber-50 dark:hover:bg-gray-700 transition"
+                                >
+                                  {mem.avatar_url ? (
+                                    <img src={mem.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold">{initials}</div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{mem.name}</p>
+                                    {mem.role && <p className="text-[10px] text-gray-400 truncate">{mem.role}</p>}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <input
+                          ref={messageInputRef}
+                          type="text"
+                          value={messageText}
+                          onChange={(e) => handleMessageChange(e.target.value)}
+                          placeholder={selectedRoomId ? 'Digite uma mensagem... use @ para mencionar' : 'Selecione uma conversa...'}
+                          disabled={!selectedRoomId}
+                          className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#f97316] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') { setMentionQuery(null); return; }
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              if (mentionSuggestions.length > 0) {
+                                e.preventDefault();
+                                pickMention(mentionSuggestions[0].name || '');
+                                return;
+                              }
+                              e.preventDefault();
+                              handleSend();
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleToggleRecording}
+                        disabled={!selectedRoomId}
+                        className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                        title="Gravar áudio"
+                      >
+                        <Mic className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSend}
+                        disabled={!selectedRoomId || !messageText.trim()}
+                        className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:opacity-50 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                        title="Enviar"
+                      >
+                        <Send className="w-5 h-5" />
+                      </button>
+                    </>
                   )}
-                  {isRecording && (
-                    <span className="text-xs font-mono text-red-500 font-bold animate-pulse">
-                      {formatRecordingTime(recordingTime)}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!selectedRoomId || !messageText.trim() || isRecording}
-                    className="p-2.5 md:p-3 bg-[#f97316] hover:bg-[#ea580c] disabled:opacity-50 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
-                    title="Enviar"
-                  >
-                    <Send className="w-5 h-5" />
-                  </button>
                 </div>
               </footer>
             </>

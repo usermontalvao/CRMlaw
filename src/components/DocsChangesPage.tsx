@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.134': { name: 'Café Chat Unificado', emoji: '💬' },
+  '1.10.133': { name: 'Chat Premium', emoji: '🎙️' },
+  '1.10.132': { name: 'Presença Real', emoji: '🟢' },
   '1.10.131': { name: 'Café DataJud Express', emoji: '⚖️' },
   '1.10.130': { name: 'Café Terminal Glass', emoji: '⌨️' },
   '1.10.129': { name: 'Café Vidro Aero', emoji: '🪟' },
@@ -829,6 +832,112 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.134',
+    date: '23/05/2026',
+    summary: 'Módulo de chat principal sincronizado com o widget: player de áudio polido, imagens com visualizador portal, bolhas invertidas e correção de redirect de sessão expirada.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Player de áudio estilo widget no módulo principal',
+            description: 'O módulo principal de chat agora usa o mesmo ProAudioPlayer polido do widget: botão circular com gradiente laranja, barras de waveform brancas semi-transparentes, controle de velocidade e tempo. Container transparente — o player fica diretamente dentro da bolha sem card extra.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Imagens com thumbnail cover e visualizador via portal',
+            description: 'Imagens no módulo principal agora usam margem negativa para preencher a bolha borda a borda (objectFit: cover). O visualizador em tela cheia foi migrado para createPortal no document.body, corrigindo o bug de stacking context que impedia o overlay de cobrir a tela toda.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Bolhas invertidas: laranja para recebidas, escuro para enviadas',
+            description: 'Mensagens recebidas agora usam gradiente laranja/âmbar (identidade da marca) e mensagens enviadas ficam com fundo slate-700 escuro. Consistente com o widget. Todos os elementos internos (reply quote, hora, ticks) adaptados para texto branco.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Autenticação',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Redirect de sessão expirada não gera mais 404',
+            description: 'O timeout de inatividade redirecionava para /login?reason=session_expired, que o servidor SPA não conhece. Agora redireciona para a raiz (window.location.origin + "/") e passa o motivo via sessionStorage. A tela de login lê o valor e exibe banner âmbar "Sessão encerrada por inatividade".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.133',
+    date: '23/05/2026',
+    summary: 'Widget de chat com player de áudio estilo WhatsApp, imagens contidas na bolha com visualizador em tela cheia correto, animação de toast da direita e mensagens da outra pessoa em destaque laranja.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Player de áudio estilo WhatsApp',
+            description: 'O player de áudio nas mensagens foi redesenhado no estilo WhatsApp: botão play/pause circular com gradiente laranja, forma de onda com barras coloridas (laranja = reproduzido, branco suave = não reproduzido), controle de velocidade minimalista e tempo exibido abaixo da waveform.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Imagem contida na bolha — sem ocupar o widget inteiro',
+            description: 'Imagens enviadas no chat eram exibidas com largura total (w-full), dominando o espaço do widget. Agora a thumbnail é limitada a 210×150px. O visualizador em tela cheia foi movido para portal no document.body, corrigindo bug onde o backdrop-filter do widget criava um novo stacking context que impedia o fixed inset-0 de cobrir a tela toda.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Animação de notificação (toast) da direita com bounce',
+            description: 'O toast de nova mensagem agora desliza da direita com efeito de mola (slide-from-right + overshoot). A barra laranja no topo ganhou animação shimmer contínua para atrair a atenção.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Mensagens da outra pessoa em destaque laranja',
+            description: 'As cores das bolhas foram invertidas: mensagens recebidas (outra pessoa) agora usam o gradiente laranja/âmbar de destaque, enquanto mensagens enviadas (suas) ficam com fundo sutil escuro. Padrão oposto ao WhatsApp mas consistente com a identidade da marca.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.132',
+    date: '23/05/2026',
+    summary: 'Correções de presença online no chat, status do processo sincronizado com a linha do tempo e nomes de partes limpos do DJEN.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Presença online reflete estado real',
+            description: 'O indicador verde de "online" no chat agora mostra apenas usuários com conexão WebSocket ativa. Antes, o status era lido diretamente do banco de dados (campo stale), fazendo todos parecerem online permanentemente. Agora o banco é ignorado para presença — apenas o canal Supabase Realtime define quem está online.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Processos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Status do processo sincronizado com a Linha do Tempo',
+            description: 'O badge de status no detalhe do processo (ex: "Arquivado") agora reflete automaticamente o estágio detectado na Linha do Tempo (ex: "Sentença"). Corrigida race condition onde o handleReload sobrescrevia o novo status com dado antigo do banco.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Nomes de partes sem endereço e CPF',
+            description: 'O DJEN concatena endereço e CPF ao nome do destinatário (ex: "LISLIANDRA... Endereço: RUA CATORZE..."). A limpeza agora remove corretamente prefixo "Nome:", endereço, CPF e CNPJ, exibindo apenas o nome da parte. Aplicado tanto no cache do banco quanto na consulta direta à API.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'AudioContext — sem erro de autoplay',
+            description: 'Corrigido erro "AudioContext was not allowed to start" no carregamento da página. O contexto de áudio agora é criado de forma lazy e só ativado após o primeiro gesto do usuário. O som de notificação não toca mais na carga inicial.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.131',
     date: '20/05/2026',

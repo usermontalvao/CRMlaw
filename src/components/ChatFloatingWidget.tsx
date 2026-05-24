@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Send, Smile, Square, X, Zap, Play, Pause } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -151,11 +151,14 @@ const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, 
   };
 
   const progress = duration > 0 ? (current / duration) * 100 : 0;
-  // Pseudo-waveform estável por barra
-  const bars = Array.from({ length: 28 }, (_, i) => 30 + ((i * 37) % 70));
+  // Pseudo-waveform — altura estável por índice
+  const bars = Array.from({ length: 32 }, (_, i) => 20 + ((i * 41 + i * i * 3) % 80));
 
   return (
-    <div className="mt-2 flex items-center gap-3 rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5">
+    <div
+      className="mt-1 flex items-center gap-2 select-none"
+      style={{ minWidth: '170px', maxWidth: '230px' }}
+    >
       <audio
         ref={audioRef}
         src={src}
@@ -167,34 +170,51 @@ const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, 
         onEnded={() => { setPlaying(false); setCurrent(0); }}
         className="hidden"
       />
+
+      {/* Botão play/pause estilo WA */}
       <button
         type="button"
         onClick={toggle}
-        className="shrink-0 w-9 h-9 rounded-full bg-white text-indigo-600 flex items-center justify-center shadow hover:scale-105 transition"
+        className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-[0_3px_10px_rgba(251,146,60,.5),inset_0_1px_0_rgba(255,255,255,.2)] active:scale-95 transition-transform duration-100"
         title={playing ? 'Pausar' : 'Reproduzir'}
       >
-        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+        {playing
+          ? <Pause className="w-3.5 h-3.5 text-white" />
+          : <Play className="w-3.5 h-3.5 text-white ml-0.5" />}
       </button>
+
       <div className="flex-1 min-w-0">
-        <div className="flex items-end gap-[2px] h-7 cursor-pointer" onClick={seek}>
+        {/* Waveform */}
+        <div
+          className="flex items-end gap-[2px] h-5 cursor-pointer"
+          onClick={seek}
+          title="Avançar / retroceder"
+        >
           {bars.map((h, i) => {
             const filled = (i / bars.length) * 100 <= progress;
             return (
               <div
                 key={i}
-                className={`flex-1 rounded-full transition-colors ${filled ? 'bg-white' : 'bg-white/30'}`}
-                style={{ height: `${h}%` }}
+                className="flex-1 rounded-full transition-colors duration-75"
+                style={{
+                  height: `${h}%`,
+                  background: filled ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.35)',
+                }}
               />
             );
           })}
         </div>
+
+        {/* Tempo + velocidade */}
         <div className="flex items-center justify-between mt-1">
-          <span className="text-[10px] text-white/70 tabular-nums">{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
+          <span className="text-[9px] text-white/55 tabular-nums font-semibold">
+            {playing || current > 0 ? fmtAudioTime(current) : fmtAudioTime(duration)}
+          </span>
           <button
             type="button"
             onClick={cycleRate}
-            className="text-[10px] font-bold text-white/80 bg-white/15 rounded px-1.5 py-0.5 hover:bg-white/25 transition"
-            title="Velocidade"
+            className="text-[8px] font-bold text-white/55 bg-white/10 hover:bg-white/20 rounded px-1 py-0.5 transition leading-none"
+            title="Velocidade de reprodução"
           >
             {rate}x
           </button>
@@ -237,42 +257,51 @@ const AttachmentSignedMedia: React.FC<{
   if (kind === 'image') {
     return (
       <>
+        {/* Thumbnail — margem negativa para preencher a bolha sem frame */}
         <button
           type="button"
           onClick={() => setViewerOpen(true)}
-          className="mt-2 rounded-xl overflow-hidden bg-white/5 border border-white/10 w-full text-left min-h-[60px] flex items-center justify-center"
+          className="block p-0 border-0 bg-transparent overflow-hidden rounded-[inherit]"
+          style={{ margin: '-8px -14px', display: 'block' }}
           title="Ampliar imagem"
         >
           <img
             src={signedUrl}
-            alt={attachment.fileName}
-            className="w-full max-h-64 object-contain"
-            loading="eager"
-            onLoad={() => {
-              onMediaLoaded?.();
+            alt=""
+            className="block"
+            style={{
+              width: '100%',
+              maxWidth: '260px',
+              maxHeight: '200px',
+              objectFit: 'cover',
+              display: 'block',
             }}
+            loading="eager"
+            onLoad={() => { onMediaLoaded?.(); }}
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = 'none';
               const parent = e.currentTarget.parentElement;
               if (parent && !parent.querySelector('.img-error-msg')) {
                 const msg = document.createElement('span');
-                msg.className = 'img-error-msg text-xs text-white/40 italic p-2';
-                msg.textContent = 'Imagem não disponível';
+                msg.className = 'img-error-msg text-xs text-white/40 italic p-3 block';
+                msg.textContent = '🖼️ Imagem indisponível';
                 parent.appendChild(msg);
               }
             }}
           />
         </button>
 
-        {viewerOpen && (
+        {/* Viewer em portal para escapar do backdrop-filter stacking context do widget */}
+        {viewerOpen && createPortal(
           <div
-            className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[99999] bg-black/85 flex items-center justify-center p-4"
+            style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setViewerOpen(false)}
           >
             <div className="relative max-w-[92vw] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="absolute -top-3 -right-3 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20"
+                className="absolute -top-4 -right-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition"
                 onClick={() => setViewerOpen(false)}
                 title="Fechar"
               >
@@ -281,10 +310,11 @@ const AttachmentSignedMedia: React.FC<{
               <img
                 src={signedUrl}
                 alt={attachment.fileName}
-                className="max-w-[92vw] max-h-[92vh] object-contain rounded-xl"
+                className="max-w-[92vw] max-h-[92vh] object-contain rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,.8)]"
               />
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     );
@@ -316,10 +346,7 @@ const MessageBody: React.FC<{ message: ChatMessage; onMediaLoaded?: () => void }
   }
 
   return (
-    <div className="min-w-0">
-      {isImage && <div className="text-sm font-semibold truncate">{attachment.fileName}</div>}
-      <AttachmentSignedMedia attachment={attachment} kind={isImage ? 'image' : 'audio'} onMediaLoaded={onMediaLoaded} />
-    </div>
+    <AttachmentSignedMedia attachment={attachment} kind={isImage ? 'image' : 'audio'} onMediaLoaded={onMediaLoaded} />
   );
 };
 
@@ -356,7 +383,7 @@ const formatLastSeen = (value: string) => {
   return `Online em ${date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
 };
 
-const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean }> = ({ src, name, online }) => {
+const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean; size?: 'sm' | 'md' | 'lg' }> = ({ src, name, online, size = 'md' }) => {
   const initials = useMemo(() => {
     if (!name) return '?';
     return name
@@ -368,19 +395,33 @@ const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean }> 
       .slice(0, 2);
   }, [name]);
 
+  const dim = size === 'sm' ? 'h-9 w-9' : size === 'lg' ? 'h-12 w-12' : 'h-10 w-10';
+  const dotSize = size === 'sm' ? 'h-2.5 w-2.5' : size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5';
+
   return (
     <div className="relative shrink-0">
       {src ? (
-        <img src={src} alt={name} className="h-10 w-10 rounded-full object-cover" />
+        <img
+          src={src}
+          alt={name}
+          className={`${dim} rounded-full object-cover ring-1 ring-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.3)]`}
+        />
       ) : (
-        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-slate-700 flex items-center justify-center text-white text-xs font-bold">
+        <div
+          className={`${dim} rounded-full bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold ring-1 ring-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.3)]`}
+        >
           {initials}
         </div>
       )}
       {typeof online === 'boolean' && (
-        <span
-          className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-[#111827] ${online ? 'bg-green-500' : 'bg-slate-500'}`}
-        />
+        <span className="absolute bottom-0 right-0 flex items-center justify-center">
+          {online && (
+            <span className={`absolute ${dotSize} rounded-full bg-emerald-400/60 animate-ping`} />
+          )}
+          <span
+            className={`relative block ${dotSize} rounded-full ring-[2.5px] ring-[#0a0f1c] ${online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-slate-500'}`}
+          />
+        </span>
       )}
     </div>
   );
@@ -448,7 +489,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [searchMember, setSearchMember] = useState('');
@@ -482,6 +525,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<number | null>(null);
+  const cancelRecordingRef = useRef(false);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewAudioUrlRef = useRef<string | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const nudgeCooldownTimerRef = useRef<number | null>(null);
@@ -593,25 +640,28 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       if (!selectedRoomId || uploadingAttachment) return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      const chunks: Blob[] = [];
+      recordingChunksRef.current = []; // reset chunks
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
         try {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
+          stream.getTracks().forEach((t) => t.stop());
+          if (cancelRecordingRef.current) return;
+          const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
           const file = new File([blob], `audio_${Date.now()}.webm`, { type: 'audio/webm' });
           await handleUploadAttachment(file);
         } finally {
-          stream.getTracks().forEach((t) => t.stop());
+          cancelRecordingRef.current = false;
         }
       };
 
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
+      mediaRecorder.start(200); // timeslice 200ms — garante chunks frequentes
       setIsRecording(true);
+      setIsRecordingPaused(false);
       setRecordingTime(0);
 
       if (recordingIntervalRef.current) {
@@ -626,17 +676,93 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     }
   }, [selectedRoomId, uploadingAttachment, handleUploadAttachment]);
 
+  const cleanupPreviewAudio = useCallback(() => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.src = '';
+      previewAudioRef.current = null;
+    }
+    if (previewAudioUrlRef.current) {
+      URL.revokeObjectURL(previewAudioUrlRef.current);
+      previewAudioUrlRef.current = null;
+    }
+    setPreviewPlaying(false);
+  }, []);
+
+  const handleTogglePreviewPlayback = useCallback(() => {
+    // Se já tem áudio carregado, alterna play/pause
+    if (previewAudioRef.current) {
+      const audio = previewAudioRef.current;
+      if (audio.paused) { void audio.play(); setPreviewPlaying(true); }
+      else { audio.pause(); setPreviewPlaying(false); }
+      return;
+    }
+    // Constrói o blob a partir dos chunks coletados até agora
+    const chunks = recordingChunksRef.current;
+    if (chunks.length === 0) return;
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    const url = URL.createObjectURL(blob);
+    previewAudioUrlRef.current = url;
+    const audio = new Audio(url);
+    audio.onended = () => setPreviewPlaying(false);
+    previewAudioRef.current = audio;
+    void audio.play();
+    setPreviewPlaying(true);
+  }, []);
+
   const handleStopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    cleanupPreviewAudio();
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== 'inactive') {
+      if (mr.state === 'paused') mr.resume();
+      mr.stop();
     }
     setIsRecording(false);
+    setIsRecordingPaused(false);
     setRecordingTime(0);
     if (recordingIntervalRef.current) {
       window.clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
     }
+  }, [cleanupPreviewAudio]);
+
+  const handleCancelRecording = useCallback(() => {
+    cleanupPreviewAudio();
+    cancelRecordingRef.current = true;
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== 'inactive') mr.stop();
+    setIsRecording(false);
+    setIsRecordingPaused(false);
+    setRecordingTime(0);
+    if (recordingIntervalRef.current) {
+      window.clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+  }, [cleanupPreviewAudio]);
+
+  const handlePauseRecording = useCallback(() => {
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') return;
+    try { mr.requestData(); } catch { /* flush pendente */ }
+    try { mr.pause(); } catch { /* browser pode não suportar */ }
+    setIsRecordingPaused(true);
+    if (recordingIntervalRef.current) {
+      window.clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
   }, []);
+
+  const handleResumeRecording = useCallback(() => {
+    cleanupPreviewAudio();
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') return;
+    try { mr.resume(); } catch { /* ignora se não suportado */ }
+    setIsRecordingPaused(false);
+    if (recordingIntervalRef.current) window.clearInterval(recordingIntervalRef.current);
+    recordingIntervalRef.current = window.setInterval(() => {
+      setRecordingTime((t) => t + 1);
+    }, 1000);
+  }, [cleanupPreviewAudio]);
 
   const handleToggleRecording = useCallback(() => {
     if (isRecording) {
@@ -1478,12 +1604,42 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   return createPortal(
     <div className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
-      <style>{`@keyframes chatShake{0%,100%{transform:translate(0,0) rotate(0)}10%{transform:translate(-6px,4px) rotate(-2deg)}20%{transform:translate(6px,-4px) rotate(2deg)}30%{transform:translate(-6px,-4px) rotate(-2deg)}40%{transform:translate(6px,4px) rotate(2deg)}50%{transform:translate(-4px,2px) rotate(-1deg)}60%{transform:translate(4px,-2px) rotate(1deg)}70%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}90%{transform:translate(-1px,0)}}`}</style>
+      <style>{`
+        @keyframes chatShake{0%,100%{transform:translate(0,0) rotate(0)}10%{transform:translate(-6px,4px) rotate(-2deg)}20%{transform:translate(6px,-4px) rotate(2deg)}30%{transform:translate(-6px,-4px) rotate(-2deg)}40%{transform:translate(6px,4px) rotate(2deg)}50%{transform:translate(-4px,2px) rotate(-1deg)}60%{transform:translate(4px,-2px) rotate(1deg)}70%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}90%{transform:translate(-1px,0)}}
+        @keyframes chatPanelIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes chatGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0)}50%{box-shadow:0 0 0 8px rgba(251,146,60,.15)}}
+        @keyframes chatLauncherGlow{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 0 rgba(251,146,60,.4)}50%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 12px rgba(251,146,60,0)}}
+        @keyframes chatTypingDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-3px);opacity:1}}
+        @keyframes chatToastIn{0%{opacity:0;transform:translateX(36px) scale(.91)}55%{opacity:1;transform:translateX(-6px) scale(1.015)}75%{transform:translateX(4px) scale(.997)}100%{opacity:1;transform:translateX(0) scale(1)}}
+        @keyframes chatWaveBar{0%,100%{transform:scaleY(.22);opacity:.45}50%{transform:scaleY(1);opacity:1}}
+        @keyframes chatToastBarShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+        .chat-scrollbar::-webkit-scrollbar{width:6px}
+        .chat-scrollbar::-webkit-scrollbar-track{background:transparent}
+        .chat-scrollbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
+        .chat-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.15)}
+      `}</style>
       {open && (
         <div
-          className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]"
-          style={shaking ? { animation: 'chatShake 0.8s cubic-bezier(.36,.07,.19,.97) both' } : undefined}
+          className="mb-3 w-[380px] max-w-[calc(100vw-24px)] rounded-[24px] text-white overflow-hidden flex flex-col h-[520px] max-h-[calc(100vh-120px)] relative"
+          style={{
+            ...(shaking ? { animation: 'chatShake 0.8s cubic-bezier(.36,.07,.19,.97) both' } : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
+            background:
+              'linear-gradient(180deg, rgba(15,23,42,.97) 0%, rgba(10,15,28,.98) 100%)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            boxShadow:
+              '0 40px 80px -20px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.08)',
+          }}
         >
+          {/* Brilho sutil no topo */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-32"
+            style={{
+              background:
+                'radial-gradient(80% 100% at 50% 0%, rgba(251,146,60,.12) 0%, transparent 70%)',
+            }}
+          />
           {nudgeFlash && (
             <div className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold text-center shrink-0 flex items-center justify-center gap-2">
               <Zap className="w-3.5 h-3.5 animate-pulse" />
@@ -1491,14 +1647,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               <Zap className="w-3.5 h-3.5 animate-pulse" />
             </div>
           )}
-          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="relative px-4 py-3.5 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               {selectedRoomId ? (
                 <>
                   <button
                     type="button"
                     onClick={() => setSelectedRoomId(null)}
-                    className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center shrink-0"
+                    className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center shrink-0 text-white/70 hover:text-white"
                     title="Voltar"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -1508,17 +1664,18 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       src={avatarUrl}
                       name={displayName}
                       online={selectedRoom?.is_public ? undefined : headerOnline}
+                      size="sm"
                     />
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-bold truncate max-w-[160px]">{displayName}</span>
+                      <span className="text-[14px] font-semibold tracking-tight truncate max-w-[160px]">{displayName}</span>
                       {headerVerified && <VerifiedBadge variant={headerVerified} />}
                     </div>
                     {otherUser && !selectedRoom?.is_public && (
-                      <span className={`flex items-center gap-1 text-[11px] ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
+                      <span className={`flex items-center gap-1.5 text-[11px] font-medium mt-0.5 ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
                         {headerOnline
-                          ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Online agora</>
+                          ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.7)] animate-pulse" />Online agora</>
                           : otherUser.last_seen_at
                             ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
                             : 'Offline'}
@@ -1534,46 +1691,43 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       setShowNewChatModal(false);
                       setSearchMember('');
                     }}
-                    className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center shrink-0"
+                    className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center shrink-0 text-white/70 hover:text-white"
                     title="Voltar"
                   >
                     <ArrowLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-bold truncate">Nova Conversa</span>
+                  <span className="text-[15px] font-semibold tracking-tight truncate">Nova Conversa</span>
                 </>
               ) : (
                 <>
-                  <span className="text-sm font-bold truncate">Mensagens</span>
-                  {badgeCount > 0 && (
-                    <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                      {badgeCount}
-                    </span>
-                  )}
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-[0_4px_12px_rgba(251,146,60,.35)]">
+                    <MessageCircle className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15px] font-semibold tracking-tight">Mensagens</span>
+                      {badgeCount > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[11px] font-bold shadow-[0_2px_6px_rgba(239,68,68,.5)]">
+                          {badgeCount > 99 ? '99+' : badgeCount}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-white/40 font-medium">{rooms.length} {rooms.length === 1 ? 'conversa' : 'conversas'}</span>
+                  </div>
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {!selectedRoomId && !showNewChatModal && (
                 <button
                   type="button"
                   onClick={() => setShowNewChatModal(true)}
-                  className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center"
+                  className="h-9 w-9 rounded-xl bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70"
                   title="Nova Conversa"
                 >
                   <MessageCircle className="w-4 h-4" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  setSelectedRoomId(null);
-                }}
-                className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center"
-                title="Fechar"
-              >
-                <X className="w-4 h-4" />
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1584,10 +1738,21 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     navigateTo('chat');
                   }
                 }}
-                className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center"
+                className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
                 title="Abrir Chat"
               >
                 <Maximize2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setSelectedRoomId(null);
+                }}
+                className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
+                title="Fechar"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1595,16 +1760,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           {!selectedRoomId ? (
             showNewChatModal ? (
               <>
-                <div className="px-4 py-3 border-b border-white/10">
-                  <input
-                    type="text"
-                    value={searchMember}
-                    onChange={(e) => setSearchMember(e.target.value)}
-                    placeholder="Buscar pessoa..."
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="px-4 py-3 border-b border-white/[0.06]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchMember}
+                      onChange={(e) => setSearchMember(e.target.value)}
+                      placeholder="Buscar pessoa..."
+                      autoFocus
+                      className="w-full pl-9 pr-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-[13px] text-white placeholder-white/30 focus:outline-none focus:border-orange-500/60 focus:bg-white/[0.06] transition-all"
+                    />
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto chat-scrollbar py-1">
                   {members
                     .filter((m) => m.user_id !== user?.id)
                     .filter((m) => {
@@ -1614,40 +1783,51 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     .map((member) => {
                       const online = onlineUserIds.has(member.user_id);
                       const verified = getVerifiedVariant(member);
-                      
+
                       return (
                         <button
                           key={member.user_id}
                           type="button"
                           onClick={() => handleStartNewChat(member.user_id)}
-                          className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/5 transition"
+                          className="w-full mx-2 px-3 py-2.5 flex items-center gap-3 text-left rounded-xl hover:bg-white/[0.06] active:scale-[0.99] transition-all duration-150"
+                          style={{ width: 'calc(100% - 16px)' }}
                         >
                           <Avatar src={member.avatar_url} name={member.name} online={online} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <div className="text-sm font-semibold truncate">{member.name}</div>
+                              <div className="text-[13px] font-semibold truncate">{member.name}</div>
                               {verified && <VerifiedBadge variant={verified} />}
                             </div>
-                            <div className="text-xs text-white/60 truncate">
-                              {online ? 'Online' : member.role || 'Offline'}
+                            <div className={`text-[11px] truncate mt-0.5 ${online ? 'text-emerald-400 font-medium' : 'text-white/40'}`}>
+                              {online ? '● Online' : member.role || 'Offline'}
                             </div>
                           </div>
                         </button>
                       );
                     })}
                   {members.filter((m) => m.user_id !== user?.id).length === 0 && (
-                    <div className="p-4 text-sm text-white/70 text-center">
+                    <div className="p-8 text-sm text-white/50 text-center">
+                      <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
                       Nenhuma pessoa cadastrada
                     </div>
                   )}
                 </div>
               </>
             ) : (
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto chat-scrollbar py-1">
                 {loadingRooms && rooms.length === 0 ? (
-                  <div className="p-4 text-sm text-white/70">Carregando...</div>
+                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-white/50">
+                    <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
+                    Carregando...
+                  </div>
                 ) : rooms.length === 0 ? (
-                  <div className="p-4 text-sm text-white/70">Nenhuma conversa</div>
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 flex items-center justify-center mb-3 ring-1 ring-orange-500/20">
+                      <MessageCircle className="w-7 h-7 text-orange-400/80" />
+                    </div>
+                    <p className="text-sm font-semibold text-white/80">Nenhuma conversa</p>
+                    <p className="text-xs text-white/40 mt-1">Clique em + para iniciar</p>
+                  </div>
                 ) : (
                   [...rooms].sort((a, b) => {
                     const ua = roomUnreadCounts.get(a.id) ?? 0;
@@ -1666,10 +1846,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   const subtitle = room.is_public
                     ? `${room.type === 'team' ? 'Grupo' : 'Sala'} · ${(roomMembers.get(room.id) ?? []).length || ''} membros`
                     : online
-                      ? '● Online agora'
+                      ? 'Online agora'
                       : otherUser?.last_seen_at
                         ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
-                        : '● Offline';
+                        : 'Offline';
 
                   const preview = getPreview((room as any).last_message_preview);
 
@@ -1686,33 +1866,34 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                           return next;
                         });
                       }}
-                      className={`w-full px-4 py-3 flex items-center gap-3 text-left transition ${roomUnread > 0 ? 'bg-white/[0.06] hover:bg-white/10' : 'hover:bg-white/5'}`}
+                      className={`group w-full mx-2 px-3 py-2.5 flex items-center gap-3 text-left rounded-xl active:scale-[0.99] transition-all duration-150 ${
+                        roomUnread > 0
+                          ? 'bg-gradient-to-r from-orange-500/[0.08] to-transparent hover:from-orange-500/[0.12]'
+                          : 'hover:bg-white/[0.05]'
+                      }`}
+                      style={{ width: 'calc(100% - 16px)' }}
                     >
-                      <div className="relative">
-                        <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
-                        {roomUnread > 0 && (
-                          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 ring-2 ring-[#111827]" />
-                        )}
-                      </div>
+                      <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <div className={`text-sm truncate ${roomUnread > 0 ? 'font-bold text-white' : 'font-semibold'}`}>{displayName}</div>
+                            <div className={`text-[13px] truncate ${roomUnread > 0 ? 'font-bold text-white' : 'font-semibold text-white/95'}`}>{displayName}</div>
                             {verified && <VerifiedBadge variant={verified} />}
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {roomUnread > 0 && (
-                              <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">
-                                {roomUnread > 99 ? '99+' : roomUnread}
-                              </span>
-                            )}
-                            <div className="text-[11px] text-white/50">
-                              {room.last_message_at ? new Date(room.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
-                            </div>
+                          <div className={`text-[10px] shrink-0 ${roomUnread > 0 ? 'text-orange-300 font-semibold' : 'text-white/40'}`}>
+                            {room.last_message_at ? new Date(room.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
                           </div>
                         </div>
-                        <div className={`text-xs truncate ${online && !room.is_public ? 'text-emerald-400' : 'text-white/50'}`}>{subtitle}</div>
-                        <div className={`text-xs truncate mt-0.5 ${roomUnread > 0 ? 'text-white font-medium' : 'text-white/50'}`}>{preview}</div>
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <div className={`text-[11.5px] truncate ${roomUnread > 0 ? 'text-white/85 font-medium' : 'text-white/50'}`}>
+                            {preview || subtitle}
+                          </div>
+                          {roomUnread > 0 && (
+                            <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white text-[10px] font-bold shrink-0 shadow-[0_2px_8px_rgba(251,146,60,.4)]">
+                              {roomUnread > 99 ? '99+' : roomUnread}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -1739,26 +1920,28 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   const file = e.dataTransfer.files?.[0];
                   if (file && selectedRoomId) handleUploadAttachment(file);
                 }}
-                className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-1 min-h-[200px] relative"
+                className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-0.5 min-h-[200px] relative chat-scrollbar"
               >
                 {/* Overlay drag & drop */}
                 {isDragging && (
-                  <div className="absolute inset-0 z-10 bg-indigo-600/20 border-2 border-dashed border-indigo-400 rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none">
-                    <Paperclip className="w-8 h-8 text-indigo-300" />
-                    <span className="text-sm font-semibold text-indigo-200">Solte para enviar</span>
+                  <div className="absolute inset-2 z-10 bg-orange-500/15 border-2 border-dashed border-orange-400 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none backdrop-blur-sm">
+                    <Paperclip className="w-8 h-8 text-orange-300" />
+                    <span className="text-sm font-semibold text-orange-200">Solte para enviar</span>
                   </div>
                 )}
 
                 {loadingMessages && messages.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-white/50 py-6 justify-center">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white/80 rounded-full animate-spin" />
+                  <div className="flex items-center gap-2 text-sm text-white/50 py-8 justify-center">
+                    <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
                     Carregando mensagens...
                   </div>
                 ) : !loadingMessages && messages.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 py-8 text-white/40">
-                    <MessageCircle className="w-10 h-10 opacity-30" />
-                    <span className="text-sm">Nenhuma mensagem ainda</span>
-                    <span className="text-xs text-white/30">Seja o primeiro a escrever 👋</span>
+                  <div className="flex flex-col items-center gap-3 py-12 text-white/50">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/15 to-amber-500/5 flex items-center justify-center ring-1 ring-orange-500/20">
+                      <MessageCircle className="w-8 h-8 text-orange-400/70" />
+                    </div>
+                    <span className="text-sm font-semibold text-white/80">Nenhuma mensagem ainda</span>
+                    <span className="text-xs text-white/40">Seja o primeiro a escrever 👋</span>
                   </div>
                 ) : (() => {
                   const otherReads = Array.from(readStates.entries())
@@ -1786,25 +1969,25 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     return (
                       <React.Fragment key={msg.id}>
                         {showSeparator && (
-                          <div className="flex items-center gap-3 py-2 my-1">
-                            <div className="flex-1 h-px bg-white/10" />
-                            <span className="text-[10px] text-white/40 font-medium px-2 shrink-0">
+                          <div className="flex items-center gap-3 py-3 my-1">
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                            <span className="text-[10px] text-white/40 font-semibold tracking-wider uppercase px-2 shrink-0">
                               {formatDateSeparator(msg.created_at)}
                             </span>
-                            <div className="flex-1 h-px bg-white/10" />
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                           </div>
                         )}
                         <div
-                          className={`group flex flex-col min-w-0 mb-1 ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in slide-in-from-left-2 fade-in duration-300' : ''}`}
+                          className={`group flex flex-col min-w-0 mb-1.5 ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in slide-in-from-left-2 fade-in duration-300' : ''}`}
                         >
                           {!isMine && (
-                            <div className="text-[10px] text-white/40 mb-0.5 ml-1">{senderName}</div>
+                            <div className="text-[10px] text-white/50 font-medium mb-0.5 ml-2.5">{senderName}</div>
                           )}
 
                           {/* Reply preview */}
                           {replyMsg && !isDeleted && (
-                            <div className={`mb-1 px-2 py-1 rounded-lg border-l-2 border-indigo-400 bg-white/5 max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
-                              <div className="text-[10px] text-indigo-300 font-semibold truncate">
+                            <div className={`mb-1 px-2.5 py-1.5 rounded-xl border-l-2 border-orange-400 bg-white/[0.04] max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
+                              <div className="text-[10px] text-orange-300 font-semibold truncate">
                                 {replySender?.name || 'Usuário'}
                               </div>
                               <div className="text-[11px] text-white/50 truncate">
@@ -1818,22 +2001,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0 mb-1"
+                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
                                 title="Responder"
                               >
-                                <Reply className="w-3 h-3 text-white/50" />
+                                <Reply className="w-3 h-3" />
                               </button>
                             )}
                             <div
-                              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm transition-all ${
+                              className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13.5px] leading-snug transition-all overflow-hidden ${
                                 isDeleted
-                                  ? 'bg-slate-700/40 text-white/30 italic rounded-bl-md rounded-br-md'
+                                  ? 'bg-white/[0.04] text-white/30 italic ring-1 ring-white/5'
                                   : isMine
-                                    ? 'bg-indigo-600 text-white rounded-br-sm'
-                                    : isNew
-                                      ? 'bg-emerald-600 text-white rounded-bl-sm ring-1 ring-emerald-400'
-                                      : 'bg-slate-700 text-white rounded-bl-sm'
-                              } overflow-hidden`}
+                                    ? 'bg-slate-700/75 text-white rounded-br-md ring-1 ring-white/[0.07] shadow-[0_2px_8px_rgba(0,0,0,.3)]'
+                                    : 'bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-bl-md shadow-[0_4px_16px_-4px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.18)]'
+                              }`}
                             >
                               {isDeleted
                                 ? <span className="flex items-center gap-1.5 text-xs"><span>🗑️</span> Mensagem apagada</span>
@@ -1844,20 +2025,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0 mb-1"
+                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
                                 title="Responder"
                               >
-                                <Reply className="w-3 h-3 text-white/50" />
+                                <Reply className="w-3 h-3" />
                               </button>
                             )}
                           </div>
 
-                          <div className={`text-[10px] text-white/30 mt-0.5 flex items-center gap-1 ${isMine ? 'mr-8' : 'ml-8'}`}>
+                          <div className={`text-[10px] text-white/35 mt-1 flex items-center gap-1 ${isMine ? 'mr-9' : 'ml-9'}`}>
                             {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {msg.edited_at && !isDeleted && <span className="text-white/20">(editada)</span>}
+                            {msg.edited_at && !isDeleted && <span className="text-white/25">· editada</span>}
                             {isMine && !isDeleted && (
                               <span
-                                className={seen ? 'text-sky-400' : 'text-white/30'}
+                                className={`ml-0.5 ${seen ? 'text-sky-400' : 'text-white/35'}`}
                                 title={seen ? 'Visualizada' : 'Enviada'}
                               >
                                 {seen ? '✓✓' : '✓'}
@@ -1872,18 +2053,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
                 {/* Typing indicator */}
                 {typingUsers.length > 0 && (
-                  <div className="flex items-center gap-2 pt-1 pb-2">
-                    <div className="flex gap-[3px] items-center bg-slate-700 rounded-2xl px-3 py-2">
-                      <span className="text-xs text-white/60 mr-1">
+                  <div className="flex items-center gap-2 pt-1 pb-2 px-1">
+                    <div className="flex gap-1.5 items-center bg-slate-700/80 ring-1 ring-white/[0.06] rounded-2xl px-3 py-2 shadow-[0_2px_8px_rgba(0,0,0,.2)]">
+                      <span className="text-[11.5px] text-white/70 font-medium">
                         {typingUsers.length === 1 ? `${typingUsers[0]} está digitando` : 'Várias pessoas digitando'}
                       </span>
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="block w-1.5 h-1.5 bg-white/50 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 0.15}s` }}
-                        />
-                      ))}
+                      <div className="flex gap-1 items-center ml-1">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="block w-1.5 h-1.5 bg-orange-400 rounded-full"
+                            style={{ animation: `chatTypingDot 1.2s ease-in-out ${i * 0.15}s infinite` }}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1891,11 +2074,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
               {/* Scroll to bottom button */}
               {showScrollBottom && (
-                <div className="absolute bottom-[72px] right-3 z-10">
+                <div className="absolute bottom-[82px] right-3 z-10">
                   <button
                     type="button"
                     onClick={() => { pinnedToBottomRef.current = true; scrollToBottom('smooth'); }}
-                    className="h-8 w-8 rounded-full bg-indigo-600 hover:bg-indigo-500 shadow-lg flex items-center justify-center transition"
+                    className="h-9 w-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 hover:scale-110 active:scale-95 shadow-[0_8px_24px_-4px_rgba(251,146,60,.6)] ring-1 ring-white/20 flex items-center justify-center transition-transform duration-150"
                     title="Ir para o fim"
                   >
                     <ChevronDown className="w-4 h-4 text-white" />
@@ -1906,33 +2089,136 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               <div className="shrink-0">
                 {/* Reply preview bar */}
                 {replyTo && (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border-t border-white/10">
-                    <div className="flex-1 min-w-0 border-l-2 border-indigo-400 pl-2">
-                      <div className="text-[10px] text-indigo-300 font-semibold">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-500/[0.08] to-transparent border-t border-white/[0.06]">
+                    <div className="flex-1 min-w-0 border-l-2 border-orange-400 pl-2.5">
+                      <div className="text-[10px] text-orange-300 font-semibold tracking-wide">
                         Respondendo a {replyTo.user_id === user?.id ? 'você mesmo' : (membersByUserIdRef.current.get(replyTo.user_id)?.name || 'Usuário')}
                       </div>
-                      <div className="text-[11px] text-white/50 truncate">{getPreview(replyTo.content)}</div>
+                      <div className="text-[11px] text-white/60 truncate mt-0.5">{getPreview(replyTo.content)}</div>
                     </div>
                     <button
                       type="button"
                       onClick={() => setReplyTo(null)}
-                      className="h-6 w-6 rounded-full hover:bg-white/10 flex items-center justify-center shrink-0"
+                      className="h-7 w-7 rounded-full hover:bg-white/10 active:scale-95 flex items-center justify-center shrink-0 transition-all"
                     >
-                      <X className="w-3 h-3 text-white/50" />
+                      <X className="w-3.5 h-3.5 text-white/60" />
                     </button>
                   </div>
                 )}
 
-              <div className="p-3 border-t border-white/10">
-                <div className="relative flex items-center gap-2">
+              <div className="p-3 border-t border-white/[0.06] bg-gradient-to-t from-black/20 to-transparent">
+                {/* ── Barra de gravação estilo WhatsApp ── */}
+                {isRecording ? (
+                  <div className="flex items-center gap-2" style={{ animation: 'chatPanelIn 220ms cubic-bezier(.22,1,.36,1) both' }}>
+
+                    {isRecordingPaused ? (
+                      /* ── ESTADO: PAUSADO ── */
+                      <div className="flex flex-col gap-1.5 w-full">
+                        {/* Linha 1: lixeira + waveform com play inline */}
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={handleCancelRecording}
+                            className="shrink-0 h-9 w-9 rounded-full bg-white/[0.06] hover:bg-red-500/20 text-white/40 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
+                            title="Cancelar gravação">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <div className="flex-1 flex items-center gap-2 rounded-2xl px-3"
+                            style={{ height: '38px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                            {/* Botão play inline */}
+                            <button type="button" onClick={handleTogglePreviewPlayback}
+                              className="shrink-0 w-6 h-6 rounded-full bg-white/[0.10] hover:bg-orange-500/30 flex items-center justify-center transition-all active:scale-90"
+                              title={previewPlaying ? 'Pausar' : 'Ouvir gravação'}>
+                              {previewPlaying
+                                ? <Pause className="w-3 h-3 text-orange-300" />
+                                : <Play className="w-3 h-3 text-white/60 ml-[1px]" />}
+                            </button>
+                            <div className="flex-1 flex items-end gap-[2px]" style={{ height: '16px' }}>
+                              {Array.from({ length: 32 }, (_, i) => (
+                                <div key={i} className="flex-1 rounded-full"
+                                  style={{ height: `${18 + ((i * 43 + i * i * 7) % 82)}%`, background: 'rgba(255,255,255,0.16)' }} />
+                              ))}
+                            </div>
+                            <span className="text-[11px] font-mono text-white/40 font-semibold tabular-nums shrink-0">
+                              {formatRecordingTime(recordingTime)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Linha 2: Retomar + Enviar */}
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={handleResumeRecording}
+                            className="flex-1 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] text-white/60 hover:text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 text-[11px] font-semibold"
+                            title="Retomar gravação">
+                            <Mic className="w-3.5 h-3.5 text-red-400" />
+                            <span>Retomar</span>
+                          </button>
+                          <button type="button" onClick={handleStopRecording}
+                            className="flex-1 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center gap-1.5 shadow-[0_4px_12px_-2px_rgba(251,146,60,.5)] active:scale-95 transition-all text-[11px] font-semibold"
+                            title="Enviar áudio">
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Enviar</span>
+                          </button>
+                        </div>
+                      </div>
+
+                    ) : (
+                      /* ── ESTADO: GRAVANDO ── */
+                      <>
+                        <button type="button" onClick={handleCancelRecording}
+                          className="shrink-0 h-10 w-10 rounded-full bg-white/[0.06] hover:bg-red-500/20 text-white/45 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
+                          title="Cancelar gravação">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="flex-1 flex items-center gap-2 rounded-2xl px-3"
+                          style={{ height: '40px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                          <div className="flex-1 flex items-end gap-[2px]" style={{ height: '22px' }}>
+                            {Array.from({ length: 32 }, (_, i) => {
+                              const baseH = 18 + ((i * 43 + i * i * 7) % 82);
+                              return (
+                                <div key={i} className="flex-1 rounded-full origin-center"
+                                  style={{
+                                    height: `${baseH}%`,
+                                    background: 'rgba(248,113,113,0.75)',
+                                    animation: `chatWaveBar ${(0.45 + (i % 5) * 0.13).toFixed(2)}s ease-in-out ${((i * 0.07) % 0.88).toFixed(2)}s infinite`,
+                                  }} />
+                              );
+                            })}
+                          </div>
+                          <span className="text-[11px] font-mono text-red-300/90 font-bold tabular-nums shrink-0">
+                            {formatRecordingTime(recordingTime)}
+                          </span>
+                        </div>
+                        {/* Mic pulsante */}
+                        <div className="shrink-0 h-10 w-10 rounded-full bg-red-500/15 ring-1 ring-red-500/30 flex items-center justify-center">
+                          <Mic className="w-[18px] h-[18px] text-red-400 animate-pulse" />
+                        </div>
+                        {/* Pausar */}
+                        <button type="button" onClick={handlePauseRecording}
+                          className="shrink-0 h-10 w-10 rounded-full bg-white/[0.06] hover:bg-white/[0.10] text-white/60 hover:text-white flex items-center justify-center transition-all active:scale-90"
+                          title="Pausar gravação">
+                          <Pause className="w-4 h-4" />
+                        </button>
+                        {/* Enviar direto */}
+                        <button type="button" onClick={handleStopRecording}
+                          className="shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-[0_4px_14px_-2px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.2)] active:scale-95 transition-transform"
+                          title="Enviar áudio">
+                          <Send className="w-4 h-4 text-white" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                <div className="relative flex items-center gap-1.5">
                   {showEmojiPicker && (
-                    <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-white/10 bg-[#0b1220]/95 shadow-xl p-3">
-                      <div className="grid grid-cols-8 gap-1">
+                    <div
+                      className="absolute bottom-14 left-0 z-20 w-[300px] rounded-2xl bg-[#0b1220]/95 backdrop-blur-xl p-3 ring-1 ring-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+                      style={{ animation: 'chatPanelIn 240ms cubic-bezier(.22,1,.36,1) both' }}
+                    >
+                      <div className="grid grid-cols-8 gap-0.5">
                         {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
                           <button
                             key={e}
                             type="button"
-                            className="h-8 w-8 rounded-lg hover:bg-white/10 transition text-lg"
+                            className="h-8 w-8 rounded-lg hover:bg-orange-500/15 active:scale-90 transition-all duration-150 text-lg"
                             onClick={() => handlePickEmoji(e)}
                             aria-label={`Emoji ${e}`}
                           >
@@ -1946,8 +2232,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker((v) => !v)}
-                    disabled={!selectedRoomId || isRecording}
-                    className="h-9 w-9 rounded-xl hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center shrink-0"
+                    disabled={!selectedRoomId}
+                    className="h-9 w-9 rounded-xl hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center shrink-0 text-white/70"
                     title="Emoji"
                   >
                     <Smile className="w-4 h-4" />
@@ -1956,8 +2242,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   <button
                     type="button"
                     onClick={handleAttachClick}
-                    disabled={!selectedRoomId || uploadingAttachment || isRecording}
-                    className="h-9 w-9 rounded-xl hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center shrink-0"
+                    disabled={!selectedRoomId || uploadingAttachment}
+                    className="h-9 w-9 rounded-xl hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center shrink-0 text-white/70"
                     title="Anexar"
                   >
                     <Paperclip className="w-4 h-4" />
@@ -1969,10 +2255,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       type="button"
                       onClick={handleSendNudge}
                       disabled={nudgeCooldown}
-                      className={`h-9 w-9 rounded-xl transition flex items-center justify-center shrink-0 ${
+                      className={`h-9 w-9 rounded-xl transition-all duration-150 flex items-center justify-center shrink-0 ${
                         nudgeCooldown
-                          ? 'opacity-30 cursor-not-allowed'
-                          : 'hover:bg-amber-500/20 text-amber-300'
+                          ? 'opacity-30 cursor-not-allowed text-amber-300'
+                          : 'hover:bg-amber-500/20 active:scale-95 text-amber-300'
                       }`}
                       title={nudgeCooldown ? 'Aguarde antes de chamar novamente' : 'Chamar atenção'}
                     >
@@ -2008,43 +2294,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        if (!isRecording) handleSendMessage();
+                        handleSendMessage();
                       }
                       if (e.key === 'Escape' && replyTo) setReplyTo(null);
                     }}
                     placeholder={replyTo ? 'Escreva sua resposta...' : 'Digite uma mensagem...'}
-                    className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-indigo-500/50"
-                    disabled={sendingMessage || uploadingAttachment || isRecording}
+                    className="min-w-0 flex-1 bg-white/[0.05] border border-white/[0.08] rounded-xl px-3.5 py-2 text-[13.5px] text-white placeholder-white/40 focus:outline-none focus:border-orange-500/50 focus:bg-white/[0.08] focus:shadow-[0_0_0_3px_rgba(251,146,60,.1)] transition-all"
+                    disabled={sendingMessage || uploadingAttachment}
                   />
 
                   <button
                     type="button"
                     onClick={handleToggleRecording}
                     disabled={!selectedRoomId || uploadingAttachment}
-                    className={`h-9 w-9 rounded-xl transition flex items-center justify-center shrink-0 ${
-                      isRecording ? 'bg-red-600 hover:bg-red-500' : 'hover:bg-white/10'
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title={isRecording ? 'Parar' : 'Gravar áudio'}
+                    className="h-9 w-9 rounded-xl hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center shrink-0 text-white/70"
+                    title="Gravar áudio"
                   >
-                    {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                    <Mic className="w-4 h-4" />
                   </button>
-
-                  {isRecording && (
-                    <span className="text-xs font-mono text-red-400 font-bold shrink-0">
-                      {formatRecordingTime(recordingTime)}
-                    </span>
-                  )}
 
                   <button
                     type="button"
                     onClick={handleSendMessage}
-                    disabled={!selectedRoomId || !messageText.trim() || sendingMessage || uploadingAttachment || isRecording}
-                    className="h-9 w-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center shrink-0"
+                    disabled={!selectedRoomId || !messageText.trim() || sendingMessage || uploadingAttachment}
+                    className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center shrink-0 shadow-[0_4px_14px_-2px_rgba(251,146,60,.5),inset_0_1px_0_rgba(255,255,255,.2)] ring-1 ring-white/10"
                     title="Enviar"
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="w-4 h-4 text-white" />
                   </button>
                 </div>
+                )} {/* fim bloco normal input */}
               </div>
               </div>
             </div>
@@ -2053,9 +2332,25 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       )}
 
       {showToast && toast && (
-        <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#0b1220]/95 text-white shadow-[0_25px_70px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden">
-          {/* Barra de destaque colorida */}
-          <div className="h-[3px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+        <div
+          className="mb-3 w-[380px] max-w-[calc(100vw-24px)] rounded-[20px] text-white overflow-hidden relative"
+          style={{
+            animation: 'chatToastIn 500ms cubic-bezier(.22,1,.36,1) both',
+            background: 'linear-gradient(180deg, rgba(15,23,42,.97) 0%, rgba(10,15,28,.98) 100%)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            boxShadow: '0 30px 70px -10px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.08)',
+          }}
+        >
+          {/* Barra de destaque âmbar com shimmer */}
+          <div
+            className="h-[3px]"
+            style={{
+              background: 'linear-gradient(90deg, #f97316 0%, #fbbf24 30%, #fff7 50%, #fbbf24 70%, #f97316 100%)',
+              backgroundSize: '200% auto',
+              animation: 'chatToastBarShimmer 2s linear infinite',
+            }}
+          />
           <div className="px-4 py-3 flex items-center gap-3">
             <button
               type="button"
@@ -2084,22 +2379,21 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               }}
             >
               <div className="flex items-center gap-1.5 min-w-0">
-                <div className="text-sm font-semibold truncate">{toast.senderName}</div>
+                <div className="text-[13.5px] font-semibold truncate tracking-tight">{toast.senderName}</div>
                 {toastVerified && <VerifiedBadge variant={toastVerified} />}
               </div>
-              <div className="text-xs text-white/60 truncate mt-0.5">{toast.preview}</div>
+              <div className="text-[11.5px] text-white/65 truncate mt-0.5">{toast.preview}</div>
             </button>
-            {/* Botão fechar — cancela o timer e remove o toast */}
             <button
               type="button"
               onClick={() => {
                 if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
                 setToast(null);
               }}
-              className="shrink-0 h-7 w-7 rounded-full hover:bg-white/10 flex items-center justify-center transition"
+              className="shrink-0 h-7 w-7 rounded-full hover:bg-white/10 active:scale-95 flex items-center justify-center transition-all"
               title="Fechar"
             >
-              <X className="w-3.5 h-3.5 text-white/50" />
+              <X className="w-3.5 h-3.5 text-white/60" />
             </button>
           </div>
         </div>
@@ -2123,40 +2417,81 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             return next;
           });
         }}
-        className={`rounded-full overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 transition ${
-          badgeCount > 0 && !open ? 'ring-amber-400/60 shadow-amber-900/30' : 'ring-white/10'
+        className={`group relative rounded-full overflow-hidden transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] ${
+          badgeCount > 0 && !open ? 'ring-2 ring-orange-400/40' : 'ring-1 ring-white/10'
         }`}
+        style={{
+          boxShadow:
+            badgeCount > 0 && !open
+              ? '0 20px 60px rgba(0,0,0,.5), 0 0 0 0 rgba(251,146,60,0)'
+              : '0 20px 60px rgba(0,0,0,.5)',
+          animation: badgeCount > 0 && !open ? 'chatLauncherGlow 2.4s ease-in-out infinite' : undefined,
+        }}
         title="Mensagens / Editor"
       >
-        <div className="sm:hidden flex items-center justify-center h-12 w-12 bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
+        {/* Mobile — círculo compacto */}
+        <div
+          className="sm:hidden flex items-center justify-center h-12 w-12 text-white relative"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(20,28,46,.98) 0%, rgba(10,15,28,.98) 100%)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        >
+          {/* Highlight superior */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-1/2 opacity-60"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 100%)',
+            }}
+          />
           <div className="relative">
-            <MessageCircle className="w-5 h-5" />
+            <MessageCircle className="w-5 h-5" strokeWidth={2.4} />
             {badgeCount > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
-                {badgeCount}
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[11px] font-bold flex items-center justify-center shadow-[0_2px_8px_rgba(239,68,68,.6)] ring-2 ring-[#0a0f1c]">
+                {badgeCount > 99 ? '99+' : badgeCount}
               </span>
             )}
           </div>
         </div>
 
-        <div className="hidden sm:flex items-stretch bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
-          <div className="flex items-center gap-3 px-4 h-12">
-            <div className="relative">
-              <MessageCircle className="w-5 h-5" />
+        {/* Desktop — barra horizontal */}
+        <div
+          className="hidden sm:flex items-stretch text-white relative"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(20,28,46,.98) 0%, rgba(10,15,28,.98) 100%)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        >
+          {/* Highlight superior */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-1/2 opacity-70 rounded-t-full"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,.1) 0%, transparent 100%)',
+            }}
+          />
+          <div className="flex items-center gap-2.5 px-4 h-12 relative">
+            <div className="relative flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 shadow-[0_4px_10px_rgba(251,146,60,.4),inset_0_1px_0_rgba(255,255,255,.25)]">
+              <MessageCircle className="w-3.5 h-3.5 text-white" strokeWidth={2.6} />
               {badgeCount > 0 && (
-                <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
-                  {badgeCount}
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,.6)] ring-2 ring-[#0a0f1c]">
+                  {badgeCount > 99 ? '99+' : badgeCount}
                 </span>
               )}
             </div>
-            <span className="text-sm font-semibold">Mensagens</span>
+            <span className="text-[13.5px] font-semibold tracking-tight">Mensagens</span>
           </div>
 
           {petitionEditorMinimized && (
             <>
-              <div className="w-[3px] bg-gradient-to-b from-orange-400 via-orange-500 to-amber-400" aria-hidden />
+              <div className="w-px bg-white/[0.08]" aria-hidden />
               <div
-                className="relative flex items-center gap-2 px-4 h-12 text-white"
+                className="relative flex items-center gap-2 px-4 h-12 text-white hover:bg-white/[0.04] transition"
                 role="button"
                 tabIndex={0}
                 onClick={(e) => {
@@ -2172,11 +2507,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 }}
                 title="Abrir Editor"
               >
-                <FileText className="w-4 h-4" />
-                <span className="text-sm font-semibold">Editor</span>
+                <FileText className="w-4 h-4 text-orange-300" />
+                <span className="text-[13px] font-semibold">Editor</span>
                 {petitionEditorHasUnsavedChanges && (
                   <span
-                    className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse"
+                    className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-[#0a0f1c] animate-pulse"
                     title="Alterações não salvas"
                   />
                 )}
@@ -2185,22 +2520,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           )}
 
           {badgeCount > 0 && (topUnreadUser || lastUnreadImageSender) && (
-            <div className="flex items-center pr-3 h-12">
+            <div className="flex items-center pr-3 pl-1 h-12">
               <div className="relative">
                 {(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) ? (
                   <img
                     src={(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) as string}
                     alt={topUnreadUser?.name || lastUnreadImageSender?.name || ''}
-                    className="w-8 h-8 rounded-full object-cover ring-2 ring-red-500"
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-orange-400 shadow-[0_4px_12px_rgba(251,146,60,.4)]"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-white/10 ring-2 ring-red-500 flex items-center justify-center text-[11px] font-bold">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 ring-2 ring-orange-300 flex items-center justify-center text-[11px] font-bold text-white shadow-[0_4px_12px_rgba(251,146,60,.4)]">
                     {(topUnreadUser?.name || lastUnreadImageSender?.name || '?').substring(0, 1).toUpperCase()}
                   </div>
                 )}
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-[#111827]">
-                  {badgeCount > 99 ? '99+' : badgeCount}
-                </span>
               </div>
             </div>
           )}

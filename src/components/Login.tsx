@@ -391,6 +391,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [sessionExpiredNotice] = useState(() => {
+    try {
+      const v = sessionStorage.getItem('auth_notice');
+      if (v === 'session_expired') { sessionStorage.removeItem('auth_notice'); return true; }
+    } catch {}
+    return false;
+  });
   const [resetting, setResetting] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [logoHover, setLogoHover] = useState(false);
@@ -860,6 +867,17 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                   </button>
                 </div>
               </>
+            )}
+
+            {/* Sessão expirada */}
+            {sessionExpiredNotice && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3"/></svg>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Sessão encerrada</p>
+                  <p className="text-sm text-amber-700 mt-0.5">Sua sessão expirou por inatividade. Faça login novamente.</p>
+                </div>
+              </div>
             )}
 
             {/* Mensagem de erro */}
