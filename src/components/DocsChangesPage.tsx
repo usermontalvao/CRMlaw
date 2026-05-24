@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.136': { name: 'Café Digest Semanal', emoji: '📧' },
   '1.10.135': { name: 'Café Agenda Visual', emoji: '📅' },
   '1.10.134': { name: 'Café Chat Unificado', emoji: '💬' },
   '1.10.133': { name: 'Chat Premium', emoji: '🎙️' },
@@ -833,6 +834,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.136',
+    date: '24/05/2026',
+    summary: 'Resumo semanal automático por email via Resend, com template premium no tema laranja/âmbar, respeitando permissões de módulo por membro.',
+    modules: [
+      {
+        moduleId: 'Notificações',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Resumo semanal automático por email (Resend)',
+            description: 'Edge Function Supabase que envia todo domingo/segunda um email personalizado para cada membro da equipe. Respeita permissões por cargo e overrides individuais: quem não tem acesso a Prazos não vê prazos, quem não tem acesso a Financeiro não vê parcelas, etc. Envia via Resend API com fallback para variável de ambiente RESEND_API_KEY.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Template de email premium no tema da marca',
+            description: 'Email com header em gradiente laranja/âmbar, seções por módulo com cabeçalhos coloridos, badges de urgência para prazos (vermelho = hoje/amanhã, laranja = 3 dias, âmbar = 5 dias), rodapé escuro com identidade do escritório. Completamente inline CSS para compatibilidade com todos os clientes de email.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Painel de configuração do digest no admin',
+            description: 'Nova seção na aba Notificações das configurações: card expansível com toggle, seletor de dia da semana, seletor de horário, campo de API Key Resend com mostrar/ocultar, e preview visual das seções que serão enviadas por módulo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.135',
     date: '24/05/2026',

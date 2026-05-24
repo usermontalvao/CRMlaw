@@ -1122,7 +1122,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               {overdueDeadlines.length > 0
                 ? <span className="text-rose-600 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span>
                 : upcomingDeadlines[0]
-                  ? `Próximo: ${formatDate(upcomingDeadlines[0].due_date)}`
+                  ? `Vence em: ${formatDate(upcomingDeadlines[0].due_date)}`
                   : 'Em dia'}
             </div>
           </div>
@@ -1133,10 +1133,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Próximo compromisso</span>
               <Gavel className="w-3.5 h-3.5 text-slate-300" />
             </div>
-            <div className="text-base font-bold text-slate-900 leading-tight">
-              {nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-400">—</span>}
+            <div className="flex items-baseline gap-2">
+              <span className="text-base font-bold text-slate-900 leading-tight">
+                {nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-400">—</span>}
+              </span>
+              {nextHearing && (() => {
+                const dt = new Date(nextHearing.date);
+                const hasTime = dt.getHours() !== 0 || dt.getMinutes() !== 0;
+                return hasTime ? (
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    {dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                ) : null;
+              })()}
             </div>
-            <div className="mt-1.5 text-[10px] text-slate-500 truncate">
+            <div className="mt-1 text-[10px] text-slate-500 truncate">
               {nextHearing ? nextHearing.label : 'Nenhuma agendada'}
             </div>
           </div>

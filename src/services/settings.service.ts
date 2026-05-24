@@ -34,6 +34,11 @@ export interface NotificationConfig {
   new_intimation_alert: boolean;
   daily_digest: boolean;
   digest_time: string;
+  // Resumo semanal automático
+  weekly_digest: boolean;
+  weekly_digest_day: number;          // 0 = Dom, 1 = Seg, ... 6 = Sáb
+  weekly_digest_hour: string;         // "08:00"
+  weekly_digest_resend_key: string;   // Resend API key
 }
 
 export interface Preferences {
@@ -272,6 +277,10 @@ class SettingsService {
       new_intimation_alert: true,
       daily_digest: false,
       digest_time: '08:00',
+      weekly_digest: false,
+      weekly_digest_day: 0,
+      weekly_digest_hour: '08:00',
+      weekly_digest_resend_key: '',
     };
   }
 
