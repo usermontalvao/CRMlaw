@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.139': { name: 'Café Recibo Exato', emoji: '🧾' },
   '1.10.138': { name: 'Café Digest Pontual', emoji: '⏰' },
   '1.10.137': { name: 'Café Vara Real', emoji: '⚖️' },
   '1.10.136': { name: 'Café Digest Semanal', emoji: '📧' },
@@ -836,6 +837,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.139',
+    date: '25/05/2026',
+    summary: 'Recibo de parcela agora exibe o valor de honorários (fee_value) e não o total da parcela.',
+    modules: [
+      {
+        moduleId: 'Financeiro',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Recibo por parcela exibia valor total em vez de honorários',
+            description: 'O recibo gerado para uma parcela individual usava o valor bruto (paid_value/value) sem aplicar o feeRatio (fee_value / total_value). Corrigido: feeRatio agora é calculado uma vez e aplicado tanto no recibo por parcela quanto no recibo total do acordo, tornando o comportamento consistente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.138',
     date: '24/05/2026',

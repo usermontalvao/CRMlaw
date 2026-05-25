@@ -2434,16 +2434,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     const issueDate = new Date();
     const year = issueDate.getFullYear();
     const issueDateFormatted = issueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-    // Usa o valor real pago (paid_value) — não o valor agendado
-    const actualPaid = installment?.paid_value ?? installment?.value ?? 0;
+    // Proporção de honorários sobre o total do acordo (ex: 0.5 se metade é honorários)
+    const feeRatio = agreement.total_value > 0 ? agreement.fee_value / agreement.total_value : 1;
+    // Usa o valor real pago (paid_value) — não o valor agendado — e aplica o feeRatio
+    const actualPaid = (installment?.paid_value ?? installment?.value ?? 0) * feeRatio;
     // Para recibo do acordo completo: soma apenas os honorários das parcelas efetivamente baixadas
     const totalPaidFees = !installment
       ? allInstallments
           .filter(i => i.agreement_id === agreement.id && i.status === 'pago')
-          .reduce((sum, i) => {
-            const feeRatio = agreement.total_value > 0 ? agreement.fee_value / agreement.total_value : 1;
-            return sum + (i.paid_value ?? i.value ?? 0) * feeRatio;
-          }, 0)
+          .reduce((sum, i) => sum + (i.paid_value ?? i.value ?? 0) * feeRatio, 0)
       : 0;
     if (!installment && !options?.totalPaid && totalPaidFees === 0) {
       toast.info('Recibo', 'Nenhuma parcela foi paga. Não há valor recebido para gerar o recibo.');
@@ -2495,7 +2494,6 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     
     const serviceDescription = agreement.description || 'Serviços advocatícios prestados conforme contrato de honorários.';
     const paidInstallmentsAsc = [...paidInstallmentsForAgreement].sort((a, b) => (a.installment_number ?? 0) - (b.installment_number ?? 0));
-    const feeRatio = agreement.total_value > 0 ? agreement.fee_value / agreement.total_value : 1;
 
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
