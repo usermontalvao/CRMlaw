@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.143': { name: 'Café Andamento Persistido', emoji: '🏛️' },
   '1.10.142': { name: 'Café Estágio Vivo', emoji: '📊' },
   '1.10.141': { name: 'Café Baixa Avulsa', emoji: '💰' },
   '1.10.140': { name: 'Café Editar Baixa', emoji: '✏️' },
@@ -840,6 +841,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.143',
+    date: '25/05/2026',
+    summary: 'DataJud Opção B: tabela datajud_movimentos com persistência de andamentos e auto-update de status a cada sync.',
+    modules: [
+      {
+        moduleId: 'Processos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Tabela datajud_movimentos',
+            description: 'Nova tabela persiste todos os andamentos processuais vindos do DataJud/CNJ: código TPU, nome, data/hora, órgão julgador, complementos, categoria (sentenca/recurso/audiencia/etc.) e process_stage mapeado. UNIQUE em (process_code, codigo, data_hora) evita duplicatas.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'datajud-sync com persistência e auto-status',
+            description: 'Edge function reescrita: busca movimentos de cada processo ativo no DataJud, faz upsert em datajud_movimentos e atualiza processes.status pelo movimento mais recente com estágio identificado. Usa a chave DataJud configurada pelo admin (system_settings.datajud_api_key) com fallback para a chave padrão.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Mapeamento TPU → estágio completo',
+            description: 'Porta a lógica de categorizarMovimento do frontend para o edge function, incluindo códigos TPU específicos e análise do nome do movimento. Audiência de conciliação → conciliacao; audiência de instrução → instrucao; decisão sobre cumprimento → cumprimento; recurso/agravo → recurso; sentença → sentenca; arquivamento → arquivado.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.142',
     date: '25/05/2026',
