@@ -28,6 +28,7 @@ export interface ChatMessage {
   edited_at: string | null;
   reply_to: string | null;
   deleted_at: string | null;
+  is_system?: boolean;
 }
 
 export interface ChatReaction {

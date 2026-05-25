@@ -493,6 +493,25 @@ class ChatService {
     return message;
   }
 
+  /** Insere uma mensagem de sistema (nudge, eventos) e retorna o registro inserido. */
+  async sendSystemMessage(params: { roomId: string; userId: string; content: string }): Promise<ChatMessage | null> {
+    const { data, error } = await supabase
+      .from(this.messagesTable)
+      .insert({
+        room_id: params.roomId,
+        user_id: params.userId,
+        content: params.content,
+        is_system: true,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error('Erro ao inserir mensagem de sistema:', error.message);
+      return null;
+    }
+    return data as ChatMessage;
+  }
+
   async editMessage(params: { messageId: string; content: string }): Promise<ChatMessage> {
     const trimmed = params.content.trim();
     if (!trimmed) throw new Error('Mensagem vazia');

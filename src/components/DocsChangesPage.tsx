@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.152': { name: 'Café Chamou Atenção', emoji: '⚡' },
+  '1.10.151': { name: 'Café Ding Ding Ding', emoji: '🔔' },
+  '1.10.150': { name: 'Café Chacoalha', emoji: '⚡' },
   '1.10.149': { name: 'Café Build Limpo', emoji: '🏗️' },
   '1.10.148': { name: 'Café Discreto', emoji: '🤫' },
   '1.10.147': { name: 'Café Canal Correto', emoji: '🔧' },
@@ -847,6 +850,77 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.152',
+    date: '25/05/2026',
+    summary: 'Nudge registrado na conversa como mensagem de sistema + som original restaurado.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Nudge registrado na conversa',
+            description: 'Toda vez que alguém usa o ⚡ "chamar atenção", é inserida uma mensagem de sistema na conversa: "⚡ Fulano chamou sua atenção". Aparece centralizada como um pill âmbar, sem contar como mensagem não lida nem disparar toast.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Som original restaurado (buzz MSN)',
+            description: 'O som de "thud/sino" das versões anteriores foi revertido para o buzz sawtooth original de 3 pulsos graves — comportamento preferido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.151',
+    date: '25/05/2026',
+    summary: 'Nudge com anéis de pulso, flash interno e som de sinos descendentes.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Anéis de pulso expandindo ao chamar atenção',
+            description: 'Dois anéis laranja aparecem e se expandem para fora do painel durante o shake (animação chatNudgeRing), criando efeito "ripple" visível mesmo com overflow:hidden — por estarem num wrapper externo ao painel.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Flash laranja interno no início do shake',
+            description: 'Um overlay de gradiente radial laranja aparece brevemente sobre o painel nos primeiros frames do shake e desaparece suavemente.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Som substituído por sinos sintéticos descendentes (E6 → C6 → G5)',
+            description: 'O som anterior (sawtooth/thud) foi substituído por 3 sinos sintéticos com sine puro + shimmer de oitava acima — som limpo, musical e claramente chamativo, sem ser harsh.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.150',
+    date: '25/05/2026',
+    summary: 'Animação e som do "chamar atenção" completamente redesenhados.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Nova animação de shake — vibração física com glow laranja',
+            description: 'O shake agora tem 15 keyframes com oscilação rápida e intensa no início decaindo progressivamente, como um celular vibrando. Adicionado glow laranja pulsante na borda do painel durante toda a animação, e o banner "está te chamando" entra com slide animado de cima.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Novo som de nudge — "thud" impactante com transiente percussivo',
+            description: 'Substituído o sawtooth áspero (196Hz) por 3 pulsos "thud" compostos de: sine grave descendo (160→56Hz), sub-harmônico, e burst de ruído branco filtrado para o ataque. Passado por compressor dinâmico para evitar distorção. Som se assemelha a celular batendo em mesa.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.149',
     date: '25/05/2026',

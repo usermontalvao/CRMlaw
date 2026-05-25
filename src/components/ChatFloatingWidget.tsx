@@ -867,8 +867,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     setShaking(true);
     if (fromName) setNudgeFlash(fromName);
     void playNudgeSound();
-    window.setTimeout(() => setShaking(false), 850);
-    window.setTimeout(() => setNudgeFlash(null), 2500);
+    window.setTimeout(() => setShaking(false), 1050);
+    window.setTimeout(() => setNudgeFlash(null), 3000);
   }, [playNudgeSound]);
 
   const handleSendNudge = useCallback(async () => {
@@ -881,12 +881,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     if (nudgeCooldownTimerRef.current) window.clearTimeout(nudgeCooldownTimerRef.current);
     nudgeCooldownTimerRef.current = window.setTimeout(() => setNudgeCooldown(false), 30000);
     try {
+      const fromName = me?.name || 'Alguém';
       await chatService.sendNudge({
         toUserId: targetId,
         fromUserId: user.id,
-        fromName: me?.name || 'Alguém',
+        fromName,
         roomId: selectedRoomId,
       });
+      // Registra o nudge na conversa e adiciona ao state local imediatamente
+      const sysMsg = await chatService.sendSystemMessage({
+        roomId: selectedRoomId,
+        userId: user.id,
+        content: `⚡ ${fromName} chamou sua atenção`,
+      });
+      if (sysMsg) {
+        setMessages((prev) => prev.some((m) => m.id === sysMsg.id) ? prev : [...prev, sysMsg]);
+        pinnedToBottomRef.current = true;
+        scrollToBottom('smooth');
+      }
       triggerShake();
     } catch (e) {
       console.error('Erro ao chamar atenção:', e);
@@ -1464,6 +1476,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     const subscribe = () => {
       unsubFn = chatService.subscribeToAllMessages({
         onInsert: (msg) => {
+          // Mensagens de sistema (nudge, eventos) só aparecem na conversa, sem toast/badge
+          if (msg.is_system) {
+            const currentRoom = selectedRoomIdRef.current;
+            if (msg.room_id === currentRoom) {
+              setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]);
+              if (pinnedToBottomRef.current) stableCallbacksRef.current.scrollBottom('smooth');
+            }
+            return;
+          }
           const isMine = msg.user_id === myUserId;
           const currentRoom = selectedRoomIdRef.current;
           const isInThisRoom = msg.room_id === currentRoom;
@@ -1655,7 +1676,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   return createPortal(
     <div className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
       <style>{`
-        @keyframes chatShake{0%,100%{transform:translate(0,0) rotate(0)}10%{transform:translate(-6px,4px) rotate(-2deg)}20%{transform:translate(6px,-4px) rotate(2deg)}30%{transform:translate(-6px,-4px) rotate(-2deg)}40%{transform:translate(6px,4px) rotate(2deg)}50%{transform:translate(-4px,2px) rotate(-1deg)}60%{transform:translate(4px,-2px) rotate(1deg)}70%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}90%{transform:translate(-1px,0)}}
+        @keyframes chatShake{0%{transform:translate(0,0) rotate(0) scale(1)}4%{transform:translate(-9px,5px) rotate(-3deg) scale(1.02)}8%{transform:translate(9px,-5px) rotate(3deg) scale(1.02)}12%{transform:translate(-9px,-5px) rotate(-3deg) scale(1.02)}16%{transform:translate(9px,5px) rotate(3deg) scale(1.02)}20%{transform:translate(-8px,-4px) rotate(-2.5deg) scale(1.01)}24%{transform:translate(8px,4px) rotate(2.5deg) scale(1.01)}28%{transform:translate(-7px,-3px) rotate(-2deg)}32%{transform:translate(7px,3px) rotate(2deg)}38%{transform:translate(-5px,-2px) rotate(-1.5deg)}44%{transform:translate(5px,2px) rotate(1.5deg)}52%{transform:translate(-3px,-1px) rotate(-1deg)}62%{transform:translate(3px,1px) rotate(0.5deg)}74%{transform:translate(-1px,0) rotate(0)}86%{transform:translate(1px,0)}100%{transform:translate(0,0) rotate(0) scale(1)}}
+        @keyframes chatShakeGlow{0%,100%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.06),inset 0 1px 0 rgba(255,255,255,.08)}8%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.5),0 0 40px 12px rgba(251,146,60,.35),inset 0 1px 0 rgba(255,255,255,.08)}22%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.4),0 0 28px 8px rgba(251,146,60,.25),inset 0 1px 0 rgba(255,255,255,.08)}40%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.25),0 0 16px 4px rgba(251,146,60,.15),inset 0 1px 0 rgba(255,255,255,.08)}65%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.12),0 0 8px 2px rgba(251,146,60,.08),inset 0 1px 0 rgba(255,255,255,.08)}}
+        @keyframes chatNudgeBanner{0%{opacity:0;transform:translateY(-100%) scaleX(.9)}40%{opacity:1;transform:translateY(4px) scaleX(1.01)}65%{transform:translateY(-2px) scaleX(.999)}80%{transform:translateY(1px)}100%{opacity:1;transform:translateY(0) scaleX(1)}}
+        @keyframes chatNudgeRing1{0%{box-shadow:0 0 0 0 rgba(251,146,60,.65);opacity:1}100%{box-shadow:0 0 0 48px rgba(251,146,60,0);opacity:0}}
+        @keyframes chatNudgeRing2{0%{box-shadow:0 0 0 0 rgba(251,146,60,.4);opacity:1}100%{box-shadow:0 0 0 72px rgba(251,146,60,0);opacity:0}}
+        @keyframes chatNudgeFlash{0%{opacity:.22}100%{opacity:0}}
         @keyframes chatPanelIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes chatGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0)}50%{box-shadow:0 0 0 8px rgba(251,146,60,.15)}}
         @keyframes chatLauncherGlow{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 0 rgba(251,146,60,.4)}50%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 12px rgba(251,146,60,0)}}
@@ -1669,10 +1695,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         .chat-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.15)}
       `}</style>
       {open && (
+        <div className="relative mb-3">
+          {/* Anéis de pulso — expandem para fora do painel durante o shake */}
+          {shaking && <>
+            <div className="absolute inset-0 rounded-[24px] pointer-events-none"
+              style={{ animation: 'chatNudgeRing1 0.65s ease-out both' }} />
+            <div className="absolute inset-0 rounded-[24px] pointer-events-none"
+              style={{ animation: 'chatNudgeRing2 0.75s 0.08s ease-out both' }} />
+          </>}
         <div
-          className="mb-3 w-[380px] max-w-[calc(100vw-24px)] rounded-[24px] text-white overflow-hidden flex flex-col h-[520px] max-h-[calc(100vh-120px)] relative"
+          className="w-[380px] max-w-[calc(100vw-24px)] rounded-[24px] text-white overflow-hidden flex flex-col h-[520px] max-h-[calc(100vh-120px)] relative"
           style={{
-            ...(shaking ? { animation: 'chatShake 0.8s cubic-bezier(.36,.07,.19,.97) both' } : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
+            ...(shaking
+              ? { animation: 'chatShake 1s cubic-bezier(.36,.07,.19,.97) both, chatShakeGlow 1s ease-out both' }
+              : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
             background:
               'linear-gradient(180deg, rgba(15,23,42,.97) 0%, rgba(10,15,28,.98) 100%)',
             backdropFilter: 'blur(24px) saturate(180%)',
@@ -1690,11 +1726,29 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 'radial-gradient(80% 100% at 50% 0%, rgba(251,146,60,.12) 0%, transparent 70%)',
             }}
           />
+          {/* Flash laranja no início do shake */}
+          {shaking && (
+            <div
+              aria-hidden
+              className="absolute inset-0 z-50 pointer-events-none rounded-[24px]"
+              style={{
+                background: 'radial-gradient(ellipse at 50% 30%, rgba(251,146,60,.28) 0%, rgba(251,146,60,.08) 60%, transparent 100%)',
+                animation: 'chatNudgeFlash 0.5s ease-out both',
+              }}
+            />
+          )}
           {nudgeFlash && (
-            <div className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold text-center shrink-0 flex items-center justify-center gap-2">
-              <Zap className="w-3.5 h-3.5 animate-pulse" />
-              <span>{nudgeFlash} está te chamando!</span>
-              <Zap className="w-3.5 h-3.5 animate-pulse" />
+            <div
+              className="px-4 py-2.5 shrink-0 flex items-center justify-center gap-2 text-white text-xs font-bold text-center"
+              style={{
+                animation: 'chatNudgeBanner 0.45s cubic-bezier(.22,1,.36,1) both',
+                background: 'linear-gradient(90deg, #f59e0b 0%, #f97316 50%, #f59e0b 100%)',
+                backgroundSize: '200% 100%',
+              }}
+            >
+              <Zap className="w-3.5 h-3.5" style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,.6))' }} />
+              <span style={{ textShadow: '0 1px 4px rgba(0,0,0,.3)' }}>{nudgeFlash} está te chamando!</span>
+              <Zap className="w-3.5 h-3.5" style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,.6))' }} />
             </div>
           )}
           <div className="relative px-4 py-3.5 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
@@ -2039,6 +2093,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                           </div>
                         )}
+                        {/* ── Mensagem de sistema (nudge, eventos) ── */}
+                        {msg.is_system ? (
+                          <div className="flex items-center justify-center py-1.5 px-4 my-0.5">
+                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 ring-1 ring-amber-500/20">
+                              <span className="text-[11px] text-amber-300/80 font-medium">{msg.content}</span>
+                            </div>
+                          </div>
+                        ) : (
                         <div
                           className={`group flex flex-col min-w-0 mb-1.5 ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in slide-in-from-left-2 fade-in duration-300' : ''}`}
                         >
@@ -2108,6 +2170,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             )}
                           </div>
                         </div>
+                        )} {/* fecha ternário is_system */}
                       </React.Fragment>
                     );
                   });
@@ -2391,6 +2454,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               </div>
             </div>
           )}
+        </div>
         </div>
       )}
 
