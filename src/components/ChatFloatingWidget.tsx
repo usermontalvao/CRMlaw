@@ -1401,6 +1401,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     scrollToBottom('auto');
   }, [selectedRoomId, messages.length, scrollToBottom]);
 
+  // Ao abrir o widget, rola para o fim — o painel usa {open && ...} então o DOM
+  // só existe após open=true. O delay garante que o ref já está montado.
+  useEffect(() => {
+    if (!open || !selectedRoomId) return;
+    pinnedToBottomRef.current = true;
+    const t = setTimeout(() => scrollToBottom('auto'), 60);
+    return () => clearTimeout(t);
+  }, [open, selectedRoomId, scrollToBottom]);
+
   // Canal único para TODAS as mensagens: notificações + atualização em-sala
   // Não usa subscribeToRoomMessages — evita interferência de canais múltiplos no Supabase
   // Quando o módulo de chat está ativo, o módulo gerencia o canal — widget pausa para evitar conflito

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.144': { name: 'Café Scroll Garantido', emoji: '⬇️' },
   '1.10.143': { name: 'Café Andamento Persistido', emoji: '🏛️' },
   '1.10.142': { name: 'Café Estágio Vivo', emoji: '📊' },
   '1.10.141': { name: 'Café Baixa Avulsa', emoji: '💰' },
@@ -841,6 +842,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.144',
+    date: '25/05/2026',
+    summary: 'Widget de chat sempre abre rolado até o fim da conversa.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Conversa não rolava para o fim ao abrir o widget',
+            description: 'O painel do widget usa {open && ...} — o DOM só existe quando aberto. Ao reabrir, open mudava para true mas nenhum efeito observava isso para rolar. Adicionado useEffect que observa open + selectedRoomId e chama scrollToBottom(auto) com 60ms de delay (tempo para o DOM montar após a animação de abertura).',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.143',
     date: '25/05/2026',
