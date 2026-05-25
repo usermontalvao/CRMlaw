@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.148': { name: 'Café Discreto', emoji: '🤫' },
   '1.10.147': { name: 'Café Canal Correto', emoji: '🔧' },
   '1.10.146': { name: 'Café Digitando na Lista', emoji: '📋' },
   '1.10.145': { name: 'Café Digitando Visível', emoji: '💬' },
@@ -845,6 +846,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.148',
+    date: '25/05/2026',
+    summary: 'Indicador de digitação na lista mostra apenas "digitando" sem o nome.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Remove nome do indicador de digitação na lista de salas',
+            description: 'O preview agora exibe apenas "digitando" (sem repetir o nome, que já aparece no título da sala acima).',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.147',
     date: '25/05/2026',

@@ -1939,8 +1939,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             {(roomTypingUsers.get(room.id)?.length ?? 0) > 0 ? (
                               <span className="flex items-center gap-1.5 text-emerald-400">
                                 {roomTypingUsers.get(room.id)!.length === 1
-                                  ? `${roomTypingUsers.get(room.id)![0]} está digitando`
-                                  : 'Várias pessoas digitando'}
+                                  ? 'digitando'
+                                  : 'várias pessoas digitando'}
                                 <span className="flex gap-[3px] items-center">
                                   {[0, 1, 2].map((i) => (
                                     <span key={i} className="block w-1 h-1 bg-emerald-400 rounded-full"
