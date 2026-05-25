@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.145': { name: 'Café Digitando Visível', emoji: '💬' },
   '1.10.144': { name: 'Café Scroll Garantido', emoji: '⬇️' },
   '1.10.143': { name: 'Café Andamento Persistido', emoji: '🏛️' },
   '1.10.142': { name: 'Café Estágio Vivo', emoji: '📊' },
@@ -842,6 +843,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.145',
+    date: '25/05/2026',
+    summary: 'Indicador "está digitando" movido para fora do scroll — sempre visível acima da barra de input.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Indicador de digitação ficava oculto abaixo do scroll',
+            description: 'O indicador estava dentro do container de mensagens (scroll). Quando aparecia, era necessário descer manualmente para vê-lo. Movido para fora do scroll, no rodapé fixo acima da barra de input — sempre visível independente da posição do scroll, igual ao comportamento do WhatsApp.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Auto-scroll ao detectar digitação',
+            description: 'Se o usuário estava no fim da conversa (pinned to bottom), a tela rola suavemente quando alguém começa a digitar, garantindo que o indicador seja visto imediatamente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.144',
     date: '25/05/2026',

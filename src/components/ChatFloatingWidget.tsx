@@ -1410,6 +1410,13 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return () => clearTimeout(t);
   }, [open, selectedRoomId, scrollToBottom]);
 
+  // Quando alguém começa a digitar, rola para mostrar o indicador (se estava no fim)
+  useEffect(() => {
+    if (!typingUsers.length) return;
+    if (!pinnedToBottomRef.current) return;
+    scrollToBottom('smooth');
+  }, [typingUsers.length, scrollToBottom]);
+
   // Canal único para TODAS as mensagens: notificações + atualização em-sala
   // Não usa subscribeToRoomMessages — evita interferência de canais múltiplos no Supabase
   // Quando o módulo de chat está ativo, o módulo gerencia o canal — widget pausa para evitar conflito
@@ -2060,25 +2067,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   });
                 })()}
 
-                {/* Typing indicator */}
-                {typingUsers.length > 0 && (
-                  <div className="flex items-center gap-2 pt-1 pb-2 px-1">
-                    <div className="flex gap-1.5 items-center bg-slate-700/80 ring-1 ring-white/[0.06] rounded-2xl px-3 py-2 shadow-[0_2px_8px_rgba(0,0,0,.2)]">
-                      <span className="text-[11.5px] text-white/70 font-medium">
-                        {typingUsers.length === 1 ? `${typingUsers[0]} está digitando` : 'Várias pessoas digitando'}
-                      </span>
-                      <div className="flex gap-1 items-center ml-1">
-                        {[0, 1, 2].map((i) => (
-                          <span
-                            key={i}
-                            className="block w-1.5 h-1.5 bg-orange-400 rounded-full"
-                            style={{ animation: `chatTypingDot 1.2s ease-in-out ${i * 0.15}s infinite` }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Scroll to bottom button */}
@@ -2096,6 +2084,26 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               )}
 
               <div className="shrink-0">
+                {/* Typing indicator — fora do scroll, sempre visível acima da barra de input */}
+                {typingUsers.length > 0 && (
+                  <div className="flex items-center px-3 pt-1.5 pb-0.5">
+                    <div className="flex gap-1.5 items-center bg-slate-700/80 ring-1 ring-white/[0.06] rounded-2xl px-3 py-1.5 shadow-[0_2px_8px_rgba(0,0,0,.2)]">
+                      <span className="text-[11.5px] text-white/70 font-medium">
+                        {typingUsers.length === 1 ? `${typingUsers[0]} está digitando` : 'Várias pessoas digitando'}
+                      </span>
+                      <div className="flex gap-1 items-center ml-1">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="block w-1.5 h-1.5 bg-orange-400 rounded-full"
+                            style={{ animation: `chatTypingDot 1.2s ease-in-out ${i * 0.15}s infinite` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Reply preview bar */}
                 {replyTo && (
                   <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-500/[0.08] to-transparent border-t border-white/[0.06]">
