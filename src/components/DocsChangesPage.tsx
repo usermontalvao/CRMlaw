@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.147': { name: 'Café Canal Correto', emoji: '🔧' },
   '1.10.146': { name: 'Café Digitando na Lista', emoji: '📋' },
   '1.10.145': { name: 'Café Digitando Visível', emoji: '💬' },
   '1.10.144': { name: 'Café Scroll Garantido', emoji: '⬇️' },
@@ -844,6 +845,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.147',
+    date: '25/05/2026',
+    summary: 'Corrige recepção do indicador de digitação na lista de salas.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Canal de broadcast com nome errado na lista de salas',
+            description: 'A subscrição na lista usava o canal "room-list-typing:{roomId}" enquanto o sender transmitia para "typing:{roomId}". Como os nomes eram diferentes, as mensagens nunca chegavam. Unificado para "typing:{roomId}" em ambos os lados.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.146',
     date: '25/05/2026',

@@ -926,7 +926,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     }
     const channels = rooms.map((room) =>
       supabase
-        .channel(`room-list-typing:${room.id}`)
+        .channel(`typing:${room.id}`)
         .on('broadcast', { event: 'typing' }, ({ payload }: any) => {
           const { user_id, name, action } = payload ?? {};
           if (!user_id || user_id === user.id) return;
