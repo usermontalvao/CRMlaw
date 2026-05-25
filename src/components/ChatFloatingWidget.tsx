@@ -500,6 +500,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [nudgeFlash, setNudgeFlash] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [roomTypingUsers, setRoomTypingUsers] = useState<Map<string, string[]>>(new Map());
   const [isDragging, setIsDragging] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [nudgeCooldown, setNudgeCooldown] = useState(false);
@@ -916,6 +917,39 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       setTypingUsers([]);
     };
   }, [selectedRoomId, user]);
+
+  // Typing indicator nas salas — subscibe a todos os canais quando a lista está visível
+  useEffect(() => {
+    if (selectedRoomId || !user || !rooms.length) {
+      setRoomTypingUsers(new Map());
+      return;
+    }
+    const channels = rooms.map((room) =>
+      supabase
+        .channel(`room-list-typing:${room.id}`)
+        .on('broadcast', { event: 'typing' }, ({ payload }: any) => {
+          const { user_id, name, action } = payload ?? {};
+          if (!user_id || user_id === user.id) return;
+          setRoomTypingUsers((prev) => {
+            const next = new Map(prev);
+            const current = next.get(room.id) ?? [];
+            if (action === 'start') {
+              next.set(room.id, current.includes(name) ? current : [...current, name]);
+            } else {
+              const filtered = current.filter((n) => n !== name);
+              if (filtered.length) next.set(room.id, filtered);
+              else next.delete(room.id);
+            }
+            return next;
+          });
+        })
+        .subscribe()
+    );
+    return () => {
+      channels.forEach((ch) => supabase.removeChannel(ch));
+      setRoomTypingUsers(new Map());
+    };
+  }, [selectedRoomId, user, rooms]);
 
   // Recebe "chamar atenção"
   useEffect(() => {
@@ -1902,7 +1936,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <div className={`text-[11.5px] truncate ${roomUnread > 0 ? 'text-white/85 font-medium' : 'text-white/50'}`}>
-                            {preview || subtitle}
+                            {(roomTypingUsers.get(room.id)?.length ?? 0) > 0 ? (
+                              <span className="flex items-center gap-1.5 text-emerald-400">
+                                {roomTypingUsers.get(room.id)!.length === 1
+                                  ? `${roomTypingUsers.get(room.id)![0]} está digitando`
+                                  : 'Várias pessoas digitando'}
+                                <span className="flex gap-[3px] items-center">
+                                  {[0, 1, 2].map((i) => (
+                                    <span key={i} className="block w-1 h-1 bg-emerald-400 rounded-full"
+                                      style={{ animation: `chatTypingDot 1.2s ease-in-out ${i * 0.15}s infinite` }} />
+                                  ))}
+                                </span>
+                              </span>
+                            ) : (preview || subtitle)}
                           </div>
                           {roomUnread > 0 && (
                             <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white text-[10px] font-bold shrink-0 shadow-[0_2px_8px_rgba(251,146,60,.4)]">

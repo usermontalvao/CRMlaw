@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.146': { name: 'Café Digitando na Lista', emoji: '📋' },
   '1.10.145': { name: 'Café Digitando Visível', emoji: '💬' },
   '1.10.144': { name: 'Café Scroll Garantido', emoji: '⬇️' },
   '1.10.143': { name: 'Café Andamento Persistido', emoji: '🏛️' },
@@ -843,6 +844,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.146',
+    date: '25/05/2026',
+    summary: 'Indicador "está digitando" aparece na lista de conversas, igual ao WhatsApp.',
+    modules: [
+      {
+        moduleId: 'Chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Digitação visível na lista de salas',
+            description: 'Quando alguém está digitando em uma sala, o preview na lista de conversas substitui o texto da última mensagem por "Nome está digitando" com os três pontos animados em verde — exatamente como o WhatsApp. As inscrições nos canais de broadcast são feitas automaticamente para todas as salas enquanto a lista está aberta.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.145',
     date: '25/05/2026',
