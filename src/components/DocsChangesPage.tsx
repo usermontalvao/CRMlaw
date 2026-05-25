@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.142': { name: 'Café Estágio Vivo', emoji: '📊' },
   '1.10.141': { name: 'Café Baixa Avulsa', emoji: '💰' },
   '1.10.140': { name: 'Café Editar Baixa', emoji: '✏️' },
   '1.10.139': { name: 'Café Recibo Exato', emoji: '🧾' },
@@ -839,6 +840,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.142',
+    date: '25/05/2026',
+    summary: 'Estágio do processo atualizado automaticamente pela IA ao receber nova intimação DJEN — sem cron separado.',
+    modules: [
+      {
+        moduleId: 'Processos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Estágio atualizado em tempo real via IA',
+            description: 'O analyze-intimations agora inclui process_stage no prompt da IA (Groq/OpenAI). Ao analisar uma nova intimação vinculada a um processo, atualiza processes.status imediatamente — sem precisar abrir a Linha do Tempo. Fluxo evento-driven: intimação chega → IA analisa → status muda na hora.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'process_stage salvo no ai_analysis',
+            description: 'O campo process_stage é persistido em djen_comunicacoes.ai_analysis junto com urgency, summary e deadline. Zero chamadas extras de IA — aproveita a análise que já rodava a cada 30min via cron.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.141',
     date: '25/05/2026',

@@ -8,10 +8,16 @@ const openaiApiKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("VITE_OPENAI
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+type ProcessStage =
+  | "distribuido" | "citacao" | "conciliacao" | "contestacao"
+  | "instrucao" | "sentenca" | "recurso" | "cumprimento" | "arquivado"
+  | null;
+
 interface AnalysisResult {
   urgency: "baixa" | "media" | "alta" | "critica";
   deadline?: { days: number; date?: string };
   summary?: string;
+  process_stage?: ProcessStage;
 }
 
 function shouldRequireAction(analysis: AnalysisResult): boolean {
@@ -40,17 +46,31 @@ async function analyzeWithGroq(texto: string): Promise<AnalysisResult | null> {
         messages: [
           {
             role: "system",
-            content: `Você é um assistente jurídico. Analise a intimação e retorne APENAS um JSON válido com:
+            content: `Você é um assistente jurídico especializado em processos trabalhistas e cíveis. Analise a intimação e retorne APENAS um JSON válido com:
 {
   "urgency": "baixa" | "media" | "alta" | "critica",
   "deadline": { "days": número de dias para o prazo },
-  "summary": "resumo curto da intimação"
+  "summary": "resumo curto da intimação em 1-2 frases",
+  "process_stage": "distribuido" | "citacao" | "conciliacao" | "contestacao" | "instrucao" | "sentenca" | "recurso" | "cumprimento" | "arquivado" | null
 }
+
 Critérios de urgência:
 - critica: prazo <= 2 dias
 - alta: prazo <= 5 dias
 - media: prazo <= 15 dias
-- baixa: prazo > 15 dias ou sem prazo definido`,
+- baixa: prazo > 15 dias ou sem prazo definido
+
+Critérios de process_stage (estágio atual do processo):
+- distribuido: apenas distribuição, sem outros atos
+- citacao: réu sendo citado ou já citado
+- conciliacao: audiência de conciliação designada ou realizada
+- contestacao: contestação apresentada ou prazo para contestar
+- instrucao: audiência de instrução, produção de provas, perícia, oitiva
+- sentenca: sentença proferida (julgo procedente/improcedente/extinto/homologo)
+- recurso: apelação, agravo, embargos, julgamento em tribunal/turma recursal
+- cumprimento: cumprimento de sentença, fase de execução, liquidação
+- arquivado: autos arquivados, baixa definitiva, processo encerrado
+- null: não é possível determinar o estágio pelo texto`,
           },
           {
             role: "user",
@@ -97,12 +117,14 @@ async function analyzeWithOpenAI(texto: string): Promise<AnalysisResult | null> 
         messages: [
           {
             role: "system",
-            content: `Você é um assistente jurídico. Analise a intimação e retorne APENAS um JSON válido com:
+            content: `Você é um assistente jurídico especializado em processos trabalhistas e cíveis. Analise a intimação e retorne APENAS um JSON válido com:
 {
   "urgency": "baixa" | "media" | "alta" | "critica",
   "deadline": { "days": número de dias para o prazo },
-  "summary": "resumo curto da intimação"
-}`,
+  "summary": "resumo curto da intimação em 1-2 frases",
+  "process_stage": "distribuido" | "citacao" | "conciliacao" | "contestacao" | "instrucao" | "sentenca" | "recurso" | "cumprimento" | "arquivado" | null
+}
+Estágio: distribuido=só distribuição; citacao=réu citado; conciliacao=audiência conciliação; contestacao=contestação/prazo; instrucao=instrução/provas/perícia; sentenca=sentença proferida; recurso=apelação/agravo/tribunal; cumprimento=execução/liquidação; arquivado=encerrado; null=não identificado.`,
           },
           {
             role: "user",
@@ -247,7 +269,7 @@ Deno.serve(async (req: Request) => {
     // Buscar todas as intimações
     const { data: allIntimations, error: intError } = await supabase
       .from("djen_comunicacoes")
-      .select("id, texto, numero_processo, numero_processo_mascara, sigla_tribunal, data_disponibilizacao")
+      .select("id, texto, numero_processo, numero_processo_mascara, sigla_tribunal, data_disponibilizacao, process_id")
       .order("data_disponibilizacao", { ascending: false })
       .limit(50);
 
@@ -309,6 +331,7 @@ Deno.serve(async (req: Request) => {
         key_points: [],
         deadline_days: deadlineDays,
         deadline_due_date: deadlineDueDate,
+        process_stage: analysis.process_stage ?? null,
         analyzed_at: analyzedAt,
         model_used: modelUsed,
       };
@@ -342,6 +365,34 @@ Deno.serve(async (req: Request) => {
 
       if (updateCommError) {
         console.error(`⚠️ Falha ao atualizar djen_comunicacoes.ai_analysis (${intimation.id.substring(0, 8)}): ${updateCommError.message}`);
+      }
+
+      // Atualizar estágio do processo vinculado (evento-driven — acontece na hora)
+      if (intimation.process_id && analysis.process_stage) {
+        const { data: proc } = await supabase
+          .from('processes')
+          .select('id, status')
+          .eq('id', intimation.process_id)
+          .single();
+
+        if (proc && proc.status !== analysis.process_stage) {
+          const { error: stageErr } = await supabase
+            .from('processes')
+            .update({
+              status: analysis.process_stage,
+              djen_synced: true,
+              djen_last_sync: analyzedAt,
+              djen_has_data: true,
+              updated_at: analyzedAt,
+            })
+            .eq('id', intimation.process_id);
+
+          if (stageErr) {
+            console.error(`⚠️ Erro ao atualizar estágio do processo ${intimation.process_id}: ${stageErr.message}`);
+          } else {
+            console.log(`📊 Processo ${intimation.numero_processo_mascara || intimation.numero_processo}: ${proc.status} → ${analysis.process_stage}`);
+          }
+        }
       }
 
       analyzed++;
