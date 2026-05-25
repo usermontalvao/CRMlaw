@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.141': { name: 'Café Baixa Avulsa', emoji: '💰' },
   '1.10.140': { name: 'Café Editar Baixa', emoji: '✏️' },
   '1.10.139': { name: 'Café Recibo Exato', emoji: '🧾' },
   '1.10.138': { name: 'Café Digest Pontual', emoji: '⏰' },
@@ -838,6 +839,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.141',
+    date: '25/05/2026',
+    summary: 'Baixa Avulsa no módulo financeiro: pagamentos manuais fora do cronograma, com edição, exclusão e fix de 409 no audit log.',
+    modules: [
+      {
+        moduleId: 'Financeiro',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Baixa Avulsa — entrada manual fora do cronograma',
+            description: 'Botão "Baixa Avulsa" (esmeralda) adicionado às ações do acordo. Permite registrar um pagamento avulso (ex: adiantamento do cliente) com data, valor, método e observações, sem vínculo a parcela agendada. Entradas avulsas são salvas com entry_type = "avulso" e status "pago" imediatamente.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Seção colapsada de entradas avulsas (azul)',
+            description: 'Entradas avulsas aparecem em seção própria (tema azul), separada das parcelas regulares pagas, colapsada por padrão. Suporta editar baixa (âmbar) e excluir com confirmação (vermelho). A exclusão refresca o status do acordo automaticamente.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Correção de 409 Conflict no audit log ao excluir avulso',
+            description: 'deleteAvulsoEntry registrava o log de auditoria APÓS o DELETE, causando violação de FK (installment_id referenciando registro já excluído). Corrigido: auditoria é escrita ANTES do DELETE, com installment_id: null para evitar FK inválida.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Coluna entry_type na tabela installments',
+            description: 'Migration adiciona entry_type TEXT NOT NULL DEFAULT "parcela" CHECK (parcela | avulso) à tabela installments. Filtros de parcelas regulares excluem avulsos automaticamente via i.entry_type !== "avulso".',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.140',
     date: '25/05/2026',

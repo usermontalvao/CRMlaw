@@ -36,6 +36,8 @@ import {
   User,
   History,
   ClipboardList,
+  Plus,
+  Edit2,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
 import { useToastContext } from '../contexts/ToastContext';
@@ -127,6 +129,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     notes: '',
   });
   const [isEditingPayment, setIsEditingPayment] = useState(false);
+  const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
+  const [manualEntryData, setManualEntryData] = useState({
+    paymentDate: today,
+    paymentMethod: 'pix' as 'dinheiro' | 'pix' | 'transferencia' | 'cheque' | 'cartao_credito' | 'cartao_debito',
+    paidValue: '',
+    description: '',
+    notes: '',
+  });
+  const [manualEntryLoading, setManualEntryLoading] = useState(false);
   const formatPaidValueInput = (value: string) => {
     const numbers = value.replace(/\D/g, '');
     if (!numbers) return '';
@@ -165,6 +176,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showPaidInstallments, setShowPaidInstallments] = useState(false);
+  const [showAvulsoEntries, setShowAvulsoEntries] = useState(false);
   const [overpaymentWarning, setOverpaymentWarning] = useState<{ diff: number; scheduled: number } | null>(null);
 
   // Navigate to another module
@@ -967,6 +979,54 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       paidValue: '',
       notes: '',
     });
+  };
+
+  const handleDeleteAvulsoEntry = async (id: string) => {
+    if (!selectedAgreement) return;
+    const confirmed = await confirmDelete({
+      title: 'Excluir entrada avulsa',
+      message: 'Deseja remover esta entrada avulsa? A ação não pode ser desfeita.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
+    try {
+      await financialService.deleteAvulsoEntry(id, selectedAgreement.id);
+      toast.success('Entrada removida', 'Baixa avulsa excluída com sucesso');
+      const updatedInstallments = await financialService.listInstallments(selectedAgreement.id);
+      setInstallments(updatedInstallments);
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro', err.message || 'Falha ao excluir entrada');
+    }
+  };
+
+  const handleAddManualEntry = async () => {
+    if (!selectedAgreement) return;
+    const parsedValue = parsePaidValue(manualEntryData.paidValue);
+    if (!manualEntryData.paymentDate || parsedValue <= 0) {
+      toast.error('Erro', 'Informe a data e o valor do recebimento');
+      return;
+    }
+    setManualEntryLoading(true);
+    try {
+      await financialService.addManualEntry(selectedAgreement.id, {
+        payment_date: manualEntryData.paymentDate,
+        payment_method: manualEntryData.paymentMethod,
+        paid_value: parsedValue,
+        description: manualEntryData.description || undefined,
+        notes: manualEntryData.notes || undefined,
+      });
+      toast.success('Entrada registrada', 'Baixa avulsa registrada com sucesso');
+      setIsManualEntryOpen(false);
+      setManualEntryData({ paymentDate: today, paymentMethod: 'pix', paidValue: '', description: '', notes: '' });
+      const updatedInstallments = await financialService.listInstallments(selectedAgreement.id);
+      setInstallments(updatedInstallments);
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro', err.message || 'Falha ao registrar entrada');
+    } finally {
+      setManualEntryLoading(false);
+    }
   };
 
   const handleBulkPayment = async () => {
@@ -4913,6 +4973,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       </button>
                       <button
                         type="button"
+                        onClick={() => { setIsManualEntryOpen(true); setManualEntryData({ paymentDate: today, paymentMethod: 'pix', paidValue: '', description: '', notes: '' }); }}
+                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 transition border border-emerald-200 dark:border-emerald-700/50"
+                      >
+                        <Plus className="w-3.5 h-3.5" />Baixa Avulsa
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleOpenEditModal(selectedAgreement)}
                         className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-400 transition border border-amber-200 dark:border-amber-700/50"
                       >
@@ -5005,10 +5072,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       </div>
                     ) : (
                       <div className="space-y-2 pr-1 lg:flex-grow lg:overflow-y-auto">
-                        {/* Parcelas pagas — colapsáveis */}
+                        {/* Parcelas pagas — colapsáveis (apenas parcelas regulares) */}
                         {(() => {
-                          const paid = installments.filter(i => i.status === 'pago');
-                          const unpaid = installments.filter(i => i.status !== 'pago');
+                          const paid = installments.filter(i => i.status === 'pago' && i.entry_type !== 'avulso');
+                          const unpaid = installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso');
                           if (paid.length === 0) return null;
                           return (
                             <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/40 overflow-hidden">
@@ -5033,12 +5100,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                   {paid.map(inst => (
                                     <div key={inst.id} className="px-4 py-2.5 flex items-center justify-between bg-white dark:bg-zinc-900/50 text-xs">
                                       <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">{inst.installment_number}</span>
+                                        {inst.entry_type === 'avulso' ? (
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[9px]">AV</span>
+                                        ) : (
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">{inst.installment_number}</span>
+                                        )}
                                         <div>
-                                          <p className="font-semibold text-slate-700 dark:text-slate-300">Parcela {inst.installment_number}/{selectedAgreement.installments_count}</p>
+                                          <div className="flex items-center gap-1.5">
+                                            <p className="font-semibold text-slate-700 dark:text-slate-300">
+                                              {inst.entry_type === 'avulso' ? 'Entrada Avulsa' : `Parcela ${inst.installment_number}/${selectedAgreement.installments_count}`}
+                                            </p>
+                                            {inst.entry_type === 'avulso' && (
+                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 uppercase tracking-wide">Avulso</span>
+                                            )}
+                                          </div>
                                           <p className="text-slate-400 dark:text-slate-500">
                                             Recebido em {inst.payment_date ? new Date(inst.payment_date).toLocaleDateString('pt-BR') : '—'} · {inst.payment_method ? { pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' }[inst.payment_method] ?? inst.payment_method : '—'}
                                           </p>
+                                          {inst.notes && <p className="text-slate-400 dark:text-slate-500 italic truncate max-w-[180px]">{inst.notes}</p>}
                                         </div>
                                       </div>
                                       <div className="text-right">
@@ -5066,8 +5145,66 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             </div>
                           );
                         })()}
-                        {installments.filter(i => i.status !== 'pago').length === 0 && <div />}
-                        {installments.filter(i => i.status !== 'pago').map((installment, index) => {
+                        {/* Baixas avulsas — colapsáveis */}
+                        {(() => {
+                          const avulsos = installments.filter(i => i.entry_type === 'avulso');
+                          if (avulsos.length === 0) return null;
+                          const totalAvulso = avulsos.reduce((s, i) => s + (i.paid_value ?? i.value ?? 0), 0);
+                          return (
+                            <div className="rounded-xl border border-blue-200 dark:border-blue-700/40 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setShowAvulsoEntries(v => !v)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                                    {avulsos.length} entrada{avulsos.length > 1 ? 's' : ''} avulsa{avulsos.length > 1 ? 's' : ''} · {formatCurrency(totalAvulso)} recebido
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                  {showAvulsoEntries ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  {showAvulsoEntries ? 'Ocultar' : 'Expandir'}
+                                </div>
+                              </button>
+                              {showAvulsoEntries && (
+                                <div className="divide-y divide-blue-100 dark:divide-blue-800/30">
+                                  {avulsos.map(avulso => (
+                                    <div key={avulso.id} className="px-4 py-3 bg-white dark:bg-zinc-900/50">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[9px] shrink-0">AV</span>
+                                          <div>
+                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Entrada Avulsa</p>
+                                            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                              {avulso.payment_date ? new Date(avulso.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                                              {avulso.payment_method && ` · ${{ pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' }[avulso.payment_method] ?? avulso.payment_method}`}
+                                            </p>
+                                            {avulso.notes && <p className="text-[11px] text-slate-400 italic truncate max-w-[180px]">{avulso.notes}</p>}
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <p className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">{formatCurrency(avulso.paid_value ?? avulso.value)}</p>
+                                          <div className="flex items-center justify-end gap-2 mt-1">
+                                            <button onClick={() => handleEditPayment(avulso)} className="text-[10px] text-slate-400 hover:text-amber-600 transition">Editar</button>
+                                            <span className="text-slate-200 dark:text-slate-700">·</span>
+                                            <button onClick={() => handleGenerateReceipt(selectedAgreement, avulso)} className="text-[10px] text-slate-400 hover:text-emerald-600 transition">Recibo</button>
+                                            <span className="text-slate-200 dark:text-slate-700">·</span>
+                                            <button onClick={() => handleDeleteAvulsoEntry(avulso.id)} className="text-[10px] text-slate-400 hover:text-red-600 transition">Excluir</button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').length === 0 && <div />}
+                        {installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').map((installment, index) => {
                           const _ = index; // suppress unused var
                           const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < serverToday;
                           const isPaid = installment.status === 'pago';
@@ -5278,7 +5415,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                 </div>
                               )}
                               </div>
-                              {index < installments.filter(i => i.status !== 'pago').length - 1 && (
+                              {index < installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').length - 1 && (
                                 <div className="hidden dark:block h-px bg-gradient-to-r from-transparent via-white/15 to-transparent mx-2 rounded-full" />
                               )}
                             </React.Fragment>
@@ -5301,6 +5438,105 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 className="px-4 py-2 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 text-sm font-medium rounded-lg transition"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Baixa Avulsa */}
+      {isManualEntryOpen && selectedAgreement && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsManualEntryOpen(false)} aria-hidden="true" />
+          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-1 w-full bg-blue-500" />
+            <div className="px-6 py-5 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Baixa Avulsa</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                  Entrada manual fora do cronograma de parcelas
+                </p>
+              </div>
+              <button type="button" onClick={() => setIsManualEntryOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              {/* Data e Valor */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Data do Recebimento</label>
+                  <input type="date" value={manualEntryData.paymentDate}
+                    onChange={(e) => setManualEntryData(prev => ({ ...prev, paymentDate: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2.5 px-3 text-slate-900 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Valor Recebido</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 text-sm font-medium">R$</span>
+                    <input type="text" value={manualEntryData.paidValue}
+                      onChange={(e) => setManualEntryData(prev => ({ ...prev, paidValue: formatPaidValueInput(e.target.value) }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-slate-900 text-sm font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 transition tabular-nums"
+                      placeholder="0,00" inputMode="decimal" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Método */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Forma de Recebimento</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'pix', icon: Smartphone, label: 'PIX' },
+                    { key: 'transferencia', icon: Building, label: 'Transferência' },
+                    { key: 'dinheiro', icon: Banknote, label: 'Dinheiro' },
+                    { key: 'cartao_credito', icon: CreditCard, label: 'Cartão Créd.' },
+                    { key: 'cartao_debito', icon: CreditCard, label: 'Cartão Déb.' },
+                    { key: 'cheque', icon: FileText, label: 'Cheque' },
+                  ] as const).map(({ key, icon: Icon, label }) => {
+                    const active = manualEntryData.paymentMethod === key;
+                    return (
+                      <button key={key} type="button"
+                        onClick={() => setManualEntryData(prev => ({ ...prev, paymentMethod: key }))}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 px-3 text-xs font-semibold transition-all ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-[1.02]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'}`}>
+                        <Icon className="w-3.5 h-3.5" />{label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Descrição */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Descrição (opcional)</label>
+                <input type="text" value={manualEntryData.description}
+                  onChange={(e) => setManualEntryData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 px-3 py-2.5 transition"
+                  placeholder="Ex: Adiantamento, entrada, ajuste..." />
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">Observações (opcional)</label>
+                <textarea value={manualEntryData.notes}
+                  onChange={(e) => setManualEntryData(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 px-3 py-2 resize-none transition"
+                  rows={2} placeholder="Anotações internas sobre este recebimento..." />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-6 py-4 flex justify-end gap-3">
+              <button type="button" onClick={() => setIsManualEntryOpen(false)}
+                className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition">
+                Cancelar
+              </button>
+              <button type="button" onClick={handleAddManualEntry} disabled={manualEntryLoading || !manualEntryData.paymentDate || parsePaidValue(manualEntryData.paidValue) <= 0}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                {manualEntryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Registrar Entrada
               </button>
             </div>
           </div>

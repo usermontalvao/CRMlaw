@@ -328,6 +328,86 @@ class FinancialService {
     return updated;
   }
 
+  async addManualEntry(agreementId: string, data: {
+    payment_date: string;
+    payment_method: string;
+    paid_value: number;
+    notes?: string;
+    description?: string;
+  }): Promise<Installment> {
+    // Busca o maior installment_number existente para garantir unicidade
+    const { data: existing } = await supabase
+      .from('installments')
+      .select('installment_number')
+      .eq('agreement_id', agreementId)
+      .order('installment_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextNumber = (existing?.installment_number ?? 0) + 1;
+
+    const { data: inserted, error } = await supabase
+      .from('installments')
+      .insert({
+        agreement_id: agreementId,
+        installment_number: nextNumber,
+        due_date: data.payment_date, // vencimento = data do pagamento (já foi)
+        value: data.paid_value,
+        status: 'pago',
+        payment_date: data.payment_date,
+        payment_method: data.payment_method,
+        paid_value: data.paid_value,
+        notes: data.notes ?? null,
+        entry_type: 'avulso',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const paymentMethodLabels: Record<string, string> = {
+      dinheiro: 'Dinheiro', pix: 'PIX', transferencia: 'Transferência',
+      cheque: 'Cheque', cartao_credito: 'Cartão de Crédito', cartao_debito: 'Cartão de Débito',
+    };
+
+    await this.logPaymentAudit({
+      agreement_id: agreementId,
+      installment_id: inserted.id,
+      action: 'payment_registered',
+      description: `Baixa avulsa registrada${data.description ? ' — ' + data.description : ''} - Valor: R$ ${data.paid_value.toFixed(2)} - Método: ${paymentMethodLabels[data.payment_method] || data.payment_method}`,
+      old_value: undefined,
+      new_value: {
+        status: 'pago',
+        payment_date: data.payment_date,
+        payment_method: data.payment_method,
+        paid_value: data.paid_value,
+        entry_type: 'avulso',
+        notes: data.notes,
+      },
+    });
+
+    await this.checkAndUpdateAgreementStatus(agreementId);
+    return inserted;
+  }
+
+  async deleteAvulsoEntry(id: string, agreementId: string): Promise<void> {
+    const { data: entry } = await supabase.from('installments').select('*').eq('id', id).single();
+    // Loga ANTES de deletar — FK em installment_id não existiria após o delete
+    await this.logPaymentAudit({
+      agreement_id: agreementId,
+      installment_id: null, // sem FK pois o registro será excluído
+      action: 'payment_registered',
+      description: `Baixa avulsa excluída - Valor: R$ ${(entry?.paid_value ?? 0).toFixed(2)} - Data: ${entry?.payment_date ?? '—'}`,
+      old_value: entry ? { status: entry.status, paid_value: entry.paid_value, payment_date: entry.payment_date, entry_type: 'avulso' } : undefined,
+      new_value: { deleted: true },
+    });
+    const { error } = await supabase.from('installments').delete().eq('id', id).eq('entry_type', 'avulso');
+    if (error) throw error;
+    await this.checkAndUpdateAgreementStatus(agreementId);
+  }
+
   async editInstallmentPayment(id: string, data: PayInstallmentDTO): Promise<Installment> {
     const { data: oldData } = await supabase
       .from('installments')

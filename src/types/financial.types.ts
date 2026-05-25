@@ -49,18 +49,21 @@ export interface Agreement {
 export interface Installment {
   id: string;
   agreement_id: string;
-  
+
   // Dados da Parcela
   installment_number: number; // Número da parcela (1, 2, 3...)
   due_date: string; // Data de vencimento
   value: number; // Valor da parcela
-  
+
   // Pagamento
   status: InstallmentStatus;
   payment_date?: string | null; // Data do pagamento
   payment_method?: PaymentMethod | null;
   paid_value?: number | null; // Valor pago (pode ser diferente se houver desconto/juros)
-  
+
+  // Tipo de entrada
+  entry_type?: 'parcela' | 'avulso'; // 'parcela' = agendada; 'avulso' = entrada manual
+
   // Observações
   notes?: string;
   created_at: string;
