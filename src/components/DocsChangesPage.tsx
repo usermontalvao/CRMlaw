@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.149': { name: 'Café Build Limpo', emoji: '🏗️' },
   '1.10.148': { name: 'Café Discreto', emoji: '🤫' },
   '1.10.147': { name: 'Café Canal Correto', emoji: '🔧' },
   '1.10.146': { name: 'Café Digitando na Lista', emoji: '📋' },
@@ -846,6 +847,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.149',
+    date: '25/05/2026',
+    summary: 'Corrige erros de TypeScript que impediam o build no Render.',
+    modules: [
+      {
+        moduleId: 'Financeiro',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'null não atribuível a string | undefined em financial.service.ts',
+            description: 'installment_id: null substituído por undefined no logPaymentAudit da deleção de baixa avulsa.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Requerimentos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Propriedade djenOrgao ausente no mapa de MS',
+            description: 'O objeto inserido em requirementsMsMap não incluía djenOrgao, causando incompatibilidade de tipos com o Map<string, { ..., djenOrgao: string | null }>.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.148',
     date: '25/05/2026',

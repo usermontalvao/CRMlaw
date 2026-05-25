@@ -722,7 +722,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       // Atualizar lista de requerimentos com MS
       if (ms && !requirementsWithMs.has(selectedRequirementForView.id)) {
         setRequirementsWithMs(prev => new Set([...prev, selectedRequirementForView.id]));
-        setRequirementsMsMap(prev => new Map([...prev, [selectedRequirementForView.id, { process_code: ms.process_code ?? '', court: ms.court ?? null }]]));
+        setRequirementsMsMap(prev => new Map([...prev, [selectedRequirementForView.id, { process_code: ms.process_code ?? '', court: ms.court ?? null, djenOrgao: null }]]));
       }
 
       // Atualizar lista de requerimentos indeferidos com processo

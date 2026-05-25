@@ -397,7 +397,7 @@ class FinancialService {
     // Loga ANTES de deletar — FK em installment_id não existiria após o delete
     await this.logPaymentAudit({
       agreement_id: agreementId,
-      installment_id: null, // sem FK pois o registro será excluído
+      installment_id: undefined, // sem FK pois o registro será excluído
       action: 'payment_registered',
       description: `Baixa avulsa excluída - Valor: R$ ${(entry?.paid_value ?? 0).toFixed(2)} - Data: ${entry?.payment_date ?? '—'}`,
       old_value: entry ? { status: entry.status, paid_value: entry.paid_value, payment_date: entry.payment_date, entry_type: 'avulso' } : undefined,
