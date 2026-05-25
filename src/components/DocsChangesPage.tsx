@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.140': { name: 'Café Editar Baixa', emoji: '✏️' },
   '1.10.139': { name: 'Café Recibo Exato', emoji: '🧾' },
   '1.10.138': { name: 'Café Digest Pontual', emoji: '⏰' },
   '1.10.137': { name: 'Café Vara Real', emoji: '⚖️' },
@@ -837,6 +838,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.140',
+    date: '25/05/2026',
+    summary: 'Edição de baixa de pagamento: permite corrigir data, valor e método de parcelas já pagas.',
+    modules: [
+      {
+        moduleId: 'Financeiro',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Editar baixa de parcela já paga',
+            description: 'Botão "Editar baixa" (âmbar) adicionado na lista colapsada e no card expandido de parcelas pagas. Abre o modal de pagamento pré-preenchido com os dados existentes (data, valor, método, observações). Modal muda para tema âmbar com título "Editar Baixa" e botão "Salvar Alterações". Registra auditoria com action payment_edited e logs de antes/depois.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'editInstallmentPayment no financial service',
+            description: 'Novo método no financialService com auditoria própria (payment_edited), separando semanticamente edição de nova baixa.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.139',
     date: '25/05/2026',

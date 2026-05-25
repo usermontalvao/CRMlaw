@@ -328,6 +328,63 @@ class FinancialService {
     return updated;
   }
 
+  async editInstallmentPayment(id: string, data: PayInstallmentDTO): Promise<Installment> {
+    const { data: oldData } = await supabase
+      .from('installments')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    const { data: updated, error } = await supabase
+      .from('installments')
+      .update({
+        status: 'pago',
+        payment_date: data.payment_date,
+        payment_method: data.payment_method,
+        paid_value: data.paid_value,
+        notes: data.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const paymentMethodLabels: Record<string, string> = {
+      dinheiro: 'Dinheiro',
+      pix: 'PIX',
+      transferencia: 'Transferência',
+      cheque: 'Cheque',
+      cartao_credito: 'Cartão de Crédito',
+      cartao_debito: 'Cartão de Débito',
+    };
+
+    await this.logPaymentAudit({
+      agreement_id: updated.agreement_id,
+      installment_id: id,
+      action: 'payment_edited',
+      description: `Baixa editada na parcela ${updated.installment_number} - Valor: R$ ${data.paid_value.toFixed(2)} - Método: ${paymentMethodLabels[data.payment_method] || data.payment_method}`,
+      old_value: oldData ? {
+        status: oldData.status,
+        payment_date: oldData.payment_date,
+        payment_method: oldData.payment_method,
+        paid_value: oldData.paid_value,
+        notes: oldData.notes,
+      } : undefined,
+      new_value: {
+        status: 'pago',
+        payment_date: data.payment_date,
+        payment_method: data.payment_method,
+        paid_value: data.paid_value,
+        notes: data.notes,
+      },
+    });
+
+    await this.checkAndUpdateAgreementStatus(updated.agreement_id);
+    return updated;
+  }
+
   async cancelInstallment(id: string): Promise<void> {
     const { data: oldData } = await supabase.from('installments').select('*').eq('id', id).single();
 

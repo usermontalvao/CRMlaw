@@ -126,6 +126,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     paidValue: '',
     notes: '',
   });
+  const [isEditingPayment, setIsEditingPayment] = useState(false);
   const formatPaidValueInput = (value: string) => {
     const numbers = value.replace(/\D/g, '');
     if (!numbers) return '';
@@ -932,6 +933,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
   const handleOpenPaymentModal = (installment: Installment) => {
     setSelectedInstallment(installment);
+    setIsEditingPayment(false);
     setPaymentData({
       paymentDate: today,
       paymentMethod: 'pix',
@@ -941,10 +943,24 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     setIsPaymentModalOpen(true);
   };
 
+  const handleEditPayment = (installment: Installment) => {
+    setSelectedInstallment(installment);
+    setIsEditingPayment(true);
+    const rawValue = installment.paid_value ?? installment.value ?? 0;
+    setPaymentData({
+      paymentDate: installment.payment_date ?? today,
+      paymentMethod: (installment.payment_method as any) ?? 'pix',
+      paidValue: rawValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      notes: (installment as any).notes ?? '',
+    });
+    setIsPaymentModalOpen(true);
+  };
+
   const handleClosePaymentModal = () => {
     setIsPaymentModalOpen(false);
     setSelectedInstallment(null);
     setOverpaymentWarning(null);
+    setIsEditingPayment(false);
     setPaymentData({
       paymentDate: today,
       paymentMethod: 'pix',
@@ -992,21 +1008,29 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     // O paid_value sempre reflete a realidade da transação
 
     try {
-      await financialService.payInstallment(selectedInstallment.id, {
-        payment_date: paymentData.paymentDate,
-        payment_method: paymentData.paymentMethod,
-        paid_value: parsedValue,
-        notes: paymentData.notes || undefined,
-      });
-
-      await updateCalendarEventStatus(
-        selectedAgreement.id,
-        selectedInstallment.installment_number,
-        'concluido',
-        paymentData.paymentDate
-      );
-      
-      toast.success('Pagamento registrado', 'Baixa realizada com sucesso');
+      if (isEditingPayment) {
+        await financialService.editInstallmentPayment(selectedInstallment.id, {
+          payment_date: paymentData.paymentDate,
+          payment_method: paymentData.paymentMethod,
+          paid_value: parsedValue,
+          notes: paymentData.notes || undefined,
+        });
+        toast.success('Baixa atualizada', 'Os dados da baixa foram atualizados com sucesso');
+      } else {
+        await financialService.payInstallment(selectedInstallment.id, {
+          payment_date: paymentData.paymentDate,
+          payment_method: paymentData.paymentMethod,
+          paid_value: parsedValue,
+          notes: paymentData.notes || undefined,
+        });
+        await updateCalendarEventStatus(
+          selectedAgreement.id,
+          selectedInstallment.installment_number,
+          'concluido',
+          paymentData.paymentDate
+        );
+        toast.success('Pagamento registrado', 'Baixa realizada com sucesso');
+      }
       handleClosePaymentModal();
       
       // Recarregar parcelas
@@ -5019,12 +5043,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                       </div>
                                       <div className="text-right">
                                         <p className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(inst.paid_value ?? inst.value)}</p>
-                                        <button
-                                          onClick={() => handleGenerateReceipt(selectedAgreement, inst)}
-                                          className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition mt-0.5"
-                                        >
-                                          Recibo
-                                        </button>
+                                        <div className="flex items-center justify-end gap-2 mt-0.5">
+                                          <button
+                                            onClick={() => handleEditPayment(inst)}
+                                            className="text-[10px] text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition"
+                                          >
+                                            Editar
+                                          </button>
+                                          <span className="text-slate-200 dark:text-slate-700">·</span>
+                                          <button
+                                            onClick={() => handleGenerateReceipt(selectedAgreement, inst)}
+                                            className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition"
+                                          >
+                                            Recibo
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   ))}
@@ -5209,7 +5242,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                               {/* Footer da parcela */}
                               {isPaid ? (
                                 <div className="px-3 pb-3">
-                                  <div className="mt-1 flex justify-end">
+                                  <div className="mt-1 flex items-center justify-end gap-2">
+                                    <button
+                                      onClick={() => handleEditPayment(installment)}
+                                      className="inline-flex items-center gap-2 rounded-xl border border-amber-100 bg-white/90 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow-sm transition hover:bg-amber-50 dark:border-amber-500/40 dark:bg-zinc-900/60 dark:text-amber-300"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                      Editar baixa
+                                    </button>
                                     <button
                                       onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
                                       className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-white dark:border-emerald-500/40 dark:bg-zinc-900/60 dark:text-emerald-200"
@@ -5272,11 +5312,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleClosePaymentModal} aria-hidden="true" />
           <div className="relative w-full max-w-3xl max-h-[85vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-emerald-500" />
+            <div className={`h-1 w-full ${isEditingPayment ? 'bg-amber-500' : 'bg-emerald-500'}`} />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Pagamento</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Registrar Pagamento</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{isEditingPayment ? 'Edição' : 'Pagamento'}</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{isEditingPayment ? 'Editar Baixa' : 'Registrar Pagamento'}</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
                   Parcela {selectedInstallment.installment_number}/{selectedAgreement?.installments_count} - Vencimento {(parseLocalDate(selectedInstallment.due_date) ?? new Date(selectedInstallment.due_date)).toLocaleDateString('pt-BR')}
                 </p>
@@ -5424,10 +5464,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   type="button"
                   onClick={handleConfirmPayment}
                   disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  className={`px-5 py-2 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${isEditingPayment ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                 >
                   <CheckCircle className="w-4 h-4" />
-                  Confirmar Pagamento
+                  {isEditingPayment ? 'Salvar Alterações' : 'Confirmar Pagamento'}
                 </button>
               </div>
             </div>
