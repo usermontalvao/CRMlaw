@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.138': { name: 'Café Digest Pontual', emoji: '⏰' },
   '1.10.137': { name: 'Café Vara Real', emoji: '⚖️' },
   '1.10.136': { name: 'Café Digest Semanal', emoji: '📧' },
   '1.10.135': { name: 'Café Agenda Visual', emoji: '📅' },
@@ -835,6 +836,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.138',
+    date: '24/05/2026',
+    summary: 'Correção do Resumo Semanal por Email: cron horário com self-gate por dia/hora configurado na UI.',
+    modules: [
+      {
+        moduleId: 'Notificações',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Digest não era enviado — cron nunca foi registrado e timezone errado',
+            description: 'O arquivo weekly_digest_cron.sql não tinha prefixo de timestamp e nunca foi aplicado pelo Supabase CLI. O cron estava hardcoded em domingo 08:00 UTC (04:00 Cuiabá) e ignorava o horário configurado na UI. Corrigido: cron passa a rodar a cada hora ("0 * * * *"); a própria edge function verifica se o dia e hora locais (America/Cuiaba) correspondem ao configurado nas settings antes de enviar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Self-gate de dia/hora na edge function',
+            description: 'A função lê weekly_digest_day e weekly_digest_hour das settings, converte para o fuso do escritório (America/Cuiaba) e só envia se o momento atual bater exatamente. Suporte a { force: true } no body para forçar envio imediato (testes). Digest desabilitado (enabled=false) retorna skipped sem processar nada.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'SQL do cron corrigido com instruções completas',
+            description: 'weekly_digest_cron.sql atualizado: CREATE EXTENSION pg_cron e pg_net incluídos, schedule alterado para "0 * * * *", instruções de como testar via POST com force:true.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.137',
     date: '24/05/2026',
