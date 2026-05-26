@@ -46,15 +46,28 @@ export const formatDate = (date: Date | string): string => {
 export const formatDateTime = (date: Date | string): string => {
   if (typeof date === 'string') {
     const raw = date.trim();
-    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-      return formatDate(datePart);
+    // Tem componente de hora — mostra data e hora
+    if (raw.includes('T')) {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('pt-BR', {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      }
+    }
+    // Só data (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return formatDate(raw);
     }
     const d = new Date(raw);
     return d.toLocaleString('pt-BR');
   }
 
-  return date.toLocaleString('pt-BR');
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 };
 
 /**

@@ -46,6 +46,8 @@ import {
   Scale,
   Pencil,
   Check,
+  Printer,
+  EyeOff,
 } from 'lucide-react';
 import { formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
@@ -636,6 +638,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [schedulePromptId, setSchedulePromptId] = useState<string | null>(null);
   const [exigencyModal, setExigencyModal] = useState<ExigencyModalState | null>(null);
   const [periciaModal, setPericiaModal] = useState<PericiaModalState | null>(null);
+  const [indeferidoConfirm, setIndeferidoConfirm] = useState<{ requirementId: string; hasMedica: boolean; hasSocial: boolean } | null>(null);
   const [periciaForm, setPericiaForm] = useState<PericiaScheduleFormState>({
     includeMedica: true,
     medicaDate: '',
@@ -648,6 +651,16 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [periciaResponsibleId, setPericiaResponsibleId] = useState('');
   const [periciaSaving, setPericiaSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [filterNoPhone, setFilterNoPhone] = useState(false);
+  const [filterNoCpf, setFilterNoCpf] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkActioning, setIsBulkActioning] = useState(false);
+  const [whatsappTemplateReq, setWhatsappTemplateReq] = useState<Requirement | null>(null);
+  const [selectedWATemplate, setSelectedWATemplate] = useState<{ label: string; text: string } | null>(null);
+  const [copiedCpfId, setCopiedCpfId] = useState<string | null>(null);
+  const [showDetailPassword, setShowDetailPassword] = useState(false);
+  const [copiedDetailField, setCopiedDetailField] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [statusHistory, setStatusHistory] = useState<RequirementStatusHistoryEntry[]>([]);
   const [statusHistoryLoading, setStatusHistoryLoading] = useState(false);
@@ -791,6 +804,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const getAnalysisDays = (requirement: Requirement) => {
+    // Só conta enquanto o requerimento está em análise
+    if (requirement.status !== 'em_analise') return null;
+
     // Prazo conta a partir de quando o requerimento ficou em análise (analysis_started_at).
     // Fallback para entry_date ou created_at apenas em requerimentos antigos sem o campo.
     const base = requirement.analysis_started_at
@@ -841,18 +857,290 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     }
   };
 
-  const getAnalysisAlertLevel = (days: number | null) => {
+  // < 30d  → null  (não exibe nada)
+  // 30–59d → 'low'      (contador simples, sem badge)
+  // 60–89d → 'high'     (laranja)
+  // ≥ 90d  → 'critical' (vermelho, risco MS)
+  const getAnalysisAlertLevel = (days: number | null): 'critical' | 'high' | 'low' | null => {
     if (typeof days !== 'number') return null;
     if (days >= 90) return 'critical';
     if (days >= 60) return 'high';
-    if (days >= 30) return 'medium';
-    return 'none';
+    if (days >= 30) return 'low';
+    return null;
   };
 
   const isMandadoRisk = (requirement: Requirement) => {
     if (requirement.status !== 'em_analise') return false;
     const days = getAnalysisDays(requirement);
     return typeof days === 'number' && days >= 90;
+  };
+
+  // Days remaining until exigency due date (negative = overdue)
+  const getExigencyDaysLeft = (req: Requirement): number | null => {
+    if (req.status !== 'em_exigencia' || !req.exigency_due_date) return null;
+    const due = new Date(req.exigency_due_date);
+    if (isNaN(due.getTime())) return null;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    return Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const getExigencyUrgency = (daysLeft: number | null): 'overdue' | 'critical' | 'warning' | 'ok' | null => {
+    if (daysLeft === null) return null;
+    if (daysLeft < 0) return 'overdue';
+    if (daysLeft <= 3) return 'critical';
+    if (daysLeft <= 7) return 'warning';
+    return 'ok';
+  };
+
+  // Days until next INSS deadline milestone (45d or 90d) — for proactive warning
+  const getInssCountdown = (req: Requirement): { threshold: number; daysLeft: number } | null => {
+    if (req.status !== 'em_analise') return null;
+    const days = getAnalysisDays(req);
+    if (typeof days !== 'number' || days >= 90) return null;
+    if (days >= 45) return { threshold: 90, daysLeft: 90 - days };
+    if (days >= 30) return { threshold: 45, daysLeft: 45 - days };
+    return null;
+  };
+
+  // WhatsApp templates per status
+  const WHATSAPP_TEMPLATES: Partial<Record<RequirementStatus, { label: string; text: string }[]>> = {
+    em_exigencia: [
+      { label: 'Exigência pendente', text: 'Olá, *{nome}*! Informamos que seu requerimento (*{protocolo}*) está com exigência pendente no INSS e precisa ser atendida para dar continuidade ao processo. Entre em contato conosco para orientações. 🙏' },
+    ],
+    em_analise: [
+      { label: 'Em análise', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise no INSS. Assim que houver qualquer atualização, entrarei em contato. Qualquer dúvida, estou à disposição! 😊' },
+      { label: 'Prazo próximo', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise há mais de 45 dias. Caso não haja decisão em breve, podemos estudar medidas judiciais para garantir seu direito. Podemos conversar?' },
+    ],
+    aguardando_pericia: [
+      { label: 'Perícia agendada', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está aguardando perícia. Lembre-se de comparecer no dia e horário agendados com todos os documentos. Qualquer dúvida, estou à disposição!' },
+    ],
+    aguardando_confeccao: [
+      { label: 'Em preparação', text: 'Olá, *{nome}*! Seu processo (*{protocolo}*) está em preparação. Em breve daremos início ao protocolo junto ao INSS. Qualquer dúvida, estou à disposição! 👍' },
+    ],
+    deferido: [
+      { label: '🎉 Deferido!', text: '🎉 Olá, *{nome}*! Ótima notícia: seu requerimento (*{protocolo}*) foi *deferido*! O benefício foi aprovado. Em breve o valor estará disponível. Parabéns! Qualquer dúvida, estou à disposição.' },
+    ],
+    indeferido: [
+      { label: 'Indeferido — próximos passos', text: 'Olá, *{nome}*! Infelizmente seu requerimento (*{protocolo}*) foi *indeferido* pelo INSS. Não desanime — podemos estudar alternativas, como recurso administrativo ou ação judicial. Vamos conversar?' },
+    ],
+    ajuizado: [
+      { label: 'Processo judicial', text: 'Olá, *{nome}*! Seu processo judicial (*{protocolo}*) está em andamento. Acompanharemos cada movimentação e manteremos você informado(a). Qualquer dúvida, estou à disposição! ⚖️' },
+    ],
+  };
+
+  const buildWAText = (text: string, req: Requirement) =>
+    text.replace(/{nome}/g, req.beneficiary ?? 'Beneficiário')
+        .replace(/{protocolo}/g, req.protocol ?? 'sem protocolo');
+
+  const handlePrintRequirement = (req: Requirement) => {
+    const statusLabel  = getStatusLabel(req.status);
+    const benefitLabel = getBenefitTypeLabel(req.benefit_type);
+    const analysisDays = getAnalysisDays(req);
+    const alertLevel   = getAnalysisAlertLevel(typeof analysisDays === 'number' ? analysisDays : null);
+    const now          = new Date();
+    const dateStr      = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const timeStr      = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const esc          = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    // Quem está emitindo
+    const emitterName = currentProfile?.name || user?.email || 'Usuário';
+
+    // Resolve nome do ator no histórico
+    const resolveActor = (changedBy: string | null): string => {
+      if (!changedBy) return 'Sistema';
+      const m = memberByUserId.get(changedBy);
+      if (m?.name) return m.name;
+      if (changedBy === user?.id && currentProfile?.name) return currentProfile.name;
+      return 'Usu&aacute;rio';
+    };
+
+    // Alerta de análise
+    const alertBlock = alertLevel === 'critical'
+      ? `<div class="alert alert-red">&#9888; ${analysisDays} dias em an&aacute;lise${isMandadoRisk(req) ? ' &mdash; Risco de perda do prazo para MS' : ''}</div>`
+      : alertLevel === 'high'
+      ? `<div class="alert alert-orange">&#9888; ${analysisDays} dias em an&aacute;lise</div>`
+      : '';
+
+    // Campos extras
+    const analysisRow = typeof analysisDays === 'number'
+      ? `<div class="field"><div class="field-label">Dias em An&aacute;lise</div><div class="field-value">${analysisDays} dias</div></div>`
+      : '';
+    const exigencyRow = req.exigency_due_date
+      ? `<div class="field"><div class="field-label">Prazo da Exig&ecirc;ncia</div><div class="field-value">${formatDate(req.exigency_due_date)}</div></div>`
+      : '';
+
+    // Seção de Perícia
+    const medicaDate  = req.pericia_medica_at ? new Date(req.pericia_medica_at) : null;
+    const socialDate  = req.pericia_social_at ? new Date(req.pericia_social_at) : null;
+    const hasMedica   = medicaDate && !isNaN(medicaDate.getTime());
+    const hasSocial   = socialDate && !isNaN(socialDate.getTime());
+    const periciaBlock = (hasMedica || hasSocial) ? (() => {
+      const fmtPericia = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const futureBadge = (d: Date) => d > now
+        ? '<span class="badge badge-future">Futura</span>'
+        : '<span class="badge badge-past">Realizada</span>';
+      const rows = [
+        hasMedica ? `<tr><td>P&eacute;ricia M&eacute;dica</td><td>${fmtPericia(medicaDate!)}</td><td>${futureBadge(medicaDate!)}</td></tr>` : '',
+        hasSocial ? `<tr><td>P&eacute;ricia Social</td><td>${fmtPericia(socialDate!)}</td><td>${futureBadge(socialDate!)}</td></tr>` : '',
+      ].join('');
+      return `<div class="section-title">P&eacute;ricia</div>
+<table class="hist-table">
+  <thead><tr><th>Tipo</th><th>Data e Hora</th><th>Situa&ccedil;&atilde;o</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
+    })() : '';
+
+    // Observações
+    const obsBlock = req.observations
+      ? `<div class="section-title">Observa&ccedil;&otilde;es</div><div class="obs-box">${esc(req.observations)}</div>`
+      : '';
+
+    // Histórico de status
+    const histBlock = statusHistory.length > 0 ? (() => {
+      const rows = [...statusHistory]
+        .sort((a, b) => a.changed_at.localeCompare(b.changed_at))
+        .map(entry => {
+          const when = new Date(entry.changed_at);
+          const whenStr = isNaN(when.getTime()) ? entry.changed_at
+            : when.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              + ' ' + when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const fromLabel = entry.from_status ? getStatusLabel(entry.from_status as RequirementStatus) : '&mdash;';
+          const toLabel   = getStatusLabel(entry.to_status as RequirementStatus);
+          const actor     = resolveActor(entry.changed_by);
+          return `<tr><td>${whenStr}</td><td>${fromLabel}</td><td>${toLabel}</td><td>${actor}</td></tr>`;
+        }).join('');
+      return `<div class="section-title">Hist&oacute;rico de Status</div>
+<table class="hist-table">
+  <thead><tr><th>Data / Hora</th><th>De</th><th>Para</th><th>Por</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
+    })() : '';
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <title>Requerimento &mdash; ${esc(req.beneficiary ?? '')}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #fff; font-size: 13px; }
+
+    .header { background: #ea580c; color: #fff; padding: 22px 40px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .header-icon { width: 42px; height: 42px; background: rgba(255,255,255,.18); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+    .header-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
+    .header-sub { font-size: 11px; opacity: .8; margin-top: 2px; }
+    .header-date { text-align: right; font-size: 11px; opacity: .85; line-height: 1.7; }
+
+    .content { padding: 26px 40px 16px; }
+
+    .name { font-size: 21px; font-weight: 700; color: #0f172a; letter-spacing: -.3px; }
+    .protocol { font-size: 12px; color: #64748b; font-family: monospace; margin-top: 4px; }
+
+    .divider { height: 1px; background: #e2e8f0; margin: 18px 0; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 48px; }
+    .field-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #94a3b8; margin-bottom: 3px; }
+    .field-value { font-size: 13px; font-weight: 600; color: #0f172a; }
+
+    .alert { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+    .alert-red    { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+    .alert-orange { background: #fff7ed; border: 1px solid #fed7aa; color: #c2410c; }
+
+    .section-title { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #94a3b8; margin: 22px 0 8px; }
+
+    .obs-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; font-size: 12.5px; color: #374151; line-height: 1.65; white-space: pre-wrap; }
+
+    .hist-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .hist-table thead tr { background: #f8fafc; }
+    .hist-table th { text-align: left; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; }
+    .hist-table td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
+    .hist-table tbody tr:last-child td { border-bottom: none; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+    .badge-future { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    .badge-past   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+
+    .footer { margin-top: 24px; padding: 12px 40px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; color: #94a3b8; }
+    .footer-emitter { font-weight: 600; color: #64748b; }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .hist-table thead tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="header-icon">&#128203;</div>
+      <div>
+        <div class="header-title">Requerimento INSS</div>
+        <div class="header-sub">Ficha do benefici&aacute;rio &mdash; uso interno</div>
+      </div>
+    </div>
+    <div class="header-date">
+      ${dateStr}<br/>${timeStr}
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="name">${esc(req.beneficiary ?? '&mdash;')}</div>
+    <div class="protocol">Protocolo: ${req.protocol ?? '&mdash;'}</div>
+
+    <div class="divider"></div>
+
+    ${alertBlock}
+
+    <div class="grid">
+      <div class="field">
+        <div class="field-label">CPF</div>
+        <div class="field-value">${req.cpf ? formatCPF(req.cpf) : '&mdash;'}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Tipo de Benef&iacute;cio</div>
+        <div class="field-value">${benefitLabel}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Data de Entrada</div>
+        <div class="field-value">${formatDate(req.entry_date)}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Status Atual</div>
+        <div class="field-value">${statusLabel}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Telefone</div>
+        <div class="field-value">${req.phone ?? '&mdash;'}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Senha INSS</div>
+        <div class="field-value">${req.inss_password ?? '&mdash;'}</div>
+      </div>
+      ${analysisRow}
+      ${exigencyRow}
+    </div>
+
+    ${periciaBlock}
+
+    ${obsBlock}
+
+    ${histBlock}
+  </div>
+
+  <div class="footer">
+    <span>CRM &mdash; Documento gerado automaticamente</span>
+    <span class="footer-emitter">Emitido por ${esc(emitterName)} &mdash; ${dateStr} &agrave;s ${timeStr}</span>
+  </div>
+
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400); }
   };
 
   const periciaAutoUpdateRef = useRef(false);
@@ -1380,20 +1668,32 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       const allProcesses = await processService.listProcesses();
       const msProcesses = allProcesses.filter(p => p.requirement_role === 'ms' && p.requirement_id);
 
-      // Busca nome_orgao do DJEN para cada processo MS (vara real, não o campo court)
+      // 1ª tentativa: busca nome_orgao do DJEN pelo UUID do processo MS
       const msProcessIds = msProcesses.map(p => p.id);
-      const djenOrgaoMap = await djenLocalService.getOrgaoByProcessIds(msProcessIds);
+      const djenOrgaoByIdMap = await djenLocalService.getOrgaoByProcessIds(msProcessIds);
+
+      // 2ª tentativa: para processos sem orgao, tenta pelo número do processo (código)
+      const missingCodes = msProcesses
+        .filter(p => !djenOrgaoByIdMap.has(p.id) && !!p.process_code?.trim())
+        .map(p => p.process_code!.trim());
+      const djenOrgaoByCodeMap = missingCodes.length
+        ? await djenLocalService.getOrgaoByProcessCodes(missingCodes)
+        : new Map<string, string>();
 
       // Mapa: requirement_id → { process_code, court, djenOrgao }
       // djenOrgao tem prioridade sobre court para exibir a vara
-      const msMap = new Map(msProcesses.map(p => [
-        p.requirement_id!,
-        {
-          process_code: p.process_code ?? '',
-          court: p.court ?? null,
-          djenOrgao: djenOrgaoMap.get(p.id) ?? null,
-        },
-      ]));
+      const msMap = new Map(msProcesses.map(p => {
+        const byId = djenOrgaoByIdMap.get(p.id) ?? null;
+        const byCode = p.process_code ? (djenOrgaoByCodeMap.get(p.process_code.trim()) ?? null) : null;
+        return [
+          p.requirement_id!,
+          {
+            process_code: p.process_code ?? '',
+            court: p.court ?? null,
+            djenOrgao: byId ?? byCode,
+          },
+        ];
+      }));
 
       setRequirementsWithMs(new Set(msProcesses.map(p => p.requirement_id!)));
       setRequirementsMsMap(msMap);
@@ -1447,6 +1747,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       filtered = filtered.filter((req) => isMandadoRisk(req));
     }
 
+    if (filterNoPhone) {
+      filtered = filtered.filter((req) => !req.phone?.trim());
+    }
+
+    if (filterNoCpf) {
+      filtered = filtered.filter((req) => !req.cpf?.trim());
+    }
+
     const getSecondarySort = (req: Requirement) => {
       if (req.status === 'em_exigencia') {
         const t = req.exigency_due_date ? new Date(req.exigency_due_date).getTime() : Number.POSITIVE_INFINITY;
@@ -1481,7 +1789,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
-  }, [activeRequirements, activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
+  }, [activeRequirements, activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk, filterNoPhone, filterNoCpf]);
 
   const filteredArchivedReqs = useMemo(
     () => applySearch(archivedRequirements, searchTerm),
@@ -1763,7 +2071,32 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk]);
+    setSelectedIds(new Set());
+  }, [activeStatusTab, searchTerm, filterProtocol, filterBeneficiary, filterCPF, filterBenefitType, filterOnlyMsRisk, filterNoPhone, filterNoCpf]);
+
+  // Scroll to top of list on page change
+  useEffect(() => {
+    listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [currentPage]);
+
+  // Auto-select first WA template when modal opens
+  useEffect(() => {
+    if (!whatsappTemplateReq) { setSelectedWATemplate(null); return; }
+    const templates = WHATSAPP_TEMPLATES[whatsappTemplateReq.status] ?? [];
+    setSelectedWATemplate(templates[0] ?? null);
+  }, [whatsappTemplateReq]);
+
+  // Escape key closes overlays
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (whatsappTemplateReq) { setWhatsappTemplateReq(null); return; }
+      if (exigencyModal) { handleCloseExigencyModal(); return; }
+      if (periciaModal) { handleClosePericiaModal(); return; }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [whatsappTemplateReq, exigencyModal, periciaModal]);
 
   useEffect(() => {
     if (!selectedRequirementForView?.id) {
@@ -2086,6 +2419,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setViewMode('details');
     setNoteDraft('');
     setNoteError(null);
+    setShowDetailPassword(false);
+    setCopiedDetailField(null);
   };
 
   const handleQuickBackToAnalysis = async () => {
@@ -2104,6 +2439,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setViewMode('list');
     setNoteDraft('');
     setNoteError(null);
+    setShowDetailPassword(false);
+    setCopiedDetailField(null);
   };
 
   const getStatusConfig = (status: RequirementStatus) => STATUS_OPTIONS.find((s) => s.key === status);
@@ -2263,10 +2600,31 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const handleStatusChange = async (requirementId: string, newStatus: RequirementStatus) => {
+    // Se indeferindo, verificar se há péricias futuras em aberto
+    if (newStatus === 'indeferido') {
+      const req = requirements.find((r) => r.id === requirementId);
+      const now = Date.now();
+      const hasMedica = !!(req?.pericia_medica_at && new Date(req.pericia_medica_at).getTime() > now);
+      const hasSocial = !!(req?.pericia_social_at && new Date(req.pericia_social_at).getTime() > now);
+      if (hasMedica || hasSocial) {
+        setIndeferidoConfirm({ requirementId, hasMedica, hasSocial });
+        return; // aguarda confirmação do usuário
+      }
+    }
+    await doStatusChange(requirementId, newStatus, false);
+  };
+
+  const doStatusChange = async (requirementId: string, newStatus: RequirementStatus, clearPericia: boolean) => {
     try {
       setStatusUpdatingId(requirementId);
       const requirement = requirements.find((req) => req.id === requirementId) || null;
       await requirementService.updateStatus(requirementId, newStatus);
+      if (clearPericia) {
+        await requirementService.updateRequirement(requirementId, {
+          pericia_medica_at: null as any,
+          pericia_social_at: null as any,
+        });
+      }
       setRequirements((prev) =>
         prev.map((req) => (req.id === requirementId ? { ...req, status: newStatus } : req)),
       );
@@ -2508,6 +2866,107 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     }
     const cleaned = phone.replace(/\D/g, '');
     window.open(`https://wa.me/55${cleaned}`, '_blank');
+  };
+
+  const handleOpenWhatsAppTemplateModal = (req: Requirement) => {
+    if (!req.phone) {
+      alert('Telefone não informado para este requerimento.');
+      return;
+    }
+    setWhatsappTemplateReq(req);
+  };
+
+  const handleSendWATemplate = (text: string, req: Requirement) => {
+    const cleaned = (req.phone ?? '').replace(/\D/g, '');
+    const built = buildWAText(text, req);
+    window.open(`https://wa.me/55${cleaned}?text=${encodeURIComponent(built)}`, '_blank');
+    setWhatsappTemplateReq(null);
+  };
+
+  const handleBulkStatusChange = async (newStatus: RequirementStatus) => {
+    if (!selectedIds.size) return;
+    setIsBulkActioning(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => requirementService.updateStatus(id, newStatus)));
+      toast.success(`${selectedIds.size} requerimento(s) atualizados para "${getStatusLabel(newStatus)}".`);
+      setSelectedIds(new Set());
+      await handleReload();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao atualizar status em lote.');
+    } finally {
+      setIsBulkActioning(false);
+    }
+  };
+
+  const handleBulkArchive = async () => {
+    if (!selectedIds.size) return;
+    const confirmed = await confirmDelete({
+      title: 'Arquivar selecionados',
+      message: `Deseja arquivar ${selectedIds.size} requerimento(s) selecionado(s)?`,
+      confirmLabel: 'Arquivar',
+    });
+    if (!confirmed) return;
+    setIsBulkActioning(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => requirementService.archiveRequirement(id, true)));
+      toast.success(`${selectedIds.size} requerimento(s) arquivado(s).`);
+      setSelectedIds(new Set());
+      await handleReload();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao arquivar em lote.');
+    } finally {
+      setIsBulkActioning(false);
+    }
+  };
+
+  const activeFilterCount = [
+    filterProtocol.trim(),
+    filterBeneficiary.trim(),
+    filterCPF.trim(),
+    filterBenefitType,
+    filterOnlyMsRisk ? 'x' : '',
+    filterNoPhone ? 'x' : '',
+    filterNoCpf ? 'x' : '',
+  ].filter(Boolean).length;
+
+  const handleClearAllFilters = () => {
+    setFilterProtocol('');
+    setFilterBeneficiary('');
+    setFilterCPF('');
+    setFilterBenefitType('');
+    setFilterOnlyMsRisk(false);
+    setFilterNoPhone(false);
+    setFilterNoCpf(false);
+  };
+
+  const handleCopyCpf = (id: string, cpf: string) => {
+    navigator.clipboard.writeText(cpf).then(() => {
+      setCopiedCpfId(id);
+      setTimeout(() => setCopiedCpfId(null), 1500);
+    }).catch(() => {});
+  };
+
+  const handleCopyDetailField = (field: string, value: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedDetailField(field);
+      setTimeout(() => setCopiedDetailField(null), 1500);
+    }).catch(() => {});
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === paginatedRequirements.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedRequirements.map((r) => r.id)));
+    }
   };
 
   const handleExportExcel = async () => {
@@ -3423,16 +3882,42 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`} style={detailStatusConfig?.animationStyle}>
-                  {getStatusLabel(selectedRequirementForView.status)}
-                  {selectedRequirementForView.status === 'em_analise' && <Loader2 className="w-3 h-3 animate-spin" />}
-                </span>
+                {statusUpdatingId === selectedRequirementForView.id ? (
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`}>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Atualizando...
+                  </span>
+                ) : (
+                  <div className="relative" title="Alterar status">
+                    <select
+                      value={selectedRequirementForView.status}
+                      onChange={(e) => void handleStatusChange(selectedRequirementForView.id, e.target.value as RequirementStatus)}
+                      disabled={!!statusUpdatingId}
+                      className={`appearance-none text-xs font-bold pl-2.5 pr-6 py-1 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 disabled:opacity-60 transition-all ${getStatusBadge(selectedRequirementForView.status)}`}
+                      style={detailStatusConfig?.animationStyle}
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.key} value={opt.key}>{opt.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 opacity-80" />
+                  </div>
+                )}
                 {showMandadoRisk && (
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">
                     <AlertTriangle className="w-3 h-3" /> MS Risk
                   </span>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => handlePrintRequirement(selectedRequirementForView)}
+                className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition"
+                aria-label="Exportar/Imprimir"
+                title="Exportar / Imprimir"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
               <button
                 type="button"
                 onClick={handleBackToList}
@@ -3498,11 +3983,37 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">CPF</dt>
-                        <dd className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{formatCPF(selectedRequirementForView.cpf)}</dd>
+                        <dd className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{formatCPF(selectedRequirementForView.cpf)}</span>
+                          {selectedRequirementForView.cpf && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyDetailField('cpf', selectedRequirementForView.cpf)}
+                              title="Copiar CPF"
+                              className="p-1 rounded text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                            >
+                              {copiedDetailField === 'cpf' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
+                            </button>
+                          )}
+                        </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Telefone</dt>
-                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.phone ? formatPhone(selectedRequirementForView.phone) : '—'}</dd>
+                        <dd className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.phone ? formatPhone(selectedRequirementForView.phone) : '—'}</span>
+                          {selectedRequirementForView.phone && (
+                            <button
+                              type="button"
+                              onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
+                              title="Abrir no WhatsApp"
+                              className="p-1 rounded text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                            >
+                              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                              </svg>
+                            </button>
+                          )}
+                        </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Benefício</dt>
@@ -3587,12 +4098,36 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
-                        <dt className="text-sm text-slate-500 dark:text-slate-400">Telefone</dt>
-                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.phone || '—'}</dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Senha INSS</dt>
-                        <dd className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{selectedRequirementForView.inss_password || '—'}</dd>
+                        <dd className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-white font-mono tracking-widest select-none">
+                            {selectedRequirementForView.inss_password
+                              ? (showDetailPassword ? selectedRequirementForView.inss_password : '•'.repeat(Math.min(selectedRequirementForView.inss_password.length, 8)))
+                              : '—'}
+                          </span>
+                          {selectedRequirementForView.inss_password && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setShowDetailPassword((p) => !p)}
+                                title={showDetailPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                              >
+                                {showDetailPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              {showDetailPassword && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyDetailField('senha', selectedRequirementForView.inss_password!)}
+                                  title="Copiar senha"
+                                  className="p-1 rounded text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                                >
+                                  {copiedDetailField === 'senha' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Protocolo</dt>
@@ -3617,27 +4152,71 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     </dl>
                   </div>
 
-                  {(periciaMedicaAt || periciaSocialAt) && (
-                    <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
-                      <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
-                        <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias Agendadas</h3>
-                      </div>
-                      <div className="px-5 py-4 space-y-2">
-                        {periciaMedicaAt && (
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Médica</span>
-                            <span className="font-semibold text-cyan-700 dark:text-cyan-300">{formatDateTime(periciaMedicaAt)}</span>
+                  {(periciaMedicaAt || periciaSocialAt) && (() => {
+                    const nowMs = Date.now();
+                    const makeCalendarLink = (isoDate: string, label: string) => {
+                      const d = new Date(isoDate);
+                      if (isNaN(d.getTime())) return null;
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      const fmt = (dt: Date) =>
+                        `${dt.getUTCFullYear()}${pad(dt.getUTCMonth()+1)}${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}${pad(dt.getUTCMinutes())}00Z`;
+                      const end = new Date(d.getTime() + 60 * 60 * 1000); // +1h
+                      const name = selectedRequirementForView.beneficiary ?? 'Beneficiário';
+                      const title = encodeURIComponent(`Perícia ${label} — ${name}`);
+                      const details = encodeURIComponent(`Protocolo: ${selectedRequirementForView.protocol ?? '—'}`);
+                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${fmt(d)}/${fmt(end)}`;
+                    };
+
+                    const PericiaRow = ({ label, isoDate }: { label: string; isoDate: string }) => {
+                      const d = new Date(isoDate);
+                      const isPast = !isNaN(d.getTime()) && d.getTime() < nowMs;
+                      const calLink = makeCalendarLink(isoDate, label);
+                      return (
+                        <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-slate-500 dark:text-slate-400 shrink-0">{label}</span>
+                            {isPast ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-500 dark:bg-zinc-700 dark:text-slate-400">
+                                Realizada
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300">
+                                Pendente
+                              </span>
+                            )}
                           </div>
-                        )}
-                        {periciaSocialAt && (
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Social</span>
-                            <span className="font-semibold text-cyan-700 dark:text-cyan-300">{formatDateTime(periciaSocialAt)}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`font-semibold tabular-nums ${isPast ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-cyan-700 dark:text-cyan-300'}`}>
+                              {formatDateTime(isoDate)}
+                            </span>
+                            {calLink && !isPast && (
+                              <a
+                                href={calLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Adicionar ao Google Agenda"
+                                className="p-1 rounded-md text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-900/30 transition-colors"
+                              >
+                                <Calendar className="w-3.5 h-3.5" />
+                              </a>
+                            )}
                           </div>
-                        )}
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                        <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                          <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias</h3>
+                        </div>
+                        <div className="px-5 py-3 space-y-2">
+                          {periciaMedicaAt && <PericiaRow label="Médica" isoDate={periciaMedicaAt} />}
+                          {periciaSocialAt && <PericiaRow label="Social" isoDate={periciaSocialAt} />}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -4046,14 +4625,30 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* Linha 3: filtros avançados */}
             <div>
-              <button
-                type="button"
-                onClick={() => setShowFilters((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition-colors"
-              >
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
-                {showFilters ? 'Ocultar filtros avançados' : 'Filtros avançados'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowFilters((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition-colors"
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+                  {showFilters ? 'Ocultar filtros' : 'Filtros avançados'}
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-black">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
+                {activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllFilters}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-800 transition-colors"
+                  >
+                    <X className="w-3 h-3" /> Limpar filtros
+                  </button>
+                )}
+              </div>
 
               {showFilters && (
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 animate-in slide-in-from-top-1 duration-150">
@@ -4092,6 +4687,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     />
                     Somente risco MS (90+ dias)
                   </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={filterNoPhone}
+                      onChange={(e) => setFilterNoPhone(e.target.checked)}
+                      className="accent-orange-500 w-3.5 h-3.5"
+                    />
+                    Sem telefone
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={filterNoCpf}
+                      onChange={(e) => setFilterNoCpf(e.target.checked)}
+                      className="accent-orange-500 w-3.5 h-3.5"
+                    />
+                    Sem CPF
+                  </label>
                 </div>
               )}
             </div>
@@ -4104,6 +4717,53 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           {error}
         </div>
       )}
+
+      {/* ── Bulk action toolbar ──────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-orange-200 bg-orange-50 shadow-sm animate-in slide-in-from-top-1 duration-150">
+          <span className="text-sm font-bold text-orange-700">{selectedIds.size} selecionado(s)</span>
+          <div className="flex items-center gap-2 ml-auto">
+            <select
+              onChange={(e) => { if (e.target.value) void handleBulkStatusChange(e.target.value as RequirementStatus); e.target.value = ''; }}
+              disabled={isBulkActioning}
+              defaultValue=""
+              className="rounded-xl border border-orange-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 transition-all"
+            >
+              <option value="" disabled>Alterar status para…</option>
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => void handleBulkArchive()}
+              disabled={isBulkActioning}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-all"
+            >
+              {isBulkActioning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+              Arquivar
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-white transition-all"
+              title="Cancelar seleção"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Results counter + scroll anchor */}
+      <div ref={listRef} className="flex items-center justify-between gap-2 px-1">
+        {!loading && (
+          <p className="text-[11px] text-slate-400 font-medium">
+            {filteredRequirements.length === activeRequirements.length
+              ? <span>{activeRequirements.length} requerimento{activeRequirements.length !== 1 ? 's' : ''}</span>
+              : <span><span className="text-orange-600 font-bold">{filteredRequirements.length}</span> de {activeRequirements.length} requerimento{activeRequirements.length !== 1 ? 's' : ''}</span>
+            }
+          </p>
+        )}
+      </div>
 
       {loading ? (
         /* Skeleton loader */
@@ -4153,6 +4813,15 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <table className="w-full min-w-[860px] divide-y divide-slate-100">
               <thead>
                 <tr className="bg-gradient-to-r from-slate-50 to-slate-50/60">
+                  <th className="pl-4 pr-2 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={paginatedRequirements.length > 0 && selectedIds.size === paginatedRequirements.length}
+                      onChange={handleSelectAll}
+                      className="accent-orange-500 w-3.5 h-3.5 cursor-pointer"
+                      title="Selecionar todos"
+                    />
+                  </th>
                   <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Protocolo</th>
                   <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Beneficiário</th>
                   <th className="px-5 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">CPF</th>
@@ -4182,11 +4851,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     requirement.status === 'indeferido'      ? 'border-l-[3px] border-l-red-500'    :
                     requirement.status === 'ajuizado'        ? 'border-l-[3px] border-l-slate-500'  : '';
 
+                  const exigencyDaysLeft = getExigencyDaysLeft(requirement);
+                  const exigencyUrgency = getExigencyUrgency(exigencyDaysLeft);
+                  const inssCountdown = getInssCountdown(requirement);
+
                   return (
                     <tr
                       key={requirement.id}
-                      className={`group hover:bg-orange-50/40 transition-colors duration-100 ${rowAccent}`}
+                      className={`group hover:bg-orange-50/40 transition-colors duration-100 ${rowAccent} ${selectedIds.has(requirement.id) ? 'bg-orange-50/30' : ''}`}
                     >
+                      {/* Checkbox */}
+                      <td className="pl-4 pr-2 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(requirement.id)}
+                          onChange={() => toggleSelectId(requirement.id)}
+                          className="accent-orange-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                      </td>
+
                       {/* Protocolo */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 group-hover:bg-orange-100/60 px-2 py-1 rounded-md transition-colors">
@@ -4201,7 +4884,20 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                       {/* CPF */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        <span className="text-xs text-slate-500 font-mono">{requirement.cpf}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCpf(requirement.id, requirement.cpf)}
+                          title="Copiar CPF"
+                          className="group/cpf inline-flex items-center gap-1 font-mono text-xs text-slate-500 hover:text-orange-600 transition-colors"
+                        >
+                          {requirement.cpf}
+                          <span className={`transition-all ${copiedCpfId === requirement.id ? 'text-green-500 opacity-100' : 'opacity-0 group-hover/cpf:opacity-60'}`}>
+                            {copiedCpfId === requirement.id
+                              ? <Check className="w-3 h-3" />
+                              : <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            }
+                          </span>
+                        </button>
                       </td>
 
                       {/* Benefício */}
@@ -4238,10 +4934,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                         {/* Sub-info de status */}
                         {requirement.status === 'em_exigencia' && (
-                          <p className="text-amber-600 text-[11px] font-semibold mt-1.5 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
-                          </p>
+                          <div className="mt-1.5 flex flex-col gap-0.5">
+                            <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
+                            </p>
+                            {exigencyUrgency && exigencyUrgency !== 'ok' && (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                exigencyUrgency === 'overdue' ? 'bg-red-100 text-red-800 border border-red-300' :
+                                exigencyUrgency === 'critical' ? 'bg-red-50 text-red-700 border border-red-200' :
+                                'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                                {exigencyUrgency === 'overdue' ? `Vencido há ${Math.abs(exigencyDaysLeft!)}d` :
+                                 exigencyUrgency === 'critical' ? `Vence em ${exigencyDaysLeft}d` :
+                                 `${exigencyDaysLeft} dias`}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {requirement.status === 'aguardando_pericia' && periciaNextAt && (
                           <p className="text-cyan-700 text-[11px] font-semibold mt-1.5 flex items-center gap-1">
@@ -4251,25 +4961,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         )}
                         {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (
                           <div className="mt-1.5">
-                            {showMandadoRisk && (
+                            {analysisLevel === 'critical' ? (
                               <div className="inline-flex items-center gap-1 bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
                                 <AlertTriangle className="w-3 h-3 shrink-0" />
-                                MS — {analysisDays}d
+                                {showMandadoRisk ? `Risco MS — ${analysisDays}d` : `${analysisDays}d em análise`}
                               </div>
-                            )}
-                            {!showMandadoRisk && analysisLevel === 'high' && (
+                            ) : analysisLevel === 'high' ? (
                               <div className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
                                 <AlertTriangle className="w-3 h-3 shrink-0" />
-                                Atenção — {analysisDays}d
-                              </div>
-                            )}
-                            {!showMandadoRisk && analysisLevel === 'medium' && (
-                              <div className="inline-flex items-center gap-1 bg-yellow-50 border border-yellow-200 text-yellow-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                                <Clock className="w-3 h-3 shrink-0" />
                                 {analysisDays}d em análise
                               </div>
-                            )}
-                            {!showMandadoRisk && analysisLevel === 'none' && (
+                            ) : (
+                              /* < 60d: contador simples, sem badge */
                               <span className="text-[11px] text-slate-400">{analysisDays}d em análise</span>
                             )}
                           </div>
@@ -4295,11 +4998,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                     <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
                                   </span>
                                 </span>
-                                {/* Tooltip: pb-2 cria ponte invisível entre badge e painel */}
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 w-64 z-50
+                                {/* Tooltip: pt-2 cria ponte invisível entre badge e painel */}
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-64 z-[200]
                                                 pointer-events-none group-hover/msbadge:pointer-events-auto
                                                 opacity-0 group-hover/msbadge:opacity-100
                                                 transition-all duration-150 scale-95 group-hover/msbadge:scale-100">
+                                  <div className="flex justify-center mb-0">
+                                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900" />
+                                  </div>
                                   <div className="rounded-xl bg-slate-900 px-3.5 py-3 shadow-2xl shadow-black/30 text-left">
                                     <p className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 mb-2 flex items-center gap-1.5">
                                       <Scale className="w-3 h-3" /> Mandado de Segurança
@@ -4336,9 +5042,6 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                       )}
                                     </div>
                                   </div>
-                                  <div className="flex justify-center">
-                                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900" />
-                                  </div>
                                 </div>
                               </div>
                             );
@@ -4354,20 +5057,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       {/* Ações */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                          {[
-                            { icon: MessageSquare, label: 'WhatsApp', color: 'text-green-600 hover:bg-green-50 hover:text-green-700', action: () => handleWhatsApp(requirement.phone) },
-                            { icon: Eye, label: 'Detalhes', color: 'text-slate-500 hover:bg-orange-50 hover:text-orange-600', action: () => handleViewRequirement(requirement) },
-                            { icon: Edit2, label: 'Editar', color: 'text-slate-500 hover:bg-blue-50 hover:text-blue-600', action: () => handleOpenModal(requirement) },
-                          ].map(({ icon: Icon, label, color, action }) => (
-                            <button
-                              key={label}
-                              onClick={action}
-                              title={label}
-                              className={`p-1.5 rounded-lg transition-all ${color}`}
-                            >
-                              <Icon className="w-4 h-4" />
-                            </button>
-                          ))}
+                          <button onClick={() => handleViewRequirement(requirement)} title="Detalhes" className="p-1.5 rounded-lg text-slate-500 hover:bg-orange-50 hover:text-orange-600 transition-all">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleOpenModal(requirement)} title="Editar" className="p-1.5 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-all">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => handleArchiveRequirement(requirement.id, true)}
                             disabled={archivingId === requirement.id}
@@ -4405,6 +5100,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             const msJaCriado = requirementsWithMs.has(requirement.id);
             const showMandadoRisk = isMandadoRisk(requirement) && !msJaCriado;
             const analysisLevel = getAnalysisAlertLevel(typeof analysisDays === 'number' ? analysisDays : null);
+            const cardExigencyDaysLeft = getExigencyDaysLeft(requirement);
+            const cardExigencyUrgency = getExigencyUrgency(cardExigencyDaysLeft);
+            const cardInssCountdown = getInssCountdown(requirement);
+            const isCardSelected = selectedIds.has(requirement.id);
 
             const cardAccentColor =
               requirement.status === 'em_exigencia'       ? 'bg-amber-500'  :
@@ -4418,15 +5117,22 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             return (
               <div
                 key={requirement.id}
-                className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                className={`bg-white border rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ${isCardSelected ? 'border-orange-300 ring-1 ring-orange-200' : 'border-slate-200'}`}
               >
                 {/* Barra de acento no topo */}
-                <div className={`h-1 w-full ${cardAccentColor}`} />
+                <div className={`h-1 w-full rounded-t-2xl ${cardAccentColor}`} />
 
                 <div className="p-4 space-y-3">
                   {/* Cabeçalho */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isCardSelected}
+                        onChange={() => toggleSelectId(requirement.id)}
+                        className="accent-orange-500 w-4 h-4 cursor-pointer mt-0.5 shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 truncate leading-tight">{requirement.beneficiary}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[11px] text-slate-400 font-mono">{requirement.protocol || 'Sem protocolo'}</span>
@@ -4444,11 +5150,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                   <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
                                 </span>
                               </span>
-                              {/* pb-2 = invisible bridge to keep hover alive when moving to tooltip */}
-                              <div className="absolute bottom-full left-0 pb-2 w-64 z-50
+                              {/* pt-2 = invisible bridge to keep hover alive when moving to tooltip */}
+                              <div className="absolute top-full left-0 pt-2 w-64 z-[200]
                                               pointer-events-none group-hover/msbadge-m:pointer-events-auto
                                               opacity-0 group-hover/msbadge-m:opacity-100
                                               transition-all duration-150 scale-95 group-hover/msbadge-m:scale-100">
+                                <div className="flex ml-3">
+                                  <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900" />
+                                </div>
                                 <div className="rounded-xl bg-slate-900 px-3.5 py-3 shadow-2xl shadow-black/30 text-left">
                                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 mb-2 flex items-center gap-1.5">
                                     <Scale className="w-3 h-3" /> Mandado de Segurança
@@ -4479,9 +5188,6 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                     )}
                                   </div>
                                 </div>
-                                <div className="flex">
-                                  <div className="ml-3 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900" />
-                                </div>
                               </div>
                             </div>
                           );
@@ -4492,6 +5198,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                           </span>
                         )}
                       </div>
+                    </div>
                     </div>
                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${statusConfig?.badge ?? 'bg-slate-200 text-slate-700'}`}>
                       {statusConfig?.icon && <statusConfig.icon className="w-3 h-3" />}
@@ -4504,7 +5211,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <div className="flex items-center gap-1">
                       <span className="text-slate-400 font-medium">CPF</span>
-                      <span className="text-slate-600 font-mono">{requirement.cpf}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCpf(requirement.id, requirement.cpf)}
+                        className="inline-flex items-center gap-1 text-slate-600 font-mono hover:text-orange-600 transition-colors"
+                        title="Copiar CPF"
+                      >
+                        {requirement.cpf}
+                        <span className={copiedCpfId === requirement.id ? 'text-green-500' : 'text-slate-300'}>
+                          {copiedCpfId === requirement.id ? <Check className="w-2.5 h-2.5" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
+                        </span>
+                      </button>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="text-slate-400 font-medium">Entrada</span>
@@ -4518,9 +5235,22 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                   {/* Alertas de status */}
                   {requirement.status === 'em_exigencia' && (
-                    <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl">
-                      <Clock className="w-3.5 h-3.5 shrink-0" />
-                      Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
+                    <div className="space-y-1">
+                      <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl border ${
+                        cardExigencyUrgency === 'overdue' ? 'bg-red-100 border-red-300 text-red-800' :
+                        cardExigencyUrgency === 'critical' ? 'bg-red-50 border-red-200 text-red-700' :
+                        cardExigencyUrgency === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                        'bg-amber-50 border-amber-200 text-amber-700'
+                      }`}>
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
+                        {cardExigencyUrgency && cardExigencyUrgency !== 'ok' && cardExigencyDaysLeft !== null && (
+                          <span className="ml-auto font-bold text-[10px]">
+                            {cardExigencyUrgency === 'overdue' ? `Vencido há ${Math.abs(cardExigencyDaysLeft)}d` :
+                             `Vence em ${cardExigencyDaysLeft}d`}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                   {requirement.status === 'aguardando_pericia' && periciaNextAt && (
@@ -4529,17 +5259,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       Perícia: {formatDateTime(periciaNextAt)}
                     </div>
                   )}
-                  {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (showMandadoRisk || analysisLevel !== 'none') && (
-                    <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl border ${
-                      showMandadoRisk ? 'bg-red-50 border-red-200 text-red-700' :
-                      analysisLevel === 'high' ? 'bg-orange-50 border-orange-200 text-orange-700' :
-                      'bg-yellow-50 border-yellow-200 text-yellow-700'
-                    }`}>
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      {showMandadoRisk ? `Risco MS — ${analysisDays} dias` :
-                       analysisLevel === 'high' ? `Atenção — ${analysisDays} dias` :
-                       `Alerta — ${analysisDays} dias`}
-                    </div>
+                  {requirement.status === 'em_analise' && typeof analysisDays === 'number' && (
+                    analysisLevel === 'critical' || analysisLevel === 'high' ? (
+                      <div className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl border ${
+                        analysisLevel === 'critical' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-orange-50 border-orange-200 text-orange-700'
+                      }`}>
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        {analysisLevel === 'critical' && showMandadoRisk ? `Risco MS — ${analysisDays}d` : `${analysisDays}d em análise`}
+                      </div>
+                    ) : (
+                      /* < 60d: contador simples, sem badge */
+                      <span className="text-[11px] text-slate-400">{analysisDays}d em análise</span>
+                    )
                   )}
 
                   {/* Rodapé: select + ações */}
@@ -4556,15 +5287,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     </select>
 
                     <div className="flex items-center gap-1">
-                      {[
-                        { icon: MessageSquare, label: 'WhatsApp', cls: 'text-green-600 hover:bg-green-50', action: () => handleWhatsApp(requirement.phone) },
-                        { icon: Eye,           label: 'Detalhes', cls: 'text-slate-500 hover:bg-orange-50 hover:text-orange-600', action: () => handleViewRequirement(requirement) },
-                        { icon: Edit2,         label: 'Editar',   cls: 'text-slate-500 hover:bg-blue-50 hover:text-blue-600',   action: () => handleOpenModal(requirement) },
-                      ].map(({ icon: Icon, label, cls, action }) => (
-                        <button key={label} onClick={action} title={label} className={`p-1.5 rounded-lg transition-all ${cls}`}>
-                          <Icon className="w-4 h-4" />
-                        </button>
-                      ))}
+                      <button onClick={() => handleViewRequirement(requirement)} title="Detalhes" className="p-1.5 rounded-lg text-slate-500 hover:bg-orange-50 hover:text-orange-600 transition-all">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleOpenModal(requirement)} title="Editar" className="p-1.5 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-all">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleArchiveRequirement(requirement.id, true)}
                         disabled={archivingId === requirement.id}
@@ -4990,6 +5718,234 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </div>
         </div>
       )}
+
+      {/* ── Indeferido — Confirmar com péricias em aberto ───────────────── */}
+      {indeferidoConfirm && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIndeferidoConfirm(null)} />
+          <div className="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
+            {/* Barra de atenção */}
+            <div className="h-1 bg-amber-500" />
+
+            <div className="px-6 py-5">
+              {/* Ícone + título */}
+              <div className="flex items-start gap-3 mb-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white leading-tight">
+                    Péricias em aberto
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Este requerimento possui{' '}
+                    {[
+                      indeferidoConfirm.hasMedica && 'perícia médica',
+                      indeferidoConfirm.hasSocial && 'perícia social',
+                    ].filter(Boolean).join(' e ')}{' '}
+                    agendada{indeferidoConfirm.hasMedica && indeferidoConfirm.hasSocial ? 's' : ''} com data futura.
+                  </p>
+                </div>
+              </div>
+
+              {/* Aviso */}
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 mb-5 text-sm text-amber-800 dark:text-amber-300">
+                Ao indeferir, deseja <strong>cancelar e remover</strong> os agendamentos de perícia pendentes?
+              </div>
+
+              {/* Ações */}
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { requirementId } = indeferidoConfirm;
+                    setIndeferidoConfirm(null);
+                    await doStatusChange(requirementId, 'indeferido', true);
+                    toast.success('Indeferido', 'Status atualizado e péricias canceladas.');
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition flex items-center justify-center gap-2"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  Indeferir e cancelar péricias
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { requirementId } = indeferidoConfirm;
+                    setIndeferidoConfirm(null);
+                    await doStatusChange(requirementId, 'indeferido', false);
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
+                >
+                  Indeferir sem cancelar péricias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIndeferidoConfirm(null)}
+                  className="w-full px-4 py-2 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── WhatsApp Template Modal ─────────────────────────────────────── */}
+      {whatsappTemplateReq && (() => {
+        const waTemplates = WHATSAPP_TEMPLATES[whatsappTemplateReq.status] ?? [];
+        const previewText = selectedWATemplate
+          ? buildWAText(selectedWATemplate.text, whatsappTemplateReq)
+          : null;
+        const initials = (whatsappTemplateReq.beneficiary ?? '?')
+          .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
+        return (
+          <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center sm:px-4 sm:py-6">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setWhatsappTemplateReq(null)} />
+
+            {/* Card */}
+            <div className="relative w-full sm:max-w-2xl bg-white sm:rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[85vh]">
+
+              {/* ── Header ── */}
+              <div className="bg-[#075E54] px-5 py-4 flex items-center gap-3.5 flex-shrink-0">
+                {/* Avatar */}
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-sm font-bold tracking-tight">{initials}</span>
+                </div>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-sm leading-tight truncate">
+                    {whatsappTemplateReq.beneficiary ?? 'Beneficiário'}
+                  </p>
+                  <p className="text-green-200 text-xs font-mono mt-0.5">
+                    {whatsappTemplateReq.phone ?? 'Sem telefone'}
+                  </p>
+                </div>
+                {/* WA Logo + close */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white opacity-70" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                  </svg>
+                  <button
+                    onClick={() => setWhatsappTemplateReq(null)}
+                    className="p-1.5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Body: two-column on desktop ── */}
+              <div className="flex flex-col sm:flex-row flex-1 min-h-0">
+
+                {/* Left — template list */}
+                <div className="sm:w-52 sm:border-r border-slate-100 flex flex-col flex-shrink-0">
+                  <p className="px-4 pt-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 flex-shrink-0">
+                    Modelos
+                  </p>
+                  <div className="flex-1 overflow-y-auto pb-2 space-y-0.5 px-2">
+                    {waTemplates.length === 0 && (
+                      <p className="text-xs text-slate-400 text-center py-6 px-3">
+                        Nenhum modelo para este status.
+                      </p>
+                    )}
+                    {waTemplates.map((tpl, i) => {
+                      const isSelected = selectedWATemplate?.label === tpl.label;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setSelectedWATemplate(tpl)}
+                          className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium transition-all flex items-center gap-2 ${
+                            isSelected
+                              ? 'bg-[#DCF8C6] text-[#075E54] font-semibold'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isSelected ? 'bg-[#25D366]' : 'bg-slate-300'}`} />
+                          <span className="truncate">{tpl.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* No-template shortcut */}
+                  <div className="border-t border-slate-100 px-3 py-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleWhatsApp(whatsappTemplateReq.phone)}
+                      className="w-full text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition flex items-center justify-center gap-1.5"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                      </svg>
+                      Abrir sem template
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right — chat preview */}
+                <div className="flex-1 flex flex-col min-h-0 min-w-0">
+                  {/* Chat area */}
+                  <div
+                    className="flex-1 overflow-y-auto px-4 py-4"
+                    style={{ background: 'url("data:image/svg+xml,%3Csvg width=\'400\' height=\'400\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3C/svg%3E") #ECE5DD' }}
+                  >
+                    {previewText ? (
+                      <div className="flex justify-end">
+                        <div className="max-w-[85%] relative">
+                          {/* Bubble tail */}
+                          <div className="absolute -right-1.5 top-0 w-3 h-3 overflow-hidden">
+                            <div className="w-4 h-4 bg-[#DCF8C6] rotate-45 translate-x-1 -translate-y-1" />
+                          </div>
+                          {/* Bubble */}
+                          <div className="bg-[#DCF8C6] rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm">
+                            <p className="text-[12.5px] text-slate-800 leading-[1.55] whitespace-pre-wrap break-words">
+                              {previewText}
+                            </p>
+                            <p className="text-[10px] text-slate-400 text-right mt-1.5 flex items-center justify-end gap-1">
+                              {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              <svg viewBox="0 0 16 11" className="w-3.5 h-2.5 fill-[#53bdeb]" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M11.071.653a.75.75 0 00-1.142-.97L4.917 6.31 2.07 3.772a.75.75 0 10-1.04 1.081l3.5 3.375a.75.75 0 001.091-.056l5.45-7.52zM15.071.653a.75.75 0 00-1.142-.97l-5.012 6.627-.252-.243a.75.75 0 10-1.04 1.081l.856.825a.75.75 0 001.091-.056l5.5-7.264z"/>
+                              </svg>
+                            </p>
+                          </div>
+                          {/* Template label tag */}
+                          <p className="text-[9.5px] text-slate-400 text-right mt-1 pr-0.5 font-medium">
+                            {selectedWATemplate?.label}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center gap-2 py-6">
+                        <svg viewBox="0 0 24 24" className="w-10 h-10 fill-slate-300" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                        </svg>
+                        <p className="text-xs text-slate-400">Selecione um modelo</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Send footer */}
+                  <div className="border-t border-slate-100 bg-white px-4 py-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      disabled={!selectedWATemplate}
+                      onClick={() => selectedWATemplate && handleSendWATemplate(selectedWATemplate.text, whatsappTemplateReq)}
+                      className="w-full inline-flex items-center justify-center gap-2.5 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20BC5A] disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold transition shadow-sm disabled:shadow-none disabled:cursor-not-allowed"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                      </svg>
+                      {selectedWATemplate ? `Enviar "${selectedWATemplate.label}"` : 'Selecione um modelo'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

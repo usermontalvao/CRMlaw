@@ -27,7 +27,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 
-type Tab = 'data' | 'processes' | 'financial' | 'deadlines' | 'requirements' | 'documents' | 'assinaturas' | 'overview';
+type Tab = 'data' | 'processes' | 'financial' | 'deadlines' | 'requirements' | 'documents' | 'assinaturas' | 'overview' | 'agenda';
 
 interface ClientDetailsProps {
   client: Client;
@@ -788,11 +788,22 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     const fromCalendar = calendarEvents
       .filter((e) => (e.event_type === 'hearing' || e.event_type === 'pericia') && e.status === 'pendente' && new Date(e.start_at) >= now)
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0];
-    if (fromCalendar) return { date: fromCalendar.start_at, label: EVENT_TYPE_LABEL[fromCalendar.event_type] ?? 'Compromisso', type: 'calendar' as const, id: fromCalendar.id };
+    if (fromCalendar) {
+      const d = new Date(fromCalendar.start_at);
+      const timeStr = !isNaN(d.getTime()) && fromCalendar.start_at.includes('T')
+        ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : null;
+      return { date: fromCalendar.start_at, label: EVENT_TYPE_LABEL[fromCalendar.event_type] ?? 'Compromisso', time: timeStr, type: 'calendar' as const, id: fromCalendar.id };
+    }
     const fromProcess = processes
       .filter((p) => p.hearing_date && new Date(p.hearing_date) >= now)
       .sort((a, b) => new Date(a.hearing_date!).getTime() - new Date(b.hearing_date!).getTime())[0];
-    if (fromProcess) return { date: fromProcess.hearing_date!, label: 'Audiência', type: 'process' as const, id: fromProcess.id };
+    if (fromProcess) {
+      const timeStr = (fromProcess as any).hearing_time
+        ? String((fromProcess as any).hearing_time).slice(0, 5)
+        : null;
+      return { date: fromProcess.hearing_date!, label: 'Audiência', time: timeStr, type: 'process' as const, id: fromProcess.id };
+    }
     return null;
   }, [calendarEvents, processes]);
 
@@ -1165,6 +1176,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     { id: 'financial', label: 'Financeiro', count: agreements.length },
     { id: 'deadlines', label: 'Prazos', count: deadlines.length },
     { id: 'requirements', label: 'Requerimentos', count: requirements.length },
+    { id: 'agenda', label: 'Compromissos', count: calendarEvents.length },
     { id: 'assinaturas', label: 'Assinaturas', count: signatureRequests.length },
     { id: 'documents', label: 'Documentos' },
     { id: 'overview', label: 'Histórico' },
@@ -1257,28 +1269,54 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           </div>
 
           {/* KPIs compactos — lado direito */}
-          <div className="flex items-center gap-4 divide-x divide-slate-100 flex-shrink-0">
-            <div className="pl-4 first:pl-0">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Casos</p>
-              <p className="text-lg font-bold text-slate-900 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
-              <p className="text-[9px] text-slate-400 mt-0.5">{activeProcesses.length}p · {activeRequirements.length}r</p>
-            </div>
-            <div className="pl-4">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Honorários</p>
-              <p className={`text-lg font-bold tabular-nums leading-none ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{financialLoading ? '…' : formatCurrency(totalRevenue)}</p>
-              <p className="text-[9px] text-slate-400 mt-0.5">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
-            </div>
-            <div className="pl-4">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Prazos</p>
-              <p className={`text-lg font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}</p>
-              <p className="text-[9px] mt-0.5">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-slate-400">Em dia</span>}</p>
-            </div>
-            <div className="pl-4">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Compromisso</p>
-              <p className="text-sm font-bold text-slate-900 leading-tight">{nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-300 font-normal text-xs">—</span>}</p>
-              <p className="text-[9px] text-slate-400 mt-0.5 truncate max-w-[120px]">{nextHearing ? nextHearing.label : 'Nenhum'}</p>
-            </div>
-          </div>
+          {(() => {
+            // Data formatada do próximo compromisso
+            const hearingDateObj = nextHearing ? new Date(nextHearing.date) : null;
+            const hearingDateStr = hearingDateObj && !isNaN(hearingDateObj.getTime())
+              ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              : null;
+
+            return (
+              <div className="flex items-stretch divide-x divide-slate-100 flex-shrink-0 border-l border-slate-100">
+                <div className="px-5 flex flex-col justify-center min-w-[72px]">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Casos</p>
+                  <p className="text-xl font-bold text-slate-900 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
+                  <p className="text-[9px] text-slate-400 mt-1">{activeProcesses.length}p · {activeRequirements.length}r</p>
+                </div>
+                <div className="px-5 flex flex-col justify-center min-w-[100px]">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Honorários</p>
+                  <p className={`text-sm font-bold tabular-nums leading-none ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{financialLoading ? '…' : formatCurrency(totalRevenue)}</p>
+                  <p className="text-[9px] text-slate-400 mt-1">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
+                </div>
+                <div className="px-5 flex flex-col justify-center min-w-[72px]">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Prazos</p>
+                  <p className={`text-xl font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}</p>
+                  <p className="text-[9px] mt-1">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-slate-400">Em dia</span>}</p>
+                </div>
+                <div className="px-5 flex flex-col justify-center min-w-[130px]">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Próx. Compromisso</p>
+                  {nextHearing ? (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo('agenda', { entityId: nextHearing.id } as any)}
+                      className="text-left group mt-0.5"
+                      title="Abrir na Agenda"
+                    >
+                      <p className="text-sm font-bold text-slate-900 leading-tight tabular-nums group-hover:text-orange-600 transition-colors">
+                        {hearingDateStr}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {nextHearing.time && <span className="font-semibold text-slate-600">{nextHearing.time} · </span>}
+                        {nextHearing.label}
+                      </p>
+                    </button>
+                  ) : (
+                    <p className="text-sm text-slate-300">—</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -2418,6 +2456,183 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               )}
             </div>
           )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              TAB: COMPROMISSOS (AGENDA)
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'agenda' && (() => {
+            const now = new Date();
+
+            const TYPE_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
+              hearing:     { label: 'Audiência',     bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
+              pericia:     { label: 'Perícia',       bg: 'bg-cyan-100',   text: 'text-cyan-700',   dot: 'bg-cyan-500'   },
+              meeting:     { label: 'Reunião',       bg: 'bg-blue-100',   text: 'text-blue-700',   dot: 'bg-blue-500'   },
+              deadline:    { label: 'Prazo',         bg: 'bg-rose-100',   text: 'text-rose-700',   dot: 'bg-rose-500'   },
+              requirement: { label: 'Requerimento',  bg: 'bg-amber-100',  text: 'text-amber-700',  dot: 'bg-amber-500'  },
+              payment:     { label: 'Pagamento',     bg: 'bg-emerald-100',text: 'text-emerald-700',dot: 'bg-emerald-500'},
+              personal:    { label: 'Pessoal',       bg: 'bg-slate-100',  text: 'text-slate-600',  dot: 'bg-slate-400'  },
+            };
+
+            const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
+              pendente:  { label: 'Pendente',  cls: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' },
+              concluido: { label: 'Concluído', cls: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
+              cancelado: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-500 ring-1 ring-slate-200' },
+            };
+
+            // ── Itens unificados: agenda + audiências de processo + perícias de requerimento ──
+            type UnifiedItem =
+              | { kind: 'calendar'; event: CalendarEvent; date: Date }
+              | { kind: 'process'; process: Process; date: Date; timeStr: string | null }
+              | { kind: 'pericia'; req: Requirement; periciaType: 'medica' | 'social'; date: Date };
+
+            const unified: UnifiedItem[] = [];
+
+            // Eventos reais da agenda
+            calendarEvents.forEach((e) => {
+              const d = new Date(e.start_at);
+              if (!isNaN(d.getTime())) unified.push({ kind: 'calendar', event: e, date: d });
+            });
+
+            // Audiências de processo (hearing_date) que ainda não têm evento de agenda vinculado
+            const calProcessIds = new Set(calendarEvents.map((e) => e.process_id).filter(Boolean));
+            processes.forEach((p) => {
+              if (!p.hearing_date) return;
+              if (calProcessIds.has(p.id)) return; // já coberto por evento de agenda
+              const d = new Date(p.hearing_date);
+              if (isNaN(d.getTime())) return;
+              const timeStr = (p as any).hearing_time ? String((p as any).hearing_time).slice(0, 5) : null;
+              unified.push({ kind: 'process', process: p, date: d, timeStr });
+            });
+
+            // Perícias de requerimento que ainda não têm evento de agenda vinculado
+            const calReqIds = new Set(calendarEvents.map((e) => e.requirement_id).filter(Boolean));
+            requirements.forEach((r) => {
+              if (calReqIds.has(r.id)) return;
+              if (r.pericia_medica_at) {
+                const d = new Date(r.pericia_medica_at);
+                if (!isNaN(d.getTime())) unified.push({ kind: 'pericia', req: r, periciaType: 'medica', date: d });
+              }
+              if (r.pericia_social_at) {
+                const d = new Date(r.pericia_social_at);
+                if (!isNaN(d.getTime())) unified.push({ kind: 'pericia', req: r, periciaType: 'social', date: d });
+              }
+            });
+
+            unified.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+            const upcoming = unified.filter((u) => {
+              if (u.kind === 'calendar') return u.event.status === 'pendente' && u.date >= now;
+              return u.date >= now;
+            });
+            const past = unified.filter((u) => {
+              if (u.kind === 'calendar') return u.event.status !== 'pendente' || u.date < now;
+              return u.date < now;
+            }).reverse();
+
+            const Row = ({ u }: { u: UnifiedItem }) => {
+              const isFuture = u.kind === 'calendar'
+                ? u.event.status === 'pendente' && u.date >= now
+                : u.date >= now;
+
+              let tc = TYPE_CONFIG.hearing;
+              let label = '';
+              let title = '';
+              let subtitle = '';
+              let statusBadge = '';
+              let onClick = () => {};
+              let timeStr: string | null = null;
+              let hasTime = false;
+
+              if (u.kind === 'calendar') {
+                tc = TYPE_CONFIG[u.event.event_type] ?? { label: u.event.event_type, bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' };
+                label = tc.label;
+                title = u.event.title;
+                subtitle = u.event.description ?? '';
+                statusBadge = STATUS_CONFIG[u.event.status]
+                  ? `<span>${STATUS_CONFIG[u.event.status].label}</span>` : '';
+                onClick = () => navigateTo('agenda', { entityId: u.event.id } as any);
+                hasTime = u.event.start_at.includes('T');
+                timeStr = hasTime ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+              } else if (u.kind === 'process') {
+                tc = TYPE_CONFIG.hearing;
+                label = 'Audiência';
+                title = (u.process as any).title || (u.process as any).number || 'Processo';
+                subtitle = 'Vinculado ao processo';
+                onClick = () => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: u.process.id } });
+                timeStr = u.timeStr;
+              } else {
+                tc = TYPE_CONFIG.pericia;
+                label = u.periciaType === 'medica' ? 'Perícia Médica' : 'Perícia Social';
+                title = u.req.beneficiary ?? 'Requerimento';
+                subtitle = 'Vinculado ao requerimento';
+                onClick = () => navigateTo('requerimentos', { entityId: u.req.id } as any);
+                hasTime = u.date.toISOString().includes('T');
+                timeStr = hasTime ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+              }
+
+              const statusCls = u.kind === 'calendar' ? STATUS_CONFIG[u.event.status] : null;
+
+              return (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border transition group ${isFuture ? 'border-slate-200 bg-white hover:border-orange-300 hover:shadow-sm' : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'}`}
+                >
+                  <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${tc.dot} ${!isFuture ? 'opacity-40' : ''}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${tc.bg} ${tc.text}`}>{label}</span>
+                      {statusCls && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusCls.cls}`}>{statusCls.label}</span>
+                      )}
+                      {u.kind !== 'calendar' && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{isFuture ? 'Pendente' : 'Passado'}</span>
+                      )}
+                    </div>
+                    <p className={`text-sm font-semibold mt-1 group-hover:text-orange-600 transition-colors truncate ${isFuture ? 'text-slate-900' : 'text-slate-400'}`}>{title}</p>
+                    {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className={`text-xs font-semibold tabular-nums ${isFuture ? 'text-slate-700' : 'text-slate-400 line-through'}`}>
+                      {u.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </p>
+                    {timeStr && (
+                      <p className={`text-[10px] tabular-nums mt-0.5 ${isFuture ? 'text-slate-500' : 'text-slate-300'}`}>{timeStr}</p>
+                    )}
+                    <p className="text-[9px] text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity mt-1">Abrir →</p>
+                  </div>
+                </button>
+              );
+            };
+
+            return (
+              <div className="space-y-5">
+                {calendarLoading || relationsLoading ? (
+                  <div className="flex items-center gap-2 text-slate-400 py-6"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                ) : unified.length === 0 ? (
+                  <div className="text-center py-10">
+                    <CalendarIcon className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">Nenhum compromisso vinculado a este cliente.</p>
+                  </div>
+                ) : (
+                  <>
+                    {upcoming.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Próximos ({upcoming.length})</p>
+                        <div className="space-y-2">{upcoming.map((u, i) => <Row key={i} u={u} />)}</div>
+                      </div>
+                    )}
+                    {past.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Passados / Concluídos ({past.length})</p>
+                        <div className="space-y-2">{past.map((u, i) => <Row key={i} u={u} />)}</div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ═══════════════════════════════════════════════════════════════════
               TAB: ASSINATURAS

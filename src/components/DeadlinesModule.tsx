@@ -2859,13 +2859,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             {/* Footer */}
             <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => void handleCloneDeadline(d)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  Duplicar
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => void handleCloneDeadline(d)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Duplicar
+                  </button>
+                )}
                 <button
                   onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50 transition"
@@ -3332,13 +3334,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 Marcar como Cumprido
               </button>
             )}
-            <button
-              onClick={() => void handleCloneDeadline(selectedDeadlineForView)}
-              className="inline-flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium px-4 py-2.5 rounded-lg transition"
-            >
-              <Copy className="w-4 h-4" />
-              Duplicar Prazo
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => void handleCloneDeadline(selectedDeadlineForView)}
+                className="inline-flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium px-4 py-2.5 rounded-lg transition"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicar Prazo
+              </button>
+            )}
             <button
               onClick={() => {
                 handleDeleteDeadline(selectedDeadlineForView.id);
@@ -4383,13 +4387,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => void handleCloneDeadline(deadline)}
-                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                            title="Duplicar prazo"
-                          >
-                            <Copy className="w-4 h-4" />
-                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => void handleCloneDeadline(deadline)}
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                              title="Duplicar prazo"
+                            >
+                              <Copy className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDeleteDeadline(deadline.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

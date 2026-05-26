@@ -656,6 +656,43 @@ class DjenLocalService {
     }
     return result;
   }
+
+  /**
+   * Retorna o nome_orgao mais recente do DJEN para cada numero_processo informado.
+   * Fallback quando o link por process_id não está disponível (comunicação ainda não vinculada ao UUID do processo).
+   * Retorna mapa: process_code → nome_orgao
+   */
+  async getOrgaoByProcessCodes(processCodes: string[]): Promise<Map<string, string>> {
+    if (!processCodes.length) return new Map();
+
+    // Busca por código exato e também pela versão somente dígitos para tolerância de formato
+    const codesNorm = processCodes.map(c => c.replace(/\D/g, '')).filter(Boolean);
+
+    const { data } = await supabase
+      .from(this.tableName)
+      .select('numero_processo, nome_orgao, sigla_tribunal, data_disponibilizacao')
+      .eq('ativo', true)
+      .not('nome_orgao', 'is', null)
+      .order('data_disponibilizacao', { ascending: false });
+
+    const result = new Map<string, string>();
+    for (const row of data ?? []) {
+      if (!row.nome_orgao || !row.numero_processo) continue;
+      const rowNorm = String(row.numero_processo).replace(/\D/g, '');
+      // Encontra qual process_code deste lote corresponde a esta linha
+      const matchIdx = codesNorm.findIndex(n => n === rowNorm);
+      if (matchIdx === -1) continue;
+      const originalCode = processCodes[matchIdx];
+      if (!result.has(originalCode)) {
+        // Concatena tribunal quando disponível, ex: "TRF1 — 1ª Vara Federal"
+        const orgaoLabel = row.sigla_tribunal
+          ? `${row.sigla_tribunal} — ${row.nome_orgao}`
+          : row.nome_orgao;
+        result.set(originalCode, orgaoLabel);
+      }
+    }
+    return result;
+  }
   /**
    * Retorna IDs de processos que têm comunicações não lidas (para badge na lista)
    */

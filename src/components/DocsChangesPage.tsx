@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.155': { name: 'Café Agenda Unificada', emoji: '📆' },
   '1.10.154': { name: 'Café Data Ajustada', emoji: '📅' },
   '1.10.153': { name: 'Café Prazo Certo', emoji: '⏱️' },
   '1.10.152': { name: 'Café Chamou Atenção', emoji: '⚡' },
@@ -852,6 +853,68 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.155',
+    date: '26/05/2026',
+    summary: 'Melhorias no módulo de requerimentos e ficha do cliente: aba Compromissos unificada, redesign WhatsApp, badge de análise e correções.',
+    modules: [
+      {
+        moduleId: 'Requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Redesign do modal de templates WhatsApp',
+            description: 'Modal dividido em duas colunas: lista de templates à esquerda e prévia de bolha de chat à direita, com cores reais do WhatsApp (#075E54, #DCF8C6).',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Badge de tempo em análise unificado',
+            description: 'Um único indicador: crítico (≥90d, vermelho), alto (≥60d, laranja) ou contador simples (≥30d). Abaixo de 30 dias nada é exibido. O contador para automaticamente ao indeferir.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Alerta e limpeza de perícias ao indeferir',
+            description: 'Ao mudar status para Indeferido, se houver perícias futuras em aberto, um modal de confirmação permite cancelá-las automaticamente ou ignorar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Template de impressão reformulado',
+            description: 'Inclui histórico de status com datas/responsáveis, datas de perícias com badges Pendente/Realizada, nome do usuário emitente e rodapé com data e hora.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Perícias com badges e link para agenda interna',
+            description: 'Na seção de perícias do modal, exibe badge "Pendente" (data futura) ou "Realizada" (data passada) e ícone de calendário que abre a agenda interna.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Clientes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Aba Compromissos com lista unificada',
+            description: 'Nova aba na ficha do cliente lista todos os compromissos: eventos reais da agenda, audiências de processo (hearing_date) e perícias de requerimento — separados em Próximos e Passados. Clique navega diretamente para o módulo correspondente.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'KPI Próx. Compromisso com horário e link interno',
+            description: 'O KPI no cabeçalho exibe data + horário e ao clicar navega para o modal do compromisso na agenda interna (sem Google Calendar).',
+          },
+        ],
+      },
+      {
+        moduleId: 'Sistema',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'formatDateTime não mostrava horário em strings ISO',
+            description: 'Strings como "2026-05-16T10:30:00" tinham o horário descartado — corrigido para exibir data e hora corretamente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.154',
     date: '25/05/2026',
