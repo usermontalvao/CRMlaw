@@ -157,102 +157,317 @@ const INSTALLMENT_STATUS_COLOR: Record<string, string> = {
   cancelado: 'bg-slate-100 text-slate-500',
 };
 
-// ─── Timeline event builder ───────────────────────────────────────────────────
+// ─── Structured timeline ──────────────────────────────────────────────────────
 
-interface TimelineEvent {
+interface TLeaf {
   id: string;
   date: string;
+  label: string;
   title: string;
-  description?: string;
-  dotColor: string;
+  actor?: string;
   future?: boolean;
+  badgeBg: string;
+  badgeText: string;
+  dot: string;
+  entityId?: string;       // ID real para navegação
+  module?: string;         // módulo destino
+  navParams?: Record<string, unknown>;
 }
 
-function buildTimeline(
+interface TRoot {
+  id: string;
+  type: 'process' | 'requirement' | 'general';
+  date: string;
+  title: string;
+  subtitle?: string;
+  statusLabel?: string;
+  statusColor?: string;
+  actor?: string;
+  leaves: TLeaf[];
+  entityId?: string;       // ID real para navegação
+  module?: string;
+}
+
+const REQ_STATUS_LABEL: Record<string, string> = {
+  aguardando_confeccao: 'Aguardando Confecção',
+  em_analise:           'Em Análise',
+  em_exigencia:         'Em Exigência',
+  aguardando_pericia:   'Aguardando Perícia',
+  deferido:             'Deferido',
+  indeferido:           'Indeferido',
+  ajuizado:             'Ajuizado',
+};
+
+const REQ_STATUS_COLOR: Record<string, string> = {
+  aguardando_confeccao: 'bg-slate-100 text-slate-600',
+  em_analise:           'bg-blue-100 text-blue-700',
+  em_exigencia:         'bg-amber-100 text-amber-700',
+  aguardando_pericia:   'bg-violet-100 text-violet-700',
+  deferido:             'bg-emerald-100 text-emerald-700',
+  indeferido:           'bg-rose-100 text-rose-700',
+  ajuizado:             'bg-orange-100 text-orange-700',
+};
+
+const BENEFIT_LABEL: Record<string, string> = {
+  bpc_loas: 'BPC/LOAS', bpc_loas_deficiencia: 'BPC Deficiência', bpc_loas_idoso: 'BPC Idoso',
+  aposentadoria_tempo: 'Aposent. por Tempo', aposentadoria_idade: 'Aposent. por Idade',
+  aposentadoria_invalidez: 'Aposent. por Invalidez', auxilio_acidente: 'Auxílio-Acidente',
+  auxilio_doenca: 'Auxílio-Doença', pensao_morte: 'Pensão por Morte',
+  salario_maternidade: 'Salário-Maternidade', outro: 'Outro',
+};
+
+const CAL_TYPE_LABEL: Record<string, string> = {
+  hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião',
+  deadline: 'Prazo', requirement: 'Requerimento', payment: 'Pagamento',
+};
+
+function buildStructuredTimeline(
   processes: Process[],
-  _tasks: unknown[],
+  requirements: import('../types/requirement.types').Requirement[],
   agreements: Agreement[],
   signatures: SignatureRequestWithSigners[],
   petitions: SavedPetition[],
-  calEvents: CalendarEvent[] = [],
-): TimelineEvent[] {
-  const evts: TimelineEvent[] = [];
+  calEvents: CalendarEvent[],
+): TRoot[] {
   const now = new Date();
+  const roots: TRoot[] = [];
 
+  // ── Processos ──────────────────────────────────────────────────────────────
   processes.forEach((p) => {
-    evts.push({
-      id: `process-open-${p.id}`,
-      date: p.created_at,
-      title: `Processo aberto${p.process_code ? `: ${p.process_code}` : ''}`,
-      description: PRACTICE_AREA_LABEL[p.practice_area] ?? p.practice_area,
-      dotColor: 'bg-blue-500',
-    });
+    const leaves: TLeaf[] = [];
+
+    // Audiência vinculada ao processo
     if (p.hearing_date) {
       const isFuture = new Date(p.hearing_date) >= now;
-      evts.push({
+      leaves.push({
         id: `hearing-${p.id}`,
         date: p.hearing_date,
-        title: `Audiência${p.process_code ? ` — ${p.process_code}` : ''}`,
-        description: p.court ?? undefined,
-        dotColor: isFuture ? 'bg-violet-500' : 'bg-violet-300',
+        label: 'Audiência',
+        title: [p.hearing_mode === 'online' ? 'Online' : p.hearing_mode === 'presencial' ? 'Presencial' : null, p.hearing_time ? p.hearing_time.slice(0,5) : null].filter(Boolean).join(' · ') || 'Audiência agendada',
+        actor: p.responsible_lawyer ?? undefined,
         future: isFuture,
+        badgeBg: 'bg-violet-100', badgeText: 'text-violet-700', dot: isFuture ? 'bg-violet-500' : 'bg-violet-300',
+        entityId: p.id, module: 'processos',
       });
     }
+
+    // Petições vinculadas ao processo
+    petitions.filter((pet) => pet.process_id === p.id).forEach((pet) => {
+      leaves.push({
+        id: `petition-${pet.id}`,
+        date: pet.created_at,
+        label: 'Petição',
+        title: pet.title ?? 'Sem título',
+        badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', dot: 'bg-amber-400',
+        entityId: pet.id, module: 'peticoes',
+      });
+    });
+
+    // Assinaturas vinculadas ao processo
+    signatures.filter((s) => s.process_id === p.id).forEach((s) => {
+      const signerName = (s.signers ?? [])[0]?.name ?? undefined;
+      leaves.push({
+        id: `sig-${s.id}`,
+        date: s.created_at,
+        label: 'Documento',
+        title: s.document_name ?? 'Documento',
+        actor: signerName,
+        badgeBg: 'bg-slate-100', badgeText: 'text-slate-600', dot: 'bg-slate-400',
+        entityId: s.id, module: 'assinaturas',
+      });
+      if (s.signed_at) {
+        leaves.push({
+          id: `sig-signed-${s.id}`,
+          date: s.signed_at,
+          label: 'Assinatura',
+          title: s.document_name ?? 'Documento',
+          actor: signerName,
+          badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', dot: 'bg-emerald-500',
+          entityId: s.id, module: 'assinaturas',
+        });
+      }
+    });
+
+    // Eventos de agenda vinculados ao processo
+    calEvents.filter((e) => e.process_id === p.id).forEach((e) => {
+      const isFuture = new Date(e.start_at) >= now;
+      leaves.push({
+        id: `cal-${e.id}`,
+        date: e.start_at,
+        label: CAL_TYPE_LABEL[e.event_type] ?? 'Agenda',
+        title: e.title,
+        future: isFuture,
+        badgeBg: 'bg-violet-100', badgeText: 'text-violet-700', dot: 'bg-violet-400',
+        entityId: e.id, module: 'agenda',
+      });
+    });
+
+    leaves.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    roots.push({
+      id: `process-${p.id}`,
+      type: 'process',
+      date: p.created_at,
+      title: p.process_code || 'Processo',
+      subtitle: [PRACTICE_AREA_LABEL[p.practice_area] ?? p.practice_area, p.court].filter(Boolean).join(' · ') || undefined,
+      statusLabel: PROCESS_STATUS_LABEL[p.status],
+      statusColor: PROCESS_STATUS_COLOR[p.status],
+      actor: p.responsible_lawyer ?? undefined,
+      leaves,
+      entityId: p.id, module: 'processos',
+    });
   });
 
+  // ── Requerimentos ──────────────────────────────────────────────────────────
+  requirements.forEach((r) => {
+    const leaves: TLeaf[] = [];
+
+    // Assinaturas vinculadas ao requerimento
+    signatures.filter((s) => s.requirement_id === r.id).forEach((s) => {
+      const signerName = (s.signers ?? [])[0]?.name ?? undefined;
+      leaves.push({
+        id: `sig-r-${s.id}`,
+        date: s.created_at,
+        label: 'Documento',
+        title: s.document_name ?? 'Documento',
+        actor: signerName,
+        badgeBg: 'bg-slate-100', badgeText: 'text-slate-600', dot: 'bg-slate-400',
+        entityId: s.id, module: 'assinaturas',
+      });
+      if (s.signed_at) {
+        leaves.push({
+          id: `sig-r-signed-${s.id}`,
+          date: s.signed_at,
+          label: 'Assinatura',
+          title: s.document_name ?? 'Documento',
+          actor: signerName,
+          badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', dot: 'bg-emerald-500',
+          entityId: s.id, module: 'assinaturas',
+        });
+      }
+    });
+
+    // Eventos de agenda vinculados ao requerimento
+    calEvents.filter((e) => e.requirement_id === r.id).forEach((e) => {
+      const isFuture = new Date(e.start_at) >= now;
+      leaves.push({
+        id: `cal-r-${e.id}`,
+        date: e.start_at,
+        label: CAL_TYPE_LABEL[e.event_type] ?? 'Agenda',
+        title: e.title,
+        future: isFuture,
+        badgeBg: 'bg-violet-100', badgeText: 'text-violet-700', dot: 'bg-violet-400',
+        entityId: e.id, module: 'agenda',
+      });
+    });
+
+    leaves.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    roots.push({
+      id: `req-${r.id}`,
+      type: 'requirement',
+      date: r.created_at,
+      title: r.protocol ? `Protocolo ${r.protocol}` : 'Requerimento',
+      subtitle: BENEFIT_LABEL[r.benefit_type] ?? r.benefit_type,
+      statusLabel: REQ_STATUS_LABEL[r.status],
+      statusColor: REQ_STATUS_COLOR[r.status],
+      leaves,
+      entityId: r.id, module: 'requerimentos',
+    });
+  });
+
+  // ── Itens sem vínculo (acordos, petições/assinaturas/agenda soltas) ────────
+  const linkedSigIds = new Set([
+    ...signatures.filter((s) => s.process_id || s.requirement_id).map((s) => s.id),
+  ]);
+  const linkedPetIds = new Set(petitions.filter((p) => p.process_id).map((p) => p.id));
+  const linkedCalIds = new Set(calEvents.filter((e) => e.process_id || e.requirement_id).map((e) => e.id));
+
+  const generalLeaves: TLeaf[] = [];
 
   agreements.forEach((a) => {
-    evts.push({
+    generalLeaves.push({
       id: `agreement-${a.id}`,
       date: a.created_at,
-      title: `Acordo financeiro: ${a.title}`,
-      description: formatCurrency(a.total_value),
-      dotColor: 'bg-emerald-500',
+      label: 'Financeiro',
+      title: `${a.title} · ${formatCurrency(a.total_value)}`,
+      badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', dot: 'bg-emerald-500',
+      entityId: a.id, module: 'financeiro',
     });
   });
 
-  signatures.forEach((s) => {
-    evts.push({
+  petitions.filter((p) => !linkedPetIds.has(p.id)).forEach((p) => {
+    generalLeaves.push({
+      id: `petition-${p.id}`,
+      date: p.created_at,
+      label: 'Petição',
+      title: p.title ?? 'Sem título',
+      badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', dot: 'bg-amber-400',
+      entityId: p.id, module: 'peticoes',
+    });
+  });
+
+  signatures.filter((s) => !linkedSigIds.has(s.id)).forEach((s) => {
+    const signerName = (s.signers ?? [])[0]?.name ?? undefined;
+    generalLeaves.push({
       id: `sig-${s.id}`,
       date: s.created_at,
-      title: `Documento gerado: ${s.document_name ?? 'Documento'}`,
-      dotColor: 'bg-slate-400',
+      label: 'Documento',
+      title: s.document_name ?? 'Documento',
+      actor: signerName,
+      badgeBg: 'bg-slate-100', badgeText: 'text-slate-600', dot: 'bg-slate-400',
+      entityId: s.id, module: 'assinaturas',
     });
     if (s.signed_at) {
-      evts.push({
+      generalLeaves.push({
         id: `sig-signed-${s.id}`,
         date: s.signed_at,
-        title: `Documento assinado: ${s.document_name ?? 'Documento'}`,
-        dotColor: 'bg-emerald-500',
+        label: 'Assinatura',
+        title: s.document_name ?? 'Documento',
+        actor: signerName,
+        badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', dot: 'bg-emerald-500',
+        entityId: s.id, module: 'assinaturas',
       });
     }
   });
 
-  petitions.forEach((p) => {
-    evts.push({
-      id: `petition-${p.id}`,
-      date: p.created_at,
-      title: `Petição: ${p.title ?? 'Sem título'}`,
-      dotColor: 'bg-amber-500',
-    });
-  });
-
-  const typeLabel: Record<string, string> = { hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião', deadline: 'Prazo', requirement: 'Requerimento', payment: 'Pagamento' };
-  const typeColor: Record<string, string> = { hearing: 'bg-violet-500', pericia: 'bg-blue-500', meeting: 'bg-slate-400', deadline: 'bg-rose-400', requirement: 'bg-amber-500', payment: 'bg-emerald-500' };
-  calEvents.forEach((e) => {
+  calEvents.filter((e) => !linkedCalIds.has(e.id)).forEach((e) => {
     const isFuture = new Date(e.start_at) >= now;
-    evts.push({
+    generalLeaves.push({
       id: `cal-${e.id}`,
       date: e.start_at,
-      title: `${typeLabel[e.event_type] ?? e.event_type}: ${e.title}`,
-      description: e.description ?? undefined,
-      dotColor: typeColor[e.event_type] ?? 'bg-slate-400',
+      label: CAL_TYPE_LABEL[e.event_type] ?? 'Agenda',
+      title: e.title,
       future: isFuture,
+      badgeBg: 'bg-violet-100', badgeText: 'text-violet-700', dot: 'bg-violet-400',
+      entityId: e.id, module: 'agenda',
     });
   });
 
-  return evts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  if (generalLeaves.length > 0) {
+    generalLeaves.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    roots.push({
+      id: 'general',
+      type: 'general',
+      date: generalLeaves[0].date,
+      title: 'Atividades Gerais',
+      subtitle: 'Petições, documentos e eventos sem processo vinculado',
+      leaves: generalLeaves,
+    });
+  }
+
+  // Ordenar raízes pela data mais recente (raiz ou folha mais nova)
+  roots.sort((a, b) => {
+    const aDate = a.leaves[0] ? Math.max(new Date(a.date).getTime(), new Date(a.leaves[0].date).getTime()) : new Date(a.date).getTime();
+    const bDate = b.leaves[0] ? Math.max(new Date(b.date).getTime(), new Date(b.leaves[0].date).getTime()) : new Date(b.date).getTime();
+    return bDate - aDate;
+  });
+
+  return roots;
 }
+
+// compat: keep old buildTimeline for useMemo (unused after refactor)
+function buildTimeline() { return []; }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -320,6 +535,13 @@ const InfoItem = ({ label, value }: { label: string; value?: React.ReactNode }) 
   <div>
     <p className="text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">{label}</p>
     <p className="text-sm font-semibold text-slate-900 mt-0.5">{value ?? 'Não informado'}</p>
+  </div>
+);
+
+const MiniField = ({ label, value }: { label: string; value?: React.ReactNode }) => (
+  <div>
+    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{label}</p>
+    <p className="text-xs font-medium text-slate-800">{value ?? <span className="text-slate-400">—</span>}</p>
   </div>
 );
 
@@ -625,10 +847,28 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     return signatureRequests.filter((r) => !signedIds.has(r.id));
   }, [signatureRequests, signedDocuments]);
 
-  const timelineEvents = useMemo(
-    () => buildTimeline(processes, [], agreements, signatureRequests, clientPetitions, calendarEvents),
-    [processes, agreements, signatureRequests, clientPetitions, calendarEvents],
+  const structuredTimeline = useMemo(
+    () => buildStructuredTimeline(processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents),
+    [processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents],
   );
+
+  // ── Navigate from timeline items
+  const handleTimelineNavigate = (module?: string, entityId?: string) => {
+    if (!module || !entityId) return;
+    if (module === 'processos') {
+      events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId } });
+    } else if (module === 'requerimentos') {
+      navigateTo('requerimentos', { entityId } as any);
+    } else if (module === 'assinaturas') {
+      events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { mode: 'details', requestId: entityId } });
+    } else if (module === 'agenda') {
+      navigateTo('agenda', { entityId } as any);
+    } else if (module === 'financeiro') {
+      navigateTo('financeiro', { entityId } as any);
+    } else if (module === 'peticoes') {
+      events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { entityId });
+    }
+  };
 
   // ── Dar baixa em parcela
   const handlePayInstallment = async (installment: Installment) => {
@@ -938,217 +1178,105 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       ══════════════════════════════════════════════════════════════════ */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
-        {/* Identidade (foto + nome + meta) */}
-        <div className="flex gap-5 p-5 items-center">
+        {/* Identidade compacta: avatar + info + KPIs numa linha só */}
+        <div className="flex items-center gap-4 px-5 py-4">
 
-          {/* Avatar */}
+          {/* Avatar compacto */}
           {selfies.length > 0 ? (() => {
             const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
             return (
-              <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setPreviewSelfie(profileSelfie)}
-                  className="group relative w-[92px] h-[116px] rounded-xl overflow-hidden ring-1 ring-slate-200 hover:ring-orange-300 shadow-sm hover:shadow-md transition focus:outline-none block"
-                  title="Ampliar foto"
-                >
-                  <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/0 to-transparent" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <Search className="w-5 h-5 text-white drop-shadow" />
-                  </div>
-                  <span className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow tracking-wider">ID</span>
-                  {selfies.length > 1 && (
-                    <span className="absolute bottom-1.5 right-1.5 bg-black/70 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">+{selfies.length - 1}</span>
-                  )}
-                </button>
-                {selfies.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelfiePickerOpen(true)}
-                    className="text-[10px] font-semibold text-slate-500 hover:text-orange-600 transition"
-                  >
-                    Gerenciar fotos
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewSelfie(profileSelfie)}
+                className="group relative w-12 h-12 rounded-full overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm flex-shrink-0 transition focus:outline-none"
+                title="Ampliar foto"
+              >
+                <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
+                <span className="absolute bottom-0 left-0 right-0 bg-emerald-500 text-white text-[7px] font-bold text-center leading-none py-[3px] tracking-wider">ID</span>
+              </button>
             );
           })() : (() => {
-            // Fallback: avatar com iniciais determinísticas (PF) ou ícone (PJ)
             const isPj = client.client_type === 'pessoa_juridica';
-            const stringHue = (s: string) => {
-              let h = 0;
-              for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i);
-              return Math.abs(h) % 360;
-            };
-            const initials = (() => {
-              const parts = client.full_name.trim().split(/\s+/).filter(Boolean);
-              if (!parts.length) return '?';
-              if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
-              return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-            })();
+            const stringHue = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i); return Math.abs(h) % 360; };
+            const initials = (() => { const parts = client.full_name.trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; if (parts.length === 1) return (parts[0][0] || '?').toUpperCase(); return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(); })();
             const hue = stringHue(client.full_name);
             return (
               <div
-                className="flex-shrink-0 w-[92px] h-[116px] rounded-xl flex items-center justify-center font-bold shadow-sm ring-1 ring-inset"
-                style={isPj
-                  ? { background: '#f1f5f9', color: '#64748b', borderColor: '#e2e8f0' }
-                  : {
-                      background: `hsl(${hue}, 55%, 94%)`,
-                      color: `hsl(${hue}, 50%, 32%)`,
-                      fontSize: 32,
-                      // @ts-ignore inline ring color
-                      '--tw-ring-color': `hsl(${hue}, 50%, 80%)`,
-                    } as React.CSSProperties}
+                className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
+                style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
               >
-                {isPj ? <Building2 className="w-10 h-10" strokeWidth={1.5} /> : initials}
+                {isPj ? <Building2 className="w-5 h-5" strokeWidth={1.5} /> : initials}
               </div>
             );
           })()}
 
-          {/* Identidade — sem repetir o nome (já está no header do modal) */}
+          {/* Info principal */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Tag CPF/CNPJ + status, em vez de duplicar o nome */}
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => { if (formattedDoc) { void navigator.clipboard.writeText(formattedDoc); } }}
-                className="inline-flex items-center gap-2 group bg-slate-100 hover:bg-slate-200 transition rounded-lg px-3 py-1.5"
+                className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 transition rounded-md px-2 py-1"
                 title="Clique para copiar"
               >
-                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
-                <strong className="font-semibold text-slate-900 tabular-nums text-sm">{formattedDoc || '—'}</strong>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
+                <span className="font-semibold text-slate-800 tabular-nums text-xs">{formattedDoc || '—'}</span>
               </button>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                 client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' :
-                client.status === 'inativo' ? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' :
+                client.status === 'inativo' ? 'bg-slate-100 text-slate-500 ring-1 ring-slate-200' :
                 'bg-red-50 text-red-700 ring-1 ring-red-200'
               }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  client.status === 'ativo' ? 'bg-emerald-500' :
-                  client.status === 'inativo' ? 'bg-slate-400' :
-                  'bg-red-500'
-                }`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-red-500'}`} />
                 {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
               </span>
-              <span className="text-xs text-slate-500 font-medium">
-                {client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
-              </span>
+              <span className="text-[11px] text-slate-400">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
             </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
               {client.created_at && (
-                <span className="inline-flex items-center gap-1.5"><CalendarIcon className="w-3 h-3 text-slate-400" />Cliente desde <strong className="text-slate-700 font-medium">{formatDate(client.created_at)}</strong></span>
+                <span className="inline-flex items-center gap-1"><CalendarIcon className="w-3 h-3 text-slate-400" />Cliente desde <strong className="text-slate-600 font-medium">{formatDate(client.created_at)}</strong></span>
               )}
               {client.email && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 hover:text-blue-600 transition">
-                    <Mail className="w-3 h-3 text-slate-400" />{client.email}
-                  </a>
-                </>
+                <><span className="text-slate-300">·</span>
+                <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 hover:text-orange-500 transition truncate max-w-[180px]">
+                  <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />{client.email}
+                </a></>
               )}
               {primaryPhone && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span className="inline-flex items-center gap-1">
-                    <a href={`tel:${primaryPhone}`} className="inline-flex items-center gap-1 hover:text-blue-600 transition" title="Ligar">
-                      <Phone className="w-3 h-3 text-slate-400" />{primaryPhone}
-                    </a>
-                    <a
-                      href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition ml-1"
-                      title="Abrir no WhatsApp"
-                    >
-                      <MessageCircle className="w-3 h-3" />
-                    </a>
-                  </span>
-                </>
+                <><span className="text-slate-300">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Phone className="w-3 h-3 text-slate-400" />
+                  <a href={`tel:${primaryPhone}`} className="hover:text-orange-500 transition">{primaryPhone}</a>
+                  <a href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition" title="WhatsApp">
+                    <MessageCircle className="w-2.5 h-2.5" />
+                  </a>
+                </span></>
               )}
             </div>
           </div>
-        </div>
 
-        {/* KPI strip — integrado, sem cores carregadas */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-slate-100 divide-x divide-slate-100">
-          {/* Casos ativos */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Casos ativos</span>
-              <Scale className="w-3.5 h-3.5 text-slate-300" />
+          {/* KPIs compactos — lado direito */}
+          <div className="flex items-center gap-4 divide-x divide-slate-100 flex-shrink-0">
+            <div className="pl-4 first:pl-0">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Casos</p>
+              <p className="text-lg font-bold text-slate-900 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
+              <p className="text-[9px] text-slate-400 mt-0.5">{activeProcesses.length}p · {activeRequirements.length}r</p>
             </div>
-            <div className="text-2xl font-bold text-slate-900 tabular-nums leading-none">
-              {relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}
+            <div className="pl-4">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Honorários</p>
+              <p className={`text-lg font-bold tabular-nums leading-none ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{financialLoading ? '…' : formatCurrency(totalRevenue)}</p>
+              <p className="text-[9px] text-slate-400 mt-0.5">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
             </div>
-            {!relationsLoading && (
-              <div className="mt-1.5 text-[10px] text-slate-500">
-                {activeProcesses.length} processo{activeProcesses.length !== 1 ? 's' : ''} · {activeRequirements.length} req.
-              </div>
-            )}
-          </div>
-
-          {/* Honorários recebidos */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Honorários recebidos</span>
-              <DollarSign className="w-3.5 h-3.5 text-emerald-500/70" />
+            <div className="pl-4">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Prazos</p>
+              <p className={`text-lg font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}</p>
+              <p className="text-[9px] mt-0.5">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-slate-400">Em dia</span>}</p>
             </div>
-            <div className="text-2xl font-bold text-emerald-600 tabular-nums leading-none">
-              {financialLoading ? '…' : formatCurrency(totalRevenue)}
-            </div>
-            <div className="mt-1.5 text-[10px] text-slate-500">
-              {totalRevenue > 0
-                ? `${agreements.length} lançamento${agreements.length !== 1 ? 's' : ''} · efetivamente pago`
-                : agreements.length > 0
-                  ? <span className="text-amber-600 font-medium">Aguardando baixa</span>
-                  : 'Sem lançamentos'}
-            </div>
-          </div>
-
-          {/* Prazos pendentes */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Prazos pendentes</span>
-              {overdueDeadlines.length > 0
-                ? <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                : <Clock className="w-3.5 h-3.5 text-slate-300" />}
-            </div>
-            <div className={`text-2xl font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-              {deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}
-            </div>
-            <div className="mt-1.5 text-[10px] text-slate-500">
-              {overdueDeadlines.length > 0
-                ? <span className="text-rose-600 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span>
-                : upcomingDeadlines[0]
-                  ? `Vence em: ${formatDate(upcomingDeadlines[0].due_date)}`
-                  : 'Em dia'}
-            </div>
-          </div>
-
-          {/* Próximo compromisso */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Próximo compromisso</span>
-              <Gavel className="w-3.5 h-3.5 text-slate-300" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-base font-bold text-slate-900 leading-tight">
-                {nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-400">—</span>}
-              </span>
-              {nextHearing && (() => {
-                const dt = new Date(nextHearing.date);
-                const hasTime = dt.getHours() !== 0 || dt.getMinutes() !== 0;
-                return hasTime ? (
-                  <span className="text-[11px] font-semibold text-slate-500">
-                    {dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                ) : null;
-              })()}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-500 truncate">
-              {nextHearing ? nextHearing.label : 'Nenhuma agendada'}
+            <div className="pl-4">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Compromisso</p>
+              <p className="text-sm font-bold text-slate-900 leading-tight">{nextHearing ? formatDate(nextHearing.date) : <span className="text-slate-300 font-normal text-xs">—</span>}</p>
+              <p className="text-[9px] text-slate-400 mt-0.5 truncate max-w-[120px]">{nextHearing ? nextHearing.label : 'Nenhum'}</p>
             </div>
           </div>
         </div>
@@ -1605,158 +1733,95 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 </div>
               )}
 
-              {/* Status + tipo + cliente desde */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 mb-1.5">Status</p>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                    client.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
-                    client.status === 'inativo' ? 'bg-slate-200 text-slate-600' :
-                    'bg-amber-100 text-amber-700'
-                  }`}>
-                    {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
-                  </span>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 mb-1.5">Tipo</p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 mb-1.5">Cliente desde</p>
-                  <p className="text-sm font-semibold text-slate-900">{formatDate(client.created_at)}</p>
-                </div>
-              </div>
+              {/* Layout 2 colunas: esquerda dados pessoais+contato / direita endereço+alertas */}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-0">
 
-              {/* Dados pessoais */}
-              <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Dados Pessoais</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-                  <InfoItem label={client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'} value={formattedDoc || '—'} />
-                  {client.client_type === 'pessoa_fisica' && <InfoItem label="RG" value={client.rg} />}
-                  {client.client_type === 'pessoa_fisica' && <InfoItem label="Nascimento" value={formatDate(client.birth_date)} />}
-                  <InfoItem label="Nacionalidade" value={client.nationality} />
-                  {client.client_type === 'pessoa_fisica' && <InfoItem label="Estado civil" value={client.marital_status} />}
-                  <InfoItem label="Profissão" value={client.profession} />
-                </div>
-              </div>
-
-              {/* Contato */}
-              <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Contato</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                  <InfoItem label="E-mail" value={client.email
-                    ? <a href={`mailto:${client.email}`} className="text-blue-600 hover:underline">{client.email}</a>
-                    : '—'}
-                  />
-                  <div>
-                    <InfoItem label="Telefone / Celular" value={formattedPhone || '—'} />
-                    {whatsappLink && (
-                      <a href={whatsappLink} target="_blank" rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:underline">
-                        Abrir no WhatsApp →
-                      </a>
-                    )}
+                {/* ── Col esquerda ── */}
+                <div className="space-y-0 divide-y divide-slate-100">
+                  {/* Status + tipo */}
+                  <div className="pb-3 flex items-center gap-4">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      client.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
+                      client.status === 'inativo' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-amber-500'}`} />
+                      {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
+                    </span>
+                    <span className="text-xs text-slate-500">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
+                    <span className="text-xs text-slate-400">· desde {formatDate(client.created_at)}</span>
                   </div>
-                </div>
-              </div>
 
-              {/* Endereço */}
-              <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Endereço</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-                  <InfoItem label="Rua" value={client.address_street} />
-                  <InfoItem label="Número" value={client.address_number} />
-                  <InfoItem label="Bairro" value={client.address_neighborhood} />
-                  <InfoItem label="Cidade" value={client.address_city} />
-                  <InfoItem label="UF" value={client.address_state} />
-                  <InfoItem label="CEP" value={client.address_zip_code} />
-                </div>
-              </div>
-
-              {/* Compromissos da Agenda */}
-              {(calendarLoading || upcomingEvents.length > 0) && (
-                <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-violet-500">Próximos Compromissos</p>
-                    <button
-                      onClick={() => navigateTo('agenda', {})}
-                      className="text-[11px] font-semibold text-violet-600 hover:underline flex items-center gap-1"
-                    >
-                      Ver agenda <ExternalLink className="w-3 h-3" />
-                    </button>
+                  {/* Documentos */}
+                  <div className="py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    <MiniField label={client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'} value={formattedDoc || '—'} />
+                    {client.client_type === 'pessoa_fisica' && <MiniField label="RG" value={client.rg} />}
+                    {client.client_type === 'pessoa_fisica' && <MiniField label="Nascimento" value={formatDate(client.birth_date)} />}
+                    {client.client_type === 'pessoa_fisica' && <MiniField label="Estado civil" value={client.marital_status} />}
+                    <MiniField label="Nacionalidade" value={client.nationality} />
+                    <MiniField label="Profissão" value={client.profession} />
                   </div>
-                  {calendarLoading ? (
-                    <div className="flex items-center gap-2 text-slate-400 text-xs"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {upcomingEvents.slice(0, 5).map((e) => {
-                        const typeLabel: Record<string, string> = { hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião', deadline: 'Prazo', requirement: 'Requerimento', payment: 'Pagamento' };
-                        const typeColor: Record<string, string> = { hearing: 'bg-violet-100 text-violet-700', pericia: 'bg-blue-100 text-blue-700', meeting: 'bg-slate-100 text-slate-600', deadline: 'bg-rose-100 text-rose-700', requirement: 'bg-amber-100 text-amber-700', payment: 'bg-emerald-100 text-emerald-700' };
-                        return (
-                          <button
-                            key={e.id}
-                            onClick={() => navigateTo('agenda', { entityId: e.id })}
-                            className="w-full text-left rounded-lg border border-violet-100 bg-white px-3 py-2.5 hover:border-orange-200 hover:bg-orange-50/30 transition group"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-900 truncate">{e.title}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{formatDateTime(e.start_at)}</p>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${typeColor[e.event_type] ?? 'bg-slate-100 text-slate-600'}`}>
-                                  {typeLabel[e.event_type] ?? e.event_type}
-                                </span>
-                                <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-orange-500 transition" />
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {upcomingEvents.length > 5 && (
-                        <button onClick={() => navigateTo('agenda', {})} className="text-xs text-violet-600 font-semibold hover:underline">
-                          + {upcomingEvents.length - 5} compromisso(s) a mais
-                        </button>
+
+                  {/* Contato */}
+                  <div className="py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">E-mail</p>
+                      {client.email
+                        ? <a href={`mailto:${client.email}`} className="text-xs font-medium text-orange-500 hover:underline truncate block">{client.email}</a>
+                        : <span className="text-xs text-slate-400">—</span>}
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Telefone</p>
+                      <p className="text-xs font-medium text-slate-800">{formattedPhone || '—'}</p>
+                      {whatsappLink && (
+                        <a href={whatsappLink} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] font-semibold text-emerald-600 hover:underline">WhatsApp →</a>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* Notas */}
-              {client.notes && (
-                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <StickyNote className="w-3.5 h-3.5 text-amber-600" />
-                    <p className="text-xs font-bold uppercase tracking-widest text-amber-600">Observações</p>
                   </div>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{client.notes}</p>
                 </div>
-              )}
 
-              {/* Alerta inadimplência */}
-              {installmentsLoaded && overdueAmount > 0 && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-center gap-3">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-rose-800">Cliente com parcelas em atraso</p>
-                    <p className="text-xs text-rose-600 mt-0.5">{formatCurrency(overdueAmount)} em aberto</p>
+                {/* ── Col direita ── */}
+                <div className="space-y-0 divide-y divide-slate-100">
+                  {/* Endereço */}
+                  <div className="pb-3 grid grid-cols-3 gap-x-3 gap-y-2.5">
+                    <div className="col-span-2"><MiniField label="Rua" value={client.address_street} /></div>
+                    <MiniField label="Número" value={client.address_number} />
+                    <MiniField label="Bairro" value={client.address_neighborhood} />
+                    <MiniField label="Cidade" value={client.address_city} />
+                    <MiniField label="UF" value={client.address_state} />
+                    <MiniField label="CEP" value={client.address_zip_code} />
                   </div>
-                  <button onClick={() => setActiveTab('financial')} className="text-xs font-semibold text-rose-700 hover:underline flex-shrink-0">
-                    Ver Financeiro →
-                  </button>
-                </div>
-              )}
 
-              {/* Sistema */}
-              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Informações do Sistema</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
-                  <InfoItem label="Cadastro" value={formatDateTime(client.created_at)} />
-                  <InfoItem label="Última atualização" value={formatDateTime(client.updated_at)} />
-                  <InfoItem label="ID interno" value={client.id.slice(0, 8).toUpperCase()} />
+                  {/* Alertas + notas + próximos eventos (compacto) */}
+                  <div className="pt-3 space-y-2">
+                    {installmentsLoaded && overdueAmount > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                        <p className="text-xs text-rose-700 font-medium flex-1">{formatCurrency(overdueAmount)} em atraso</p>
+                        <button onClick={() => setActiveTab('financial')} className="text-[10px] font-bold text-rose-600 hover:underline">Ver →</button>
+                      </div>
+                    )}
+                    {client.notes && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                        <StickyNote className="w-3 h-3 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-slate-700 line-clamp-3">{client.notes}</p>
+                      </div>
+                    )}
+                    {upcomingEvents.length > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
+                        <CalendarIcon className="w-3 h-3 text-violet-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-slate-800 truncate">{upcomingEvents[0].title}</p>
+                          <p className="text-[10px] text-slate-500">{formatDateTime(upcomingEvents[0].start_at)}</p>
+                        </div>
+                        {upcomingEvents.length > 1 && <span className="text-[10px] text-violet-600 font-semibold flex-shrink-0">+{upcomingEvents.length - 1}</span>}
+                      </div>
+                    )}
+                    {/* Info sistema (discreto) */}
+                    <p className="text-[9px] text-slate-300 pt-1">
+                      ID {client.id.slice(0, 8).toUpperCase()} · Atualizado {formatDate(client.updated_at)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1766,47 +1831,145 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               TAB: HISTÓRICO — Timeline
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'overview' && (
-            <div className="space-y-3">
-              {/* Busca no histórico */}
-              <div className="relative">
+            <div className="space-y-2">
+              {/* Busca */}
+              <div className="relative mb-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                 <input
                   type="text"
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  placeholder="Filtrar histórico..."
+                  placeholder="Buscar no histórico..."
                   className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
                 />
               </div>
 
-              {(() => {
-                const filtered = historySearch.trim()
-                  ? timelineEvents.filter((e) =>
-                      e.title.toLowerCase().includes(historySearch.toLowerCase()) ||
-                      (e.description ?? '').toLowerCase().includes(historySearch.toLowerCase()),
-                    )
-                  : timelineEvents;
+              {structuredTimeline.length === 0 ? (
+                <SectionEmpty text="Nenhuma atividade registrada." />
+              ) : (() => {
+                const q = historySearch.trim().toLowerCase();
+                const roots = q
+                  ? structuredTimeline
+                      .map((r) => ({
+                        ...r,
+                        leaves: r.leaves.filter((l) =>
+                          l.title.toLowerCase().includes(q) ||
+                          l.label.toLowerCase().includes(q) ||
+                          (l.actor ?? '').toLowerCase().includes(q)
+                        ),
+                      }))
+                      .filter((r) =>
+                        r.title.toLowerCase().includes(q) ||
+                        (r.subtitle ?? '').toLowerCase().includes(q) ||
+                        (r.actor ?? '').toLowerCase().includes(q) ||
+                        r.leaves.length > 0
+                      )
+                  : structuredTimeline;
 
-                if (filtered.length === 0)
-                  return <SectionEmpty text={historySearch ? 'Nenhum resultado encontrado.' : 'Nenhuma atividade registrada.'} />;
+                if (roots.length === 0)
+                  return <SectionEmpty text="Nenhum resultado encontrado." />;
 
                 return (
                   <div className="relative">
-                    <div className="absolute left-3.5 top-2 bottom-2 w-0.5 bg-slate-100" />
-                    <div className="space-y-0">
-                      {filtered.map((evt) => (
-                        <div key={evt.id} className="relative flex gap-4 pb-5 last:pb-0">
-                          <div className={`relative z-10 mt-0.5 w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center border-2 border-white shadow-sm ${evt.dotColor}`} />
-                          <div className="flex-1 min-w-0 pt-0.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className={`text-sm font-semibold ${evt.future ? 'text-violet-700' : 'text-slate-900'}`}>
-                                {evt.future && <span className="text-[10px] font-bold uppercase tracking-wider mr-1.5 px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded">Futuro</span>}
-                                {evt.title}
-                              </p>
-                              <p className="text-[11px] text-slate-400 whitespace-nowrap flex-shrink-0">{formatDate(evt.date)}</p>
+                    {/* Linha vertical principal */}
+                    <div className="absolute left-[18px] top-4 bottom-4 w-0.5 bg-slate-100 z-0" />
+
+                    <div className="space-y-6">
+                      {roots.map((root) => (
+                        <div key={root.id} className="relative">
+                          {/* ── Raiz ── */}
+                          <div className="flex items-start gap-3 group/root">
+                            {/* Ícone raiz */}
+                            <div className={`relative z-10 flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center shadow-sm border-2 border-white ${
+                              root.type === 'process' ? 'bg-blue-500' :
+                              root.type === 'requirement' ? 'bg-orange-500' : 'bg-slate-400'
+                            }`}>
+                              {root.type === 'process'
+                                ? <Scale className="w-4 h-4 text-white" />
+                                : root.type === 'requirement'
+                                  ? <ClipboardList className="w-4 h-4 text-white" />
+                                  : <Star className="w-4 h-4 text-white" />}
                             </div>
-                            {evt.description && <p className="text-xs text-slate-500 mt-0.5">{evt.description}</p>}
+
+                            {/* Info raiz */}
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-sm font-bold text-slate-900 font-mono tracking-tight">{root.title}</p>
+                                    {root.statusLabel && (
+                                      <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${root.statusColor}`}>
+                                        {root.statusLabel}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {root.subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{root.subtitle}</p>}
+                                  {root.actor && (
+                                    <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                      <User className="w-3 h-3" />{root.actor}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
+                                  <span className="text-[10px] text-slate-400 whitespace-nowrap tabular-nums">
+                                    {new Date(root.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                  {root.module && root.entityId && (
+                                    <button
+                                      onClick={() => handleTimelineNavigate(root.module, root.entityId)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-orange-600 hover:bg-orange-50 border border-transparent hover:border-orange-200 transition opacity-0 group-hover/root:opacity-100"
+                                      title="Abrir no módulo"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      Abrir
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
+
+                          {/* ── Folhas (atividades da raiz) ── */}
+                          {root.leaves.length > 0 && (
+                            <div className="ml-[18px] mt-2 pl-6 border-l-2 border-slate-100 space-y-1.5">
+                              {root.leaves.map((leaf) => (
+                                <div
+                                  key={leaf.id}
+                                  onClick={() => leaf.module && leaf.entityId && handleTimelineNavigate(leaf.module, leaf.entityId)}
+                                  className={`group/leaf flex items-start gap-2.5 rounded-lg px-3 py-2 transition ${
+                                    leaf.future
+                                      ? 'bg-violet-50 border border-violet-100'
+                                      : 'bg-slate-50 border border-slate-100 hover:border-orange-200 hover:bg-orange-50/30'
+                                  } ${leaf.module && leaf.entityId ? 'cursor-pointer' : ''}`}
+                                >
+                                  <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${leaf.dot}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-semibold text-slate-800 truncate group-hover/leaf:text-orange-700 transition">{leaf.title}</p>
+                                        {leaf.actor && (
+                                          <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                            <User className="w-2.5 h-2.5" />{leaf.actor}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <span className="text-[9px] text-slate-400 tabular-nums">
+                                          {new Date(leaf.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                        </span>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${leaf.badgeBg} ${leaf.badgeText}`}>
+                                          {leaf.future ? '⏱ ' : ''}{leaf.label}
+                                        </span>
+                                        {leaf.module && leaf.entityId && (
+                                          <ExternalLink className="w-3 h-3 text-slate-300 group-hover/leaf:text-orange-400 transition flex-shrink-0" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

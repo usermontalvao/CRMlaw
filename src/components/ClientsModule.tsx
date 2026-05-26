@@ -305,9 +305,19 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       console.log('🔄 ClientsModule: Mudança de clientes detectada, recarregando lista...');
       loadClients();
     });
-    
+
     return () => unsubscribe();
   }, [filters]); // Recarregar respeitando filtros atuais
+
+  // Quando a timeline atualiza o status de um processo, reflete imediatamente na aba de processos do cliente
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.PROCESS_UPDATED, ({ processId, status }: { processId: string; status: string }) => {
+      setClientProcesses((prev) =>
+        prev.map((p) => (p.id === processId ? { ...p, status: status as any } : p))
+      );
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!prefillData) return;
@@ -1378,7 +1388,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   closeDetailsModal();
                   handleEditClient(selectedClient);
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition"
               >
                 <Edit className="w-4 h-4" />
                 Editar
@@ -1386,7 +1396,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={closeDetailsModal}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition"
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/10 transition"
               >
                 Fechar
               </button>

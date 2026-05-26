@@ -44,6 +44,8 @@ import {
   Archive,
   ArchiveRestore,
   Scale,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
@@ -649,6 +651,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [statusHistory, setStatusHistory] = useState<RequirementStatusHistoryEntry[]>([]);
   const [statusHistoryLoading, setStatusHistoryLoading] = useState(false);
+  const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null);
+  const [editingHistoryDate, setEditingHistoryDate] = useState<string>('');
+  const [savingHistoryDate, setSavingHistoryDate] = useState(false);
   const [exigencyForm, setExigencyForm] = useState({
     title: '',
     due_date: '',
@@ -786,28 +791,54 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const getAnalysisDays = (requirement: Requirement) => {
-    // Se já tem analysis_started_at e o status é em_analise, usar essa data
-    // Caso contrário, usar entry_date ou created_at
-    let base: string;
-    
-    if (requirement.status === 'em_analise' && requirement.analysis_started_at) {
-      // Verificar se analysis_started_at é mais antigo que entry_date (possível erro)
-      const analysisTime = new Date(requirement.analysis_started_at).getTime();
-      const entryTime = requirement.entry_date ? new Date(requirement.entry_date).getTime() : 0;
-      
-      // Se analysis_started_at for mais recente que entry_date, usar entry_date
-      if (analysisTime > entryTime && entryTime > 0) {
-        base = requirement.entry_date || requirement.created_at;
-      } else {
-        base = requirement.analysis_started_at;
-      }
-    } else {
-      base = requirement.entry_date || requirement.created_at;
-    }
-    
+    // Prazo conta a partir de quando o requerimento ficou em análise (analysis_started_at).
+    // Fallback para entry_date ou created_at apenas em requerimentos antigos sem o campo.
+    const base = requirement.analysis_started_at
+      || requirement.entry_date
+      || requirement.created_at;
+
+    if (!base) return null;
     const t = new Date(base).getTime();
     if (Number.isNaN(t)) return null;
     return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
+  };
+
+  // Converte ISO string → formato aceito pelo input datetime-local (YYYY-MM-DDTHH:mm)
+  const toDatetimeLocal = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handleSaveHistoryDate = async (entry: RequirementStatusHistoryEntry) => {
+    if (!editingHistoryDate || savingHistoryDate) return;
+    setSavingHistoryDate(true);
+    try {
+      const newISO = new Date(editingHistoryDate).toISOString();
+      await requirementService.updateHistoryEntryDate(entry.id, newISO, entry.requirement_id, entry.to_status);
+
+      // Atualiza histórico local e reordena
+      setStatusHistory((prev) =>
+        [...prev.map((e) => (e.id === entry.id ? { ...e, changed_at: newISO } : e))]
+          .sort((a, b) => b.changed_at.localeCompare(a.changed_at))
+      );
+
+      // Se era transição para em_analise, atualiza analysis_started_at nos states
+      // para que o contador de dias recalcule imediatamente
+      if (entry.to_status === 'em_analise') {
+        const patchReq = (r: Requirement) =>
+          r.id === entry.requirement_id ? { ...r, analysis_started_at: newISO } : r;
+        setRequirements((prev) => prev.map(patchReq));
+        setSelectedRequirementForView((prev) => prev ? patchReq(prev) : prev);
+      }
+
+      setEditingHistoryId(null);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar data.');
+    } finally {
+      setSavingHistoryDate(false);
+    }
   };
 
   const getAnalysisAlertLevel = (days: number | null) => {
@@ -2730,24 +2761,26 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     document.body,
   );
 
-  const inputClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
-  const selectClass = "form-select flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 px-4 py-3 text-sm font-normal leading-normal";
-  const textareaClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white min-h-20 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
-  const labelClass = "text-gray-900 text-sm font-medium leading-normal pb-1";
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all";
+  const selectClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer";
+  const textareaClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none min-h-[80px]";
+  const labelClass = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5";
 
   const requirementModal = isModalOpen && createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
       <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        className="aero-backdrop absolute inset-0"
         onClick={handleCloseModal}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+      <div className="aero-modal relative w-full max-w-3xl max-h-[92vh] rounded-2xl flex flex-col overflow-hidden">
+        <div className="h-1.5 w-full bg-orange-500 shrink-0" />
+
+        {/* Header */}
+        <div className="aero-modal-inner px-5 sm:px-7 py-4 border-b border-white/30 dark:border-white/10 flex items-start justify-between gap-4 shrink-0">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-              Formulário
+              {selectedRequirement ? 'Editar' : 'Novo'}
             </p>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
@@ -2757,36 +2790,39 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             type="button"
             onClick={handleCloseModal}
             className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex-1 bg-white dark:bg-zinc-900">
-          <form onSubmit={handleSubmit} className="flex flex-col h-full">
-            <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 flex-1 overflow-y-auto">
-              {error && (
-                <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-                  {error}
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-5">
+            {error && (
+              <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* ── Seção: Identificação ── */}
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Protocolo */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Protocolo do INSS *</p>
+                <label className="flex flex-col">
+                  <span className={labelClass}>Protocolo INSS *</span>
                   <input
                     value={formData.protocol}
-                    onChange={(event) => handleFormChange('protocol', event.target.value)}
+                    onChange={(e) => handleFormChange('protocol', e.target.value)}
                     className={inputClass}
-                    placeholder="Digite o protocolo do INSS"
+                    placeholder="NB / Protocolo"
                     required
                   />
                 </label>
 
                 {/* Beneficiário */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Beneficiário *</p>
+                <label className="flex flex-col sm:col-span-2">
+                  <span className={labelClass}>Beneficiário *</span>
                   <div className="relative">
                     <input
                       value={beneficiarySearchTerm}
@@ -2802,29 +2838,29 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       onFocus={() => setShowBeneficiarySuggestions(true)}
                       onBlur={() => setTimeout(() => setShowBeneficiarySuggestions(false), 150)}
                       className={inputClass}
-                      placeholder="Digite o nome do beneficiário"
+                      placeholder="Nome do beneficiário"
                       required
                     />
                     {clientsLoading && (
-                      <Loader2 className="w-4 h-4 text-blue-600 absolute right-4 top-1/2 -translate-y-1/2 animate-spin" />
+                      <Loader2 className="w-4 h-4 text-orange-500 absolute right-3.5 top-1/2 -translate-y-1/2 animate-spin" />
                     )}
                     {showBeneficiarySuggestions && (
-                      <div className="absolute mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-10">
+                      <div className="absolute mt-1.5 w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20">
                         {clientsLoading ? (
-                          <div className="px-4 py-3 text-sm text-gray-500">Buscando clientes...</div>
+                          <div className="px-4 py-3 text-sm text-slate-500">Buscando...</div>
                         ) : clients.length === 0 ? (
                           <div className="px-4 py-3">
-                            <div className="text-sm text-gray-500">Nenhum cliente encontrado.</div>
+                            <p className="text-sm text-slate-500 dark:text-zinc-400 mb-2">Nenhum cliente encontrado.</p>
                             <button
                               type="button"
-                              onMouseDown={(event) => event.preventDefault()}
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => openClientModal({ full_name: beneficiarySearchTerm })}
-                              className="mt-3 w-full text-left px-3 py-2.5 hover:bg-orange-50 transition border border-orange-200 rounded-lg flex items-center gap-2 text-orange-700 font-medium"
+                              className="w-full text-left px-3 py-2.5 bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20 border border-orange-200 dark:border-orange-500/30 rounded-xl flex items-center gap-2 text-orange-700 dark:text-orange-400 transition"
                             >
-                              <Plus className="w-4 h-4" />
+                              <Plus className="w-4 h-4 shrink-0" />
                               <div>
-                                <div className="text-sm font-semibold">Adicionar Novo Cliente</div>
-                                <div className="text-xs text-gray-500">Criar cadastro para "{beneficiarySearchTerm}"</div>
+                                <div className="text-sm font-semibold">Adicionar novo cliente</div>
+                                <div className="text-xs opacity-70">"{beneficiarySearchTerm}"</div>
                               </div>
                             </button>
                           </div>
@@ -2833,25 +2869,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             <button
                               type="button"
                               key={client.id}
-                              className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition"
-                              onMouseDown={(event) => event.preventDefault()}
+                              className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 handleFormChange('beneficiary', client.full_name);
                                 handleFormChange('client_id', client.id);
                                 setBeneficiarySearchTerm(client.full_name);
-                                if (client.cpf_cnpj) {
-                                  handleFormChange('cpf', formatCPF(client.cpf_cnpj));
-                                }
+                                if (client.cpf_cnpj) handleFormChange('cpf', formatCPF(client.cpf_cnpj));
                                 const phoneValue = client.phone || client.mobile || '';
-                                if (phoneValue) {
-                                  handleFormChange('phone', phoneValue);
-                                }
+                                if (phoneValue) handleFormChange('phone', phoneValue);
                                 setShowBeneficiarySuggestions(false);
                               }}
                             >
-                              <div className="font-semibold text-gray-800">{client.full_name}</div>
-                              <div className="text-xs text-gray-500">
-                                {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} • {client.email || 'Sem e-mail'}
+                              <div className="font-semibold text-slate-800 dark:text-white">{client.full_name}</div>
+                              <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                                {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} · {client.email || 'Sem e-mail'}
                               </div>
                             </button>
                           ))
@@ -2862,27 +2894,32 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* CPF */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>CPF *</p>
+                <label className="flex flex-col">
+                  <span className={labelClass}>CPF *</span>
                   <input
                     value={formData.cpf}
-                    onChange={(event) => handleFormChange('cpf', event.target.value)}
+                    onChange={(e) => handleFormChange('cpf', e.target.value)}
                     className={inputClass}
                     placeholder="000.000.000-00"
                     maxLength={14}
                     required
                   />
                 </label>
+              </div>
+            </div>
 
+            {/* ── Seção: Benefício e Status ── */}
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Tipo de Benefício */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Tipo de Benefício</p>
+                <label className="flex flex-col sm:col-span-2">
+                  <span className={labelClass}>Tipo de Benefício</span>
                   <select
                     value={formData.benefit_type}
-                    onChange={(event) => handleFormChange('benefit_type', event.target.value as BenefitType | '')}
+                    onChange={(e) => handleFormChange('benefit_type', e.target.value as BenefitType | '')}
                     className={selectClass}
                   >
-                    <option value="" disabled>Selecione o tipo de benefício</option>
+                    <option value="" disabled>Selecione...</option>
                     {BENEFIT_TYPES.map((type) => (
                       <option key={type.key} value={type.key}>{type.label}</option>
                     ))}
@@ -2890,115 +2927,121 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* Status */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Status</p>
+                <label className="flex flex-col">
+                  <span className={labelClass}>Status</span>
                   <select
                     value={formData.status}
-                    onChange={(event) => handleFormChange('status', event.target.value as RequirementStatus)}
+                    onChange={(e) => handleFormChange('status', e.target.value as RequirementStatus)}
                     className={selectClass}
                   >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status.key} value={status.key}>{status.label}</option>
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s.key} value={s.key}>{s.label}</option>
                     ))}
                   </select>
                 </label>
 
                 {/* Data de Entrada */}
-                <label className="block">
-                  <p className={labelClass}>Data de Entrada</p>
+                <label className="flex flex-col">
+                  <span className={labelClass}>Data de Entrada</span>
                   <input
                     type="date"
                     value={formData.entry_date}
-                    onChange={(event) => handleFormChange('entry_date', event.target.value)}
+                    onChange={(e) => handleFormChange('entry_date', e.target.value)}
                     className={inputClass}
                   />
                 </label>
 
                 {/* Prazo da Exigência (condicional) */}
                 {formData.status === 'em_exigencia' && (
-                  <label className="flex flex-col w-full">
-                    <p className={labelClass}>Prazo da Exigência</p>
+                  <label className="flex flex-col">
+                    <span className={labelClass}>Prazo da Exigência</span>
                     <input
                       type="date"
                       value={formData.exigency_due_date}
-                      onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
+                      onChange={(e) => handleFormChange('exigency_due_date', e.target.value)}
                       className={inputClass}
                       min={new Date().toISOString().split('T')[0]}
                     />
                   </label>
                 )}
+              </div>
+            </div>
 
-                {/* Telefone */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Telefone</p>
+            {/* ── Seção: Contato e Acesso ── */}
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="flex flex-col">
+                  <span className={labelClass}>Telefone</span>
                   <input
                     value={formData.phone}
-                    onChange={(event) => handleFormChange('phone', event.target.value)}
+                    onChange={(e) => handleFormChange('phone', e.target.value)}
                     className={inputClass}
                     placeholder="(00) 00000-0000"
                     maxLength={15}
                   />
                 </label>
-
-                {/* Senha do INSS */}
-                <label className="flex flex-col w-full">
-                  <p className={labelClass}>Senha do INSS</p>
+                <label className="flex flex-col">
+                  <span className={labelClass}>Senha do INSS</span>
                   <input
                     type="text"
                     value={formData.inss_password}
-                    onChange={(event) => handleFormChange('inss_password', event.target.value)}
+                    onChange={(e) => handleFormChange('inss_password', e.target.value)}
                     className={inputClass}
-                    placeholder="Digite a senha do INSS"
-                  />
-                </label>
-
-                {/* Observações */}
-                <label className="flex flex-col w-full col-span-1 sm:col-span-2">
-                  <p className={labelClass}>Observações</p>
-                  <textarea
-                    value={formData.observations}
-                    onChange={(event) => handleFormChange('observations', event.target.value)}
-                    className={textareaClass}
-                    placeholder="Digite as observações"
-                  />
-                </label>
-
-                {/* Notas Internas */}
-                <label className="flex flex-col w-full col-span-1 sm:col-span-2">
-                  <p className={labelClass}>Notas Internas</p>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(event) => handleFormChange('notes', event.target.value)}
-                    className={textareaClass}
-                    placeholder="Digite as notas internas"
+                    placeholder="Senha de acesso"
                   />
                 </label>
               </div>
             </div>
-          </form>
-        </div>
 
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              disabled={saving}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              onClick={handleSubmit}
-              disabled={saving}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Salvar
-            </button>
+            {/* ── Seção: Notas ── */}
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="flex flex-col">
+                  <span className={labelClass}>Observações</span>
+                  <textarea
+                    value={formData.observations}
+                    onChange={(e) => handleFormChange('observations', e.target.value)}
+                    className={textareaClass}
+                    placeholder="Observações sobre o requerimento..."
+                  />
+                </label>
+                <label className="flex flex-col">
+                  <span className={labelClass}>Notas Internas</span>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => handleFormChange('notes', e.target.value)}
+                    className={textareaClass}
+                    placeholder="Notas internas do escritório..."
+                  />
+                </label>
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* Footer */}
+          <div className="shrink-0 px-5 sm:px-7 py-4 border-t border-slate-100 dark:border-white/10 flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                onClick={handleSubmit}
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {saving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   , document.body);
@@ -3760,17 +3803,60 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
-                    {statusHistory.slice(0, 20).map((entry) => (
-                      <div key={entry.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
-                        <div className="min-w-0">
+                    {statusHistory.slice(0, 20).map((entry) => {
+                      const isEditing = editingHistoryId === entry.id;
+                      return (
+                      <div key={entry.id} className="px-4 py-3 flex items-start justify-between gap-3 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition group">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-slate-900 dark:text-white">
                             {getHistoryStatus(entry.from_status)} → {getHistoryStatus(entry.to_status)}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Por: {getHistoryActor(entry.changed_by)}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Por: {getHistoryActor(entry.changed_by)}</p>
+                          {isEditing ? (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <input
+                                type="datetime-local"
+                                value={editingHistoryDate}
+                                onChange={(e) => setEditingHistoryDate(e.target.value)}
+                                className="text-xs px-2 py-1 rounded-lg border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveHistoryDate(entry)}
+                                disabled={savingHistoryDate}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50"
+                              >
+                                {savingHistoryDate ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Salvar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingHistoryId(null)}
+                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded transition"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 dark:text-slate-500">{formatDateTime(entry.changed_at)}</p>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap">{formatDateTime(entry.changed_at)}</p>
+                        {!isEditing && (
+                          <button
+                            type="button"
+                            title="Ajustar data manualmente"
+                            onClick={() => {
+                              setEditingHistoryId(entry.id);
+                              setEditingHistoryDate(toDatetimeLocal(entry.changed_at));
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg shrink-0 mt-0.5"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                     {statusHistory.length > 20 && (
                       <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-zinc-800">
                         Mostrando 20 de {statusHistory.length} alterações

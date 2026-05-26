@@ -258,6 +258,29 @@ class RequirementService {
 
     return (data ?? []) as RequirementStatusHistoryEntry[];
   }
+
+  /** Ajuste manual da data de um registro de histórico de status. */
+  async updateHistoryEntryDate(
+    entryId: string,
+    newChangedAt: string,
+    requirementId: string,
+    toStatus: string,
+  ): Promise<void> {
+    const { error } = await supabase
+      .from(this.statusHistoryTableName)
+      .update({ changed_at: newChangedAt })
+      .eq('id', entryId);
+
+    if (error) throw new Error(error.message);
+
+    // Se a transição foi para em_analise, sincroniza analysis_started_at no requerimento
+    if (toStatus === 'em_analise') {
+      await supabase
+        .from(this.tableName)
+        .update({ analysis_started_at: newChangedAt, updated_at: new Date().toISOString() })
+        .eq('id', requirementId);
+    }
+  }
 }
 
 export const requirementService = new RequirementService();

@@ -34,6 +34,7 @@ import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { processService } from '../services/process.service';
 import type { ProcessStatus } from '../types/process.types';
+import { events as globalEvents, SYSTEM_EVENTS } from '../utils/events';
 import { fetchDatajudMovimentos, categorizarMovimento, getTribunalNome, type DatajudComplemento } from '../services/datajud.service';
 
 interface ProcessTimelineProps {
@@ -567,6 +568,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
           if (detectedStatus && currentProcess.status !== detectedStatus) {
             await processTimelineService.autoUpdateProcessStatus(processId, data);
             setStatusUpdated(detectedStatus);
+            globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
           }
           if (!currentProcess.court) {
             const comarca = extractComarcaFromEvents(data);
@@ -589,6 +591,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
             if (detectedStatus && currentProcess.status !== detectedStatus) {
               await processTimelineService.autoUpdateProcessStatus(processId, data);
               setStatusUpdated(detectedStatus);
+              globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
             }
             if (!currentProcess.court) {
               const comarca = extractComarcaFromEvents(data);
@@ -618,7 +621,10 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       const stage = detectCurrentStage(data);
       setCurrentStage(stage);
       const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
-      if (detectedStatus) onStatusUpdated?.(detectedStatus);
+      if (detectedStatus) {
+        onStatusUpdated?.(detectedStatus);
+        if (processId) globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao atualizar');
     } finally {

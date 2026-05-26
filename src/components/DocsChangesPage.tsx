@@ -47,6 +47,8 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.154': { name: 'Café Data Ajustada', emoji: '📅' },
+  '1.10.153': { name: 'Café Prazo Certo', emoji: '⏱️' },
   '1.10.152': { name: 'Café Chamou Atenção', emoji: '⚡' },
   '1.10.151': { name: 'Café Ding Ding Ding', emoji: '🔔' },
   '1.10.150': { name: 'Café Chacoalha', emoji: '⚡' },
@@ -850,6 +852,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.154',
+    date: '25/05/2026',
+    summary: 'Ajuste manual de data no histórico de status do requerimento.',
+    modules: [
+      {
+        moduleId: 'Requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Edição manual da data de cada entrada do histórico de status',
+            description: 'No histórico de alterações do requerimento, ao passar o mouse sobre uma entrada aparece um ícone de lápis. Clicando, abre um seletor de data e hora inline para corrigir quando a mudança de status realmente ocorreu. Ao salvar, o campo analysis_started_at do requerimento é sincronizado automaticamente se a entrada for uma transição para "em análise", atualizando o prazo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.153',
+    date: '25/05/2026',
+    summary: 'Prazo em análise passa a contar a partir de quando o requerimento ficou em análise, não da data do protocolo.',
+    modules: [
+      {
+        moduleId: 'Requerimentos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Prazo contava da data do requerimento em vez da data de entrada em análise',
+            description: 'A função getAnalysisDays tinha lógica invertida: a condição "se analysis_started_at for mais recente que entry_date" sempre era verdadeira (o protocolo vem antes da análise), fazendo com que o campo analysis_started_at nunca fosse usado. Corrigido para sempre priorizar analysis_started_at (quando ficou em análise) com fallback para entry_date/created_at em requerimentos antigos sem o campo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.152',
     date: '25/05/2026',
