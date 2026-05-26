@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.156': { name: 'Café Blocos Limpos', emoji: '🧹' },
   '1.10.155': { name: 'Café Agenda Unificada', emoji: '📆' },
   '1.10.154': { name: 'Café Data Ajustada', emoji: '📅' },
   '1.10.153': { name: 'Café Prazo Certo', emoji: '⏱️' },
@@ -853,6 +854,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.156',
+    date: '26/05/2026',
+    summary: 'Redesign dos blocos de Processos e Compromissos na ficha do cliente.',
+    modules: [
+      {
+        moduleId: 'Clientes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Cards de Processos redesenhados',
+            description: 'Substituída a faixa horizontal de 3px no topo por borda esquerda colorida por status. Badges, comarca e advogado ficam numa linha só. Audiência aparece como texto discreto inline sem o box violeta.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Linhas de Compromissos redesenhadas',
+            description: 'Cada compromisso agora usa layout de linha limpa: chip de tipo à esquerda, título + subtítulo ao centro, data/hora à direita. Borda esquerda colorida por tipo. Título de audiências de processo mostra o número do processo em vez de "Processo".',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.155',
     date: '26/05/2026',

@@ -2021,7 +2021,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               TAB: PROCESSOS
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'processes' && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {relationsLoading ? (
                 <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
               ) : processes.length === 0 ? (
@@ -2031,71 +2031,55 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   const statusColor = PROCESS_STATUS_COLOR[p.status] ?? 'bg-slate-100 text-slate-600';
                   const statusLabel = PROCESS_STATUS_LABEL[p.status] ?? p.status;
                   const practiceLabel = PRACTICE_AREA_LABEL[p.practice_area] ?? p.practice_area;
-                  // Stripe cor por status
-                  const stripeColor: Record<string, string> = {
-                    andamento: 'bg-emerald-400', distribuido: 'bg-amber-400',
-                    recurso: 'bg-yellow-400', sentenca: 'bg-purple-400',
-                    arquivado: 'bg-slate-300', cumprimento: 'bg-rose-400',
-                    conciliacao: 'bg-teal-400', contestacao: 'bg-orange-400',
-                    instrucao: 'bg-indigo-400', citacao: 'bg-cyan-400',
-                    nao_protocolado: 'bg-slate-300', aguardando_confeccao: 'bg-blue-400',
+                  const accentColor: Record<string, string> = {
+                    andamento: 'border-l-emerald-400', distribuido: 'border-l-amber-400',
+                    recurso: 'border-l-yellow-400', sentenca: 'border-l-purple-400',
+                    arquivado: 'border-l-slate-300', cumprimento: 'border-l-lime-400',
+                    conciliacao: 'border-l-teal-400', contestacao: 'border-l-orange-400',
+                    instrucao: 'border-l-indigo-400', citacao: 'border-l-cyan-400',
+                    nao_protocolado: 'border-l-slate-300', aguardando_confeccao: 'border-l-blue-400',
                   };
-                  const stripe = stripeColor[p.status] ?? 'bg-slate-300';
+                  const accent = accentColor[p.status] ?? 'border-l-slate-300';
+                  const isMuted = p.status === 'arquivado';
+                  const hearingFuture = p.hearing_date ? new Date(p.hearing_date) >= new Date() : false;
                   return (
-                    <div key={p.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-orange-200 hover:shadow-md transition-all duration-200 group">
-                      {/* Status stripe */}
-                      <div className={`h-[3px] w-full ${stripe}`} />
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            {/* Número */}
-                            <p className="text-[15px] font-bold text-slate-900 font-mono tracking-tight leading-snug">
-                              {p.process_code || <span className="text-slate-400 font-sans font-normal italic text-sm">Sem número</span>}
-                            </p>
-                            {/* Tags */}
-                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                              <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full ${statusColor}`}>{statusLabel}</span>
-                              {practiceLabel && (
-                                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-100 text-slate-600">{practiceLabel}</span>
-                              )}
-                            </div>
-                            {/* Comarca */}
-                            {p.court && (
-                              <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
-                                <MapPin className="w-3 h-3 flex-shrink-0 text-slate-400" />
-                                {p.court}
-                              </p>
-                            )}
-                            {/* Advogado */}
-                            {p.responsible_lawyer && (
-                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-                                <User className="w-3 h-3 flex-shrink-0" />
-                                Dr(a). {p.responsible_lawyer}
-                              </p>
-                            )}
-                          </div>
-                          {/* Botão abrir */}
-                          <button
-                            onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: p.id } })}
-                            className="flex-shrink-0 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold text-slate-500 hover:text-orange-600 hover:bg-orange-50 border border-transparent hover:border-orange-200 transition"
-                            title="Abrir processo"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Abrir
-                          </button>
+                    <div
+                      key={p.id}
+                      className={`rounded-xl border border-l-4 bg-white px-4 py-3.5 flex items-start gap-4 group transition hover:shadow-sm ${accent} ${isMuted ? 'border-slate-100 opacity-60' : 'border-slate-200 hover:border-orange-200'}`}
+                    >
+                      {/* Conteúdo principal */}
+                      <div className="flex-1 min-w-0">
+                        {/* Número */}
+                        <p className={`text-sm font-bold font-mono tracking-tight leading-snug ${isMuted ? 'text-slate-500' : 'text-slate-900'}`}>
+                          {p.process_code || <span className="text-slate-400 font-sans font-normal italic">Sem número</span>}
+                        </p>
+                        {/* Badges + meta inline */}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${statusColor}`}>{statusLabel}</span>
+                          {practiceLabel && <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-100 text-slate-500">{practiceLabel}</span>}
+                          {p.court && <span className="text-[11px] text-slate-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{p.court}</span>}
+                          {p.responsible_lawyer && <span className="text-[11px] text-slate-400 flex items-center gap-1"><User className="w-3 h-3" />{p.responsible_lawyer}</span>}
                         </div>
-                        {/* Audiência */}
+                        {/* Audiência — linha discreta abaixo */}
                         {p.hearing_date && (
-                          <div className="mt-3 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2 flex items-center gap-2">
-                            <CalendarIcon className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
-                            <span className="text-xs font-semibold text-violet-700">
-                              Audiência: {formatDate(p.hearing_date)}
-                              {p.hearing_time ? ` · ${p.hearing_time.slice(0, 5)}` : ''}
-                              {p.hearing_mode === 'online' ? ' · Online' : p.hearing_mode === 'presencial' ? ' · Presencial' : ''}
-                            </span>
-                          </div>
+                          <p className={`mt-2 text-[11px] flex items-center gap-1.5 ${hearingFuture ? 'text-violet-600 font-semibold' : 'text-slate-400'}`}>
+                            <CalendarIcon className="w-3 h-3 flex-shrink-0" />
+                            Audiência · {formatDate(p.hearing_date)}
+                            {p.hearing_time && ` · ${p.hearing_time.slice(0, 5)}`}
+                            {p.hearing_mode === 'online' ? ' · Online' : p.hearing_mode === 'presencial' ? ' · Presencial' : ''}
+                            {!hearingFuture && <span className="text-[10px] font-normal text-slate-300">(passada)</span>}
+                          </p>
                         )}
                       </div>
+                      {/* Abrir */}
+                      <button
+                        onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: p.id } })}
+                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition"
+                        title="Abrir processo"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Abrir
+                      </button>
                     </div>
                   );
                 })
@@ -2463,14 +2447,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           {activeTab === 'agenda' && (() => {
             const now = new Date();
 
-            const TYPE_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-              hearing:     { label: 'Audiência',     bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
-              pericia:     { label: 'Perícia',       bg: 'bg-cyan-100',   text: 'text-cyan-700',   dot: 'bg-cyan-500'   },
-              meeting:     { label: 'Reunião',       bg: 'bg-blue-100',   text: 'text-blue-700',   dot: 'bg-blue-500'   },
-              deadline:    { label: 'Prazo',         bg: 'bg-rose-100',   text: 'text-rose-700',   dot: 'bg-rose-500'   },
-              requirement: { label: 'Requerimento',  bg: 'bg-amber-100',  text: 'text-amber-700',  dot: 'bg-amber-500'  },
-              payment:     { label: 'Pagamento',     bg: 'bg-emerald-100',text: 'text-emerald-700',dot: 'bg-emerald-500'},
-              personal:    { label: 'Pessoal',       bg: 'bg-slate-100',  text: 'text-slate-600',  dot: 'bg-slate-400'  },
+            const TYPE_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; accent: string }> = {
+              hearing:     { label: 'Audiência',     bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500',  accent: 'border-l-violet-400'  },
+              pericia:     { label: 'Perícia',       bg: 'bg-cyan-100',   text: 'text-cyan-700',   dot: 'bg-cyan-500',    accent: 'border-l-cyan-400'    },
+              meeting:     { label: 'Reunião',       bg: 'bg-blue-100',   text: 'text-blue-700',   dot: 'bg-blue-500',    accent: 'border-l-blue-400'    },
+              deadline:    { label: 'Prazo',         bg: 'bg-rose-100',   text: 'text-rose-700',   dot: 'bg-rose-500',    accent: 'border-l-rose-400'    },
+              requirement: { label: 'Requerimento',  bg: 'bg-amber-100',  text: 'text-amber-700',  dot: 'bg-amber-500',   accent: 'border-l-amber-400'   },
+              payment:     { label: 'Pagamento',     bg: 'bg-emerald-100',text: 'text-emerald-700',dot: 'bg-emerald-500', accent: 'border-l-emerald-400' },
+              personal:    { label: 'Pessoal',       bg: 'bg-slate-100',  text: 'text-slate-600',  dot: 'bg-slate-400',   accent: 'border-l-slate-300'   },
             };
 
             const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
@@ -2534,7 +2518,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 ? u.event.status === 'pendente' && u.date >= now
                 : u.date >= now;
 
-              let tc = TYPE_CONFIG.hearing;
+              let tc = TYPE_CONFIG.hearing as { label: string; bg: string; text: string; dot: string; accent: string };
               let label = '';
               let title = '';
               let subtitle = '';
@@ -2544,29 +2528,27 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               let hasTime = false;
 
               if (u.kind === 'calendar') {
-                tc = TYPE_CONFIG[u.event.event_type] ?? { label: u.event.event_type, bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' };
+                tc = TYPE_CONFIG[u.event.event_type] ?? { label: u.event.event_type, bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', accent: 'border-l-slate-300' };
                 label = tc.label;
                 title = u.event.title;
                 subtitle = u.event.description ?? '';
-                statusBadge = STATUS_CONFIG[u.event.status]
-                  ? `<span>${STATUS_CONFIG[u.event.status].label}</span>` : '';
                 onClick = () => navigateTo('agenda', { entityId: u.event.id } as any);
                 hasTime = u.event.start_at.includes('T');
                 timeStr = hasTime ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
               } else if (u.kind === 'process') {
                 tc = TYPE_CONFIG.hearing;
                 label = 'Audiência';
-                title = (u.process as any).title || (u.process as any).number || 'Processo';
-                subtitle = 'Vinculado ao processo';
+                title = u.process.process_code || 'Processo sem número';
+                subtitle = [PRACTICE_AREA_LABEL[u.process.practice_area] ?? u.process.practice_area, u.process.court].filter(Boolean).join(' · ');
                 onClick = () => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: u.process.id } });
                 timeStr = u.timeStr;
               } else {
                 tc = TYPE_CONFIG.pericia;
                 label = u.periciaType === 'medica' ? 'Perícia Médica' : 'Perícia Social';
-                title = u.req.beneficiary ?? 'Requerimento';
-                subtitle = 'Vinculado ao requerimento';
+                title = u.req.beneficiary || u.req.protocol || 'Requerimento';
+                subtitle = BENEFIT_LABEL[u.req.benefit_type] ?? u.req.benefit_type ?? '';
                 onClick = () => navigateTo('requerimentos', { entityId: u.req.id } as any);
-                hasTime = u.date.toISOString().includes('T');
+                hasTime = u.kind === 'pericia' && (u.periciaType === 'medica' ? (u.req.pericia_medica_at ?? '').includes('T') : (u.req.pericia_social_at ?? '').includes('T'));
                 timeStr = hasTime ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
               }
 
@@ -2576,30 +2558,32 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 <button
                   type="button"
                   onClick={onClick}
-                  className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border transition group ${isFuture ? 'border-slate-200 bg-white hover:border-orange-300 hover:shadow-sm' : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'}`}
+                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 transition group ${tc.accent} ${
+                    isFuture
+                      ? 'bg-white border border-slate-200 hover:border-orange-200 hover:shadow-sm'
+                      : 'bg-slate-50 border border-slate-100 opacity-60 hover:opacity-80'
+                  }`}
                 >
-                  <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${tc.dot} ${!isFuture ? 'opacity-40' : ''}`} />
+                  {/* Tipo */}
+                  <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-md ${tc.bg} ${tc.text} whitespace-nowrap`}>{label}</span>
+
+                  {/* Título + subtítulo */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${tc.bg} ${tc.text}`}>{label}</span>
-                      {statusCls && (
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusCls.cls}`}>{statusCls.label}</span>
-                      )}
-                      {u.kind !== 'calendar' && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{isFuture ? 'Pendente' : 'Passado'}</span>
-                      )}
-                    </div>
-                    <p className={`text-sm font-semibold mt-1 group-hover:text-orange-600 transition-colors truncate ${isFuture ? 'text-slate-900' : 'text-slate-400'}`}>{title}</p>
-                    {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+                    <p className={`text-sm font-semibold truncate group-hover:text-orange-600 transition-colors ${isFuture ? 'text-slate-900' : 'text-slate-500'}`}>{title}</p>
+                    {subtitle && <p className="text-[11px] text-slate-400 truncate mt-0.5">{subtitle}</p>}
                   </div>
-                  <div className="flex-shrink-0 text-right">
-                    <p className={`text-xs font-semibold tabular-nums ${isFuture ? 'text-slate-700' : 'text-slate-400 line-through'}`}>
+
+                  {/* Data + hora + status */}
+                  <div className="flex-shrink-0 text-right space-y-0.5">
+                    {statusCls && (
+                      <p><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusCls.cls}`}>{statusCls.label}</span></p>
+                    )}
+                    <p className={`text-xs font-semibold tabular-nums ${isFuture ? 'text-slate-700' : 'text-slate-400'}`}>
                       {u.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </p>
                     {timeStr && (
-                      <p className={`text-[10px] tabular-nums mt-0.5 ${isFuture ? 'text-slate-500' : 'text-slate-300'}`}>{timeStr}</p>
+                      <p className={`text-[11px] tabular-nums font-medium ${isFuture ? 'text-slate-500' : 'text-slate-300'}`}>{timeStr}</p>
                     )}
-                    <p className="text-[9px] text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity mt-1">Abrir →</p>
                   </div>
                 </button>
               );
