@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.163': { name: 'Café Upload Liberado', emoji: '📤' },
   '1.10.162': { name: 'Café Docs Notificados', emoji: '📬' },
   '1.10.161': { name: 'Café Build Limpo', emoji: '🔧' },
   '1.10.160': { name: 'Café Docs Inteligentes', emoji: '📄' },
@@ -860,6 +861,15 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.163',
+    date: '31/05/2026',
+    summary: 'Fix CORS na edge function de upload + melhorias na UI do portal: múltiplos envios por item, estados visuais claros e badge de aprovação.',
+    modules: [{ moduleId: 'Portal', changes: [
+      { type: 'fix' as const, title: 'CORS bloqueando upload de documentos', description: 'Edge function atualizada para aceitar o header x-client-info do Supabase JS.' },
+      { type: 'improvement' as const, title: 'Upload de múltiplos documentos por item', description: 'Cliente pode enviar arquivos adicionais para o mesmo item enquanto não aprovado. Botão muda entre "Enviar documento", "Enviar outro arquivo" e "Reenviar". Estados visuais: pending/processing/ready com spinner e badge de aprovado.' },
+    ]}],
+  },
   {
     version: '1.10.162',
     date: '31/05/2026',

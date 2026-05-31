@@ -45,6 +45,8 @@ const UploadDrawer: React.FC<UploadDrawerProps> = ({ item, clientId, portalUserI
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Re-abre o drawer para enviar mais arquivos (substituindo o anterior)
+  const isResend = item.status === 'uploaded' || item.status === 'rejected';
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -215,7 +217,8 @@ const ItemCard: React.FC<{
   const [open, setOpen] = useState(false);
   const statusInfo = ITEM_STATUS[item.status] || ITEM_STATUS.pending;
   const upload = item.upload;
-  const canUpload = item.status === 'pending' || item.status === 'rejected';
+  // Pode enviar: pendente, rejeitado, ou reenvio mesmo após enviado (enquanto não aprovado)
+  const canUpload = item.status !== 'approved';
 
   return (
     <div className={`rounded-2xl border bg-white p-4 shadow-sm transition ${
@@ -244,26 +247,37 @@ const ItemCard: React.FC<{
 
           {/* Upload info */}
           {upload && (
-            <div className="mt-2">
+            <div className="mt-2 space-y-1.5">
+              {upload.processing_status === 'pending' && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Aguardando processamento...
+                </div>
+              )}
               {upload.processing_status === 'processing' && (
                 <div className="flex items-center gap-1.5 text-xs text-blue-600">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Processando documento...
+                  Convertendo para PDF e identificando...
                 </div>
               )}
-              {upload.processing_status === 'ready' && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                  <FileText className="h-3 w-3 text-orange-500" />
-                  <span className="font-medium">{upload.final_name || 'documento.pdf'}</span>
+              {(upload.processing_status === 'ready' || upload.processing_status === 'error') && (
+                <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-600">
+                  <FileText className="h-3 w-3 shrink-0 text-orange-500" />
+                  <span className="font-medium truncate max-w-[160px]">{upload.final_name || 'documento.pdf'}</span>
                   {upload.ai_document_type && (
                     <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 ring-1 ring-orange-100">
                       {upload.ai_document_type}
                     </span>
                   )}
+                  {item.status === 'approved' && (
+                    <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      Aprovado ✓
+                    </span>
+                  )}
                 </div>
               )}
               {item.status === 'rejected' && upload.rejection_reason && (
-                <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-rose-50 px-2.5 py-2 text-xs text-rose-700">
+                <div className="flex items-start gap-1.5 rounded-lg bg-rose-50 px-2.5 py-2 text-xs text-rose-700">
                   <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>{upload.rejection_reason}</span>
                 </div>
@@ -280,11 +294,15 @@ const ItemCard: React.FC<{
           className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition active:scale-[0.98] ${
             item.status === 'rejected'
               ? 'bg-rose-500 text-white hover:bg-rose-600'
+              : item.status === 'uploaded'
+              ? 'border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
               : 'bg-orange-500 text-white hover:bg-orange-600'
           }`}
         >
           {item.status === 'rejected'
             ? <><RotateCcw className="h-4 w-4" /> Reenviar</>
+            : item.status === 'uploaded'
+            ? <><Plus className="h-4 w-4" /> Enviar outro arquivo</>
             : <><Camera className="h-4 w-4" /> Enviar documento</>}
         </button>
       )}
