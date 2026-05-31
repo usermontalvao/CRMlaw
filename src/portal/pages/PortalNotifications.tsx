@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell, Briefcase, FileText, DollarSign, Calendar, FileSignature,
-  AlertCircle, CheckCheck, UserCheck, UserX, ChevronRight, Scale,
+  AlertCircle, CheckCheck, UserCheck, UserX, ChevronRight, Scale, FolderOpen,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
@@ -61,6 +61,8 @@ function styleFor(type?: string, category?: string) {
     return { Icon: FileSignature, color: 'from-violet-500 to-purple-500', ring: 'ring-violet-100' };
   if (t === 'new_agreement')
     return { Icon: DollarSign, color: 'from-emerald-500 to-teal-500', ring: 'ring-emerald-100' };
+  if (t === 'new_document_request')
+    return { Icon: FolderOpen, color: 'from-orange-500 to-amber-500', ring: 'ring-orange-100' };
   if (t.includes('process') || t.includes('movi') || t.includes('andamento'))
     return { Icon: Briefcase, color: 'from-orange-500 to-amber-500', ring: 'ring-orange-100' };
   if (t.includes('public') || t.includes('intim'))
@@ -93,6 +95,9 @@ function routeFor(n: NotificationItem): { route: string; param?: string } | null
   // Novo contrato
   if (t === 'new_agreement')
     return { route: 'financeiro' };
+  // Nova solicitação de documentos
+  if (t === 'new_document_request')
+    return { route: 'documentos' };
   // Processo genérico
   if (n.process_id)
     return { route: 'processos', param: n.process_id };

@@ -61,6 +61,7 @@ function iconFor(type: string) {
   if (type === 'process_status_changed')  return <Bell className="h-5 w-5 text-white" />;
   if (type === 'new_signature_request')   return <Bell className="h-5 w-5 text-white" />;
   if (type === 'new_agreement')           return <Bell className="h-5 w-5 text-white" />;
+  if (type === 'new_document_request')    return <Bell className="h-5 w-5 text-white" />;
   return <Bell className="h-5 w-5 text-white" />;
 }
 function bgFor(type: string) {
@@ -69,6 +70,7 @@ function bgFor(type: string) {
   if (type === 'process_status_changed')  return 'bg-orange-500';
   if (type === 'new_signature_request')   return 'bg-violet-500';
   if (type === 'new_agreement')           return 'bg-teal-500';
+  if (type === 'new_document_request')    return 'bg-orange-500';
   return 'bg-orange-500';
 }
 
@@ -161,6 +163,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
           'process_status_changed',
           'new_signature_request',
           'new_agreement',
+          'new_document_request',
         ]);
         const fresh = (items as any[]).filter(
           (n) => n.id && !seen.has(n.id) && PUSH_TYPES.has(n.type)

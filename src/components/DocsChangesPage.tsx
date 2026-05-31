@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.162': { name: 'Café Docs Notificados', emoji: '📬' },
   '1.10.161': { name: 'Café Build Limpo', emoji: '🔧' },
   '1.10.160': { name: 'Café Docs Inteligentes', emoji: '📄' },
   '1.10.159': { name: 'Café Portal Completo', emoji: '🚪' },
@@ -859,6 +860,12 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.162',
+    date: '31/05/2026',
+    summary: 'Fix: cliente agora recebe notificação push quando o escritório solicita documentos via portal.',
+    modules: [{ moduleId: 'Portal', changes: [{ type: 'fix' as const, title: 'Notificação de solicitação de documentos', description: "O tipo 'new_document_request' foi adicionado ao sistema de push do portal. Cliente recebe toast in-app + push do browser com link direto para a aba Documentos." }] }],
+  },
   {
     version: '1.10.161',
     date: '31/05/2026',
