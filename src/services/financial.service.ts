@@ -698,7 +698,7 @@ class FinancialService {
 
       await supabase.from('payment_audit_log').insert({
         agreement_id: data.agreement_id,
-        installment_id: data.installment_id || null,
+        installment_id: data.installment_id || undefined,
         user_id: user?.id || null,
         user_name: userName,
         action: data.action,

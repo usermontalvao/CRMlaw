@@ -1682,18 +1682,20 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       // Mapa: requirement_id → { process_code, court, djenOrgao }
       // djenOrgao tem prioridade sobre court para exibir a vara
-      const msMap = new Map(msProcesses.map(p => {
-        const byId = djenOrgaoByIdMap.get(p.id) ?? null;
-        const byCode = p.process_code ? (djenOrgaoByCodeMap.get(p.process_code.trim()) ?? null) : null;
-        return [
-          p.requirement_id!,
-          {
-            process_code: p.process_code ?? '',
-            court: p.court ?? null,
-            djenOrgao: byId ?? byCode,
-          },
-        ];
-      }));
+      const msMap = new Map<string, { process_code: string; court: string | null; djenOrgao: string | null }>(
+        msProcesses.map(p => {
+          const byId = djenOrgaoByIdMap.get(p.id) ?? null;
+          const byCode = p.process_code ? (djenOrgaoByCodeMap.get(p.process_code.trim()) ?? null) : null;
+          return [
+            p.requirement_id!,
+            {
+              process_code: p.process_code ?? '',
+              court: p.court ?? null,
+              djenOrgao: (byId ?? byCode) as string | null,
+            },
+          ] as [string, { process_code: string; court: string | null; djenOrgao: string | null }];
+        })
+      );
 
       setRequirementsWithMs(new Set(msProcesses.map(p => p.requirement_id!)));
       setRequirementsMsMap(msMap);

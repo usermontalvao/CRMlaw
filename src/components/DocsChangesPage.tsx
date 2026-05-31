@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.161': { name: 'Café Build Limpo', emoji: '🔧' },
   '1.10.160': { name: 'Café Docs Inteligentes', emoji: '📄' },
   '1.10.159': { name: 'Café Portal Completo', emoji: '🚪' },
   '1.10.158': { name: 'Café Corretor Ligado', emoji: '✍️' },
@@ -858,6 +859,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.161',
+    date: '31/05/2026',
+    summary: 'Correções de build: .catch() em rpc do portal, null em financial.service e tipagem do Map em RequirementsModule.',
+    modules: [
+      { moduleId: 'Portal', changes: [{ type: 'fix' as const, title: 'Erro .catch() no upload de documentos', description: 'Substituído .catch() por try/catch no supabase.rpc() que não suporta encadeamento de promise diretamente.' }] },
+      { moduleId: 'Financeiro', changes: [{ type: 'fix' as const, title: 'Tipo null em installment_id', description: 'Corrigido null → undefined no logPaymentAudit para bater com o tipo CreatePaymentAuditDTO.' }] },
+      { moduleId: 'Requerimentos', changes: [{ type: 'fix' as const, title: 'Tipo do Map msMap', description: 'Adicionada tipagem explícita no new Map para resolver inferência incorreta de djenOrgao que quebrava o build no Render.' }] },
+    ],
+  },
   {
     version: '1.10.160',
     date: '31/05/2026',

@@ -406,15 +406,17 @@ class ClientPortalService {
     if (dbErr || !uploadRec) { console.error('DB insert error:', dbErr); return null; }
 
     // 3. Notifica admins
-    await supabase.rpc('portal_notify_document_uploaded', {
-      p_portal_user_id: portalUserId,
-      p_upload_id: uploadRec.id,
-    }).catch(() => {});
+    try {
+      await supabase.rpc('portal_notify_document_uploaded', {
+        p_portal_user_id: portalUserId,
+        p_upload_id: uploadRec.id,
+      });
+    } catch { /* silent */ }
 
     // 4. Dispara processamento assíncrono
     supabase.functions.invoke('process-document-upload', {
       body: { upload_id: uploadRec.id },
-    }).catch(() => {});
+    }).then(() => null, () => null);
 
     return { upload_id: uploadRec.id };
   }
