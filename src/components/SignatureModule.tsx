@@ -6,7 +6,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen, Phone,
-  ArrowUpDown, FileSignature, ChevronUp, ChevronDown,
+  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,6 +33,7 @@ import type {
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog,
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
+import SignatureReport from './SignatureReport';
 import type { GeneratedDocument } from '../types/document.types';
 import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
@@ -262,6 +263,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [createProcessUrgent, setCreateProcessUrgent] = useState(false);
   const [createProcessLoading, setCreateProcessLoading] = useState(false);
   const [copyToCloudLoading, setCopyToCloudLoading] = useState(false);
+  const [sendEmailLoading, setSendEmailLoading] = useState(false);
 
   useEffect(() => {
     try {
@@ -329,7 +331,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [selectedClientId]);
 
   const [signers, setSigners] = useState<DraftSigner[]>([
-    { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' },
+    { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: 1, deliveryMethod: 'email' },
   ]);
   const [signerOrder, setSignerOrder] = useState<'none' | 'sequential'>('none');
 
@@ -368,6 +370,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [createdRequest, setCreatedRequest] = useState<SignatureRequestWithSigners | null>(null);
   const [detailsRequest, setDetailsRequest] = useState<SignatureRequestWithSigners | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ request: SignatureRequestWithSigners; signer: Signer } | null>(null);
 
   useEffect(() => {
     setShowCreateProcess(false);
@@ -1824,7 +1827,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedGenDocIds([]);
     setGenDocsSearchTerm('');
     clearSelectedUploadFileIndexes();
-    setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' }]);
+    setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: 1, deliveryMethod: 'email' }]);
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
     setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
     setIsDocxFile(false); setIsImageFile(false); setDocxBlob(null);
@@ -2135,7 +2138,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const addSigner = () => {
-    setSigners((prev) => [...prev, { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: prev.length + 1, deliveryMethod: 'email' }]);
+    setSigners((prev) => [...prev, { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: prev.length + 1, deliveryMethod: 'email' }]);
   };
 
   const removeSigner = (id: string) => { if (signers.length > 1) setSigners((prev) => prev.filter((s) => s.id !== id)); };
@@ -2671,7 +2674,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         attachment_paths: attachPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: 'signature_only' as SignerAuthMethod,
         expires_at: settings.expiresAt || null,
-        signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || null, order: i + 1 })),
+        signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || 'Signatário', order: i + 1 })),
       };
       
       console.log('📎 Criando solicitação com anexos:', selectedAttachmentPaths);
@@ -2849,20 +2852,174 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const copyLink = (token: string) => { navigator.clipboard.writeText(signatureService.generatePublicSigningUrl(token)); toast.success('Link copiado!'); };
 
-  const handleDeleteRequest = async (requestId: string) => {
-    const req = requests.find((r) => r.id === requestId);
-    const confirmed = await confirmDelete({
-      title: 'Remover documento',
-      entityName: req?.document_name || undefined,
-      message: 'Esta ação remove o documento do painel e invalida o link de assinatura. O documento assinado permanece preservado.',
-      confirmLabel: 'Remover',
-    });
-    if (!confirmed) return;
+  // ── Lixeira (excluídas) + bloqueio/revogação ──
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [archivedList, setArchivedList] = useState<SignatureRequestWithSigners[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [trashSearch, setTrashSearch] = useState('');
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [trashSelected, setTrashSelected] = useState<Set<string>>(new Set());
+  const [trashBulkLoading, setTrashBulkLoading] = useState(false);
+  // Modal de exclusão customizado
+  const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteAlsoBlock, setDeleteAlsoBlock] = useState(false);
+  const isAdmin = user?.email === 'pedro@advcuiaba.com';
 
+  const loadArchived = async () => {
+    setArchivedLoading(true);
+    setTrashSelected(new Set());
+    try {
+      setArchivedList(await signatureService.listArchivedRequests());
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao carregar excluídas');
+    } finally {
+      setArchivedLoading(false);
+    }
+  };
+  const openTrash = () => { setTrashOpen(true); void loadArchived(); };
+
+  const toggleTrashSelect = (id: string) => {
+    setTrashSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (trashSelected.size === archivedList.length) {
+      setTrashSelected(new Set());
+    } else {
+      setTrashSelected(new Set(archivedList.map(r => r.id)));
+    }
+  };
+  const handleBulkRestore = async () => {
+    if (trashSelected.size === 0) return;
+    setTrashBulkLoading(true);
+    try {
+      await Promise.all([...trashSelected].map(async id => {
+        await signatureService.restoreRequest(id);
+        // Desbloquear automaticamente ao restaurar
+        const item = archivedList.find(r => r.id === id);
+        if ((item as any)?.blocked_at) {
+          await signatureService.unblockRequest(id);
+        }
+      }));
+      toast.success(`${trashSelected.size} documento(s) restaurado(s) e desbloqueado(s).`);
+      await loadArchived();
+      loadData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao restaurar');
+    } finally {
+      setTrashBulkLoading(false);
+    }
+  };
+  const handleBulkPermanentDelete = async () => {
+    if (trashSelected.size === 0) return;
+    const ok = await confirmDelete({
+      title: `Excluir definitivamente (${trashSelected.size})`,
+      message: `Ação IRREVERSÍVEL: apaga ${trashSelected.size} documento(s) e TODOS os arquivos do servidor. Não poderão mais ser validados.`,
+      confirmLabel: 'Excluir tudo',
+    });
+    if (!ok) return;
+    setTrashBulkLoading(true);
+    try {
+      const items = archivedList.filter(r => trashSelected.has(r.id));
+      await Promise.all(items.map(r => signatureService.permanentlyDeleteRequest(r.id, true)));
+      toast.success(`${trashSelected.size} documento(s) excluído(s) definitivamente.`);
+      await loadArchived();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao excluir');
+    } finally {
+      setTrashBulkLoading(false);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    try {
+      await signatureService.restoreRequest(id);
+      // Desbloquear automaticamente ao restaurar
+      const item = archivedList.find(r => r.id === id);
+      if ((item as any)?.blocked_at) {
+        await signatureService.unblockRequest(id);
+      }
+      toast.success('Documento restaurado e desbloqueado.');
+      await loadArchived();
+      loadData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao restaurar');
+    }
+  };
+
+  const handlePermanentDelete = async (req: SignatureRequestWithSigners) => {
+    const ok = await confirmDelete({
+      title: 'Excluir definitivamente',
+      entityName: req.document_name || undefined,
+      message: 'Ação IRREVERSÍVEL: apaga o registro e TODOS os arquivos do servidor (documento, anexos, PDF assinado, imagens). Não poderá mais ser validado.',
+      confirmLabel: 'Excluir definitivamente',
+    });
+    if (!ok) return;
+    try {
+      await signatureService.permanentlyDeleteRequest(req.id, true);
+      toast.success('Documento excluído definitivamente.');
+      await loadArchived();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao excluir');
+    }
+  };
+
+  const handleBlockRequest = async (req: { id: string; document_name?: string | null }) => {
+    const ok = await confirmDelete({
+      title: 'Bloquear / revogar documento',
+      entityName: req.document_name || undefined,
+      message: 'O documento bloqueado/revogado NÃO poderá ser validado publicamente pelo código nem por upload do arquivo. Você pode desbloquear depois.',
+      confirmLabel: 'Bloquear',
+    });
+    if (!ok) return;
+    try {
+      setBlockLoading(true);
+      await signatureService.blockRequest(req.id);
+      toast.success('Documento bloqueado/revogado. Validação pública desativada.');
+      loadData();
+      setDetailsRequest((prev) => (prev && prev.id === req.id ? { ...prev, blocked_at: new Date().toISOString() } : prev));
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao bloquear');
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleUnblockRequest = async (req: { id: string }) => {
+    try {
+      setBlockLoading(true);
+      await signatureService.unblockRequest(req.id);
+      toast.success('Documento desbloqueado. Validação pública reativada.');
+      loadData();
+      setDetailsRequest((prev) => (prev && prev.id === req.id ? { ...prev, blocked_at: null } : prev));
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao desbloquear');
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleDeleteRequest = (requestId: string) => {
+    const req = requests.find((r) => r.id === requestId);
+    setDeleteAlsoBlock(false);
+    setDeleteModalTarget({ id: requestId, name: req?.document_name || 'Documento' });
+  };
+
+  const confirmDeleteRequest = async () => {
+    if (!deleteModalTarget) return;
     try {
       setDeleteLoading(true);
-      await signatureService.archiveRequest(requestId);
-      toast.success('Documento removido do painel. Consulta disponível apenas pelo código de autenticidade.');
+      await signatureService.archiveRequest(deleteModalTarget.id);
+      if (deleteAlsoBlock) {
+        await signatureService.blockRequest(deleteModalTarget.id, 'Bloqueado ao excluir do painel');
+      }
+      toast.success(deleteAlsoBlock
+        ? 'Documento removido e bloqueado. Validação pública desativada.'
+        : 'Documento removido do painel. Consulta disponível pelo código de autenticidade.');
+      setDeleteModalTarget(null);
       detailsRequestIdRef.current = null;
       setDetailsRequest(null);
       loadData();
@@ -2936,6 +3093,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 min-width: 794px !important;
                 max-width: 794px !important;
                 background: #ffffff !important;
+              }
+              /* Impede o docx-preview de quebrar palavras no meio (overflow-wrap:
+                 break-word / hyphens: auto). Sem isso, html2canvas parte palavras
+                 como "Trabalhista" → "Trabal" + "hista" no PDF gerado. */
+              .docx-wrapper,
+              .docx-wrapper *,
+              .docx-wrapper p,
+              .docx-wrapper span {
+                overflow-wrap: normal !important;
+                word-wrap: normal !important;
+                word-break: normal !important;
+                hyphens: none !important;
+                -webkit-hyphens: none !important;
               }
             `;
             document.head.appendChild(style);
@@ -3676,8 +3846,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         <div className="flex gap-2">
                           <input type="email" value={signer.email} onChange={(e) => updateSigner(signer.id, 'email', e.target.value)} placeholder="Email" className="flex-1 px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
                           <select value={signer.role} onChange={(e) => updateSigner(signer.id, 'role', e.target.value)} className="px-3 py-2 border border-slate-200 rounded text-sm bg-white">
-                            <option>Assinar</option>
-                            <option>Testemunha</option>
+                            <option value="Signatário">Signatário</option>
+                            <option value="Contratante">Contratante</option>
+                            <option value="Contratado">Contratado</option>
+                            <option value="Testemunha">Testemunha</option>
+                            <option value="Fiador">Fiador</option>
+                            <option value="Cônjuge">Cônjuge</option>
+                            <option value="Representante Legal">Representante Legal</option>
                           </select>
                         </div>
                       </div>
@@ -4218,7 +4393,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
 
   return (
-    <div className="flex flex-col gap-4 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" data-signature-module>
+    <div className="flex flex-col gap-3 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" style={{ background: 'transparent' }} data-signature-module>
       {selectionMode && selectedRequestIds.size > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -4256,8 +4431,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar Explorer */}
-        <div className="hidden lg:block w-[280px] flex-shrink-0">
-          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-black/5">
+        <div className="hidden lg:block w-[260px] flex-shrink-0">
+          <div className="rounded-2xl bg-white p-3" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.06)' }}>
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="text-[11px] font-bold tracking-[0.18em] text-slate-500 uppercase">Pastas</div>
             <div className="flex items-center gap-1">
@@ -4360,155 +4535,146 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-          {/* Toolbar compacta e limpa */}
-          <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          {/* Lado esquerdo: Filtros de status como tabs */}
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 overflow-x-auto max-w-full">
-            <button
-              type="button"
-              onClick={() => setFilterStatus('all')}
-              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                filterStatus === 'all'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Todos <span className="text-slate-400">{requests.length}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus('pending')}
-              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                filterStatus === 'pending'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Pendentes <span className="text-amber-500">{requests.filter(r => r.status === 'pending').length}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus('signed')}
-              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                filterStatus === 'signed'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Concluídos <span className="text-emerald-500">{requests.filter(r => r.status === 'signed').length}</span>
-            </button>
-            {expiredRequestsCount > 0 && (
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+          {/* Toolbar */}
+          <div className="rounded-xl bg-white overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
+
+            {/* Row 1: tabs + ações primárias */}
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              {/* Tabs de status */}
+              <div className="flex items-center gap-0.5 overflow-x-auto">
+                {[
+                  { key: 'all',     label: 'Todos',      count: requests.length,                                     countCls: 'text-slate-400' },
+                  { key: 'pending', label: 'Pendentes',  count: requests.filter(r => r.status === 'pending').length, countCls: 'text-amber-500' },
+                  { key: 'signed',  label: 'Assinados',  count: requests.filter(r => r.status === 'signed').length,  countCls: 'text-emerald-600' },
+                  ...(expiredRequestsCount > 0 ? [{ key: 'expired', label: 'Expirados', count: expiredRequestsCount, countCls: 'text-red-500' }] : []),
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setFilterStatus(tab.key as any)}
+                    className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                      filterStatus === tab.key
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                    }`}
+                  >
+                    {tab.label} <span className={filterStatus === tab.key ? 'text-slate-300' : tab.countCls}>{tab.count}</span>
+                  </button>
+                ))}
+                <div className="w-px h-4 bg-slate-200 mx-1.5 flex-shrink-0" />
+                <span className="shrink-0 whitespace-nowrap px-3 py-1.5 text-xs text-slate-400">
+                  Assinantes <span className="text-slate-600 font-medium">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</span>
+                </span>
+              </div>
+
+              {/* Ações primárias */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPublicAuthSettings((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    showPublicAuthSettings
+                      ? 'border-orange-300 bg-orange-50 text-orange-600'
+                      : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  Público
+                  {publicAuthSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                </button>
+                <button
+                  onClick={() => { resetWizard(); setWizardStep('upload'); }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Novo documento
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: busca + utilitários */}
+            <div className="flex items-center gap-2 px-4 py-2">
+              {/* Busca */}
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar documentos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10"
+                />
+              </div>
+
+              {/* Separador */}
+              <div className="w-px h-5 bg-slate-200 flex-shrink-0" />
+
+              {/* Filtros */}
               <button
                 type="button"
-                onClick={() => setFilterStatus('expired')}
-                className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  filterStatus === 'expired'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
+                onClick={() => setShowFilters((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+                  showFilters
+                    ? 'border-slate-800 bg-slate-800 text-white'
+                    : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
-                Expirados <span className="text-red-500">{expiredRequestsCount}</span>
+                <Filter className="w-3.5 h-3.5" />
+                Filtros
               </button>
-            )}
-            <button
-              type="button"
-              className="shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 border-l border-slate-300 pl-2 ml-1"
-            >
-              Assinantes <span className="text-blue-500">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</span>
-            </button>
-          </div>
 
-          {/* Centro: Busca */}
-          <div className="relative w-full md:flex-1 md:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar documentos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
-            />
-          </div>
-
-          {/* Lado direito: Ações */}
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:justify-end">
-            {/* Assinatura Pública */}
-            <button
-              type="button"
-              onClick={() => setShowPublicAuthSettings((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                showPublicAuthSettings
-                  ? 'border-orange-200 bg-orange-50 text-orange-700'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              Público
-              {publicAuthSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-            </button>
-
-            {/* Novo documento */}
-            <button
-              onClick={() => { resetWizard(); setWizardStep('upload'); }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
-            >
-              <Plus className="h-4 w-4" />
-              Novo documento
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowFilters((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                showFilters
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              Filtros
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleSelectionMode}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                selectionMode
-                  ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Check className="w-3.5 h-3.5" />
-            </button>
-
-            <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+              {/* Seleção */}
               <button
                 type="button"
-                onClick={() => setViewMode('list')}
-                className={`p-2 transition ${
-                  viewMode === 'list'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white text-slate-500 hover:bg-slate-50'
+                onClick={toggleSelectionMode}
+                title="Selecionar múltiplos"
+                className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition ${
+                  selectionMode
+                    ? 'border-orange-500 bg-orange-500 text-white'
+                    : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
-                <LayoutList className="w-4 h-4" />
+                <Check className="w-3.5 h-3.5" />
               </button>
+
+              {/* View toggle */}
+              <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center justify-center w-7 h-7 transition ${
+                    viewMode === 'list' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <LayoutList className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`flex items-center justify-center w-7 h-7 transition ${
+                    viewMode === 'grid' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Separador */}
+              <div className="w-px h-5 bg-slate-200 flex-shrink-0" />
+
+              {/* Excluídas */}
               <button
                 type="button"
-                onClick={() => setViewMode('grid')}
-                className={`p-2 transition ${
-                  viewMode === 'grid'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white text-slate-500 hover:bg-slate-50'
-                }`}
+                onClick={openTrash}
+                title="Documentos excluídos"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition"
               >
-                <LayoutGrid className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluídas
               </button>
             </div>
           </div>
-        </div>
 
         {/* Painel de seleção em massa */}
         {selectionMode && (
@@ -4709,10 +4875,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </div>
           </div>
         )}
-      </div>
 
           {/* Lista de documentos */}
-          <div className="rounded-2xl border border-slate-200 bg-white">
+          <div className="rounded-2xl bg-white" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
         {filteredRequestsByFolder.length === 0 && filteredGeneratedDocumentsByFolder.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
@@ -4727,7 +4892,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </button>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="space-y-3">
+          <div className="p-3 space-y-2">
             {filteredRequestsByFolder.map((req) => {
               const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
               const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
@@ -4756,6 +4921,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 && draggingExplorer.itemType === 'signature_request'
                 && draggingExplorer.id === req.id;
 
+              const isBlocked = !!(req as any).blocked_at;
+              const statusColor  = isBlocked ? '#dc2626' : allSigned ? '#16a34a' : '#d97706';
+              const statusBg     = isBlocked ? '#fef2f2' : allSigned ? '#f0fdf4' : '#fffbeb';
+              const statusBorder = isBlocked ? '#fecaca' : allSigned ? '#bbf7d0' : '#fde68a';
+
               return (
                 <div
                   key={req.id}
@@ -4772,11 +4942,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     setDragOverFolderId(null);
                     setDraggingExplorer(null);
                     if (dragImageElRef.current) {
-                      try {
-                        document.body.removeChild(dragImageElRef.current);
-                      } catch {
-                        // ignore
-                      }
+                      try { document.body.removeChild(dragImageElRef.current); } catch { /* ignore */ }
                       dragImageElRef.current = null;
                     }
                   }}
@@ -4788,129 +4954,150 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     if (suppressExplorerClickRef.current || isDraggingExplorer) return;
                     openDetails(req);
                   }}
-                  className={`group bg-white rounded-2xl border border-slate-200 p-4 shadow-sm ring-1 ring-black/5 hover:border-slate-300 hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${
-                    isDraggingExplorer ? 'select-none' : ''
-                  } ${
-                    isDraggingThisItem ? 'opacity-60 scale-[1.01] shadow-lg shadow-slate-900/10' : ''
-                  }`}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 12,
+                    border: '1px solid #e8edf2',
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.05)',
+                    cursor: 'grab',
+                    transition: 'box-shadow 0.15s, border-color 0.15s, background 0.15s',
+                    opacity: isDraggingThisItem ? 0.6 : 1,
+                    overflow: 'hidden',
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(15,23,42,0.09)';
+                    (e.currentTarget as HTMLElement).style.borderColor = '#c7d2da';
+                    (e.currentTarget as HTMLElement).style.background = '#fafcfe';
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 3px rgba(15,23,42,0.05)';
+                    (e.currentTarget as HTMLElement).style.borderColor = '#e8edf2';
+                    (e.currentTarget as HTMLElement).style.background = '#ffffff';
+                  }}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {selectionMode && (
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                            checked={selectedRequestIds.has(req.id)}
-                            onChange={() => toggleSelectedRequestId(req.id)}
-                          />
-                        </div>
-                      )}
-                      
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        allSigned ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
-                      }`}>
-                        <FileText className="w-5 h-5" />
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12 }}>
+
+                    {/* Status strip */}
+                    <div style={{ width: 3, alignSelf: 'stretch', borderRadius: 99, background: statusColor, flexShrink: 0 }} />
+
+                    {/* Checkbox */}
+                    {selectionMode && (
+                      <div onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" style={{ width: 15, height: 15, accentColor: '#ea580c', cursor: 'pointer', flexShrink: 0 }}
+                          checked={selectedRequestIds.has(req.id)} onChange={() => toggleSelectedRequestId(req.id)} />
                       </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-slate-900 truncate">
-                            {req.document_name}
-                          </h3>
-                          {req.process_id && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-sky-200 bg-sky-50 text-sky-700">
-                              <FileText className="w-3 h-3" />
-                              Processo
-                            </span>
-                          )}
-                          {req.requirement_id && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">
-                              <Plus className="w-3 h-3" />
-                              Req.
-                            </span>
-                          )}
-                          {isInCloud && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-emerald-200 bg-emerald-50 text-emerald-700">
-                              <FolderOpen className="w-3 h-3" />
-                              Pasta criada
-                            </span>
-                          )}
-                          {isExpiredCard && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-red-200 bg-red-50 text-red-600">
-                              <AlertTriangle className="w-3 h-3" />
-                              Expirado
-                            </span>
-                          )}
-                          {expiresWithin48h && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-amber-200 bg-amber-50 text-amber-700">
-                              <Clock className="w-3 h-3" />
-                              Expira em breve
-                            </span>
-                          )}
-                          {hasViewedPending && (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-sky-200 bg-sky-50 text-sky-700"
-                              title={lastViewedAt ? `Visualizado ${timeAgo(lastViewedAt)}` : 'Visualizado'}
-                            >
-                              <Eye className="w-3 h-3" />
-                              Visto {lastViewedAt ? timeAgo(lastViewedAt) : ''}
-                            </span>
-                          )}
-                          {attachmentCount > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 bg-slate-50 text-slate-500">
-                              📎 +{attachmentCount}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-slate-600 truncate">
-                          {clientLabel}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {formatDate(req.created_at)}
-                        </p>
+                    )}
+
+                    {/* Doc icon */}
+                    <div style={{ width: 38, height: 38, borderRadius: 9, background: statusBg, border: `1px solid ${statusBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <FileSignature style={{ width: 17, height: 17, color: statusColor }} />
+                    </div>
+
+                    {/* Main info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                          {req.document_name}
+                        </span>
+                        {req.process_id && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', whiteSpace: 'nowrap' }}>
+                            <FileText style={{ width: 9, height: 9 }} />Processo
+                          </span>
+                        )}
+                        {req.requirement_id && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', whiteSpace: 'nowrap' }}>
+                            <FileText style={{ width: 9, height: 9 }} />Req.
+                          </span>
+                        )}
+                        {isBlocked && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', whiteSpace: 'nowrap' }}>
+                            <Lock style={{ width: 9, height: 9 }} />Bloqueado
+                          </span>
+                        )}
+                        {isExpiredCard && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', whiteSpace: 'nowrap' }}>
+                            <AlertTriangle style={{ width: 9, height: 9 }} />Expirado
+                          </span>
+                        )}
+                        {expiresWithin48h && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#d97706', background: '#fffbeb', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>
+                            <Clock style={{ width: 9, height: 9 }} />Expira em breve
+                          </span>
+                        )}
+                        {hasViewedPending && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', whiteSpace: 'nowrap' }}
+                            title={lastViewedAt ? `Visualizado ${timeAgo(lastViewedAt)}` : 'Visualizado'}>
+                            <Eye style={{ width: 9, height: 9 }} />Visto {lastViewedAt ? timeAgo(lastViewedAt) : ''}
+                          </span>
+                        )}
+                        {attachmentCount > 0 && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                            📎 +{attachmentCount}
+                          </span>
+                        )}
+                        {isInCloud && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
+                            <FolderOpen style={{ width: 9, height: 9 }} />Pasta
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientLabel}</span>
+                        <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#cbd5e1', flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatDate(req.created_at)}</span>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                          allSigned 
-                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
-                            : 'bg-amber-100 text-amber-700 border border-amber-200'
-                        }`}>
-                          {allSigned ? (
-                            <>
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              Concluído
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-3.5 h-3.5" />
-                              {signedCount}/{totalSigners}
-                            </>
-                          )}
-                        </div>
-                        
-                        {totalSigners > 0 && (
-                          <div className="mt-2">
-                            <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  allSigned ? 'bg-emerald-500' : 'bg-amber-500'
-                                }`}
-                                style={{ width: `${pct}%` }}
-                              />
+
+                    {/* Signatários avatars */}
+                    {req.signers && req.signers.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                        {req.signers.slice(0, 3).map((s: Signer, i: number) => {
+                          const initials = s.name.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase();
+                          const signed = s.status === 'signed';
+                          return (
+                            <div key={s.id} title={`${s.name} — ${signed ? 'Assinou' : 'Aguardando'}`} style={{
+                              width: 26, height: 26, borderRadius: '50%',
+                              background: signed ? '#dcfce7' : '#f1f5f9',
+                              border: `2px solid ${signed ? '#16a34a' : '#e2e8f0'}`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 9, fontWeight: 800, color: signed ? '#15803d' : '#64748b',
+                              marginLeft: i > 0 ? -8 : 0, position: 'relative', zIndex: req.signers.length - i,
+                            }}>
+                              {initials}
                             </div>
-                            <div className="text-xs text-slate-500 mt-1">
-                              {pct}%
-                            </div>
+                          );
+                        })}
+                        {req.signers.length > 3 && (
+                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#f1f5f9', border: '2px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#94a3b8', marginLeft: -8 }}>
+                            +{req.signers.length - 3}
                           </div>
                         )}
                       </div>
-                      
-                      <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition flex-shrink-0" />
+                    )}
+
+                    {/* Status badge + progress */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0, minWidth: 110 }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '4px 10px', borderRadius: 20,
+                        fontSize: 11, fontWeight: 700,
+                        color: statusColor, background: statusBg, border: `1px solid ${statusBorder}`,
+                      }}>
+                        {isBlocked ? <Lock style={{ width: 10, height: 10 }} /> : allSigned ? <CheckCircle style={{ width: 10, height: 10 }} /> : <Clock style={{ width: 10, height: 10 }} />}
+                        {isBlocked ? 'Bloqueado' : allSigned ? 'Assinado' : `${signedCount}/${totalSigners}`}
+                      </span>
+                      {totalSigners > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 72, height: 4, borderRadius: 999, background: '#f1f5f9', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', borderRadius: 999, width: `${pct}%`, background: statusColor, transition: 'width 0.4s' }} />
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: pct === 100 ? '#16a34a' : '#94a3b8', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Arrow */}
+                    <ChevronRight style={{ width: 16, height: 16, color: '#cbd5e1', flexShrink: 0 }} />
                   </div>
                 </div>
               );
@@ -4981,8 +5168,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             )}
           </div>
         ) : (
-          <div className="p-4 sm:p-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredRequestsByFolder.map((req) => {
                 const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
                 const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
@@ -4990,6 +5177,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
                 const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
                 const isInCloud = Boolean(cloudSyncStatusByRequestId[req.id]);
+
+                const isBlocked = !!(req as any).blocked_at;
+                const statusColor  = isBlocked ? '#ef4444' : allSigned ? '#16a34a' : '#d97706';
+                const statusBg     = isBlocked ? '#fef2f2' : allSigned ? '#f0fdf4' : '#fffbeb';
+                const statusBorder = isBlocked ? '#fecaca' : allSigned ? '#bbf7d0' : '#fde68a';
+                const statusLabel  = isBlocked ? 'Bloqueado' : allSigned ? 'Assinado' : 'Aguardando';
 
                 return (
                   <div
@@ -5007,11 +5200,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       setDragOverFolderId(null);
                       setDraggingExplorer(null);
                       if (dragImageElRef.current) {
-                        try {
-                          document.body.removeChild(dragImageElRef.current);
-                        } catch {
-                          // ignore
-                        }
+                        try { document.body.removeChild(dragImageElRef.current); } catch { /* ignore */ }
                         dragImageElRef.current = null;
                       }
                       releaseSuppressExplorerClick();
@@ -5024,101 +5213,149 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       if (suppressExplorerClickRef.current || isDraggingExplorer) return;
                       openDetails(req);
                     }}
-                    className="group relative cursor-grab active:cursor-grabbing"
+                    className="cursor-grab active:cursor-grabbing"
                   >
                     <div
-                      className={`absolute left-4 top-0 h-3 w-24 rounded-t-lg border border-b-0 ${
-                        allSigned
-                          ? 'border-emerald-300 bg-emerald-100/90'
-                          : 'border-amber-300 bg-amber-100/90'
-                      }`}
-                    />
-
-                    <div
-                      className={`relative mt-2 rounded-2xl border p-4 shadow-sm ring-1 ring-black/5 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
-                        allSigned
-                          ? 'border-emerald-300 bg-gradient-to-b from-emerald-50 to-white'
-                          : 'border-amber-300 bg-gradient-to-b from-amber-50 to-white'
-                      }`}
+                      style={{
+                        background: '#ffffff',
+                        borderRadius: 14,
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        transition: 'box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease',
+                      }}
+                      onMouseEnter={e => {
+                        const el = e.currentTarget as HTMLElement;
+                        el.style.boxShadow = '0 12px 32px rgba(15,23,42,0.12), 0 2px 8px rgba(15,23,42,0.06)';
+                        el.style.borderColor = '#c7d2da';
+                        el.style.transform = 'translateY(-3px)';
+                      }}
+                      onMouseLeave={e => {
+                        const el = e.currentTarget as HTMLElement;
+                        el.style.boxShadow = '0 1px 4px rgba(15,23,42,0.07)';
+                        el.style.borderColor = '#e2e8f0';
+                        el.style.transform = 'translateY(0)';
+                      }}
                     >
-                      {selectionMode && (
-                        <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                            checked={selectedRequestIds.has(req.id)}
-                            onChange={() => toggleSelectedRequestId(req.id)}
-                          />
-                        </div>
-                      )}
+                      {/* ── Header strip ── */}
+                      <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        {/* Status badge */}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '3px 9px', borderRadius: 20,
+                          fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+                          color: statusColor, background: statusBg, border: `1px solid ${statusBorder}`,
+                        }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
+                          {statusLabel}
+                        </span>
 
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                            allSigned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          <FolderOpen className="w-5 h-5" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-slate-500">{formatDate(req.created_at)}</p>
-                          <h3 className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2 leading-tight">
-                            {req.document_name}
-                          </h3>
-                          <p className="mt-1 text-xs text-slate-600 truncate">{clientLabel}</p>
+                        {/* Right controls */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {isInCloud && (
+                            <span title="Pasta na nuvem criada" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                              <FolderOpen style={{ width: 11, height: 11, color: '#16a34a' }} />
+                            </span>
+                          )}
+                          {selectionMode && (
+                            <div onClick={e => e.stopPropagation()}>
+                              <input type="checkbox" style={{ width: 14, height: 14, accentColor: '#ea580c', cursor: 'pointer' }}
+                                checked={selectedRequestIds.has(req.id)} onChange={() => toggleSelectedRequestId(req.id)} />
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {req.process_id && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
-                            <FileText className="w-3 h-3" /> Processo
-                          </span>
-                        )}
-                        {req.requirement_id && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-700">
-                            <Plus className="w-3 h-3" /> Req.
-                          </span>
-                        )}
-                        {isInCloud && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                            <FolderOpen className="w-3 h-3" /> Pasta criada
-                          </span>
-                        )}
-                      </div>
+                      {/* ── Body ── */}
+                      <div style={{ padding: '14px 14px 10px', flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-                      <div className="mt-4 border-t border-slate-200/70 pt-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <div
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${
-                              allSigned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
-                            {allSigned ? (
-                              <>
-                                <CheckCircle className="w-3 h-3" /> Concluído
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="w-3 h-3" /> {signedCount}/{totalSigners}
-                              </>
+                        {/* Doc icon + title */}
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+                          {/* File icon */}
+                          <div style={{ flexShrink: 0, width: 36, height: 44, borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, background: '#e2e8f0', borderBottomLeftRadius: 4 }} />
+                            <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, background: '#fff', borderRadius: '0 0 0 4px', transform: 'translate(-1px, -1px)', border: '1px solid #e2e8f0' }} />
+                            <FileSignature style={{ width: 14, height: 14, color: '#ea580c', marginTop: 4 }} />
+                            <span style={{ fontSize: 7, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.05em', marginTop: 2 }}>PDF</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#0f172a', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
+                              {req.document_name}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Client */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 12 }}>
+                          <User style={{ width: 11, height: 11, color: '#94a3b8', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientLabel}</span>
+                        </div>
+
+                        {/* Tags */}
+                        {(req.process_id || req.requirement_id) && (
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+                            {req.process_id && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd' }}>
+                                <FileText style={{ width: 9, height: 9 }} />Processo
+                              </span>
+                            )}
+                            {req.requirement_id && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                                <FileText style={{ width: 9, height: 9 }} />Req.
+                              </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1 text-xs font-semibold text-slate-500">
-                            {pct}%
-                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition" />
-                          </div>
-                        </div>
+                        )}
 
-                        {totalSigners > 0 && (
-                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              className={`h-full transition-all duration-300 ${allSigned ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                              style={{ width: `${pct}%` }}
-                            />
+                        {/* Signatários avatars */}
+                        {req.signers && req.signers.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              {req.signers.slice(0, 4).map((s: Signer, i: number) => {
+                                const initials = s.name.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase();
+                                const signed = s.status === 'signed';
+                                return (
+                                  <div key={s.id} title={`${s.name} — ${signed ? 'Assinou' : 'Aguardando'}`} style={{
+                                    width: 24, height: 24, borderRadius: '50%',
+                                    background: signed ? '#dcfce7' : '#f1f5f9',
+                                    border: `2px solid ${signed ? '#16a34a' : '#cbd5e1'}`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 8, fontWeight: 800, color: signed ? '#15803d' : '#64748b',
+                                    marginLeft: i > 0 ? -6 : 0, zIndex: req.signers.length - i,
+                                    position: 'relative',
+                                  }}>
+                                    {initials}
+                                  </div>
+                                );
+                              })}
+                              {req.signers.length > 4 && (
+                                <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#f1f5f9', border: '2px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#94a3b8', marginLeft: -6 }}>
+                                  +{req.signers.length - 4}
+                                </div>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                              {signedCount}/{totalSigners} {totalSigners === 1 ? 'assinante' : 'assinantes'}
+                            </span>
                           </div>
                         )}
+                      </div>
+
+                      {/* ── Footer ── */}
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #f1f5f9', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>{formatDate(req.created_at)}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
+                          {totalSigners > 0 && (
+                            <>
+                              <div style={{ flex: 1, maxWidth: 72, height: 4, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', borderRadius: 999, width: `${pct}%`, background: statusColor, transition: 'width 0.4s' }} />
+                              </div>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: pct === 100 ? '#16a34a' : '#94a3b8', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -5447,67 +5684,393 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         document.body
       )}
 
+      {/* ── Modal: Excluir documento (com opção de bloquear) ── */}
+      {deleteModalTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-slate-900">Remover documento</p>
+                <p className="text-xs text-slate-500 truncate mt-0.5">{deleteModalTarget.name}</p>
+              </div>
+              <button onClick={() => setDeleteModalTarget(null)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                O documento será movido para a lixeira. O link de assinatura pública será invalidado. O PDF assinado permanece preservado e consultável pelo código.
+              </p>
+
+              {/* Opção: bloquear também */}
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={deleteAlsoBlock}
+                  onChange={(e) => setDeleteAlsoBlock(e.target.checked)}
+                  className="mt-0.5 accent-orange-500 w-4 h-4 flex-shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-orange-500" />
+                    Bloquear também
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Impede a validação pública pelo código de autenticação. Útil quando o documento foi revogado ou houve erro.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-2 px-5 pb-5">
+              <button
+                onClick={() => setDeleteModalTarget(null)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteRequest}
+                disabled={deleteLoading}
+                className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                style={{ background: deleteAlsoBlock ? '#dc2626' : '#ea580c' }}
+              >
+                {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : deleteAlsoBlock ? 'Remover e bloquear' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Documentos excluídos (lixeira) ── */}
+      {trashOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 24px 80px rgba(0,0,0,0.18)', width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Trash2 style={{ width: 18, height: 18, color: '#ef4444' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Documentos excluídos</p>
+                <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                  {archivedList.length} {archivedList.length === 1 ? 'documento' : 'documentos'} na lixeira
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button
+                  onClick={() => void loadArchived()}
+                  disabled={archivedLoading}
+                  title="Atualizar"
+                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, opacity: archivedLoading ? 0.5 : 1 }}
+                >
+                  <RotateCcw style={{ width: 14, height: 14, animation: archivedLoading ? 'spin 1s linear infinite' : undefined }} />
+                </button>
+                <button
+                  onClick={() => setTrashOpen(false)}
+                  title="Fechar"
+                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  <X style={{ width: 16, height: 16 }} />
+                </button>
+              </div>
+            </div>
+
+            {/* Search */}
+            {archivedList.length > 0 && (
+              <div style={{ padding: '8px 20px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
+                <div style={{ position: 'relative' }}>
+                  <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: '#94a3b8', pointerEvents: 'none' }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar na lixeira..."
+                    value={trashSearch}
+                    onChange={e => setTrashSearch(e.target.value)}
+                    style={{ width: '100%', paddingLeft: 32, paddingRight: 12, paddingTop: 7, paddingBottom: 7, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 12, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }}
+                    onFocus={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ea580c'; }}
+                    onBlur={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                  />
+                  {trashSearch && (
+                    <button
+                      onClick={() => setTrashSearch('')}
+                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }}
+                    >
+                      <X style={{ width: 12, height: 12 }} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Barra de seleção em massa */}
+            {archivedList.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', flexShrink: 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={trashSelected.size === archivedList.length && archivedList.length > 0}
+                    onChange={toggleSelectAll}
+                    style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                    {trashSelected.size === 0 ? 'Selecionar todos' : `${trashSelected.size} selecionado(s)`}
+                  </span>
+                </label>
+
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {trashSelected.size > 0 && (
+                    <>
+                      <button
+                        onClick={handleBulkRestore}
+                        disabled={trashBulkLoading}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: trashBulkLoading ? 0.5 : 1 }}
+                      >
+                        {trashBulkLoading ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <RotateCcw style={{ width: 13, height: 13 }} />}
+                        Restaurar
+                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={handleBulkPermanentDelete}
+                          disabled={trashBulkLoading}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: trashBulkLoading ? 0.5 : 1 }}
+                        >
+                          {trashBulkLoading ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <Trash2 style={{ width: 13, height: 13 }} />}
+                          Excluir
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {isAdmin && trashSelected.size === 0 && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#d97706', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <Shield style={{ width: 12, height: 12 }} />Admin
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Lista */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {archivedLoading ? (
+                <div style={{ padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: '#94a3b8' }}>
+                  <Loader2 style={{ width: 24, height: 24 }} className="animate-spin" />
+                  <span style={{ fontSize: 13 }}>Carregando...</span>
+                </div>
+              ) : archivedList.length === 0 ? (
+                <div style={{ padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Trash2 style={{ width: 24, height: 24, color: '#cbd5e1' }} />
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>Nenhum documento excluído</p>
+                </div>
+              ) : (() => {
+                const filteredArchived = trashSearch.trim()
+                  ? archivedList.filter(r =>
+                      (r.document_name || '').toLowerCase().includes(trashSearch.toLowerCase()) ||
+                      (r.client_name || '').toLowerCase().includes(trashSearch.toLowerCase())
+                    )
+                  : archivedList;
+                if (filteredArchived.length === 0) return (
+                  <div style={{ padding: '40px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <Search style={{ width: 24, height: 24, color: '#cbd5e1' }} />
+                    <p style={{ margin: 0, fontSize: 13, color: '#94a3b8' }}>Nenhum resultado para "{trashSearch}"</p>
+                  </div>
+                );
+                return filteredArchived.map((r, idx) => {
+                  const isSelected = trashSelected.has(r.id);
+                  const isBlocked = !!(r as any).blocked_at;
+                  const isSigned = r.signers.length > 0 && r.signers.every(s => s.status === 'signed');
+                  return (
+                    <div
+                      key={r.id}
+                      onClick={() => toggleTrashSelect(r.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '12px 20px',
+                        borderBottom: idx < archivedList.length - 1 ? '1px solid #f1f5f9' : 'none',
+                        background: isSelected ? '#fff7ed' : '#fff',
+                        cursor: 'pointer',
+                        transition: 'background 0.1s',
+                      }}
+                    >
+                      {/* Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleTrashSelect(r.id)}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer', flexShrink: 0 }}
+                      />
+
+                      {/* Info — flex:1 com minWidth:0 para truncar corretamente */}
+                      <div
+                        onClick={e => e.stopPropagation()}
+                        style={{ flex: 1, minWidth: 0 }}
+                      >
+                        {/* Badges */}
+                        {(isSigned || isBlocked) && (
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
+                            {isSigned && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: '#f0fdf4', color: '#16a34a', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <CheckCircle style={{ width: 9, height: 9 }} />Assinado
+                              </span>
+                            )}
+                            {isBlocked && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: '#fef2f2', color: '#dc2626', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <Lock style={{ width: 9, height: 9 }} />Bloqueado
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {/* Título */}
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.document_name || 'Sem título'}
+                        </p>
+                        {/* Meta */}
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.client_name ? <span style={{ color: '#64748b', fontWeight: 500 }}>{r.client_name}</span> : null}
+                          {r.client_name ? ' · ' : ''}
+                          Excluído em {r.archived_at ? new Date(r.archived_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </p>
+                      </div>
+
+                      {/* Botões */}
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button
+                          onClick={() => handleRestore(r.id)}
+                          title="Restaurar para o painel"
+                          style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        >
+                          <RotateCcw style={{ width: 14, height: 14 }} />
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handlePermanentDelete(r)}
+                            title="Excluir definitivamente do servidor"
+                            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                          >
+                            <Trash2 style={{ width: 14, height: 14 }} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '10px 20px', borderTop: '1px solid #f1f5f9', background: '#f8fafc', flexShrink: 0 }}>
+              <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                {isAdmin
+                  ? '⚠️ Excluir definitivamente apaga o registro e TODOS os arquivos do servidor. Ação irreversível.'
+                  : 'Documentos restaurados voltam ao painel e ficam disponíveis normalmente.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {detailsRequest && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 pb-6 px-3 sm:pt-10 sm:px-6 bg-black/50 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
 
             {/* ── Header ── */}
-            <div className="flex items-start gap-3 px-4 py-3 border-b border-slate-100">
-              {/* Orange accent */}
-              <div className="w-1 h-10 bg-orange-500 rounded-full flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
+            <div className="relative px-5 pt-4 pb-3" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              {/* Top row: label + status + close */}
+              <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-xs font-bold text-orange-500 uppercase tracking-widest">Assinatura Digital</p>
+                  <span className="text-[10px] font-bold text-orange-500 uppercase tracking-[0.18em]">Assinatura Digital</span>
                   {detailsRequest.signers.every(s => s.status === 'signed') ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wide">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #bbf7d0' }}>
                       <CheckCircle className="w-3 h-3" />Concluído
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wide">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #fde68a' }}>
                       <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
                     </span>
                   )}
                 </div>
-                <h2 className="text-sm font-semibold text-slate-800 leading-snug mt-0.5 break-words">{detailsRequest.document_name}</h2>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
-                  <span className="text-[11px] text-slate-400">{formatDate(detailsRequest.created_at)}</span>
-                  {detailsRequest.client_name && <span className="text-[11px] text-slate-500 flex items-center gap-1"><User className="w-3 h-3" />{detailsRequest.client_name}</span>}
-                  {detailsRequest.process_number && <span className="text-[11px] text-slate-500 flex items-center gap-1"><Hash className="w-3 h-3" />{detailsRequest.process_number}</span>}
-                  {cloudSyncStatusByRequestId[detailsRequest.id] && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><FolderOpen className="w-3 h-3" />Pasta criada</span>}
-                  {(() => {
-                    const exp = (detailsRequest as any).expires_at as string | null | undefined;
-                    if (!exp) return null;
-                    const expMs = new Date(exp).getTime();
-                    const isExp = expMs < Date.now() && !detailsRequest.signers.every(s => s.status === 'signed');
-                    const within48h = !isExp && (expMs - Date.now()) < 48 * 3600 * 1000;
-                    if (isExp) return <span className="text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expirado em {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                    if (within48h) return <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                    return <span className="text-[11px] text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                  })()}
-                </div>
+                <button
+                  onClick={() => {
+                    detailsRequestIdRef.current = null;
+                    detailsLoadTokenRef.current += 1;
+                    setAuditLogLoading(false);
+                    setAuditLog([]);
+                    setSignerImages({});
+                    setDetailsRequest(null);
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0 transition"
+                  style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#e2e8f0')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#f1f5f9')}
+                  aria-label="Fechar"
+                >
+                  <X style={{ width: 15, height: 15 }} />
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  detailsRequestIdRef.current = null;
-                  detailsLoadTokenRef.current += 1;
-                  setAuditLogLoading(false);
-                  setAuditLog([]);
-                  setSignerImages({});
-                  setDetailsRequest(null);
-                }}
-                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', minWidth: 32, minHeight: 32 }}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80 transition flex-shrink-0"
-                aria-label="Fechar"
-              >
-                <X style={{ width: 16, height: 16, color: '#475569', display: 'block' }} />
-              </button>
+              {/* Title */}
+              <h2 className="text-[15px] font-bold text-slate-800 leading-snug break-words pr-2">{detailsRequest.document_name}</h2>
+              {/* Meta */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
+                <span className="text-[11px] text-slate-400">{formatDate(detailsRequest.created_at)}</span>
+                {detailsRequest.client_name && <span className="text-[11px] text-slate-500 flex items-center gap-1"><User className="w-3 h-3" />{detailsRequest.client_name}</span>}
+                {detailsRequest.process_number && <span className="text-[11px] text-slate-500 flex items-center gap-1"><Hash className="w-3 h-3" />{detailsRequest.process_number}</span>}
+                {cloudSyncStatusByRequestId[detailsRequest.id] && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><FolderOpen className="w-3 h-3" />Pasta criada</span>}
+                {(() => {
+                  const exp = (detailsRequest as any).expires_at as string | null | undefined;
+                  if (!exp) return null;
+                  const expMs = new Date(exp).getTime();
+                  const isExp = expMs < Date.now() && !detailsRequest.signers.every(s => s.status === 'signed');
+                  const within48h = !isExp && (expMs - Date.now()) < 48 * 3600 * 1000;
+                  if (isExp) return <span className="text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expirado em {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                  if (within48h) return <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                  return <span className="text-[11px] text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                })()}
+              </div>
+              {/* Orange accent bar */}
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl bg-orange-500" />
             </div>
 
-            <div className="bg-white rounded-b-xl overflow-hidden">
+            {/* ── Banner de bloqueio ── */}
+            {(detailsRequest as any).blocked_at && (
+              <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#fee2e2' }}>
+                    <Lock className="w-3.5 h-3.5" style={{ color: '#dc2626' }} />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-red-700 leading-none">Validação pública bloqueada</p>
+                    <p className="text-[11px] text-red-500 mt-0.5">O QR Code e o link de verificação estão desativados para este documento.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleUnblockRequest(detailsRequest)}
+                  disabled={blockLoading}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition disabled:opacity-50"
+                  style={{ background: '#ffffff', border: '1px solid #fca5a5', color: '#dc2626' }}
+                >
+                  {blockLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LockOpen className="w-3 h-3" />}
+                  Desbloquear
+                </button>
+              </div>
+            )}
+
+            <div className="bg-white rounded-b-2xl overflow-hidden">
 
               {/* ── Ações principais ── */}
-              <div className="px-4 py-3 border-b border-slate-100">
-                <div className="flex gap-2">
+              <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <div className="flex gap-2.5">
                   {detailsRequest.document_path && (
                     <button
                       disabled={viewDocLoading}
@@ -5569,6 +6132,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                       min-width: 794px !important;
                                       max-width: 794px !important;
                                       background: #ffffff !important;
+                                    }
+                                    /* Impede quebra de palavra no meio (overflow-wrap/hyphens
+                                       do docx-preview) que partia "Trabalhista" no PDF. */
+                                    .docx-wrapper,
+                                    .docx-wrapper *,
+                                    .docx-wrapper p,
+                                    .docx-wrapper span {
+                                      overflow-wrap: normal !important;
+                                      word-wrap: normal !important;
+                                      word-break: normal !important;
+                                      hyphens: none !important;
+                                      -webkit-hyphens: none !important;
                                     }
                                   `;
                                   document.head.appendChild(style);
@@ -5705,7 +6280,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           setViewDocLoading(false);
                         }
                       }}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait"
                     >
                       {viewDocLoading ? (
                         <><Loader2 className="w-3.5 h-3.5 animate-spin" />Abrindo...</>
@@ -5716,21 +6291,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   )}
                   <button
                     onClick={() => handleDownloadDocument(detailsRequest)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                    style={{ background: '#0f172a', color: '#ffffff' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#1e293b')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#0f172a')}
                   >
                     <Download className="w-3.5 h-3.5" />
                     Baixar
                   </button>
                   <button
                     onClick={() => handleDeleteRequest(detailsRequest.id)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-semibold transition"
+                    className="flex items-center justify-center px-3 py-2.5 rounded-xl text-sm transition"
+                    style={{ background: '#fff1f2', color: '#e11d48', border: '1px solid #fecdd3' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#ffe4e6')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 {detailsRequest.signers.every((s) => s.status === 'signed') && (
-                  <div className="mt-2 pt-2 border-t border-slate-100">
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f1f5f9' }}>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       <button
                         disabled={openProcessLoading}
@@ -5781,6 +6362,43 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {copyToCloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
                         <span className="group-hover:underline underline-offset-2">{copyToCloudLoading ? 'Copiando...' : 'Criar pasta'}</span>
                       </button>
+                      {detailsRequest.public_token && (
+                        <button
+                          onClick={() => {
+                            const url = `${window.location.origin}/#/documento/${detailsRequest.public_token}`;
+                            navigator.clipboard.writeText(url).then(() => toast.success('Link público copiado!'));
+                          }}
+                          className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span className="group-hover:underline underline-offset-2">Página pública</span>
+                        </button>
+                      )}
+                      {detailsRequest.signers.some(s => s.status === 'signed') && (
+                        <button
+                          disabled={sendEmailLoading}
+                          onClick={async () => {
+                            try {
+                              setSendEmailLoading(true);
+                              const { sent, failed } = await signatureService.sendSignatureLinkEmail(detailsRequest.id);
+                              if (sent.length > 0) {
+                                toast.success(`E-mail enviado para ${sent.length} signatário(s)!`);
+                              }
+                              if (failed.length > 0) {
+                                toast.error(`Falha ao enviar para ${failed.length} endereço(s).`);
+                              }
+                            } catch (e: any) {
+                              toast.error(e.message || 'Erro ao enviar e-mail');
+                            } finally {
+                              setSendEmailLoading(false);
+                            }
+                          }}
+                          className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-50"
+                        >
+                          {sendEmailLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                          <span className="group-hover:underline underline-offset-2">{sendEmailLoading ? 'Enviando...' : 'Enviar ao cliente'}</span>
+                        </button>
+                      )}
                     </div>
 
                     {showCreateProcess && !detailsRequest.process_id && (
@@ -5856,10 +6474,78 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
 
               {/* ── Content sections ── */}
-              <div className="px-4 py-3 space-y-4">
+              <div className="px-5 py-4 space-y-5">
 
               {/* Documentos */}
               {(() => {
+                // Após a assinatura concluída, o artefato legal é o PDF assinado.
+                // Os DOCX provisórios são apagados do servidor para economizar espaço,
+                // então a lista passa a mostrar apenas o PDF assinado.
+                const allSigned = detailsRequest.signers.length > 0 && detailsRequest.signers.every(s => s.status === 'signed');
+                const signedSigner = [...detailsRequest.signers]
+                  .filter(s => s.status === 'signed')
+                  .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
+                const signedPath = signedSigner?.signed_document_path || null;
+
+                if (allSigned && signedPath) {
+                  const openSigned = async (download: boolean) => {
+                    try {
+                      const url = await pdfSignatureService.getSignedPdfUrl(signedPath);
+                      if (!url) { toast.error('Não foi possível abrir o PDF assinado'); return; }
+                      if (download) await downloadOriginalPdf(url, `${detailsRequest.document_name || 'documento'}_assinado.pdf`);
+                      else window.open(url, '_blank');
+                    } catch { toast.error('Erro'); }
+                  };
+                  return (
+                    <section>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Documento (1)</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                        <div style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 6, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <FileSignature style={{ width: 13, height: 13, color: '#16a34a' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 12, fontWeight: 600, color: '#334155', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detailsRequest.document_name || 'Documento assinado'}</p>
+                          <p style={{ fontSize: 10, color: '#16a34a', margin: 0, fontWeight: 600 }}>PDF assinado · certificado</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                          <button type="button" onClick={() => openSigned(false)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                            <Eye style={{ width: 11, height: 11 }} />Ver
+                          </button>
+                          <button type="button" onClick={() => openSigned(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#ea580c', background: '#fff7ed', border: '1px solid #fed7aa', cursor: 'pointer' }}>
+                            <Download style={{ width: 11, height: 11 }} />Baixar
+                          </button>
+                          {signedSigner && (
+                            <button type="button" onClick={() => setReportTarget({ request: detailsRequest, signer: signedSigner })} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                              <Shield style={{ width: 11, height: 11 }} />Relatório
+                            </button>
+                          )}
+                          {(detailsRequest as any).blocked_at ? (
+                            <button
+                              type="button"
+                              onClick={() => handleUnblockRequest(detailsRequest)}
+                              disabled={blockLoading}
+                              title="Desbloquear validação pública"
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', cursor: 'pointer', opacity: blockLoading ? 0.5 : 1 }}
+                            >
+                              <Lock style={{ width: 12, height: 12, color: '#dc2626' }} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleBlockRequest(detailsRequest)}
+                              disabled={blockLoading}
+                              title="Bloquear validação pública"
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer', opacity: blockLoading ? 0.5 : 1 }}
+                            >
+                              <LockOpen style={{ width: 12, height: 12, color: '#94a3b8' }} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  );
+                }
+
                 const mainDoc = detailsRequest.document_path
                   ? [{ name: detailsRequest.document_name || 'Documento principal', path: detailsRequest.document_path, isMain: true }]
                   : [];
@@ -6265,6 +6951,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         </div>
       )}
       {/* Modal de confirmação de exclusão */}
+
+      {/* Modal: Relatório / Certificado de Assinatura */}
+      {reportTarget && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ background: 'rgba(15,23,42,0.6)' }}>
+          <SignatureReport
+            request={reportTarget.request}
+            signer={reportTarget.signer}
+            creator={user?.email ? { name: user.email.split('@')[0], email: user.email } : null}
+            onClose={() => setReportTarget(null)}
+          />
+        </div>
+      )}
     </div>
   );
 };

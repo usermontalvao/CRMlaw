@@ -47,6 +47,8 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.158': { name: 'Café Corretor Ligado', emoji: '✍️' },
+  '1.10.157': { name: 'Café Compromisso Certo', emoji: '📌' },
   '1.10.156': { name: 'Café Blocos Limpos', emoji: '🧹' },
   '1.10.155': { name: 'Café Agenda Unificada', emoji: '📆' },
   '1.10.154': { name: 'Café Data Ajustada', emoji: '📅' },
@@ -854,6 +856,50 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.158',
+    date: '27/05/2026',
+    summary: 'Corretor ortográfico ativado nas Petições e card de próximo compromisso clicável na ficha do cliente.',
+    modules: [
+      {
+        moduleId: 'Petições',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Corretor ortográfico ativado no editor',
+            description: 'O editor de Petições agora sublinha palavras com erros de ortografia em tempo real. O corretor usa o serviço configurado (Syncfusion) e está habilitado automaticamente ao abrir qualquer documento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Clientes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Card de próximo compromisso é clicável',
+            description: 'Na aba Dados da ficha do cliente, o card que mostra o próximo compromisso agora abre a tela de Agenda ao ser clicado, posicionando-se no evento correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.157',
+    date: '27/05/2026',
+    summary: 'KPI Próx. Compromisso agora mostra qualquer tipo de evento pendente, não só audiências e perícias.',
+    modules: [
+      {
+        moduleId: 'Clientes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'KPI Próx. Compromisso exibe todos os tipos de evento',
+            description: 'Antes filtrava apenas audiências e perícias. Agora exibe qualquer evento pendente futuro (reunião, prazo, requerimento, etc.), exceto pagamentos. Eventos salvos sem horário (00:00) não exibem hora.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.156',
     date: '26/05/2026',

@@ -700,6 +700,12 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Editor Syncfusion
   const [petitionTitle, setPetitionTitle] = useState('Nova Petição Trabalhista');
   const [currentPetitionId, setCurrentPetitionId] = useState<string | null>(null);
+  // Ref síncrono: usado em savePetition para evitar race condition de duplicação
+  // (setCurrentPetitionId é async; sem este ref, múltiplos saves concorrentes
+  // viam null e criavam várias petições do mesmo documento).
+  const currentPetitionIdRef = useRef<string | null>(null);
+  // Lock síncrono: impede 2 saves concorrentes de chegarem ao create() simultâneo
+  const saveInFlightRef = useRef(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isOnline, setIsOnline] = useState(() => {
@@ -2076,6 +2082,10 @@ Regras:
       return;
     }
     if (savingDoc) return;
+    // Lock síncrono: previne race condition onde 2 autosaves disparam
+    // antes de setCurrentPetitionId ter efeito → criavam petições duplicadas
+    if (saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     setSavingDoc(true);
     setError(null);
 
@@ -2092,9 +2102,12 @@ Regras:
 
       let savedRow: SavedPetition | null = null;
 
-      if (currentPetitionId) {
+      // Lê do ref síncrono — garante valor mais atualizado entre saves concorrentes
+      const existingId = currentPetitionIdRef.current ?? currentPetitionId;
+
+      if (existingId) {
         // Atualizar petição existente
-        savedRow = await petitionEditorService.updatePetition(currentPetitionId, {
+        savedRow = await petitionEditorService.updatePetition(existingId, {
           title,
           content: sfdt,
           client_id: clientId,
@@ -2109,6 +2122,8 @@ Regras:
           client_name: clientName,
         });
         if (savedRow?.id) {
+          // Atualiza ref ANTES do state — próximos saves leem imediatamente
+          currentPetitionIdRef.current = savedRow.id;
           setCurrentPetitionId(savedRow.id);
         }
       }
@@ -2140,6 +2155,7 @@ Regras:
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
     } finally {
+      saveInFlightRef.current = false;
       setSavingDoc(false);
     }
   };
@@ -2178,6 +2194,7 @@ Regras:
     }
 
     // Atualizar estados primeiro
+    currentPetitionIdRef.current = petitionToLoad.id;
     setCurrentPetitionId(petitionToLoad.id);
     setPetitionTitle(petitionToLoad.title || '');
     setLastSaved(petitionToLoad.updated_at ? new Date(petitionToLoad.updated_at) : null);
@@ -2262,6 +2279,7 @@ Regras:
       }
     }
 
+    currentPetitionIdRef.current = null;
     setCurrentPetitionId(null);
     setPetitionTitle('');
     setLastSaved(null);
@@ -3978,7 +3996,24 @@ Regras:
                   <div className="px-3 py-4 text-sm text-slate-500">Nenhuma petição recente</div>
                 ) : (
                   <div className="max-h-[360px] overflow-y-auto">
-                    {savedPetitions.slice(0, 15).map((p) => {
+                    {(() => {
+                      // Dedup: agrupa por (título normalizado + client_id), mantém o mais recente.
+                      // Normalização remove sufixos Windows ` (N)` do final do título:
+                      // "MODELO MASCULINO (8) (1) (2)" → "modelo masculino"
+                      const normalizeTitle = (t: string) =>
+                        t.trim().replace(/(\s*\(\d+\))+$/g, '').trim().toLowerCase();
+                      const seen = new Map<string, SavedPetition>();
+                      for (const p of savedPetitions) {
+                        const key = `${normalizeTitle(p.title || '')}|${p.client_id || ''}`;
+                        const existing = seen.get(key);
+                        if (!existing || new Date(p.updated_at).getTime() > new Date(existing.updated_at).getTime()) {
+                          seen.set(key, p);
+                        }
+                      }
+                      return Array.from(seen.values())
+                        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                        .slice(0, 15);
+                    })().map((p) => {
                       const isOpening = openingPetitionId === p.id;
                       const isBusyOpening = openingPetitionId !== null;
 

@@ -47,6 +47,8 @@ const currentHash = window.location.hash;
 // Permitir rota /cron/djen para endpoint público
 if (currentHash.includes('/cron/djen')) {
   // Não alterar a URL, permitir que o app processe a rota
+} else if (currentPath.startsWith('/portal')) {
+  // Portal do Cliente — preservar URL para o PortalApp processar
 } else if (currentPath !== '/') {
   // Garante que a URL sempre seja "/" (raiz) para outras rotas
   window.history.replaceState({}, '', '/');

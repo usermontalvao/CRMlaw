@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   Briefcase,
@@ -35,12 +36,16 @@ import {
   GripVertical,
   RotateCcw,
   ShieldAlert,
+  UserCheck,
+  UserX,
+  Loader2,
 } from 'lucide-react';
 import { ResponsiveGridLayout, verticalCompactor } from 'react-grid-layout';
 import { useContainerWidth } from 'react-grid-layout/react';
 import type { ResponsiveLayouts, LayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
@@ -63,6 +68,62 @@ import { FinancialCard } from './dashboard/FinancialCard';
 import { DashboardHeader } from './dashboard/DashboardHeader';
 import { QuickActions } from './dashboard/QuickActions';
 import { profileService } from '../services/profile.service';
+
+// ── Modal rápido de ficha do cliente (abre sem sair do dashboard) ────────────
+const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; onNavigateToModule?: (k: string, p?: any) => void }> = ({ clientId, onClose, onNavigateToModule }) => {
+  const [client, setClient] = React.useState<Client | null>(null);
+  const [processes, setProcesses] = React.useState<Process[]>([]);
+  const [requirements, setRequirements] = React.useState<Requirement[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    Promise.all([
+      import('./ClientDetails').then(m => m),
+      clientService.getClientById(clientId),
+      processService.listProcesses({ client_id: clientId }),
+      requirementService.listRequirements({ client_id: clientId }),
+    ]).then(([, c, p, r]) => {
+      if (!mounted) return;
+      setClient(c);
+      setProcesses(p);
+      setRequirements(r);
+      setLoading(false);
+    }).catch(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [clientId]);
+
+  const ClientDetailsComp = React.lazy(() => import('./ClientDetails'));
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-start justify-center px-3 sm:px-6 py-6 overflow-y-auto">
+      <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden my-auto">
+        <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
+        {loading || !client ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
+          </div>
+        ) : (
+          <React.Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-orange-500" /></div>}>
+            <div className="overflow-y-auto max-h-[85vh]">
+              <ClientDetailsComp
+                client={client}
+                processes={processes}
+                requirements={requirements}
+                onBack={onClose}
+                onEdit={onClose}
+              />
+            </div>
+          </React.Suspense>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -354,6 +415,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   // Solicitações de acesso pendentes (visível só para admin)
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
   const [accessBannerDismissed, setAccessBannerDismissed] = useState(false);
+  // Solicitações de atualização cadastral pendentes (portal)
+  interface ProfileReq {
+    id: string; client_id: string; client_name: string; client_cpf: string;
+    changes: Record<string, string>; current_values: Record<string, string>;
+    requested_at: string;
+  }
+  const [pendingProfileReqs, setPendingProfileReqs] = useState<ProfileReq[]>([]);
+  const pendingProfileCount = pendingProfileReqs.length;
+  const [profileBannerDismissed, setProfileBannerDismissed] = useState(false);
+  const [profileBannerExpanded, setProfileBannerExpanded] = useState(false);
+  const [profileReqProcessing, setProfileReqProcessing] = useState<string | null>(null);
+  const [profileRejectId, setProfileRejectId] = useState<string | null>(null);
+  const [profileRejectReason, setProfileRejectReason] = useState('');
+  const [quickViewClientId, setQuickViewClientId] = useState<string | null>(null);
   // Chave DataJud inválida (visível só para admin)
   const [datajudKeyInvalid, setDatajudKeyInvalid] = useState(false);
   const [datajudKeyBannerDismissed, setDatajudKeyBannerDismissed] = useState(false);
@@ -695,6 +770,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     });
   }, [isAdmin]);
 
+  // Carregar solicitações de atualização cadastral pendentes (só admin)
+  const loadProfileReqs = async () => {
+    try {
+      const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_status: 'pending' });
+      setPendingProfileReqs(Array.isArray(data) ? data : []);
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setProfileBannerDismissed(false);
+    loadProfileReqs();
+  }, [isAdmin]);
+
   // Verificar se a chave DataJud está inválida (só admin)
   useEffect(() => {
     if (!isAdmin) return;
@@ -988,6 +1077,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   });
 
   return (
+    <>
     <div className="bg-slate-50/50 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 min-h-screen overflow-x-hidden">
 
       {/* Layout saved toast */}
@@ -1120,6 +1210,132 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       )}
+
+      {/* Painel de atualizações cadastrais pendentes (apenas admin) */}
+      {isAdmin && pendingProfileCount > 0 && !profileBannerDismissed && (() => {
+        const FIELD_LABELS: Record<string,string> = {
+          full_name:'Nome', email:'E-mail', phone:'Telefone', birth_date:'Nascimento',
+          marital_status:'Estado civil', profession:'Profissão', nationality:'Nacionalidade',
+          address_street:'Rua', address_number:'Número', address_neighborhood:'Bairro',
+          address_city:'Cidade', address_state:'UF', address_zip_code:'CEP',
+        };
+        const MARITAL: Record<string,string> = {
+          solteiro:'Solteiro(a)', casado:'Casado(a)', divorciado:'Divorciado(a)',
+          viuvo:'Viúvo(a)', uniao_estavel:'União Estável',
+        };
+        const fmt = (k: string, v?: string) => {
+          if (!v) return '—';
+          if (k === 'marital_status') return MARITAL[v] || v;
+          if (k === 'birth_date') { try { return new Date(v).toLocaleDateString('pt-BR'); } catch { return v; } }
+          if (k === 'phone') { const d = v.replace(/\D/g,''); return d.length===11?`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`:d.length===10?`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`:v; }
+          return v;
+        };
+        const handleApprove = async (id: string) => {
+          setProfileReqProcessing(id);
+          await supabase.rpc('admin_approve_profile_update', { p_request_id: id });
+          await loadProfileReqs();
+          setProfileReqProcessing(null);
+        };
+        const handleReject = async (id: string) => {
+          setProfileReqProcessing(id);
+          await supabase.rpc('admin_reject_profile_update', { p_request_id: id, p_reason: profileRejectReason || 'Solicitação não aprovada.' });
+          await loadProfileReqs();
+          setProfileReqProcessing(null);
+          setProfileRejectId(null);
+          setProfileRejectReason('');
+        };
+        return (
+          <div className="mx-1 mb-3">
+            <div className="rounded-xl border border-orange-200 bg-white shadow-sm overflow-hidden">
+              {/* Header clicável */}
+              <button
+                onClick={() => setProfileBannerExpanded(e => !e)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-orange-50/50 transition border-l-4 border-l-orange-400"
+              >
+                <UserCheck className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {pendingProfileCount === 1
+                      ? '1 atualização cadastral aguardando aprovação'
+                      : `${pendingProfileCount} atualizações cadastrais aguardando aprovação`}
+                  </p>
+                  <p className="text-xs text-slate-500">Enviadas via Portal — clique para {profileBannerExpanded ? 'recolher' : 'revisar'}</p>
+                </div>
+                <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${profileBannerExpanded ? 'rotate-90' : ''}`} />
+                <button onClick={(e) => { e.stopPropagation(); setProfileBannerDismissed(true); }}
+                  className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition p-1">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </button>
+
+              {/* Lista expansível */}
+              {profileBannerExpanded && (
+                <div className="divide-y divide-slate-100 border-t border-orange-100">
+                  {pendingProfileReqs.map((req) => (
+                    <div key={req.id} className="px-4 py-3 space-y-2.5">
+                      {/* Nome + link para ficha */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setQuickViewClientId(req.client_id)}
+                          className="text-sm font-semibold text-orange-600 hover:underline"
+                        >
+                          {req.client_name}
+                        </button>
+                        <span className="text-[10px] text-slate-400">{new Date(req.requested_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                      </div>
+
+                      {/* Campos: antigo → novo */}
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(req.changes).map(([k, newVal]) => newVal && (
+                          <div key={k} className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200 text-xs">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mr-0.5">{FIELD_LABELS[k]||k}</span>
+                            <span className="text-slate-400 line-through">{fmt(k, req.current_values?.[k])}</span>
+                            <span className="text-slate-300">→</span>
+                            <span className="font-semibold text-emerald-700">{fmt(k, String(newVal))}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Ações */}
+                      {profileRejectId === req.id ? (
+                        <div className="flex gap-2">
+                          <input type="text" value={profileRejectReason}
+                            onChange={e => setProfileRejectReason(e.target.value)}
+                            placeholder="Motivo (opcional)"
+                            className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                          />
+                          <button onClick={() => { setProfileRejectId(null); setProfileRejectReason(''); }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            Cancelar
+                          </button>
+                          <button disabled={!!profileReqProcessing} onClick={() => handleReject(req.id)}
+                            className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-60">
+                            {profileReqProcessing === req.id ? '...' : 'Confirmar'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button disabled={!!profileReqProcessing}
+                            onClick={() => { setProfileRejectId(req.id); setProfileRejectReason(''); }}
+                            className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
+                            <UserX className="w-3 h-3" /> Rejeitar
+                          </button>
+                          <button disabled={!!profileReqProcessing}
+                            onClick={() => handleApprove(req.id)}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-orange-600 disabled:opacity-60">
+                            {profileReqProcessing === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                            Aprovar e aplicar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Banner de chave DataJud inválida (apenas admin) */}
       {isAdmin && datajudKeyInvalid && !datajudKeyBannerDismissed && (
@@ -1856,6 +2072,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       )}
 
     </div>
+
+    {/* Modal rápido de ficha do cliente */}
+    {quickViewClientId && (
+      <ClientQuickViewModal
+        clientId={quickViewClientId}
+        onClose={() => setQuickViewClientId(null)}
+        onNavigateToModule={onNavigateToModule}
+      />
+    )}
+    </>
   );
 };
 

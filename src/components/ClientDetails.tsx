@@ -4,7 +4,7 @@ import {
   Gavel, Loader2, PenTool, Trash2, DollarSign, AlertTriangle,
   Scale, ExternalLink, Search, Printer, CalendarPlus, StickyNote,
   User, Mail, Phone, Calendar as CalendarIcon, ChevronRight, Building2, MessageCircle, Sparkles, Check,
-  Star, X, Image as ImageIcon, MapPin, AlarmClock, ClipboardList,
+  Star, X, Image as ImageIcon, MapPin, AlarmClock, ClipboardList, UserCheck, UserX,
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -15,6 +15,7 @@ import type { SignatureRequestWithSigners } from '../types/signature.types';
 import type { Agreement, Installment, PaymentMethod } from '../types/financial.types';
 import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
+import { supabase } from '../config/supabase';
 import { signatureService } from '../services/signature.service';
 import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
@@ -603,6 +604,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [installmentsLoading, setInstallmentsLoading] = useState(false);
   const [installmentsLoaded, setInstallmentsLoaded] = useState(false);
 
+  // ── Profile update requests (portal)
+  interface ProfileReq { id: string; changes: Record<string, string>; status: string; rejection_reason?: string | null; requested_at: string; }
+  const [profileReqs, setProfileReqs] = useState<ProfileReq[]>([]);
+  const [profileReqLoading, setProfileReqLoading] = useState(false);
+  const [profileReqProcessing, setProfileReqProcessing] = useState<string | null>(null);
+  const [rejectInputId, setRejectInputId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   // ── Pay installment (dar baixa)
   const [payingInstallmentId, setPayingInstallmentId] = useState<string | null>(null);
   const [payForm, setPayForm] = useState<{ date: string; method: PaymentMethod; value: number }>({
@@ -720,7 +729,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       finally { if (active) setFinancialLoading(false); }
     };
 
-    void Promise.all([loadSignatures(), loadPetitions(), loadCloud(), loadDeadlines(), loadFinancial(), loadCalendar()]);
+    const loadProfileReqs = async () => {
+      setProfileReqLoading(true);
+      try {
+        const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_client_id: client.id, p_status: null });
+        if (active) setProfileReqs(Array.isArray(data) ? data : []);
+      } catch { /* silent */ }
+      finally { if (active) setProfileReqLoading(false); }
+    };
+
+    void Promise.all([loadSignatures(), loadPetitions(), loadCloud(), loadDeadlines(), loadFinancial(), loadCalendar(), loadProfileReqs()]);
     return () => { active = false; };
   }, [client.id]);
 
@@ -768,6 +786,27 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     [requirements],
   );
 
+  const handleApproveProfileReq = async (id: string) => {
+    setProfileReqProcessing(id);
+    try {
+      await supabase.rpc('admin_approve_profile_update', { p_request_id: id });
+      const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_client_id: client.id, p_status: null });
+      setProfileReqs(Array.isArray(data) ? data : []);
+      events.emit(SYSTEM_EVENTS.CLIENT_UPDATED, { id: client.id });
+    } catch { /* silent */ }
+    finally { setProfileReqProcessing(null); }
+  };
+
+  const handleRejectProfileReq = async (id: string) => {
+    setProfileReqProcessing(id);
+    try {
+      await supabase.rpc('admin_reject_profile_update', { p_request_id: id, p_reason: rejectReason || 'Solicitação não aprovada.' });
+      const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_client_id: client.id, p_status: null });
+      setProfileReqs(Array.isArray(data) ? data : []);
+    } catch { /* silent */ }
+    finally { setProfileReqProcessing(null); setRejectInputId(null); setRejectReason(''); }
+  };
+
   // Eventos da agenda vinculados a este cliente (por client_id, process_id ou requirement_id)
   const calendarEvents = useMemo(() => {
     const processIds = new Set(processes.map((p) => p.id));
@@ -786,11 +825,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const nextHearing = useMemo(() => {
     const now = new Date();
     const fromCalendar = calendarEvents
-      .filter((e) => (e.event_type === 'hearing' || e.event_type === 'pericia') && e.status === 'pendente' && new Date(e.start_at) >= now)
+      .filter((e) => e.status === 'pendente' && e.event_type !== 'payment' && new Date(e.start_at) >= now)
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0];
     if (fromCalendar) {
       const d = new Date(fromCalendar.start_at);
-      const timeStr = !isNaN(d.getTime()) && fromCalendar.start_at.includes('T')
+      const isExactMidnight = d.getHours() === 0 && d.getMinutes() === 0;
+      const timeStr = !isNaN(d.getTime()) && fromCalendar.start_at.includes('T') && !isExactMidnight
         ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
         : null;
       return { date: fromCalendar.start_at, label: EVENT_TYPE_LABEL[fromCalendar.event_type] ?? 'Compromisso', time: timeStr, type: 'calendar' as const, id: fromCalendar.id };
@@ -1771,6 +1811,87 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 </div>
               )}
 
+              {/* ── Solicitações de atualização cadastral do portal ── */}
+              {!profileReqLoading && profileReqs.filter((r) => r.status === 'pending').map((req) => {
+                const FIELD_LABELS: Record<string, string> = {
+                  full_name: 'Nome completo', email: 'E-mail', phone: 'Telefone',
+                  birth_date: 'Nascimento', marital_status: 'Estado civil',
+                  profession: 'Profissão', nationality: 'Nacionalidade',
+                  address_street: 'Rua', address_number: 'Número',
+                  address_neighborhood: 'Bairro', address_city: 'Cidade',
+                  address_state: 'UF', address_zip_code: 'CEP',
+                };
+                const MARITAL_LABELS: Record<string, string> = {
+                  solteiro: 'Solteiro(a)', casado: 'Casado(a)', divorciado: 'Divorciado(a)',
+                  viuvo: 'Viúvo(a)', uniao_estavel: 'União Estável',
+                };
+                const displayValue = (k: string, v: string) => {
+                  if (k === 'marital_status') return MARITAL_LABELS[v] || v;
+                  if (k === 'birth_date') return new Date(v).toLocaleDateString('pt-BR');
+                  if (k === 'phone') {
+                    const d = v.replace(/\D/g, '');
+                    if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+                    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+                  }
+                  return v;
+                };
+                return (
+                <div key={req.id} className="rounded-xl border border-orange-200 bg-orange-50/60 px-4 py-3 space-y-2.5">
+                  {/* Header compacto */}
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-3.5 h-3.5 shrink-0 text-orange-500" />
+                    <p className="text-xs font-semibold text-slate-800 flex-1">Atualização cadastral solicitada via Portal</p>
+                    <span className="text-[10px] text-slate-400">{new Date(req.requested_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                  </div>
+
+                  {/* Campos em linha */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(req.changes).map(([k, v]) => v && (
+                      <span key={k} className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] ring-1 ring-orange-100">
+                        <span className="font-medium text-slate-500">{FIELD_LABELS[k] || k}:</span>
+                        <span className="font-semibold text-slate-800">{displayValue(k, String(v))}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Ações compactas */}
+                  {rejectInputId === req.id ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Motivo (opcional)"
+                        className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                      />
+                      <button onClick={() => { setRejectInputId(null); setRejectReason(''); }}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                        Cancelar
+                      </button>
+                      <button disabled={!!profileReqProcessing} onClick={() => handleRejectProfileReq(req.id)}
+                        className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-60">
+                        {profileReqProcessing === req.id ? '...' : 'Confirmar'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button disabled={!!profileReqProcessing}
+                        onClick={() => { setRejectInputId(req.id); setRejectReason(''); }}
+                        className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
+                        <UserX className="w-3 h-3" /> Rejeitar
+                      </button>
+                      <button disabled={!!profileReqProcessing}
+                        onClick={() => handleApproveProfileReq(req.id)}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-orange-600 disabled:opacity-60">
+                        {profileReqProcessing === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                        Aprovar e aplicar
+                      </button>
+                    </div>
+                  )}
+                </div>
+                );
+              })}
+
               {/* Layout 2 colunas: esquerda dados pessoais+contato / direita endereço+alertas */}
               <div className="grid grid-cols-2 gap-x-8 gap-y-0">
 
@@ -1846,14 +1967,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       </div>
                     )}
                     {upcomingEvents.length > 0 && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
+                      <button
+                        type="button"
+                        onClick={() => navigateTo('agenda', { entityId: upcomingEvents[0].id } as any)}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100 hover:border-violet-300 hover:bg-violet-100 transition text-left group"
+                      >
                         <CalendarIcon className="w-3 h-3 text-violet-500 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-slate-800 truncate">{upcomingEvents[0].title}</p>
+                          <p className="text-xs font-medium text-slate-800 truncate group-hover:text-violet-700 transition-colors">{upcomingEvents[0].title}</p>
                           <p className="text-[10px] text-slate-500">{formatDateTime(upcomingEvents[0].start_at)}</p>
                         </div>
-                        {upcomingEvents.length > 1 && <span className="text-[10px] text-violet-600 font-semibold flex-shrink-0">+{upcomingEvents.length - 1}</span>}
-                      </div>
+                        {upcomingEvents.length > 1
+                          ? <span className="text-[10px] text-violet-600 font-semibold flex-shrink-0">+{upcomingEvents.length - 1}</span>
+                          : <ChevronRight className="w-3 h-3 text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                        }
+                      </button>
                     )}
                     {/* Info sistema (discreto) */}
                     <p className="text-[9px] text-slate-300 pt-1">
@@ -2534,7 +2662,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 subtitle = u.event.description ?? '';
                 onClick = () => navigateTo('agenda', { entityId: u.event.id } as any);
                 hasTime = u.event.start_at.includes('T');
-                timeStr = hasTime ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+                const isMidnight = u.date.getHours() === 0 && u.date.getMinutes() === 0;
+                timeStr = hasTime && !isMidnight ? u.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
               } else if (u.kind === 'process') {
                 tc = TYPE_CONFIG.hearing;
                 label = 'Audiência';
@@ -2785,7 +2914,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       </div>
                       <div className="space-y-2">
                         {generatedDocuments.map((r) => (
-                          <div key={r.id} className="rounded-xl border border-amber-100 bg-amber-50 p-3.5 flex items-center justify-between gap-3">
+                          <div
+                            key={r.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); } }}
+                            className="rounded-xl border border-amber-100 bg-amber-50 p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-amber-100 hover:border-amber-200 transition-colors"
+                          >
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
                               <p className="text-xs text-slate-500 mt-0.5">Gerado em {formatDateTime(r.created_at)}</p>
@@ -2861,7 +2997,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     ) : (
                       <div className="space-y-2">
                         {clientCloudFolders.map((f) => (
-                          <div key={f.id} className="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3">
+                          <div
+                            key={f.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('cloud', { folderId: f.id } as any); } }}
+                            className="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                          >
                             <div className="min-w-0 flex items-center gap-2.5">
                               <FolderPlus className="w-4 h-4 text-amber-500 flex-shrink-0" />
                               <div>

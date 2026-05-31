@@ -9,6 +9,20 @@ import {
   DocumentEditorContainerComponent,
   Toolbar,
 } from '@syncfusion/ej2-react-documenteditor';
+import {
+  getCachedSuggestions,
+  setCachedSuggestions,
+  schedulePrefetch,
+  pruneExpiredEntries,
+} from './spell-check-cache';
+import {
+  createDebouncedScanner,
+  autoFixIssues,
+  type ScanResult,
+} from './editor-issues-scanner';
+
+// Prune entradas expiradas na inicialização do módulo
+pruneExpiredEntries();
 
 // Inject required modules
 DocumentEditorContainerComponent.Inject(Toolbar);
@@ -89,6 +103,403 @@ const applySyncfusionServiceUrl = (editor: any) => {
     // ignore
   }
 };
+
+/* ────────────────────────────────────────────────────────────────
+ * Patch do context menu: adicionar .catch() no caminho assíncrono
+ * de spell-check para evitar que o menu nunca abra quando a
+ * chamada ao spell checker falha ou retorna JSON inválido.
+ *
+ * Syncfusion faz event.preventDefault() ANTES do .then() sem
+ * .catch(), então qualquer erro silencia o menu E o browser menu.
+ * ──────────────────────────────────────────────────────────────── */
+function patchContextMenuForSpellCheck(editor: any): void {
+  if (!editor) return;
+  const ctxModule = editor.contextMenu;
+  const spellChecker = editor.spellCheckerModule ?? editor.spellChecker;
+  if (!ctxModule) return;
+
+  // Só patchear uma vez
+  if ((ctxModule as any).__spellPatchApplied) return;
+  (ctxModule as any).__spellPatchApplied = true;
+
+  if (typeof ctxModule.onContextMenuInternal !== 'function') return;
+
+  // Helper: injeta sugestões de spell no DOM do menu já aberto.
+  // Word: a palavra com erro. Suggestions: array de strings.
+  const injectSpellSuggestions = (suggestions: string[], word: string) => {
+    try {
+      // Localizar o wrapper do context menu visível
+      const wrappers = Array.from(
+        document.querySelectorAll<HTMLElement>('.e-de-contextmenu-wrapper, .e-contextmenu-wrapper')
+      ).filter((w) => {
+        const s = window.getComputedStyle(w);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+      if (wrappers.length === 0) return;
+      const wrapper = wrappers[0];
+      const ul = wrapper.querySelector<HTMLElement>('ul.e-menu-parent') || wrapper.querySelector<HTMLElement>('ul');
+      if (!ul) return;
+
+      // Remover sugestões antigas se houver
+      ul.querySelectorAll('[data-spell-suggestion]').forEach((el) => el.remove());
+
+      // Construir itens de sugestão
+      const items: HTMLElement[] = [];
+      if (suggestions.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'e-menu-item e-disabled';
+        li.setAttribute('data-spell-suggestion', '1');
+        li.setAttribute('role', 'menuitem');
+        li.innerHTML = '<span class="e-menu-icon"></span><span class="e-menu-text" style="font-style:italic;color:#888">Nenhuma sugestão</span>';
+        items.push(li);
+      } else {
+        for (const sug of suggestions.slice(0, 5)) {
+          const li = document.createElement('li');
+          li.className = 'e-menu-item';
+          li.setAttribute('data-spell-suggestion', '1');
+          li.setAttribute('role', 'menuitem');
+          li.setAttribute('tabindex', '-1');
+          const escaped = sug.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+          li.innerHTML = `<span class="e-menu-icon"></span><span class="e-menu-text" style="font-weight:600">${escaped}</span>`;
+
+          // Click: substituir a palavra errada pela sugestão
+          li.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            try {
+              // Selecionar a palavra e substituir
+              const sel = editor.selection;
+              if (sel) {
+                // Tentar usar a API do spell checker para substituir
+                const info = spellChecker?.currentContextInfo;
+                if (info?.element && typeof spellChecker?.manageReplace === 'function') {
+                  spellChecker.manageReplace(sug, info.element);
+                } else if (typeof editor.editor?.insertText === 'function') {
+                  // Selecionar palavra atual e substituir
+                  sel.selectCurrentWord?.();
+                  editor.editor.insertText(sug);
+                }
+              }
+            } catch (err) {
+              console.warn('[SyncfusionEditor] replace word erro:', err);
+            }
+            // Fechar o menu
+            try { ctxModule.contextMenuInstance?.close?.(); } catch { /* ignore */ }
+          });
+
+          // Hover highlight
+          li.addEventListener('mouseenter', () => li.classList.add('e-focused'));
+          li.addEventListener('mouseleave', () => li.classList.remove('e-focused'));
+          items.push(li);
+        }
+      }
+
+      // Adicionar separador
+      const sep = document.createElement('li');
+      sep.className = 'e-separator e-menu-item';
+      sep.setAttribute('data-spell-suggestion', '1');
+      items.push(sep);
+
+      // Inserir no topo do ul
+      for (let i = items.length - 1; i >= 0; i--) {
+        ul.insertBefore(items[i], ul.firstChild);
+      }
+
+      void word; // suppress unused warning
+    } catch (err) {
+      console.warn('[SyncfusionEditor] injectSpellSuggestions erro:', err);
+    }
+  };
+
+  // Helper: injeta skeleton de loading enquanto sugestões são buscadas da API
+  const injectLoadingSkeleton = () => {
+    try {
+      const wrappers = Array.from(
+        document.querySelectorAll<HTMLElement>('.e-de-contextmenu-wrapper, .e-contextmenu-wrapper')
+      ).filter((w) => {
+        const s = window.getComputedStyle(w);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+      if (wrappers.length === 0) return;
+      const wrapper = wrappers[0];
+      const ul = wrapper.querySelector<HTMLElement>('ul.e-menu-parent') || wrapper.querySelector<HTMLElement>('ul');
+      if (!ul) return;
+
+      // Remover sugestões/skeletons antigos
+      ul.querySelectorAll('[data-spell-suggestion]').forEach((el) => el.remove());
+
+      // Injetar keyframes uma vez
+      if (!document.getElementById('spell-skeleton-keyframes')) {
+        const style = document.createElement('style');
+        style.id = 'spell-skeleton-keyframes';
+        style.textContent = `
+          @keyframes spellShimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: 200px 0; }
+          }
+          .spell-skeleton-bar {
+            display: inline-block;
+            height: 12px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #f0f0f0 0%, #e0e0e0 50%, #f0f0f0 100%);
+            background-size: 400px 100%;
+            animation: spellShimmer 1.2s ease-in-out infinite;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      // Criar 3 linhas de skeleton com larguras variadas
+      const widths = [80, 100, 70];
+      const items: HTMLElement[] = [];
+      for (const w of widths) {
+        const li = document.createElement('li');
+        li.className = 'e-menu-item e-disabled';
+        li.setAttribute('data-spell-suggestion', '1');
+        li.setAttribute('role', 'menuitem');
+        li.innerHTML = `<span class="e-menu-icon"></span><span class="e-menu-text"><span class="spell-skeleton-bar" style="width:${w}px"></span></span>`;
+        items.push(li);
+      }
+      // Separador
+      const sep = document.createElement('li');
+      sep.className = 'e-separator e-menu-item';
+      sep.setAttribute('data-spell-suggestion', '1');
+      items.push(sep);
+
+      // Inserir no topo
+      for (let i = items.length - 1; i >= 0; i--) {
+        ul.insertBefore(items[i], ul.firstChild);
+      }
+    } catch (err) {
+      console.warn('[SyncfusionEditor] injectLoadingSkeleton erro:', err);
+    }
+  };
+
+  // Helper: busca sugestões via callSpellChecker, retorna Promise<string[]>
+  const fetchSuggestionsFromAPI = (word: string): Promise<string[]> => {
+    if (typeof spellChecker?.callSpellChecker !== 'function') {
+      return Promise.resolve([]);
+    }
+    return spellChecker
+      .callSpellChecker(spellChecker.languageID, word, false, true, false, false)
+      .then((data: string) => {
+        try {
+          const json = JSON.parse(data);
+          return (json.Suggestions || []) as string[];
+        } catch {
+          return [];
+        }
+      })
+      .catch(() => []);
+  };
+
+  // Helper: detecta se o clique foi em palavra errada e busca sugestões
+  const tryFetchSpellSuggestions = () => {
+    try {
+      if (!spellChecker || !editor.isSpellCheck) return;
+      if (!spellChecker.allowSpellCheckAndSuggestion) return;
+
+      const info = typeof spellChecker.findCurretText === 'function' ? spellChecker.findCurretText() : null;
+      if (!info?.text) return;
+      const word = typeof spellChecker.manageSpecialCharacters === 'function'
+        ? spellChecker.manageSpecialCharacters(info.text, undefined, true)
+        : info.text;
+      if (!word) return;
+
+      // Só é palavra errada se está no errorWordCollection
+      const errorColl = spellChecker.errorWordCollection;
+      if (!errorColl || typeof errorColl.containsKey !== 'function' || !errorColl.containsKey(word)) return;
+
+      spellChecker.currentContextInfo = info;
+
+      // === Camada 1: cache do Syncfusion (mesma sessão) ===
+      const sfCache = spellChecker.errorSuggestions;
+      if (sfCache?.containsKey?.(word)) {
+        injectSpellSuggestions((sfCache.get(word) || []).slice(), word);
+        return;
+      }
+
+      // === Camada 2: nosso cache (memória + localStorage) ===
+      const cached = getCachedSuggestions(word);
+      if (cached !== null) {
+        // Hidrata cache do Syncfusion também para evitar re-busca posterior
+        try { sfCache?.add?.(word, cached.slice()); } catch { /* ignore */ }
+        injectSpellSuggestions(cached.slice(), word);
+        return;
+      }
+
+      // === Camada 3: API (XHR) — mostra skeleton enquanto carrega ===
+      injectLoadingSkeleton();
+      fetchSuggestionsFromAPI(word).then((suggestions) => {
+        setCachedSuggestions(word, suggestions);
+        try { sfCache?.add?.(word, suggestions.slice()); } catch { /* ignore */ }
+        injectSpellSuggestions(suggestions, word);
+      });
+    } catch (err) {
+      console.warn('[SyncfusionEditor] tryFetchSpellSuggestions erro:', err);
+    }
+  };
+
+  // Pre-fetch em background: quando o spell-check encontra erros novos, agenda
+  // busca de sugestões antes mesmo do usuário clicar. Hook no spellChecker.handleSpellCheck.
+  const setupPrefetch = () => {
+    if (!spellChecker || (spellChecker as any).__prefetchHooked) return;
+    (spellChecker as any).__prefetchHooked = true;
+
+    // Hook em addInvalidElementsToCollection (chamado quando spell-check marca palavra como erro)
+    const origAdd = spellChecker.addInvalidElementsToCollection;
+    if (typeof origAdd === 'function') {
+      spellChecker.addInvalidElementsToCollection = function (...args: any[]) {
+        const result = origAdd.apply(this, args);
+        try {
+          // args[0] geralmente é a info da palavra; tentar extrair texto
+          const errArg = args[0];
+          const errText = typeof errArg === 'string' ? errArg : errArg?.text || errArg?.Text;
+          if (errText && typeof errText === 'string' && errText.length > 1) {
+            schedulePrefetch(errText, () => fetchSuggestionsFromAPI(errText));
+          }
+        } catch { /* ignore */ }
+        return result;
+      };
+    }
+  };
+  setupPrefetch();
+
+  ctxModule.onContextMenuInternal = function patchedOnContextMenu(event: any) {
+    try {
+      // 1) Abrir o menu normal IMEDIATAMENTE (sem esperar spell check)
+      if (typeof ctxModule.hideSpellContextItems === 'function') {
+        ctxModule.hideSpellContextItems();
+      }
+      if (typeof ctxModule.showContextMenuOnSel === 'function') {
+        ctxModule.showContextMenuOnSel(event);
+      } else {
+        const isTouch = !(event instanceof MouseEvent);
+        let xPos = 0;
+        let yPos = 0;
+        if (isTouch) {
+          const point = ctxModule.documentHelper?.getTouchOffsetValue?.(event);
+          xPos = point?.x ?? 0;
+          yPos = point?.y ?? 0;
+        } else {
+          yPos = (event.clientY ?? event.y ?? 0) + document.body.scrollTop + document.documentElement.scrollTop;
+          xPos = (event.clientX ?? event.x ?? 0) + document.body.scrollLeft + document.documentElement.scrollLeft;
+        }
+        ctxModule.contextMenuInstance?.open?.(yPos, xPos);
+      }
+      event.preventDefault?.();
+
+      // 2) Async: buscar e injetar sugestões de spell-check no menu já aberto
+      tryFetchSpellSuggestions();
+    } catch (err) {
+      console.warn('[SyncfusionEditor] onContextMenuInternal erro:', err);
+    }
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Patch do ruler do Syncfusion para mostrar valores em CENTÍMETROS
+ *
+ * O Syncfusion desenha o ruler com incrementos de 36 pt (= 0,5 inch
+ * = ~1,27 cm). A gente intercepta `updateSegment` do protótipo da
+ * classe Ruler para:
+ *   1. Usar incremento de 28,3464 pt (= exatamente 1 cm)
+ *   2. Mostrar o label dividido por 28,3464 (= valor em cm inteiro)
+ *
+ * Também sobrescreve `segmentWidth` em pixels para que cada segmento
+ * desenhado equivalha a 1 cm visualmente.
+ * ──────────────────────────────────────────────────────────────── */
+const PT_PER_CM = 28.3464566929;
+const PX_PER_PT = 96 / 72; // 1.3333... (96 DPI padrão)
+const CM_IN_PX = PT_PER_CM * PX_PER_PT; // ~37.795 px = 1 cm
+
+function patchRulerForCentimeters(editor: any): void {
+  if (!editor) return;
+  const rulers = [editor.hRuler, editor.vRuler].filter(Boolean);
+  if (rulers.length === 0) return;
+
+  for (const ruler of rulers) {
+    // segmentWidth do Syncfusion está em PIXELS (padrão: 47.9988 px ≈ 0,5 polegada).
+    // Mudamos para CM_IN_PX (≈ 37.795 px) para que cada segmento = exatamente 1 cm.
+    try { ruler.segmentWidth = CM_IN_PX; } catch { /* ignore */ }
+
+    const proto = Object.getPrototypeOf(ruler);
+    if (!proto || (proto as any).__crmCmPatched) continue;
+
+    // ── Substitui updateSegment com fórmula direta em pixels ──
+    //
+    // Problema anterior: as abordagens com rulerStartValue acumulavam erro de ponto
+    // flutuante (1584 pt / 28,3464 pt/cm = 55,88 — não inteiro → oscilação).
+    //
+    // SOLUÇÃO: usar this.zeroPosition (px) — propriedade que o próprio Syncfusion
+    // mantém atualizada em cada redraw com a posição em pixels do início do conteúdo.
+    //
+    //   cm = Math.round((run - this.zeroPosition) / CM_IN_PX)
+    //   cm > 0  → mostrar (conteúdo da página)
+    //   cm <= 0 → ocultar (área cinza + margem esquerda)
+    //
+    // run e zeroPosition estão no mesmo sistema de coordenadas do ruler (pixels).
+    // Não há aritmética acumulada → impossível oscilar.
+    (proto as any).updateSegment = function (
+      start: number,
+      _end: number,
+      rulerSegment: any,
+      run: number,
+      trans: any,
+      rulerSize: number
+    ) {
+      const segWidth = this.updateSegmentWidth(this.scale); // = CM_IN_PX
+
+      if (run === start) {
+        // ── 1.º segmento de cada passagem ──
+        const cmFirst = Math.round((run - this.zeroPosition) / CM_IN_PX);
+        rulerSegment.label.textContent = cmFirst > 0 ? cmFirst.toString() : '';
+
+        this.startValue = (Math.floor(start / segWidth) * segWidth) / this.scale;
+        this.startValue =
+          this.startValue % 1 !== 0 ? Number(this.startValue.toFixed(1)) : this.startValue;
+        this.defStartValue = run = this.startValue * this.scale;
+        if (this.orientation === 'Horizontal') {
+          this.hRulerOffset = start - run;
+        } else {
+          this.vRulerOffset = start - run;
+        }
+      } else {
+        // ── Segmentos seguintes ──
+        this.startValue = run / PX_PER_PT;
+        this.startValue =
+          this.startValue % 1 !== 0 ? Number(this.startValue.toFixed(1)) : this.startValue;
+
+        const cmFromMargin = Math.round((run - this.zeroPosition) / CM_IN_PX);
+        rulerSegment.label.textContent = cmFromMargin > 0 ? cmFromMargin.toString() : '';
+      }
+
+      this.updateTickLabel(rulerSegment, rulerSize);
+      const translate =
+        this.orientation === 'Horizontal'
+          ? trans.trans + 0.5 + ',0.5'
+          : '0.5,' + (trans.trans + 0.5);
+      rulerSegment.segment.setAttribute(
+        'transform',
+        'translate(' + translate + ') scale(1,1)'
+      );
+      trans.trans += segWidth * this.scale;
+      run += segWidth;
+      return run;
+    };
+
+    (proto as any).__crmCmPatched = true;
+  }
+
+  // Re-renderiza o ruler para aplicar o patch imediatamente
+  try {
+    if (editor.rulerHelper && typeof editor.rulerHelper.updateRuler === 'function') {
+      editor.rulerHelper.updateRuler(editor, true);
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export interface SyncfusionEditorRef {
   // Get document content as SFDT (Syncfusion Document Text format)
@@ -191,7 +602,29 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const contextMenuInitRef = useRef(false);
     const createdRef = useRef(false);
     const pendingActionsRef = useRef<(() => void)[]>([]);
+    const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+    const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
     const [isCreated, setIsCreated] = useState(false);
+    const [scanResult, setScanResult] = useState<ScanResult>({ issues: [], totalOccurrences: 0 });
+
+    // Captura posição do clique direito para reposicionar o menu após filtrar itens.
+    useEffect(() => {
+      const capturePos = (e: MouseEvent) => {
+        lastContextMenuPosRef.current = { x: e.clientX, y: e.clientY };
+      };
+      document.addEventListener('contextmenu', capturePos, true);
+      return () => {
+        document.removeEventListener('contextmenu', capturePos, true);
+      };
+    }, []);
+
+    // Cleanup do scanner no unmount
+    useEffect(() => {
+      return () => {
+        scannerRef.current?.cancel();
+        scannerRef.current = null;
+      };
+    }, []);
 
     const enqueueOrRun = (action: () => void) => {
       if (createdRef.current && containerRef.current?.documentEditor) {
@@ -233,13 +666,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           if (!editor) return;
           try {
             editor.open(sfdt);
-            // Após abrir, forçar layout
+            // Após abrir: layout + foco + re-registrar menu de contexto
             setTimeout(() => {
               if (typeof (editor as any).resize === 'function') (editor as any).resize();
               if (pageFit && typeof editor.fitPage === 'function') {
                 editor.fitPage(pageFit as any);
               }
             }, 50);
+            setTimeout(() => {
+              try { initContextMenu(); } catch { /* ignore */ }
+              try { (editor as any).focusIn?.(); } catch { /* ignore */ }
+            }, 300);
           } catch (err) {
             console.error('Erro ao carregar SFDT:', err);
           }
@@ -288,6 +725,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           });
           const file = new File([blob], fileName, { type: blob.type });
           await editor.open(file);
+          // Após carregar DOCX: re-registrar menu de contexto e restaurar foco
+          setTimeout(() => {
+            try { initContextMenu(); } catch { /* ignore */ }
+            try { editor.focusIn?.(); } catch { /* ignore */ }
+          }, 300);
         };
 
         if (createdRef.current && containerRef.current?.documentEditor) {
@@ -730,6 +1172,18 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
     const handleContentChange = () => {
       onContentChange?.();
+      // Dispara scanner de issues (espaços duplos, etc.) com debounce
+      scannerRef.current?.trigger();
+    };
+
+    // Aplica todas as correções de issues (espaços duplos, etc.)
+    const fixAllIssues = () => {
+      const editor: any = containerRef.current?.documentEditor as any;
+      if (!editor) return 0;
+      const fixed = autoFixIssues(editor, scanResult.issues);
+      // Re-escanear para atualizar UI
+      scannerRef.current?.trigger();
+      return fixed;
     };
 
     const handleDocumentChange = () => {
@@ -737,6 +1191,15 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
       const editor: any = containerRef.current?.documentEditor as any;
       if (!editor) return;
+
+      // Re-registra handlers e restaura foco após document load.
+      // O Syncfusion reseta customContextMenuSelect / customContextMenuBeforeOpen
+      // quando editor.open() é chamado — sem foco o clique direito não abre.
+      window.setTimeout(() => {
+        try { initContextMenu(); } catch { /* ignore */ }
+        try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
+        try { editor.focusIn?.(); } catch { /* ignore */ }
+      }, 250);
 
       window.setTimeout(() => {
         try {
@@ -761,38 +1224,40 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
     const initContextMenu = (): boolean => {
       if (!enableCustomContextMenu || readOnly) return true;
-      if (contextMenuInitRef.current) return true;
       const editor = containerRef.current?.documentEditor as any;
       if (!editor?.contextMenu || !editor?.element?.id) return false;
 
-      const menuItems: MenuItemModel[] = [
-        {
-          text: 'Inserir bloco...',
-          id: 'crm_insert_block',
-          iconCss: 'e-icons e-de-ctnr-open',
-        },
-        {
-          text: 'Adicionar bloco...',
-          id: 'crm_add_block',
-          iconCss: 'e-icons e-de-ctnr-save',
-        },
-        {
-          text: 'Buscar empresa...',
-          id: 'crm_company_lookup',
-          iconCss: 'e-icons e-de-ctnr-find',
-        },
-        {
-          text: 'Formatar com IA...',
-          id: 'crm_format_qualification',
-          iconCss: 'e-icons e-de-copypaste',
-        },
-      ];
+      // Adiciona os itens apenas uma vez (addCustomMenu gera duplicatas se chamado de novo)
+      if (!contextMenuInitRef.current) {
+        const menuItemsDef: MenuItemModel[] = [
+          {
+            text: 'Inserir bloco...',
+            id: 'crm_insert_block',
+            iconCss: 'e-icons e-de-ctnr-open',
+          },
+          {
+            text: 'Adicionar bloco...',
+            id: 'crm_add_block',
+            iconCss: 'e-icons e-de-ctnr-save',
+          },
+          {
+            text: 'Buscar empresa...',
+            id: 'crm_company_lookup',
+            iconCss: 'e-icons e-de-ctnr-find',
+          },
+          {
+            text: 'Formatar com IA...',
+            id: 'crm_format_qualification',
+            iconCss: 'e-icons e-de-copypaste',
+          },
+        ];
+        editor.contextMenu.addCustomMenu(menuItemsDef, false, true);
+        contextMenuInitRef.current = true;
+      }
 
-      // Mantém os itens padrão e adiciona nossos itens (o 3º parâmetro ajuda a posicionar como grupo)
-      editor.contextMenu.addCustomMenu(menuItems, false, true);
-      contextMenuInitRef.current = true;
+      // Handlers são re-registrados sempre — editor.open() pode resetá-los
 
-      const prevSelect = editor.customContextMenuSelect;
+      // Substituição direta (sem encadeamento) para evitar empilhamento em re-registros
       editor.customContextMenuSelect = (args: any) => {
         const prefix = editor?.element?.id || '';
         const clickedId = String(args?.id || '');
@@ -824,31 +1289,125 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           }
           return;
         }
-
-        if (typeof prevSelect === 'function') prevSelect(args);
       };
 
-      const prevBeforeOpen = editor.customContextMenuBeforeOpen;
       editor.customContextMenuBeforeOpen = (args: any) => {
-        if (typeof prevBeforeOpen === 'function') prevBeforeOpen(args);
         try {
           const ids: string[] = (args?.ids || []) as string[];
-          const targetId = ids.find((x) => String(x).includes('crm_add_block'));
-          if (!targetId) return;
 
-          const itemEl = document.getElementById(targetId);
-          if (!itemEl) return;
-
-          const selectedText = String(editor?.selection?.text || '');
-          const hasSelection = !editor?.selection?.isEmpty && /\S/.test(selectedText);
-          itemEl.style.display = 'block';
-          if (hasSelection) {
-            itemEl.classList.remove('e-disabled');
-            (itemEl as any).setAttribute?.('aria-disabled', 'false');
-          } else {
-            itemEl.classList.add('e-disabled');
-            (itemEl as any).setAttribute?.('aria-disabled', 'true');
+          // ── crm_add_block: habilitar só com seleção ──
+          const addBlockId = ids.find((x) => String(x).includes('crm_add_block'));
+          if (addBlockId) {
+            const itemEl = document.getElementById(addBlockId);
+            if (itemEl) {
+              const selectedText = String(editor?.selection?.text || '');
+              const hasSelection = !editor?.selection?.isEmpty && /\S/.test(selectedText);
+              itemEl.style.display = 'block';
+              if (hasSelection) {
+                itemEl.classList.remove('e-disabled');
+                (itemEl as any).setAttribute?.('aria-disabled', 'false');
+              } else {
+                itemEl.classList.add('e-disabled');
+                (itemEl as any).setAttribute?.('aria-disabled', 'true');
+              }
+            }
           }
+
+          // ── Filtro do menu quando em palavra com erro ortográfico ──
+          // Estratégia POR POSIÇÃO (whitelist): sugestões reais ficam SEMPRE
+          // antes do primeiro item de sistema (More Suggestion / Add to Dictionary /
+          // Ignore Once/All / No Suggestions). Tudo a partir daí = esconder, exceto Copiar.
+          // Usamos setTimeout(fn, 0) em vez de rAF para garantir que roda DEPOIS
+          // que o Syncfusion terminou de posicionar o menu (evita sobrescrever).
+          setTimeout(() => {
+            const wrappers = document.querySelectorAll<HTMLElement>(
+              '.e-de-contextmenu-wrapper, .e-contextmenu-wrapper, .e-contextmenu-container'
+            );
+            const visibleWrappers = Array.from(wrappers).filter(
+              (w) => window.getComputedStyle(w).display !== 'none'
+            );
+            if (visibleWrappers.length === 0) return;
+
+            const menuItems: HTMLElement[] = [];
+            visibleWrappers.forEach((w) => {
+              w.querySelectorAll<HTMLElement>('li.e-menu-item').forEach((li) =>
+                menuItems.push(li)
+              );
+            });
+            if (menuItems.length === 0) return;
+
+            const normText = (el: HTMLElement) =>
+              (el.textContent || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+            // Identificar itens CRM customizados pelo id (nunca são sugestões de spell)
+            const isCrmItem = (li: HTMLElement) =>
+              (li.getAttribute('id') || '').includes('crm_');
+
+            // Indicadores do PRIMEIRO item de sistema após as sugestões.
+            // Qualquer um destes confirma contexto de erro ortográfico.
+            const SYSTEM_BOUNDARY = [
+              'more suggestion', 'mais sugest',
+              'no suggestions', 'nenhuma sugest',
+              'add to dictionary', 'adicionar ao dicion',
+              'ignore once', 'ignorar uma vez',
+              'ignore all', 'ignorar todas',
+              'spelling', 'ortografia',
+            ];
+
+            let firstSystemIdx = -1;
+            for (let i = 0; i < menuItems.length; i++) {
+              const t = normText(menuItems[i]);
+              if (SYSTEM_BOUNDARY.some((s) => t.includes(s))) {
+                firstSystemIdx = i;
+                break;
+              }
+            }
+            if (firstSystemIdx === -1) return; // não é contexto de spell check → menu normal
+
+            // Padrões de Copiar (case-insensitive, com/sem reticências)
+            const isCopyText = (t: string) =>
+              t === 'copy' || t === 'copy...' || t === 'copiar' || t === 'copiar...';
+
+            menuItems.forEach((li, idx) => {
+              const t = normText(li);
+              if (isCrmItem(li)) {
+                // Itens CRM nunca são sugestões — sempre esconder no contexto spell
+                li.style.display = 'none';
+              } else if (idx < firstSystemIdx) {
+                // sugestão de spell real
+                li.style.display = '';
+              } else if (isCopyText(t)) {
+                li.style.display = '';
+              } else {
+                li.style.display = 'none';
+              }
+            });
+
+            // Esconder separadores no modo spell-check
+            visibleWrappers.forEach((w) => {
+              w.querySelectorAll<HTMLElement>('li.e-separator').forEach((sep) => {
+                sep.style.display = 'none';
+              });
+            });
+
+            // ── Reposicionar o menu para abrir PARA BAIXO a partir do clique ──
+            // setTimeout garante que rodamos depois do posicionamento do Syncfusion.
+            const pos = lastContextMenuPosRef.current;
+            if (pos.y > 0) {
+              visibleWrappers.forEach((w) => {
+                // Forçar position:fixed para que top/left sejam relativos ao viewport
+                w.style.position = 'fixed';
+                w.style.top = `${pos.y}px`;
+                if (pos.x > 0) w.style.left = `${pos.x}px`;
+                // Verifica se cabe — se ultrapassar o viewport, sobe o suficiente
+                const rect = w.getBoundingClientRect();
+                const overflow = rect.bottom - (window.innerHeight - 10);
+                if (overflow > 0) {
+                  w.style.top = `${Math.max(10, pos.y - overflow)}px`;
+                }
+              });
+            }
+          }, 0);
         } catch {
           // ignore
         }
@@ -866,7 +1425,41 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const editor: any = containerRef.current?.documentEditor as any;
         applySyncfusionServiceUrl(editor);
         editor?.openBlank?.();
-        
+
+        // Configurar corretor ortográfico
+        try {
+          if (editor?.spellChecker) {
+            editor.spellChecker.languageID = 1046; // Português (Brasil)
+            editor.spellChecker.allowSpellCheckAndSuggestion = true;
+            editor.spellChecker.doOptimizedSpellCheck = true;
+          }
+        } catch {
+          // ignore se spell checker não disponível
+        }
+
+        // Patch do context menu: adicionar .catch() no caminho async de spell-check
+        try {
+          patchContextMenuForSpellCheck(editor);
+        } catch {
+          // ignore
+        }
+
+        // Inicializa scanner de issues (espaços duplos, espaço antes de pontuação)
+        try {
+          scannerRef.current = createDebouncedScanner(editor, (result) => {
+            setScanResult(result);
+          }, 1500);
+        } catch {
+          // ignore
+        }
+
+        // Patch do ruler: mostrar valores em CM em vez de pontos
+        try {
+          patchRulerForCentimeters(editor);
+        } catch {
+          // ignore
+        }
+
         // Forçar resize inicial
         setTimeout(() => {
           if (typeof editor?.resize === 'function') editor.resize();
@@ -1276,26 +1869,86 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     }, []);
 
     return (
-      <DocumentEditorContainerComponent
-        ref={containerRef}
-        id={id}
-        height={height}
-        serviceUrl={SYNCFUSION_SERVICE_URL}
-        enableToolbar={enableToolbar}
-        toolbarItems={(toolbarItems ?? TOOLBAR_ITEMS) as any}
-        showPropertiesPane={showPropertiesPane}
-        enableLocalPaste={false}
-        created={handleCreated}
-        documentEditorSettings={{
-          showRuler: !!(showRuler && isCreated),
-          showNavigationPane: !!(showNavigationPane && isCreated),
-        }}
-        layoutType={layoutType}
-        contentChange={handleContentChange}
-        documentChange={handleDocumentChange}
-        locale="pt-BR"
-        style={{ display: 'block', width: '100%', height: '100%' }}
-      />
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <DocumentEditorContainerComponent
+          ref={containerRef}
+          id={id}
+          height={height}
+          serviceUrl={SYNCFUSION_SERVICE_URL}
+          enableToolbar={enableToolbar}
+          toolbarItems={(toolbarItems ?? TOOLBAR_ITEMS) as any}
+          showPropertiesPane={showPropertiesPane}
+          enableLocalPaste={false}
+          enableSpellCheck={true}
+          created={handleCreated}
+          documentEditorSettings={{
+            showRuler: !!(showRuler && isCreated),
+            showNavigationPane: !!(showNavigationPane && isCreated),
+          }}
+          layoutType={layoutType}
+          contentChange={handleContentChange}
+          documentChange={handleDocumentChange}
+          locale="pt-BR"
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+
+        {/* Badge de issues — espaços duplos, espaço antes de pontuação, etc. */}
+        {scanResult.totalOccurrences > 0 && (
+          <button
+            onClick={fixAllIssues}
+            title={scanResult.issues.map((i) => i.label).join(' · ')}
+            style={{
+              position: 'absolute',
+              bottom: 16,
+              right: 24,
+              zIndex: 100,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 999,
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              background: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
+              color: '#9a3412',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(245, 158, 11, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.15)';
+            }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 18,
+                height: 18,
+                lineHeight: '18px',
+                textAlign: 'center',
+                borderRadius: '50%',
+                background: '#f59e0b',
+                color: 'white',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              {scanResult.totalOccurrences}
+            </span>
+            <span>
+              {scanResult.totalOccurrences === 1
+                ? 'issue de formatação · corrigir'
+                : 'issues de formatação · corrigir todas'}
+            </span>
+          </button>
+        )}
+      </div>
     );
   }
 );

@@ -15,6 +15,12 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 const STORAGE_BUCKET = 'document-templates';
 
+/** Resultado da verificação pública por hash. */
+export type VerifyResult =
+  | { status: 'valid';   signer: Signer; request: SignatureRequest }
+  | { status: 'blocked'; reason?: string | null; signer?: Signer; request?: SignatureRequest }
+  | null;
+
 class SignatureService {
   private requestsTable = 'signature_requests';
   private signersTable = 'signature_signers';
@@ -40,6 +46,21 @@ class SignatureService {
     const request = (data as any).request as SignatureRequest | undefined;
     if (!signer || !request) return null;
 
+    // Checar lixeira / bloqueio (independente do RPC)
+    const { data: flags } = await supabase
+      .from(this.requestsTable)
+      .select('deleted_at, blocked_at, blocked_reason')
+      .eq('id', request.id)
+      .single();
+    if (flags?.deleted_at) return null;
+    if (flags?.blocked_at) {
+      throw new Error(
+        flags.blocked_reason
+          ? `Documento bloqueado/revogado pelo emissor. Motivo: ${flags.blocked_reason}`
+          : 'Documento bloqueado/revogado pelo emissor. Esta assinatura não está disponível para validação.'
+      );
+    }
+
     return { signer, request };
   }
 
@@ -54,6 +75,7 @@ class SignatureService {
       .from(this.requestsTable)
       .select('*')
       .is('archived_at', null)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (filters?.status) {
@@ -346,30 +368,128 @@ class SignatureService {
     await this.addAuditLog(id, null, 'cancelled', 'Solicitação arquivada (removida do painel)');
   }
 
-  async deleteRequest(id: string, deleteFilesFromServer: boolean = false): Promise<void> {
-    // Buscar dados para possível exclusão do storage
+  /**
+   * Soft delete: move o documento para a lixeira (não some, pode ser restaurado
+   * ou excluído definitivamente depois). Não apaga nada do storage.
+   */
+  async deleteRequest(id: string, _deleteFilesFromServer: boolean = false): Promise<void> {
+    void _deleteFilesFromServer; // compat — soft delete não apaga arquivos
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Restaura um documento removido (lixeira) de volta ao painel. */
+  async restoreRequest(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .update({ archived_at: null, deleted_at: null })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Lista os documentos removidos do painel (lixeira), com signatários. */
+  async listArchivedRequests(): Promise<SignatureRequestWithSigners[]> {
+    const { data, error } = await supabase
+      .from(this.requestsTable)
+      .select('*')
+      .not('archived_at', 'is', null)
+      .order('archived_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    const requests = (data ?? []) as SignatureRequest[];
+    if (requests.length === 0) return [];
+
+    const ids = requests.map((r) => r.id);
+    const { data: allSigners } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .in('signature_request_id', ids)
+      .order('order', { ascending: true });
+
+    const byReq = new Map<string, Signer[]>();
+    for (const s of (allSigners ?? []) as Signer[]) {
+      const arr = byReq.get(s.signature_request_id) ?? [];
+      arr.push(s);
+      byReq.set(s.signature_request_id, arr);
+    }
+    return requests.map((r) => ({ ...r, signers: byReq.get(r.id) ?? [] }));
+  }
+
+  /** Bloqueia/revoga um documento: não pode mais ser validado publicamente. */
+  async blockRequest(id: string, reason?: string | null): Promise<void> {
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .update({ blocked_at: new Date().toISOString(), blocked_reason: reason ?? null })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Desbloqueia um documento revogado. */
+  async unblockRequest(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .update({ blocked_at: null, blocked_reason: null })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Remove paths de todos os buckets relevantes (best-effort). */
+  private async removePathsFromStorage(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const buckets = ['document-templates', 'generated-documents', 'signatures', 'assinados'];
+    for (const bucket of buckets) {
+      try {
+        await supabase.storage.from(bucket).remove(paths);
+      } catch (e) {
+        console.warn(`[STORAGE] Erro ao remover do bucket ${bucket}:`, e);
+      }
+    }
+  }
+
+  /**
+   * Apaga os DOCX provisórios (documento principal + anexos) do storage após a
+   * assinatura estar concluída. Mantém o PDF assinado (artefato legal).
+   * Idempotente — marca provisional_cleaned_at.
+   */
+  async cleanupProvisionalDocs(requestId: string): Promise<void> {
+    const request = await this.getRequest(requestId);
+    if (!request || request.provisional_cleaned_at) return;
+
+    const isDocx = (p?: string | null) => !!p && /\.(docx?|doc)$/i.test(p);
+    const paths: string[] = [];
+    if (isDocx(request.document_path)) paths.push(request.document_path!);
+    for (const a of request.attachment_paths ?? []) {
+      if (isDocx(a)) paths.push(a);
+    }
+
+    if (paths.length > 0) {
+      console.log('[CLEANUP] Removendo DOCX provisórios:', paths);
+      await this.removePathsFromStorage(paths);
+    }
+
+    await supabase
+      .from(this.requestsTable)
+      .update({ provisional_cleaned_at: new Date().toISOString() })
+      .eq('id', requestId);
+  }
+
+  /**
+   * Exclusão DEFINITIVA (a partir da lixeira): apaga do banco (cascade) e,
+   * opcionalmente, todos os arquivos do storage.
+   */
+  async permanentlyDeleteRequest(id: string, deleteFilesFromServer: boolean = true): Promise<void> {
     const request = await this.getRequestWithSigners(id);
     if (!request) return;
 
     const pathsToDelete: string[] = [];
-    
-    // Se deleteFilesFromServer = true, apaga TUDO (imagens, documentos, PDFs assinados)
-    // Se deleteFilesFromServer = false, apenas remove do banco (mantém arquivos no servidor)
     if (deleteFilesFromServer) {
-      // Documento original
       if (request.document_path) pathsToDelete.push(request.document_path);
-      
-      // Anexos
-      if (request.attachment_paths && request.attachment_paths.length > 0) {
-        pathsToDelete.push(...request.attachment_paths);
-      }
-      
-      // Imagens do request
+      if (request.attachment_paths?.length) pathsToDelete.push(...request.attachment_paths);
       if (request.signature_image_path) pathsToDelete.push(request.signature_image_path);
       if (request.facial_image_path) pathsToDelete.push(request.facial_image_path);
       if (request.document_image_path) pathsToDelete.push(request.document_image_path);
-
-      // Imagens e PDFs assinados dos signatários
       request.signers.forEach((signer) => {
         if (signer.signature_image_path) pathsToDelete.push(signer.signature_image_path);
         if (signer.facial_image_path) pathsToDelete.push(signer.facial_image_path);
@@ -378,26 +498,14 @@ class SignatureService {
       });
     }
 
-    // Deletar do banco (cascade deleta signers e audit_log)
     const { error } = await supabase
       .from(this.requestsTable)
       .delete()
       .eq('id', id);
-
     if (error) throw new Error(error.message);
 
-    // Deletar arquivos do storage apenas se solicitado
-    if (deleteFilesFromServer && pathsToDelete.length > 0) {
-      console.log('[DELETE] Removendo arquivos do storage:', pathsToDelete);
-      // Tentar remover de múltiplos buckets
-      const buckets = ['document-templates', 'generated-documents', 'signatures', 'assinados'];
-      for (const bucket of buckets) {
-        try {
-          await supabase.storage.from(bucket).remove(pathsToDelete);
-        } catch (e) {
-          console.warn(`[DELETE] Erro ao remover do bucket ${bucket}:`, e);
-        }
-      }
+    if (deleteFilesFromServer) {
+      await this.removePathsFromStorage(pathsToDelete);
     }
   }
 
@@ -812,6 +920,14 @@ class SignatureService {
         .eq('id', requestId);
 
       if (error) throw new Error(error.message);
+
+      // Documento concluído → apagar DOCX provisórios do storage (mantém PDF assinado).
+      // Best-effort: não falha o fluxo de assinatura se a limpeza der erro.
+      try {
+        await this.cleanupProvisionalDocs(requestId);
+      } catch (e) {
+        console.warn('[CLEANUP] Falha ao limpar DOCX provisórios:', e);
+      }
     }
   }
 
@@ -1027,7 +1143,7 @@ class SignatureService {
     return `${baseUrl}/#/verificar/${hash}`;
   }
 
-  async verifySignatureByHash(hash: string): Promise<{ signer: Signer; request: SignatureRequest } | null> {
+  async verifySignatureByHash(hash: string): Promise<VerifyResult> {
     // Buscar signatário pelo hash de verificação
     const { data: signer, error } = await supabase
       .from(this.signersTable)
@@ -1047,8 +1163,14 @@ class SignatureService {
         return null;
       }
 
+      // Documento bloqueado/revogado → informar mas manter auditável
+      if (request.blocked_at) return { status: 'blocked', reason: request.blocked_reason ?? null, signer: undefined, request };
+      // Documento na lixeira → ainda auditável (assinatura ocorreu)
+      if (request.deleted_at) return { status: 'valid', signer: undefined as any, request };
+
       // Retornar request como signer simulado
       return {
+        status: 'valid',
         signer: {
           id: request.id,
           signature_request_id: request.id,
@@ -1080,7 +1202,12 @@ class SignatureService {
     const request = await this.getRequest(signer.signature_request_id);
     if (!request) return null;
 
-    return { signer, request };
+    // Documento bloqueado → auditável mas marcado
+    if (request.blocked_at) return { status: 'blocked', reason: request.blocked_reason ?? null, signer, request };
+    // Documento na lixeira → ainda auditável (a assinatura ocorreu)
+    if (request.deleted_at) return { status: 'valid', signer, request };
+
+    return { status: 'valid', signer, request };
   }
 
   generateVerificationHash(): string {
@@ -1107,8 +1234,21 @@ class SignatureService {
       });
     
     if (error) throw new Error(`Erro ao fazer upload: ${error.message}`);
-    
+
     return filePath;
+  }
+
+  /**
+   * Envia o link público do documento assinado para o e-mail dos signatários.
+   */
+  async sendSignatureLinkEmail(requestId: string): Promise<{ sent: string[]; failed: { email: string; error: string }[] }> {
+    const origin = 'https://jurius.com.br';
+    const { data, error } = await supabase.functions.invoke('send-signature-link', {
+      body: { request_id: requestId, origin },
+    });
+    if (error) throw new Error(error.message ?? 'Erro ao enviar e-mail');
+    if (!data?.success && data?.sent?.length === 0) throw new Error(data?.failed?.[0]?.error ?? 'Falha no envio');
+    return { sent: data.sent ?? [], failed: data.failed ?? [] };
   }
 }
 

@@ -112,30 +112,29 @@ self.addEventListener('push', (event) => {
 // Notification click event
 self.addEventListener('notificationclick', (event) => {
   console.log('Notificação clicada:', event.notification.tag);
-  
   event.notification.close();
 
   const payload = event.notification.data || {};
+  const targetUrl = payload.url || '/portal';
 
-  // Abre ou foca a janela do app
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Se já tem uma janela aberta, foca nela
+      // Procura janela já aberta do portal
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           return client.focus().then(() => {
-            try {
-              client.postMessage(payload);
-            } catch {}
+            // Envia rota para o portal navegar
+            try { client.postMessage(payload); } catch {}
           });
         }
       }
-      // Senão, abre uma nova janela
+      // Nenhuma janela aberta — abre na URL correta
       if (clients.openWindow) {
-        return clients.openWindow('/').then((client) => {
-          try {
-            client?.postMessage(payload);
-          } catch {}
+        return clients.openWindow(targetUrl).then((client) => {
+          // Aguarda a página carregar e envia a rota
+          setTimeout(() => {
+            try { client?.postMessage(payload); } catch {}
+          }, 1500);
         });
       }
     })

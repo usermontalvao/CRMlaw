@@ -35,6 +35,13 @@ export interface SignatureRequest {
   public_token?: string | null;
   // Arquivamento (removido do painel)
   archived_at?: string | null;
+  // Soft delete (lixeira)
+  deleted_at?: string | null;
+  // Bloqueio / revogação — impede validação pública
+  blocked_at?: string | null;
+  blocked_reason?: string | null;
+  // Limpeza de DOCX provisórios após assinatura
+  provisional_cleaned_at?: string | null;
 }
 
 export interface Signer {

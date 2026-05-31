@@ -3152,3 +3152,29 @@ div[class*="z-[60]"] span[class*="text-sky"] {
   position: relative;
   top: 0.5px;
 }
+
+/* ===== Renderização docx-preview: espelhar o Microsoft Word =====
+   O Word vem com hifenização automática DESLIGADA por padrão — ao justificar,
+   ele apenas estica os espaços e nunca corta palavras com hífen.
+
+   A biblioteca docx-preview injeta `hyphens: auto` + `overflow-wrap: break-word`
+   no `.docx`/`.docx span`, ligando a hifenização do navegador. Isso gerava
+   quebras como "cláusulas" → "cláusu-las" e "CONTRATADO" → "CONTRA-TADO",
+   tanto na pré-visualização na tela quanto no PDF gerado (html2canvas).
+
+   Esta regra global neutraliza o comportamento em TODOS os contextos de
+   preview (assinatura, cloud, editor, designer de posição), fazendo a quebra
+   acontecer apenas em espaços — idêntico ao Word. Usa !important porque as
+   regras do docx-preview (e seus estilos inline) não são !important. */
+.docx-wrapper,
+.docx-wrapper *,
+.docx,
+.docx * {
+  hyphens: none !important;
+  -webkit-hyphens: none !important;
+  -moz-hyphens: none !important;
+  -ms-hyphens: none !important;
+  overflow-wrap: normal !important;
+  word-wrap: normal !important;
+  word-break: normal !important;
+}

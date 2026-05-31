@@ -53,7 +53,7 @@ import ProfileModal, { type AppProfile, type UserRole } from './components/Profi
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/Dashboard'));
-const Feed = lazy(() => import('./components/FeedPage'));
+const Feed = lazy(() => import('./components/Feed'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
 const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
@@ -77,7 +77,10 @@ const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFil
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
 const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
 const PublicCloudSharePage = lazy(() => import('./components/PublicCloudSharePage'));
+const PublicDocumentPage = lazy(() => import('./components/PublicDocumentPage'));
 const DocsPage = lazy(() => import('./components/DocsPage'));
+// Portal do Cliente - Módulo isolado em src/portal/ (pode ser removido sem afetar o app principal)
+const PortalApp = lazy(() => import('./portal/PortalApp'));
 // Editor de Petições - Módulo isolado (pode ser removido sem afetar outros módulos)
 const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModule'));
 // Widget flutuante do Editor de Petições
@@ -2408,7 +2411,9 @@ const App: React.FC = () => {
   const isTemplateFillRoute = hashRoute?.includes('/preencher/') || pathname?.includes('/preencher/');
   const isPermalinkRoute = hashRoute?.includes('/p/') || pathname?.includes('/p/');
   const isCloudShareRoute = hashRoute?.includes('/cloud/share/') || pathname?.includes('/cloud/share/');
-  const isVerificationRoute = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
+  const isVerificationRoute   = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
+  const isDocumentPublicRoute = hashRoute?.includes('/documento/') || pathname?.includes('/documento/');
+  const isPortalRoute = hashRoute?.includes('/portal') || pathname?.startsWith('/portal');
 
   if (isTermsRoute) {
     return <TermsPrivacyPage type="terms" />;
@@ -2496,10 +2501,32 @@ const App: React.FC = () => {
     }
   }
 
+  if (isDocumentPublicRoute) {
+    let token = hashRoute.split('/documento/')[1]?.split('?')[0]?.split('#')[0];
+    if (!token && pathname.includes('/documento/')) {
+      token = pathname.split('/documento/')[1]?.split('?')[0]?.split('#')[0];
+    }
+    if (token) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>}>
+          <PublicDocumentPage token={token} />
+        </Suspense>
+      );
+    }
+  }
+
   if (isVerificationRoute) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>}>
         <PublicVerificationPage />
+      </Suspense>
+    );
+  }
+
+  if (isPortalRoute) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+        <PortalApp />
       </Suspense>
     );
   }

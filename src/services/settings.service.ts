@@ -68,6 +68,28 @@ export interface ModulesConfig {
   tasks_enabled: boolean;
 }
 
+export interface PortalModulesConfig {
+  processos:    boolean;
+  documentos:   boolean;
+  assinar:      boolean;
+  financeiro:   boolean;
+  agenda:       boolean;
+  mensagens:    boolean;
+  notificacoes: boolean;
+  perfil:       boolean;
+}
+
+export const PORTAL_MODULES_DEFAULT: PortalModulesConfig = {
+  processos:    true,
+  documentos:   true,
+  assinar:      true,
+  financeiro:   true,
+  agenda:       true,
+  mensagens:    true,
+  notificacoes: true,
+  perfil:       true,
+};
+
 export interface DatajudKeyConfig {
   key: string;           // chave pública CNJ (ex: cDZHYzl...)
   invalid: boolean;      // true quando a última chamada retornou 401/403
@@ -157,11 +179,10 @@ class SettingsService {
 
     const { error } = await supabase
       .from('system_settings')
-      .update({ 
-        value, 
-        updated_at: new Date().toISOString() 
-      })
-      .eq('key', key);
+      .upsert(
+        { key, value, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
 
     if (error) {
       console.error('Erro ao atualizar configuração:', error);
@@ -355,6 +376,21 @@ class SettingsService {
    */
   async updateModulesConfig(config: ModulesConfig, userName?: string): Promise<void> {
     await this.updateSetting('modules_config', config, userName);
+  }
+
+  /**
+   * Busca configuração de submódulos do portal do cliente
+   */
+  async getPortalModulesConfig(): Promise<PortalModulesConfig> {
+    const value = await this.getSetting<PortalModulesConfig>('portal_modules_config');
+    return { ...PORTAL_MODULES_DEFAULT, ...(value || {}) };
+  }
+
+  /**
+   * Salva configuração de submódulos do portal do cliente
+   */
+  async savePortalModulesConfig(config: PortalModulesConfig, userName?: string): Promise<void> {
+    await this.updateSetting('portal_modules_config', config, userName);
   }
 
   // ==================== PERMISSÕES ====================

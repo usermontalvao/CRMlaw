@@ -1,4 +1,4 @@
-﻿import { PDFDocument, PDFPage, rgb, StandardFonts } from 'pdf-lib';
+﻿import { PDFDocument, PDFPage, rgb, StandardFonts, LineCapStyle } from 'pdf-lib';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
@@ -363,64 +363,89 @@ class PdfSignatureService {
     const mode: 'card' | 'strip' = variant ?? 'strip';
 
     if (mode === 'strip') {
-      const h = 52;
+      const h = 54;
       const x = 0;
       const y = 0;
       const w = pageWidth;
-      const qrPad = 5;
-      const qrSize = h - qrPad * 2;
-      const qrX = x + w - qrSize - qrPad - 2;
-      const qrY = y + qrPad;
 
-      const stripWhite  = rgb(1, 1, 1);
-      const stripBorder = rgb(0.86, 0.89, 0.93);
-      const stripDark   = rgb(0.09, 0.12, 0.18);
-      const stripSoft   = rgb(0.45, 0.50, 0.58);
-      const stripMuted  = rgb(0.62, 0.67, 0.74);
-      const stripOrange = rgb(0.91, 0.32, 0.04);
+      const stripWhite   = rgb(1, 1, 1);
+      const stripBorder  = rgb(0.88, 0.91, 0.94);
+      const stripDark    = rgb(0.09, 0.12, 0.18);
+      const stripSoft    = rgb(0.45, 0.50, 0.58);
+      const stripMuted   = rgb(0.62, 0.67, 0.74);
+      const stripOrange  = rgb(0.91, 0.32, 0.04);
+      const stripEmerald = rgb(0.05, 0.49, 0.29);
+      const stripEmSoft  = rgb(0.90, 0.96, 0.92);
 
-      // White background: opaque when space is reserved (nothing behind), semi-opaque as overlay
-      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: opaqueStrip ? 1 : 0.92 });
+      // Local helpers (drawFooterStamp não tem acesso aos helpers de addReportPages)
+      const rr = (xx: number, topY: number, ww: number, hh: number, r: number, fill?: any, stroke?: any, sw = 0.7) => {
+        const rad = Math.max(0, Math.min(r, ww / 2, hh / 2));
+        page.drawSvgPath(
+          `M ${rad} 0 L ${ww - rad} 0 Q ${ww} 0 ${ww} ${rad} L ${ww} ${hh - rad} Q ${ww} ${hh} ${ww - rad} ${hh} L ${rad} ${hh} Q 0 ${hh} 0 ${hh - rad} L 0 ${rad} Q 0 0 ${rad} 0 Z`,
+          { x: xx, y: topY, color: fill, borderColor: stroke, borderWidth: stroke ? sw : 0 }
+        );
+      };
+      // check(cx, cy, r) — checkmark centrado em (cx,cy) com raio r
+      const check = (cx: number, cy: number, r: number, color: any, weight = 1.5) => {
+        const s = r * 2;
+        const x1 = 0.15 * s; const y1 = 0.50 * s;
+        const x2 = 0.40 * s; const y2 = 0.75 * s;
+        const x3 = 0.85 * s; const y3 = 0.25 * s;
+        page.drawSvgPath(`M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3}`, {
+          x: cx - r, y: cy + r,
+          borderColor: color, borderWidth: weight,
+          borderLineCap: LineCapStyle.Round,
+        });
+      };
 
-      // Top border line
-      page.drawLine({
-        start: { x, y: y + h }, end: { x: x + w, y: y + h },
-        thickness: 0.6, color: stripBorder,
-      });
+      // Background + top accents
+      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: opaqueStrip ? 1 : 0.94 });
+      page.drawLine({ start: { x, y: y + h }, end: { x: x + w, y: y + h }, thickness: 0.6, color: stripBorder });
+      page.drawRectangle({ x, y: y + h - 2.5, width: w, height: 2.5, color: stripOrange });
 
-      // Thin orange top stripe (3px)
-      page.drawRectangle({ x, y: y + h - 3, width: w, height: 3, color: stripOrange });
-
-      // QR code
+      // ── QR (right) com moldura arredondada ──
+      const qrSize = h - 14;
+      const qrX = x + w - qrSize - 12;
+      const qrY = y + 6;
       if (qrImage) {
-        page.drawRectangle({ x: qrX - 3, y: qrY - 3, width: qrSize + 6, height: qrSize + 6, color: stripWhite });
+        rr(qrX - 4, qrY + qrSize + 4, qrSize + 8, qrSize + 8, 4, stripWhite, stripBorder, 0.6);
         page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
       }
 
-      const tx = x + 12;
+      // Divisória vertical antes do QR
+      const dividerX = qrX - 14;
+      page.drawLine({ start: { x: dividerX, y: y + 9 }, end: { x: dividerX, y: y + h - 9 }, thickness: 0.5, color: stripBorder });
 
-      // Brand + label
-      page.drawText('JURIUS', { x: tx, y: y + h - 16, size: 7, font: helveticaBold, color: stripDark });
-      page.drawText('·', { x: tx + 30, y: y + h - 16, size: 7, font: helvetica, color: stripOrange });
-      page.drawText('Assinatura Eletrônica', { x: tx + 38, y: y + h - 16, size: 6.5, font: helvetica, color: stripSoft });
+      // ── Selo de verificação (esquerda) ──
+      const sealCX = x + 26;
+      const sealCY = y + 28;
+      page.drawCircle({ x: sealCX, y: sealCY, size: 10, color: stripEmSoft });
+      page.drawCircle({ x: sealCX, y: sealCY, size: 7.5, color: stripEmerald });
+      check(sealCX, sealCY, 5, stripWhite, 1.5);
 
-      // Thin separator
-      page.drawLine({
-        start: { x: tx, y: y + h - 23 }, end: { x: qrX - 8, y: y + h - 23 },
-        thickness: 0.4, color: stripBorder,
-      });
+      const tx = x + 44;
 
-      // Code row
+      // Linha 1 — marca + verificado
+      page.drawText('JURIUS', { x: tx, y: y + h - 15, size: 8, font: helveticaBold, color: stripDark });
+      const jw = helveticaBold.widthOfTextAtSize('JURIUS', 8);
+      page.drawCircle({ x: tx + jw + 5, y: y + h - 12, size: 1.3, color: stripOrange });
+      page.drawText('ASSINATURA ELETRÔNICA', { x: tx + jw + 11, y: y + h - 14.5, size: 6, font: helveticaBold, color: stripSoft });
+      const lblW = helveticaBold.widthOfTextAtSize('ASSINATURA ELETRÔNICA', 6);
+      page.drawText('· VERIFICADO', { x: tx + jw + 16 + lblW, y: y + h - 14.5, size: 6, font: helveticaBold, color: stripEmerald });
+
+      // Separador
+      page.drawLine({ start: { x: tx, y: y + h - 22 }, end: { x: dividerX - 10, y: y + h - 22 }, thickness: 0.4, color: stripBorder });
+
+      // Linha 2 — código
       if (signer.verification_hash) {
-        page.drawText('CODIGO:', { x: tx, y: y + h - 34, size: 5.5, font: helvetica, color: stripMuted });
-        page.drawText(code, { x: tx + 38, y: y + h - 34, size: 6.5, font: helveticaBold, color: stripDark });
+        page.drawText('CÓDIGO', { x: tx, y: y + h - 33, size: 5.5, font: helveticaBold, color: stripMuted });
+        page.drawText(code, { x: tx + 36, y: y + h - 33.5, size: 7, font: helveticaBold, color: stripDark });
       }
 
-      // Hash
-      const hashDisplay = integrityFull.length > 64 ? `${integrityFull.slice(0, 61)}...` : integrityFull;
-      page.drawText(`SHA-256: ${hashDisplay}`, {
-        x: tx, y: y + 9, size: 5, font: helvetica, color: stripMuted,
-      });
+      // Linha 3 — SHA-256 completo
+      page.drawText('SHA-256', { x: tx, y: y + 9, size: 5.5, font: helveticaBold, color: stripMuted });
+      const shaDisplay = integrityFull.length > 70 ? `${integrityFull.slice(0, 67)}...` : integrityFull;
+      page.drawText(shaDisplay, { x: tx + 36, y: y + 9, size: 5, font: helvetica, color: stripSoft });
 
       return;
     }
@@ -524,8 +549,9 @@ class PdfSignatureService {
     facialImage?: EmbeddedImage | null;
     qrImage?: EmbeddedImage | null;
     verificationUrl?: string | null;
+    integritySha256?: string | null;
   }) {
-    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl } = params;
+    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl, integritySha256 } = params;
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -609,49 +635,115 @@ class PdfSignatureService {
       return lines;
     };
 
-    // Design tokens
-    const navy    = rgb(0.06, 0.09, 0.18);
-    const navyMid = rgb(0.12, 0.16, 0.25);
-    const orange  = rgb(0.91, 0.32, 0.04);
-    const emerald = rgb(0.06, 0.47, 0.25);
-    const white   = rgb(1, 1, 1);
-    const bgLight = rgb(0.96, 0.97, 0.98);
-    const border  = rgb(0.86, 0.89, 0.93);
-    const txtDark = rgb(0.09, 0.12, 0.18);
-    const txtMid  = rgb(0.35, 0.40, 0.48);
-    const txtSoft = rgb(0.55, 0.60, 0.68);
-    const silver  = rgb(0.78, 0.82, 0.87);
+    // ── Design system ────────────────────────────────────────────
+    const navy       = rgb(0.07, 0.10, 0.19);
+    const navyMid    = rgb(0.13, 0.17, 0.27);
+    const orange     = rgb(0.91, 0.32, 0.04);
+    const emerald    = rgb(0.05, 0.49, 0.29);
+    const emeraldSoft= rgb(0.90, 0.96, 0.92);
+    const white      = rgb(1, 1, 1);
+    const bgLight    = rgb(0.965, 0.975, 0.985);
+    const paper      = rgb(0.98, 0.985, 0.992);
+    const border     = rgb(0.87, 0.90, 0.94);
+    const borderSoft = rgb(0.93, 0.95, 0.97);
+    const txtDark    = rgb(0.10, 0.13, 0.20);
+    const txtMid     = rgb(0.36, 0.42, 0.50);
+    const txtSoft    = rgb(0.55, 0.60, 0.68);
+    const silver     = rgb(0.74, 0.78, 0.84);
+    const contentW   = pageWidth - lm * 2;
+
+    // Rounded-rect SVG path (origin top-left, y-down)
+    const rrPath = (w: number, h: number, r: number) => {
+      const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+      return `M ${rr} 0 L ${w - rr} 0 Q ${w} 0 ${w} ${rr} L ${w} ${h - rr} Q ${w} ${h} ${w - rr} ${h} L ${rr} ${h} Q 0 ${h} 0 ${h - rr} L 0 ${rr} Q 0 0 ${rr} 0 Z`;
+    };
+    // Draw rounded rect by TOP-LEFT corner (topY = top edge in PDF coords)
+    const roundRect = (
+      page: PDFPage, x: number, topY: number, w: number, h: number, r: number,
+      opts: { fill?: any; stroke?: any; strokeW?: number; opacity?: number } = {}
+    ) => {
+      page.drawSvgPath(rrPath(w, h, r), {
+        x, y: topY,
+        color: opts.fill,
+        borderColor: opts.stroke,
+        borderWidth: opts.strokeW ?? (opts.stroke ? 0.8 : 0),
+        opacity: opts.opacity,
+      });
+    };
+    // Rounded only on TOP corners (for card headers)
+    const roundTopRect = (page: PDFPage, x: number, topY: number, w: number, h: number, r: number, fill: any) => {
+      const rr = Math.max(0, Math.min(r, w / 2, h));
+      page.drawSvgPath(`M 0 ${h} L 0 ${rr} Q 0 0 ${rr} 0 L ${w - rr} 0 Q ${w} 0 ${w} ${rr} L ${w} ${h} Z`, { x, y: topY, color: fill });
+    };
+    // Vector checkmark centrado em (cx, cy) num círculo de raio r.
+    // Usa drawSvgPath para garantir alinhamento preciso.
+    // pdf-lib SVG: origem top-left, y cresce para baixo → inverte y no posicionamento.
+    const checkmark = (page: PDFPage, cx: number, cy: number, r: number, color: any, weight = 1.4) => {
+      // Pontos do check relativos a um quadrado de lado 2r centrado em (cx, cy)
+      // Em pdf-lib coordenadas (y cresce para cima): passamos y = cy + r e deixamos
+      // o path interno ir de 0 (topo) a 2r (baixo).
+      const s = r * 2;
+      // Pontos: (0.15s, 0.50s) → (0.40s, 0.75s) → (0.85s, 0.25s)  em coords top-down
+      // Convertendo para svg path (origin top-left, y down):
+      const x1 = 0.15 * s; const y1 = 0.50 * s;
+      const x2 = 0.40 * s; const y2 = 0.75 * s;
+      const x3 = 0.85 * s; const y3 = 0.25 * s;
+      const path = `M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3}`;
+      page.drawSvgPath(path, {
+        x: cx - r,
+        y: cy + r, // pdf-lib posiciona em y-up: topo do bounding box
+        borderColor: color,
+        borderWidth: weight,
+        borderLineCap: LineCapStyle.Round,
+      });
+    };
+    // Filled circle
+    const circleDot = (page: PDFPage, cx: number, cy: number, r: number, color: any) => {
+      page.drawCircle({ x: cx, y: cy, size: r, color });
+    };
+    // Corner crop marks around a framed photo (premium detail)
+    const cornerMarks = (page: PDFPage, x: number, y: number, w: number, h: number, len: number, color: any) => {
+      const t = 0.8;
+      const seg = (x1: number, y1: number, x2: number, y2: number) =>
+        page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: t, color });
+      // TL
+      seg(x, y + h, x + len, y + h); seg(x, y + h, x, y + h - len);
+      // TR
+      seg(x + w - len, y + h, x + w, y + h); seg(x + w, y + h, x + w, y + h - len);
+      // BL
+      seg(x, y, x + len, y); seg(x, y, x, y + len);
+      // BR
+      seg(x + w - len, y, x + w, y); seg(x + w, y, x + w, y + len);
+    };
 
     const createReportHeader = (page: PDFPage, title: string, subtitle?: string) => {
-      // Thin orange top stripe only — page background stays white
-      page.drawRectangle({ x: 0, y: pageHeight - 5, width: pageWidth, height: 5, color: orange });
+      // Orange top accent
+      page.drawRectangle({ x: 0, y: pageHeight - 4, width: pageWidth, height: 4, color: orange });
 
-      // Top separator line
-      page.drawLine({ start: { x: lm, y: pageHeight - 20 }, end: { x: pageWidth - lm, y: pageHeight - 20 }, thickness: 0.4, color: border });
+      // Wordmark + page label
+      const wmY = pageHeight - 32;
+      page.drawText('JURIUS', { x: lm, y: wmY, size: 16, font: helveticaBold, color: navy });
+      const jw = helveticaBold.widthOfTextAtSize('JURIUS', 16);
+      circleDot(page, lm + jw + 9, wmY + 4, 1.7, orange);
+      page.drawText(title.toUpperCase(), { x: lm + jw + 17, y: wmY + 1.5, size: 8, font: helveticaBold, color: txtSoft });
 
-      // "JURIUS" logotype in dark
-      page.drawText('JURIUS', { x: lm, y: pageHeight - 38, size: 16, font: helveticaBold, color: txtDark });
-      // Separator dot
-      page.drawText('·', { x: lm + 68, y: pageHeight - 38, size: 12, font: helvetica, color: orange });
-      // Page title in soft gray
-      page.drawText(title, { x: lm + 78, y: pageHeight - 37, size: 10, font: helvetica, color: txtSoft });
+      // Date (right-aligned)
+      const dw = helvetica.widthOfTextAtSize(nowStr, 7.5);
+      page.drawText(nowStr, { x: pageWidth - lm - dw, y: wmY + 1.5, size: 7.5, font: helvetica, color: silver });
 
-      // Right: date
-      page.drawText(nowStr, { x: pageWidth - lm - 118, y: pageHeight - 37, size: 7, font: helvetica, color: silver });
-
-      // Bottom separator
-      page.drawLine({ start: { x: lm, y: pageHeight - 50 }, end: { x: pageWidth - lm, y: pageHeight - 50 }, thickness: 0.4, color: border });
+      // Divider
+      page.drawLine({ start: { x: lm, y: pageHeight - 46 }, end: { x: pageWidth - lm, y: pageHeight - 46 }, thickness: 0.6, color: border });
 
       // Document name
-      const docName = request.document_name.length > 72 ? `${request.document_name.slice(0, 69)}...` : request.document_name;
-      page.drawText(docName, { x: lm, y: pageHeight - 74, size: 13, font: helveticaBold, color: txtDark });
+      const docName = request.document_name.length > 70 ? `${request.document_name.slice(0, 67)}...` : request.document_name;
+      page.drawText(docName, { x: lm, y: pageHeight - 68, size: 14, font: helveticaBold, color: navy });
 
-      // Subtitle / protocol line
-      const protocolLine = subtitle ? subtitle : `Protocolo: ${request.id}`;
-      page.drawText(protocolLine, { x: lm, y: pageHeight - 90, size: 7.5, font: helvetica, color: txtSoft });
+      // Subtitle / protocol
+      const protocolLine = subtitle ? subtitle : `Protocolo ${request.id}`;
+      page.drawText(protocolLine, { x: lm, y: pageHeight - 83, size: 8, font: helvetica, color: txtSoft });
 
       // Section divider
-      page.drawLine({ start: { x: lm, y: pageHeight - 104 }, end: { x: pageWidth - lm, y: pageHeight - 104 }, thickness: 0.4, color: border });
+      page.drawLine({ start: { x: lm, y: pageHeight - 100 }, end: { x: pageWidth - lm, y: pageHeight - 100 }, thickness: 0.6, color: borderSoft });
     };
 
     const buildAuthPoints = (item: Signer) => {
@@ -676,100 +768,111 @@ class PdfSignatureService {
 
     const page1 = pdfDoc.addPage([pageWidth, pageHeight]);
     const sigCount1 = signedRequestSigners.length;
-    createReportHeader(page1, 'CERTIFICADO DE ASSINATURA', `${sigCount1} ${sigCount1 === 1 ? 'signatario' : 'signatarios'} · Emitido em ${nowStr}`);
+    createReportHeader(page1, 'CERTIFICADO DE ASSINATURA', `Protocolo ${request.id}`);
 
-    // Section title
-    const sectionY1 = pageHeight - 136;
-    page1.drawRectangle({ x: lm, y: sectionY1 - 2, width: 3, height: 16, color: orange });
-    page1.drawText('ASSINATURAS', { x: lm + 10, y: sectionY1, size: 9, font: helveticaBold, color: txtDark });
-    page1.drawLine({ start: { x: lm + 10, y: sectionY1 - 6 }, end: { x: pageWidth - lm, y: sectionY1 - 6 }, thickness: 0.4, color: border });
+    // ── Hero: selo de validação ────────────────────────────────
+    const heroTop = pageHeight - 116;
+    const heroH = 58;
+    roundRect(page1, lm, heroTop, contentW, heroH, 10, { fill: paper, stroke: border, strokeW: 0.8 });
+    roundRect(page1, lm, heroTop, 5, heroH, 2.5, { fill: orange });
 
-    let yCards = pageHeight - 162;
+    const sealCX = lm + 46;
+    const sealCY = heroTop - heroH / 2;
+    circleDot(page1, sealCX, sealCY, 19, emeraldSoft);
+    circleDot(page1, sealCX, sealCY, 14.5, emerald);
+    checkmark(page1, sealCX, sealCY, 8, white, 2.2);
+
+    page1.drawText('DOCUMENTO ASSINADO', { x: sealCX + 33, y: sealCY + 4, size: 12.5, font: helveticaBold, color: navy });
+    const heroSub = `${sigCount1} ${sigCount1 === 1 ? 'signatário' : 'signatários'}  ·  Emitido em ${nowStr}`;
+    page1.drawText(heroSub, { x: sealCX + 33, y: sealCY - 10, size: 7.5, font: helvetica, color: txtMid });
+
+    // "VÁLIDO" pill (right)
+    const pillLabel = 'VÁLIDO';
+    const pillTW = helveticaBold.widthOfTextAtSize(pillLabel, 7.5);
+    const pillW = pillTW + 26;
+    const pillX = lm + contentW - pillW - 16;
+    roundRect(page1, pillX, sealCY + 9, pillW, 18, 9, { fill: emeraldSoft });
+    circleDot(page1, pillX + 11, sealCY, 2.2, emerald);
+    page1.drawText(pillLabel, { x: pillX + 18, y: sealCY - 2.5, size: 7.5, font: helveticaBold, color: emerald });
+
+    // ── Section: ASSINATURAS ───────────────────────────────────
+    const sectionY1 = heroTop - heroH - 24;
+    page1.drawRectangle({ x: lm, y: sectionY1 - 1, width: 3, height: 12, color: orange });
+    page1.drawText('ASSINATURAS', { x: lm + 10, y: sectionY1, size: 8.5, font: helveticaBold, color: txtDark });
+    {
+      const lw = helveticaBold.widthOfTextAtSize('ASSINATURAS', 8.5);
+      page1.drawLine({ start: { x: lm + 20 + lw, y: sectionY1 + 3 }, end: { x: pageWidth - lm, y: sectionY1 + 3 }, thickness: 0.5, color: borderSoft });
+    }
+
+    let yCards = sectionY1 - 22;
     for (const asset of signerAssets) {
       const item = asset.signer;
       const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
       const authPoints = buildAuthPoints(item);
       const rightColW = 175;
       const rightStartX = pageWidth - lm - rightColW;
-      const cardHeight = Math.max(185, 80 + (authPoints.length * 13));
-      if (yCards - cardHeight < 90) break;
+      const cardHeight = Math.max(180, 78 + (authPoints.length * 13));
+      if (yCards - cardHeight < 80) break;
 
-      const cw = pageWidth - lm * 2;
+      const cw = contentW;
       const cx = lm;
-      const cy = yCards - cardHeight;
+      const cardTop = yCards;
 
-      // Card shadow
-      page1.drawRectangle({ x: cx + 2, y: cy - 2, width: cw, height: cardHeight, color: rgb(0.88, 0.90, 0.93) });
-      // Card body
-      page1.drawRectangle({ x: cx, y: cy, width: cw, height: cardHeight, color: white, borderColor: border, borderWidth: 0.8 });
+      // Shadow + rounded body
+      roundRect(page1, cx + 1.5, cardTop - 1.5, cw, cardHeight, 9, { fill: rgb(0.90, 0.92, 0.95) });
+      roundRect(page1, cx, cardTop, cw, cardHeight, 9, { fill: white, stroke: border, strokeW: 0.8 });
 
-      // Left orange accent bar
-      page1.drawRectangle({ x: cx, y: cy, width: 4, height: cardHeight, color: orange });
+      // Navy header band (rounded top corners)
+      const hdrH = 34;
+      roundTopRect(page1, cx, cardTop, cw, hdrH, 9, navy);
 
-      // Dark header band inside card
-      const hdrH = 32;
-      page1.drawRectangle({ x: cx, y: yCards - hdrH, width: cw, height: hdrH, color: navy });
+      // ASSINADO badge with vector check
+      const badgeX = cx + 14, badgeY = cardTop - hdrH + 8.5, badgeW = 76, badgeH = 17;
+      roundRect(page1, badgeX, badgeY + badgeH, badgeW, badgeH, 8.5, { fill: emerald });
+      checkmark(page1, badgeX + 14, badgeY + badgeH / 2, 5, white, 1.5);
+      page1.drawText('ASSINADO', { x: badgeX + 23, y: badgeY + 5, size: 7.5, font: helveticaBold, color: white });
 
-      // Signed badge — clean design, no fake tick (WinAnsi limitation)
-      page1.drawRectangle({ x: cx + 12, y: yCards - hdrH + 7, width: 68, height: 18, color: emerald });
-      // Small white square bullet
-      page1.drawRectangle({ x: cx + 18, y: yCards - hdrH + 13, width: 5, height: 5, color: white });
-      page1.drawText('ASSINADO', { x: cx + 26, y: yCards - hdrH + 13, size: 7.5, font: helveticaBold, color: white });
+      // Name + role
+      const nameDisplay = item.name.length > 30 ? `${item.name.slice(0, 28)}...` : item.name;
+      page1.drawText(nameDisplay.toUpperCase(), { x: badgeX + badgeW + 12, y: cardTop - hdrH + 13, size: 11, font: helveticaBold, color: white });
+      const roleDisplay = item.role && item.role !== 'Assinar' ? item.role : 'Signatário';
+      page1.drawText(roleDisplay, { x: badgeX + badgeW + 12, y: cardTop - hdrH + 3, size: 7, font: helvetica, color: silver });
 
-      // Signer name in header
-      const nameDisplay = item.name.length > 32 ? `${item.name.slice(0, 30)}...` : item.name;
-      page1.drawText(nameDisplay.toUpperCase(), { x: cx + 84, y: yCards - hdrH + 12, size: 11, font: helveticaBold, color: white });
-      if (item.role) {
-        page1.drawText(item.role, { x: cx + 84, y: yCards - hdrH + 2, size: 7, font: helvetica, color: silver });
-      }
+      // Body
+      const bodyTop = cardTop - hdrH;
+      page1.drawText('Assinado em', { x: cx + 14, y: bodyTop - 17, size: 7.5, font: helvetica, color: txtSoft });
+      page1.drawText(signedAtStr, { x: cx + 72, y: bodyTop - 17, size: 7.5, font: helveticaBold, color: txtDark });
+      page1.drawLine({ start: { x: cx + 14, y: bodyTop - 27 }, end: { x: rightStartX - 10, y: bodyTop - 27 }, thickness: 0.5, color: borderSoft });
+      page1.drawText('FATORES DE AUTENTICAÇÃO', { x: cx + 14, y: bodyTop - 41, size: 6.5, font: helveticaBold, color: txtSoft });
 
-      // Timestamp
-      page1.drawText(`Assinado em:`, { x: cx + 12, y: yCards - hdrH - 16, size: 7.5, font: helvetica, color: txtSoft });
-      page1.drawText(signedAtStr, { x: cx + 65, y: yCards - hdrH - 16, size: 7.5, font: helveticaBold, color: txtDark });
-
-      // Thin divider
-      page1.drawLine({ start: { x: cx + 12, y: yCards - hdrH - 26 }, end: { x: rightStartX - 8, y: yCards - hdrH - 26 }, thickness: 0.4, color: border });
-
-      // Auth factors label
-      page1.drawText('FATORES DE AUTENTICAÇÃO:', { x: cx + 12, y: yCards - hdrH - 40, size: 6.5, font: helveticaBold, color: txtSoft });
-
-      // Auth points — small navy squares as bullets
-      let pointY = yCards - hdrH - 54;
+      let pointY = bodyTop - 55;
       for (const point of authPoints.slice(0, 8)) {
-        page1.drawRectangle({ x: cx + 14, y: pointY, width: 4, height: 4, color: emerald });
-        page1.drawText(point, { x: cx + 24, y: pointY, size: 7.5, font: helvetica, color: txtMid, maxWidth: rightStartX - cx - 36 });
+        circleDot(page1, cx + 16, pointY + 2.5, 2, emerald);
+        page1.drawText(point, { x: cx + 24, y: pointY, size: 7.5, font: helvetica, color: txtMid, maxWidth: rightStartX - cx - 38 });
         pointY -= 13;
       }
 
-      // Right column — signature box
-      // In pdf-lib: y = bottom-left corner, coordinates go UP from bottom of page
+      // Right column — signature box (rounded)
       const sigBoxW = rightColW - 16;
       const sigX = rightStartX + 8;
-      const sigLabelY = yCards - hdrH - 12;          // y of the label text (baseline)
-      const sigBoxTop = sigLabelY - 6;               // top edge of box (just below label)
-      const sigBoxBottom = yCards - cardHeight + 12; // bottom edge of box (12px above card bottom)
+      const sigLabelY = bodyTop - 13;
+      const sigBoxTop = sigLabelY - 6;
+      const sigBoxBottom = cardTop - cardHeight + 12;
       const sigBoxH = Math.max(30, sigBoxTop - sigBoxBottom);
 
       page1.drawText('ASSINATURA MANUSCRITA', { x: sigX, y: sigLabelY, size: 6, font: helveticaBold, color: txtSoft });
-
-      // Signature frame — drawn from bottom-left
-      page1.drawRectangle({ x: sigX, y: sigBoxBottom, width: sigBoxW, height: sigBoxH, color: bgLight, borderColor: border, borderWidth: 0.8 });
-
-      // Baseline hint line — 16px above box bottom
+      roundRect(page1, sigX, sigBoxTop, sigBoxW, sigBoxH, 6, { fill: paper, stroke: border, strokeW: 0.8 });
       page1.drawLine({
         start: { x: sigX + 10, y: sigBoxBottom + 16 },
         end:   { x: sigX + sigBoxW - 10, y: sigBoxBottom + 16 },
         thickness: 0.5, color: border,
       });
-
-      // Signature image — strictly inside box with fixed padding
       if (asset.signature) {
         const imgPad = 8;
-        const imgX = sigX + imgPad;
-        const imgY = sigBoxBottom + imgPad;           // starts imgPad above box bottom
-        const imgW = sigBoxW - imgPad * 2;
-        const imgH = Math.max(10, sigBoxH - imgPad * 2); // never overflows box
-        page1.drawImage(asset.signature, { x: imgX, y: imgY, width: imgW, height: imgH });
+        page1.drawImage(asset.signature, {
+          x: sigX + imgPad, y: sigBoxBottom + imgPad,
+          width: sigBoxW - imgPad * 2, height: Math.max(10, sigBoxH - imgPad * 2),
+        });
       }
 
       yCards -= cardHeight + 18;
@@ -782,13 +885,16 @@ class PdfSignatureService {
       const geoP2 = this.parseGeolocation(item.signer_geolocation);
       const uaP2  = this.parseUserAgent(item.signer_user_agent);
 
-      createReportHeader(page, 'BIOMETRIA & VERIFICAÇÃO', `Signatario: ${item.name}`);
+      createReportHeader(page, 'BIOMETRIA & VERIFICAÇÃO', `Signatário: ${item.name}`);
 
       // ── Section label ─────────────────────────────────────────
-      const sectionLabelY = pageHeight - 132;
-      page.drawRectangle({ x: lm, y: sectionLabelY - 2, width: 3, height: 14, color: orange });
-      page.drawText('BIOMETRIA FACIAL', { x: lm + 10, y: sectionLabelY, size: 8, font: helveticaBold, color: txtDark });
-      page.drawLine({ start: { x: lm + 10, y: sectionLabelY - 6 }, end: { x: pageWidth - lm, y: sectionLabelY - 6 }, thickness: 0.4, color: border });
+      const sectionLabelY = pageHeight - 128;
+      page.drawRectangle({ x: lm, y: sectionLabelY - 1, width: 3, height: 12, color: orange });
+      page.drawText('BIOMETRIA FACIAL', { x: lm + 10, y: sectionLabelY, size: 8.5, font: helveticaBold, color: txtDark });
+      {
+        const lw = helveticaBold.widthOfTextAtSize('BIOMETRIA FACIAL', 8.5);
+        page.drawLine({ start: { x: lm + 20 + lw, y: sectionLabelY + 3 }, end: { x: pageWidth - lm, y: sectionLabelY + 3 }, thickness: 0.5, color: borderSoft });
+      }
 
       // ── Photo — large, portrait ────────────────────────────────
       const photoW = 210;
@@ -801,13 +907,15 @@ class PdfSignatureService {
       page.drawText(photoCaption, { x: photoX, y: photoY + photoH + 10, size: 6.5, font: helvetica, color: txtSoft });
 
       if (asset.facial) {
-        // Subtle drop shadow
-        page.drawRectangle({ x: photoX + 3, y: photoY - 3, width: photoW, height: photoH, color: rgb(0.82, 0.86, 0.90) });
-        // White frame
-        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, color: white, borderColor: border, borderWidth: 1.2 });
+        // Subtle drop shadow (rounded)
+        roundRect(page, photoX + 3, photoY + photoH - 3, photoW, photoH, 8, { fill: rgb(0.84, 0.87, 0.91) });
+        // White frame (rounded)
+        roundRect(page, photoX, photoY + photoH, photoW, photoH, 8, { fill: white, stroke: border, strokeW: 1.2 });
         // Image inside frame
-        const imgPad = 3;
+        const imgPad = 4;
         page.drawImage(asset.facial, { x: photoX + imgPad, y: photoY + imgPad, width: photoW - imgPad * 2, height: photoH - imgPad * 2 });
+        // Corner crop marks (premium detail)
+        cornerMarks(page, photoX + 9, photoY + 9, photoW - 18, photoH - 18, 11, rgb(1, 1, 1));
 
         // ── CONFIDENTIAL watermark — centered with dashed lines ──
         const wmCenterX = photoX + imgPad + (photoW - imgPad * 2) / 2;
@@ -847,8 +955,8 @@ class PdfSignatureService {
           page.drawLine({ start: { x: cx, y: dLineY2 }, end: { x: ex, y: dLineY2 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.22 });
         }
       } else {
-        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, color: bgLight, borderColor: border, borderWidth: 1 });
-        page.drawText('Selfie nao', { x: photoX + 70, y: photoY + photoH / 2 + 8, size: 9, font: helveticaBold, color: rgb(0.70, 0.72, 0.75) });
+        roundRect(page, photoX, photoY + photoH, photoW, photoH, 8, { fill: bgLight, stroke: border, strokeW: 1 });
+        page.drawText('Selfie não', { x: photoX + 68, y: photoY + photoH / 2 + 8, size: 9, font: helveticaBold, color: rgb(0.70, 0.72, 0.75) });
         page.drawText('coletada', { x: photoX + 76, y: photoY + photoH / 2 - 6, size: 9, font: helveticaBold, color: rgb(0.70, 0.72, 0.75) });
       }
 
@@ -858,8 +966,8 @@ class PdfSignatureService {
       let detY = pageHeight - 148;
 
       // Data section label
-      page.drawRectangle({ x: detX, y: detY - 2, width: 3, height: 14, color: emerald });
-      page.drawText('DADOS DO SIGNATARIO', { x: detX + 10, y: detY, size: 8, font: helveticaBold, color: txtDark });
+      page.drawRectangle({ x: detX, y: detY - 1, width: 3, height: 12, color: emerald });
+      page.drawText('DADOS DO SIGNATÁRIO', { x: detX + 10, y: detY, size: 8.5, font: helveticaBold, color: txtDark });
       detY -= 18;
 
       const deviceStrP2 = (() => {
@@ -880,26 +988,29 @@ class PdfSignatureService {
 
       const dataFieldsP2: [string, string][] = [
         ['Nome', item.name],
-        ['Papel', item.role || '—'],
+        ['Papel', item.role && item.role !== 'Assinar' ? item.role : 'Signatário'],
         ['Contato', contactStrP2],
         ['CPF', item.cpf || '—'],
-        ['Endereco IP', item.signer_ip || '—'],
-        ['Localizacao', geoP2.coordinates || '—'],
+        ['Endereço IP', item.signer_ip || '—'],
+        ['Localização', geoP2.coordinates || '—'],
         ['Dispositivo', deviceStrP2],
-        ['Autenticacao', authStrP2],
+        ['Autenticação', authStrP2],
         ['Assinado em', signedAtStr],
       ];
 
       for (let fi = 0; fi < dataFieldsP2.length; fi++) {
         if (detY < photoY + 4) break;
         const [label, rawVal] = dataFieldsP2[fi];
-        const value = rawVal.length > 42 ? `${rawVal.slice(0, 40)}...` : rawVal;
+        // Valor vazio ("—" ou em branco) → "Não informado" em tom suave (evita campo "vazio")
+        const trimmed = String(rawVal || '').trim();
+        const isEmpty = trimmed === '' || trimmed === '—' || trimmed === '-';
+        const value = isEmpty ? 'Não informado' : (rawVal.length > 42 ? `${rawVal.slice(0, 40)}...` : rawVal);
         const rowH = 24;
         if (fi % 2 === 0) {
-          page.drawRectangle({ x: detX - 4, y: detY - rowH + 4, width: detW + 4, height: rowH, color: bgLight });
+          roundRect(page, detX - 6, detY + 4, detW + 6, rowH, 4, { fill: bgLight });
         }
-        page.drawText(label.toUpperCase() + ':', { x: detX, y: detY - 3, size: 5.5, font: helveticaBold, color: txtSoft });
-        page.drawText(value, { x: detX, y: detY - 14, size: 7.5, font: helvetica, color: txtDark, maxWidth: detW });
+        page.drawText(label.toUpperCase(), { x: detX, y: detY - 3, size: 5.5, font: helveticaBold, color: txtSoft });
+        page.drawText(value, { x: detX, y: detY - 14, size: 7.5, font: helvetica, color: isEmpty ? silver : txtDark, maxWidth: detW });
         detY -= rowH;
       }
 
@@ -916,14 +1027,9 @@ class PdfSignatureService {
       const cbMuted  = rgb(0.62, 0.67, 0.74);
       const cbOrange = rgb(0.91, 0.32, 0.04);
 
-      // White background
-      page.drawRectangle({ x: lm, y: verBlockY, width: verBlockW, height: verBlockH, color: cbWhite });
-      // Top border
-      page.drawLine({ start: { x: lm, y: legalTopY }, end: { x: lm + verBlockW, y: legalTopY }, thickness: 0.6, color: cbBorder });
-      // Orange stripe
-      page.drawRectangle({ x: lm, y: legalTopY - 3, width: verBlockW, height: 3, color: cbOrange });
-      // Bottom border
-      page.drawLine({ start: { x: lm, y: verBlockY }, end: { x: lm + verBlockW, y: verBlockY }, thickness: 0.5, color: cbBorder });
+      // Rounded card with top orange accent
+      roundRect(page, lm, legalTopY, verBlockW, verBlockH, 9, { fill: cbWhite, stroke: cbBorder, strokeW: 0.8 });
+      roundTopRect(page, lm, legalTopY, verBlockW, 3, 9, cbOrange);
 
       // QR code — right side
       const cbQrSize = 72;
@@ -945,11 +1051,11 @@ class PdfSignatureService {
       page.drawLine({ start: { x: vtx, y: legalTopY - 26 }, end: { x: cbQrX - 8, y: legalTopY - 26 }, thickness: 0.4, color: cbBorder });
 
       // Code row
-      page.drawText('CODIGO:', { x: vtx, y: legalTopY - 38, size: 6, font: helvetica, color: cbMuted });
+      page.drawText('CÓDIGO:', { x: vtx, y: legalTopY - 38, size: 6, font: helvetica, color: cbMuted });
       page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 42, y: legalTopY - 38, size: 7.5, font: helveticaBold, color: cbDark });
 
-      // SHA-256
-      const cbHash = item.verification_hash ? `${item.verification_hash.slice(0, 52)}...` : 'N/A';
+      // SHA-256 — hash de integridade REAL (completo, 64 hex)
+      const cbHash = this.formatIntegrityHash(integritySha256, false);
       page.drawText('SHA-256:', { x: vtx, y: legalTopY - 52, size: 6, font: helvetica, color: cbMuted });
       page.drawText(cbHash, { x: vtx + 42, y: legalTopY - 52, size: 5.5, font: helvetica, color: cbSoft });
 
@@ -963,7 +1069,7 @@ class PdfSignatureService {
       }
 
       // Signer note
-      page.drawText(`Signatario: ${item.name}  ·  Documento: ${request.id}`, { x: vtx, y: verBlockY + 5, size: 5, font: helvetica, color: cbMuted });
+      page.drawText(`Signatário: ${item.name}  ·  Documento: ${request.id}`, { x: vtx, y: verBlockY + 5, size: 5, font: helvetica, color: cbMuted });
     }
 
     const historyPage = pdfDoc.addPage([pageWidth, pageHeight]);
@@ -972,9 +1078,10 @@ class PdfSignatureService {
     const createdAtStr = this.formatManausDateTime(createdAtDate);
     type HistoryItem = { label: string; when: string; detail: string; sortAt: number };
     const history: HistoryItem[] = [];
-    const creatorName = creator?.name || 'Sistema';
-    const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
-    history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}`, sortAt: createdAtDate.getTime() });
+    // Criador: mostra nome sem email pessoal no PDF público — o email interno
+    // do escritório não precisa aparecer no certificado do signatário externo.
+    const creatorName = creator?.name || 'Emissor';
+    history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime() });
 
     for (const item of signedRequestSigners) {
       const geo = this.parseGeolocation(item.signer_geolocation);
@@ -1036,61 +1143,68 @@ class PdfSignatureService {
     history.sort((a, b) => a.sortAt - b.sortAt);
 
     // Section label
-    const histSectionY = pageHeight - 132;
-    historyPage.drawRectangle({ x: lm, y: histSectionY - 2, width: 3, height: 14, color: orange });
-    historyPage.drawText('REGISTRO DE EVENTOS', { x: lm + 10, y: histSectionY, size: 8, font: helveticaBold, color: txtDark });
-    historyPage.drawLine({ start: { x: lm + 10, y: histSectionY - 6 }, end: { x: pageWidth - lm, y: histSectionY - 6 }, thickness: 0.4, color: border });
+    const histSectionY = pageHeight - 128;
+    historyPage.drawRectangle({ x: lm, y: histSectionY - 1, width: 3, height: 12, color: orange });
+    historyPage.drawText('REGISTRO DE EVENTOS', { x: lm + 10, y: histSectionY, size: 8.5, font: helveticaBold, color: txtDark });
+    {
+      const lw = helveticaBold.widthOfTextAtSize('REGISTRO DE EVENTOS', 8.5);
+      historyPage.drawLine({ start: { x: lm + 20 + lw, y: histSectionY + 3 }, end: { x: pageWidth - lm, y: histSectionY + 3 }, thickness: 0.5, color: borderSoft });
+    }
 
-    let y = pageHeight - 160;
-    const timelineX = lm + 14; // vertical line x
-    const eventGap = 10;
+    let y = pageHeight - 158;
+    const timelineX = lm + 15; // vertical line x
+    const eventGap = 11;
 
-    // Draw vertical timeline line (approximate)
-    historyPage.drawLine({ start: { x: timelineX, y: y + 8 }, end: { x: timelineX, y: 100 }, thickness: 1, color: border });
+    // Vertical timeline line
+    historyPage.drawLine({ start: { x: timelineX, y: y + 6 }, end: { x: timelineX, y: 102 }, thickness: 1.2, color: border });
 
     for (const histItem of history) {
-      const detailLines = wrapText(histItem.detail, helvetica, 7.5, pageWidth - lm * 2 - 46);
-      const blockHeight = 36 + detailLines.length * 12;
-      if (y - blockHeight < 90) break;
+      const detailLines = wrapText(histItem.detail, helvetica, 7.5, pageWidth - lm * 2 - 52);
+      const blockHeight = 38 + detailLines.length * 12;
+      if (y - blockHeight < 92) break;
 
-      const isCreated    = histItem.label === 'Criado';
-      const isViewed     = histItem.label === 'Visualizado';
-      const isSigned     = histItem.label === 'Assinado';
+      const isCreated = histItem.label === 'Criado';
+      const isViewed  = histItem.label === 'Visualizado';
+      const isSigned  = histItem.label === 'Assinado';
 
-      // Accent color for this event
-      const viewedColor = rgb(0.35, 0.40, 0.52);   // slate — neutral, no strong blue
-      const dotColor  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : txtSoft;
-      const badgeBg   = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : navyMid;
+      const viewedColor = rgb(0.35, 0.40, 0.52);
+      const dotColor = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : txtSoft;
+      const badgeBg  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : navyMid;
 
-      // Timeline dot (circle via rectangle, approximate)
-      historyPage.drawRectangle({ x: timelineX - 5, y: y - 5, width: 10, height: 10, color: dotColor, borderColor: white, borderWidth: 1.5 });
+      // Timeline node: real circle with white ring + small inner dot
+      circleDot(historyPage, timelineX, y - 4, 6, white);
+      circleDot(historyPage, timelineX, y - 4, 5, dotColor);
+      circleDot(historyPage, timelineX, y - 4, 1.8, white);
 
-      // Event card
-      const cardX = timelineX + 16;
-      const cardW = pageWidth - lm - cardX - lm + lm;
-      historyPage.drawRectangle({ x: cardX, y: y - blockHeight, width: cardW, height: blockHeight, color: bgLight, borderColor: border, borderWidth: 0.6 });
-      // Left color accent per event type
-      historyPage.drawRectangle({ x: cardX, y: y - blockHeight, width: 3, height: blockHeight, color: dotColor });
+      // Event card (rounded) with left accent
+      const cardX = timelineX + 18;
+      const cardW = pageWidth - lm - cardX;
+      const cardTop = y;
+      roundRect(historyPage, cardX, cardTop, cardW, blockHeight, 7, { fill: bgLight, stroke: border, strokeW: 0.6 });
+      roundRect(historyPage, cardX, cardTop, 3.5, blockHeight, 1.5, { fill: dotColor });
 
-      // Badge + timestamp on same line
-      historyPage.drawRectangle({ x: cardX + 8, y: y - 20, width: 62, height: 14, color: badgeBg });
-      historyPage.drawText(histItem.label.toUpperCase(), { x: cardX + 11, y: y - 16, size: 6.5, font: helveticaBold, color: white });
-      historyPage.drawText(histItem.when, { x: cardX + 78, y: y - 16, size: 7.5, font: helvetica, color: txtMid });
+      // Badge (rounded) + timestamp
+      const badgeW = 66;
+      roundRect(historyPage, cardX + 10, cardTop - 8, badgeW, 14, 7, { fill: badgeBg });
+      const blbl = histItem.label.toUpperCase();
+      const blblW = helveticaBold.widthOfTextAtSize(blbl, 6.5);
+      historyPage.drawText(blbl, { x: cardX + 10 + (badgeW - blblW) / 2, y: cardTop - 17, size: 6.5, font: helveticaBold, color: white });
+      historyPage.drawText(histItem.when, { x: cardX + 10 + badgeW + 10, y: cardTop - 17, size: 7.5, font: helvetica, color: txtMid });
 
       // Detail lines
-      let detailY = y - 33;
+      let detailY = cardTop - 33;
       for (const line of detailLines.slice(0, 5)) {
-        historyPage.drawText(line, { x: cardX + 8, y: detailY, size: 7.5, font: helvetica, color: txtDark });
+        historyPage.drawText(line, { x: cardX + 12, y: detailY, size: 7.5, font: helvetica, color: txtDark });
         detailY -= 12;
       }
 
       y -= blockHeight + eventGap;
     }
 
-    // Footer note on history page
-    historyPage.drawLine({ start: { x: lm, y: 88 }, end: { x: pageWidth - lm, y: 88 }, thickness: 0.4, color: border });
-    historyPage.drawText('Este registro de auditoria e parte integrante do certificado de assinatura. Todas as datas em UTC-0400 (America/Manaus).', { x: lm, y: 76, size: 6.5, font: helvetica, color: txtSoft });
-    historyPage.drawText(`Documento: ${request.id}  ·  Jurius CRM`, { x: lm, y: 64, size: 6, font: helvetica, color: silver });
+    // Footer note
+    historyPage.drawLine({ start: { x: lm, y: 90 }, end: { x: pageWidth - lm, y: 90 }, thickness: 0.5, color: borderSoft });
+    historyPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Manaus (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
+    historyPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 
   async generateSignedPdf(options: SignedPdfOptions): Promise<Uint8Array> {
@@ -1214,6 +1328,32 @@ class PdfSignatureService {
     // Gerar hash do documento
     const docHash = this.generateHash(request.id, signer.id);
 
+    // ── Reservar espaço para o rodapé de assinatura ──────────────────────────
+    // O strip do rodapé tem 52pt e é desenhado em y=0. Em PDFs que preenchem
+    // até a borda inferior (ex: gerados a partir de template), o strip cobriria
+    // o texto. Para garantir rodapé limpo em QUALQUER documento, comprimimos
+    // levemente o conteúdo de cada página de documento/anexo para cima,
+    // liberando a faixa inferior — mesmo comportamento do fluxo DOCX.
+    //
+    // A assinatura já foi desenhada como conteúdo da página acima, então é
+    // comprimida junto, permanecendo alinhada ao documento.
+    //
+    // As páginas do relatório (criadas depois deste passo) NÃO são afetadas,
+    // pois já têm layout próprio com espaço para o rodapé.
+    const FOOTER_RESERVED_H = 56;
+    const contentPageCount = pdfDoc.getPageCount();
+    for (let i = 0; i < contentPageCount; i++) {
+      const p = pdfDoc.getPage(i);
+      const { width: pw, height: ph } = p.getSize();
+      if (ph <= FOOTER_RESERVED_H) continue;
+      const s = (ph - FOOTER_RESERVED_H) / ph;
+      // Ordem: scaleContent depois translateContent → ponto final = (s·x + tx, s·y + R)
+      //   y=0 → R (acima da faixa do rodapé)   |   y=H → H (topo intacto)
+      //   x centralizado para compensar a leve redução de largura
+      p.scaleContent(s, s);
+      p.translateContent((pw * (1 - s)) / 2, FOOTER_RESERVED_H);
+    }
+
     // Append report pages
     await this.addReportPages({
       pdfDoc,
@@ -1224,11 +1364,13 @@ class PdfSignatureService {
       facialImage,
       qrImage,
       verificationUrl,
+      integritySha256,
     });
 
     // Rodapé com hash de integridade em TODAS as páginas (documento + anexos + relatório)
     const allPages = pdfDoc.getPages();
-    for (const p of allPages) {
+    for (let i = 0; i < allPages.length; i++) {
+      const p = allPages[i];
       const { width: w, height: h } = p.getSize();
       this.drawFooterStamp({
         page: p,
@@ -1242,6 +1384,9 @@ class PdfSignatureService {
         docHash: '',
         integritySha256,
         variant: 'strip',
+        // Páginas de conteúdo têm espaço reservado → fundo branco puro.
+        // Páginas do relatório mantêm overlay semitransparente (layout próprio).
+        opaqueStrip: i < contentPageCount,
       });
     }
 
@@ -1749,7 +1894,11 @@ class PdfSignatureService {
                   const fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
                   const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
                   const manualSlicePage = Math.max(1, (field.page_number ?? 1));
-                  if (!isAuto && manualSlicePage !== pageNumberForFields) continue;
+                  // Em documento de section única, o fatiamento corta por espaço em
+                  // branco, então o nº da página pode não bater com o page_number salvo.
+                  // Nesses casos a posição vertical (verificada abaixo) é a fonte de
+                  // verdade. Em múltiplas sections mantemos o filtro por page_number.
+                  if (!isAuto && !isSingleSection && manualSlicePage !== pageNumberForFields) continue;
 
                   const sliceEndPt = sliceStartPt + drawHPt;
                   if (fieldYTopFull + fieldHFull < sliceStartPt || fieldYTopFull > sliceEndPt) continue;
@@ -1800,27 +1949,67 @@ class PdfSignatureService {
             continue;
           }
 
-          // Caso contrário: fatiar verticalmente.
-          // IMPORTANTE: se o docx-preview entregou apenas 1 section grande,
-          // tratamos page_number como páginas A4 fatiadas (page 1,2,3...).
+          // Caso contrário: fatiar verticalmente em páginas A4.
+          // PROBLEMA: cortar em pixels fixos parte uma linha de texto ao meio na
+          // borda — a metade superior fica colada no rodapé da página N e a
+          // metade inferior reaparece no topo da página N+1 (efeito "duplicado").
+          // SOLUÇÃO: ajustar o corte para a linha de pixels EM BRANCO mais próxima
+          // acima do limite ideal, de modo que cada linha de texto fique inteira
+          // em uma única página.
           const sliceHeightPx = Math.floor(contentHeightPt / scalePtPerPx);
-          const totalSlices = Math.max(1, Math.ceil(canvas.height / sliceHeightPx));
 
-          for (let sliceIdx = 0; sliceIdx < totalSlices; sliceIdx++) {
-            const yPx = sliceIdx * sliceHeightPx;
-            const hPx = Math.min(sliceHeightPx, canvas.height - yPx);
-            if (hPx <= 0) continue;
+          // Janela de busca por espaço em branco acima do limite ideal (~12% da
+          // página, suficiente para 1-2 linhas de texto).
+          const WHITESPACE_SEARCH_PX = Math.max(40, Math.round(sliceHeightPx * 0.12));
+          const sliceCtx = canvas.getContext('2d');
+
+          // Retorna o y (px) onde cortar: a linha branca mais baixa dentro da
+          // janela [idealEnd - janela, idealEnd]. Se não achar, corta no ideal.
+          const findWhitespaceCut = (idealEndPx: number): number => {
+            if (idealEndPx >= canvas.height || !sliceCtx) return Math.min(idealEndPx, canvas.height);
+            const searchTop = Math.max(0, idealEndPx - WHITESPACE_SEARCH_PX);
+            const bandH = idealEndPx - searchTop;
+            if (bandH <= 1) return idealEndPx;
+            let data: Uint8ClampedArray;
+            try {
+              data = sliceCtx.getImageData(0, searchTop, canvas.width, bandH).data;
+            } catch {
+              return idealEndPx; // canvas tainted → fallback
+            }
+            const w = canvas.width;
+            for (let row = bandH - 1; row >= 0; row--) {
+              let white = true;
+              const base = row * w * 4;
+              for (let col = 0; col < w; col++) {
+                const i = base + col * 4;
+                if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) { white = false; break; }
+              }
+              if (white) return searchTop + row + 1;
+            }
+            return idealEndPx; // sem linha totalmente branca → corta no ideal
+          };
+
+          let cursorPx = 0;
+          let pageNo = 0;
+          while (cursorPx < canvas.height) {
+            pageNo++;
+            const idealEndPx = Math.min(canvas.height, cursorPx + sliceHeightPx);
+            const endPx = findWhitespaceCut(idealEndPx);
+            const hPx = Math.max(1, endPx - cursorPx);
+            if (hPx <= 0) break;
 
             const sliceCanvas = document.createElement('canvas');
             sliceCanvas.width = canvas.width;
             sliceCanvas.height = hPx;
             const ctx = sliceCanvas.getContext('2d');
-            if (!ctx) continue;
-            ctx.drawImage(canvas, 0, yPx, canvas.width, hPx, 0, 0, canvas.width, hPx);
+            if (!ctx) { cursorPx = endPx; continue; }
+            ctx.drawImage(canvas, 0, cursorPx, canvas.width, hPx, 0, 0, canvas.width, hPx);
 
-            const pageNumberForFields = isSingleSection ? (sliceIdx + 1) : (sectionIdx + 1);
-            const sliceStartPt = sliceIdx * contentHeightPt;
+            const pageNumberForFields = isSingleSection ? pageNo : (sectionIdx + 1);
+            const sliceStartPt = cursorPx * scalePtPerPx;
             await drawOnePage(sliceCanvas, pageNumberForFields, sliceStartPt, scaledHeightPt);
+
+            cursorPx = endPx;
           }
         } finally {
           // Restaurar estilos originais da section
@@ -2014,6 +2203,7 @@ class PdfSignatureService {
       facialImage,
       qrImage,
       verificationUrl,
+      integritySha256,
     });
 
     const allPages = pdfDoc.getPages();

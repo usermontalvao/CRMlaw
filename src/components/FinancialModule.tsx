@@ -43,6 +43,7 @@ import { matchesNormalizedSearch } from '../utils/search';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
+import { openReceipt } from '../lib/receipt';
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
@@ -2765,10 +2766,27 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 </div>
 </div>
 </body></html>`;
+    void html; // template legado — recibo agora gerado pelo módulo único src/lib/receipt.ts (mesmo do portal)
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+    openReceipt({
+      clientName,
+      clientCpf: clientCpf || undefined,
+      amount,
+      description,
+      serviceDescription,
+      paymentMethod,
+      paymentDateDisplay,
+      agreementTitle: agreement.title,
+      breakdown: (!installment && paidInstallmentsForAgreement.length > 1)
+        ? paidInstallmentsAsc.map((i) => ({
+            label: `${i.installment_number}/${agreement.installments_count}`,
+            due: i.due_date ? (parseLocalDate(i.due_date) ?? new Date(i.due_date)).toLocaleDateString('pt-BR') : '—',
+            paid: i.payment_date ? new Date(i.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—',
+            method: i.payment_method ? getPaymentMethodLabel(i.payment_method) : '—',
+            value: (i.paid_value ?? i.value ?? 0) * feeRatio,
+          }))
+        : undefined,
+    });
   };
 
   const handleGenerateFullReceipt = (agreement: Agreement) => {

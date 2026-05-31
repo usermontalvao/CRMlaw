@@ -29,6 +29,15 @@ import {
   CalendarClock,
   Send,
   Key,
+  Smartphone,
+  Briefcase,
+  FolderOpen,
+  PenTool,
+  PiggyBank,
+  Calendar,
+  MessageCircle,
+  User,
+  Globe,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
@@ -46,6 +55,8 @@ import {
   type Preferences,
   type RolePermission,
   type SecurityConfig,
+  type PortalModulesConfig,
+  PORTAL_MODULES_DEFAULT,
 } from '../services/settings.service';
 
 interface UserWithProfile extends Profile {
@@ -61,7 +72,8 @@ type SettingsSection =
   | 'preferences'
   | 'security'
   | 'audit'
-  | 'access_requests';
+  | 'access_requests'
+  | 'portal';
 
 const ROLES = [
   {
@@ -210,6 +222,9 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
   });
 
   // Users
+  const [portalModules, setPortalModules] = useState<PortalModulesConfig>(PORTAL_MODULES_DEFAULT);
+  const [portalSaving, setPortalSaving] = useState(false);
+
   const [users, setUsers] = useState<UserWithProfile[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -345,6 +360,8 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
+      const portalData = await settingsService.getPortalModulesConfig();
+      setPortalModules(portalData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -581,6 +598,7 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     { key: 'preferences', label: 'Preferências', icon: Settings, description: 'Operação' },
     { key: 'security', label: 'Segurança', icon: ShieldCheck, description: 'Políticas' },
     { key: 'audit', label: 'Auditoria', icon: History, description: 'Registro completo' },
+    { key: 'portal', label: 'Portal', icon: Smartphone, description: 'Módulos do cliente' },
   ] satisfies { key: SettingsSection; label: string; icon: any; description: string }[];
 
   return (
@@ -1460,6 +1478,84 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                 {activeSection === 'access_requests' && (
                   <div className="p-6">
                     <AccessRequestsAdmin />
+                  </div>
+                )}
+
+                {activeSection === 'portal' && (
+                  <div className="p-6 space-y-6">
+                    <header className="flex items-center gap-3">
+                      <span className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
+                        <Smartphone className="w-5 h-5 text-orange-600" />
+                      </span>
+                      <div>
+                        <h2 className="text-lg font-semibold text-slate-900">Portal do Cliente</h2>
+                        <p className="text-sm text-slate-500">Ative ou desative os módulos visíveis no portal. CPF e dados de login são sempre acessíveis.</p>
+                      </div>
+                    </header>
+
+                    {/* Módulos */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {([
+                        { key: 'processos',    label: 'Processos',    desc: 'Listagem e detalhes dos processos',      icon: Briefcase },
+                        { key: 'documentos',   label: 'Documentos',   desc: 'Documentos enviados pelo escritório',    icon: FolderOpen },
+                        { key: 'assinar',      label: 'Assinaturas',  desc: 'Documentos pendentes de assinatura',     icon: PenTool },
+                        { key: 'financeiro',   label: 'Financeiro',   desc: 'Contratos, parcelas e pagamentos',       icon: PiggyBank },
+                        { key: 'agenda',       label: 'Agenda',       desc: 'Compromissos e audiências',              icon: Calendar },
+                        { key: 'mensagens',    label: 'Mensagens',    desc: 'Chat com o escritório',                  icon: MessageCircle },
+                        { key: 'notificacoes', label: 'Notificações', desc: 'Central de avisos e atualizações',       icon: Bell },
+                        { key: 'perfil',       label: 'Perfil',       desc: 'Dados cadastrais e solicitações',        icon: User },
+                      ] as { key: keyof PortalModulesConfig; label: string; desc: string; icon: React.ComponentType<any> }[]).map(({ key, label, desc, icon: Icon }) => {
+                        const enabled = portalModules[key];
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => setPortalModules((p) => ({ ...p, [key]: !p[key] }))}
+                            className={`flex items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${
+                              enabled ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white opacity-60'
+                            }`}
+                          >
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{label}</p>
+                              <p className="text-xs text-slate-500 truncate">{desc}</p>
+                            </div>
+                            {/* Toggle */}
+                            <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Aviso perfil */}
+                    <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                      <Globe className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+                      O módulo <strong>Perfil</strong> exibe os dados cadastrais. Se desativado, o cliente não poderá solicitar atualizações via portal.
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        disabled={portalSaving}
+                        onClick={async () => {
+                          setPortalSaving(true);
+                          try {
+                            await settingsService.savePortalModulesConfig(portalModules, currentProfile?.name);
+                            setFeedback('success', 'Configurações do portal salvas!');
+                          } catch (err: any) {
+                            setFeedback('error', err.message || 'Erro ao salvar.');
+                          } finally {
+                            setPortalSaving(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-60"
+                      >
+                        {portalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Salvar configurações
+                      </button>
+                    </div>
                   </div>
                 )}
 

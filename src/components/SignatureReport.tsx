@@ -154,7 +154,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                   Certificado de Assinatura Eletrônica
                 </h1>
                 <p className="text-[10.5px] mt-0.5" style={{ color: '#475569' }}>
-                  MP 2.200-2/2001 · Lei 14.063/2020 · ICP-Brasil
+                  MP 2.200-2/2001 · Lei 14.063/2020
                 </p>
               </div>
             </div>

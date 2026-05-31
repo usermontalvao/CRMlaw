@@ -1820,6 +1820,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   max-width: 794px !important;
                   background: #ffffff !important;
                 }
+                /* Impede o docx-preview de quebrar palavras no meio (overflow-wrap:
+                   break-word / hyphens: auto). Sem isso, html2canvas parte palavras
+                   como "Trabalhista" → "Trabal" + "hista" no PDF gerado. */
+                .docx-wrapper,
+                .docx-wrapper *,
+                .docx-wrapper p,
+                .docx-wrapper span {
+                  overflow-wrap: normal !important;
+                  word-wrap: normal !important;
+                  word-break: normal !important;
+                  hyphens: none !important;
+                  -webkit-hyphens: none !important;
+                }
               `;
               document.head.appendChild(style);
             };
@@ -2575,141 +2588,148 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         <div className="w-full max-w-md">
 
           {/* ── Card principal ── */}
-          <div className="bg-white rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
+          <div className="bg-white rounded-[28px] overflow-hidden" style={{ boxShadow: '0 24px 70px -20px rgba(234,88,12,0.25), 0 8px 24px -12px rgba(15,23,42,0.12), 0 0 0 1px rgba(15,23,42,0.04)' }}>
 
-            {/* Cabeçalho em gradiente laranja */}
-            <div className="relative px-6 pt-10 pb-8 flex flex-col items-center overflow-hidden"
-              style={{ background: 'linear-gradient(145deg, #7c2d12 0%, #9a3412 30%, #c2410c 70%, #ea580c 100%)' }}>
+            {/* Cabeçalho — gradiente laranja vivo + brilho radial */}
+            <div className="relative px-6 pt-11 pb-9 flex flex-col items-center overflow-hidden"
+              style={{ background: 'linear-gradient(160deg, #fb923c 0%, #f97316 35%, #ea580c 70%, #c2410c 100%)' }}>
 
-              {/* Reflexo decorativo */}
-              <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)' }} />
-              <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }} />
-              <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full" style={{ background: 'rgba(0,0,0,0.08)' }} />
+              {/* Brilho radial superior */}
+              <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,0.30), transparent 60%)' }} />
+              <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }} />
 
-              {/* Ícone de sucesso */}
-              <div className="relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center mb-5"
-                style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                <svg viewBox="0 0 24 24" className="w-9 h-9" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
+              {/* Selo de sucesso — círculo com anel */}
+              <div className="relative mb-5">
+                <div className="absolute inset-0 rounded-full" style={{ background: 'rgba(255,255,255,0.25)', filter: 'blur(14px)', transform: 'scale(1.25)' }} />
+                <div className="relative w-[78px] h-[78px] rounded-full flex items-center justify-center"
+                  style={{ background: 'rgba(255,255,255,0.16)', border: '2px solid rgba(255,255,255,0.55)', boxShadow: 'inset 0 1px 8px rgba(255,255,255,0.25), 0 10px 28px rgba(124,45,18,0.35)' }}>
+                  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </div>
               </div>
 
-              <h1 className="text-[22px] font-bold text-white text-center leading-tight mb-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                Documento assinado!
+              <h1 className="relative text-[23px] font-bold text-white text-center leading-tight mb-1.5" style={{ textShadow: '0 1px 4px rgba(124,45,18,0.35)' }}>
+                Documento assinado
               </h1>
-              <p className="text-[13px] text-center" style={{ color: 'rgba(255,255,255,0.80)' }}>
+              <p className="relative text-[13px] text-center" style={{ color: 'rgba(255,255,255,0.88)' }}>
                 Assinatura registrada e validada com sucesso.
               </p>
 
               {/* Eyebrow / badge */}
-              <div className="mt-4 px-3 py-1 rounded-full flex items-center gap-1.5"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.20)' }}>
-                <div className="w-[5px] h-[5px] rounded-full bg-emerald-300 flex-shrink-0" style={{ boxShadow: '0 0 5px rgba(110,231,183,0.8)' }} />
-                <span className="text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: 'rgba(255,255,255,0.90)' }}>
-                  JURIUS · Assinatura Digital
+              <div className="relative mt-4 px-3.5 py-1.5 rounded-full flex items-center gap-2"
+                style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', backdropFilter: 'blur(6px)' }}>
+                <span className="w-[6px] h-[6px] rounded-full bg-emerald-300 flex-shrink-0" style={{ boxShadow: '0 0 6px rgba(110,231,183,0.9)' }} />
+                <span className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: 'rgba(255,255,255,0.95)' }}>
+                  Jurius · Assinatura Digital
                 </span>
               </div>
             </div>
 
-            {/* Corpo */}
-            <div className="px-5 pt-5 pb-2">
+            {/* Corpo — sem caixas aninhadas, separado por linhas finas */}
+            <div className="px-6 pt-6">
 
-              {/* Card do documento */}
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f1f5f9', background: '#fafafa' }}>
-                {/* Tarja laranja topo */}
-                <div className="h-[3px]" style={{ background: 'linear-gradient(90deg, #c2410c, #ea580c, #f97316)' }} />
-                <div className="p-4 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                    <FileText className="w-[18px] h-[18px]" style={{ color: '#ea580c' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-[13.5px] text-slate-900 truncate">{request?.document_name}</div>
-                    <div className="text-[12px] text-slate-400 mt-0.5">
-                      {signer?.signed_at ? formatDate(signer.signed_at) : ''}
-                    </div>
+              {/* Documento */}
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #fff7ed, #ffedd5)', border: '1px solid #fed7aa' }}>
+                  <FileText className="w-5 h-5" style={{ color: '#ea580c' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[14px] text-slate-900 truncate">{request?.document_name}</div>
+                  <div className="text-[12px] text-slate-400 mt-0.5">
+                    {signer?.signed_at ? formatDate(signer.signed_at) : ''}
                   </div>
                 </div>
-
-                {/* Código de autenticação */}
-                {signer?.verification_hash && (
-                  <div className="px-4 pb-4">
-                    <div className="rounded-xl p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-1.5">
-                        Código de autenticação
-                      </div>
-                      <div className="font-mono text-[12.5px] font-semibold tracking-wider text-slate-700 break-all">
-                        {signer.verification_hash}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
+
+              {/* Código de autenticação */}
+              {signer?.verification_hash && (
+                <div className="mt-5 rounded-2xl px-4 py-3.5" style={{ background: '#f8fafc', border: '1px solid #eef2f7' }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      Código de autenticação
+                    </span>
+                    <button
+                      onClick={async () => {
+                        try { await navigator.clipboard.writeText(signer.verification_hash || ''); toast.success('Código copiado.'); }
+                        catch { /* ignore */ }
+                      }}
+                      className="flex items-center gap-1 text-[10.5px] font-semibold transition-colors"
+                      style={{ color: '#ea580c' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#c2410c')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#ea580c')}
+                    >
+                      <Copy className="w-3 h-3" /> Copiar
+                    </button>
+                  </div>
+                  <div className="font-mono text-[13px] font-semibold tracking-[0.08em] text-slate-700 break-all">
+                    {signer.verification_hash}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Botões de ação */}
-            <div className="px-5 pt-4 pb-5 space-y-2.5">
+            <div className="px-6 pt-5 pb-5 space-y-3">
               {signer?.signed_document_path && (
                 <button
                   onClick={handleDownload}
                   disabled={downloading}
-                  className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-white rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-70"
+                  className="group w-full flex items-center justify-center gap-2.5 px-5 py-4 text-white rounded-2xl font-semibold text-[14.5px] transition-all disabled:opacity-70 active:scale-[0.99]"
                   style={{
-                    background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)',
-                    boxShadow: '0 6px 20px -4px rgba(194,65,12,0.45)',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 60%, #c2410c 100%)',
+                    boxShadow: '0 10px 26px -6px rgba(234,88,12,0.5)',
                   }}
                 >
                   {downloading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Abrindo documento...</>
+                    <><Loader2 className="w-[18px] h-[18px] animate-spin" />Abrindo documento...</>
                   ) : (
-                    <><Download className="w-4 h-4" />Abrir documento assinado</>
+                    <><Download className="w-[18px] h-[18px]" />Abrir documento assinado</>
                   )}
                 </button>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
                   onClick={() => setShowReport(true)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
-                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
+                  className="flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-[13px] font-semibold text-slate-600 transition-all active:scale-[0.98]"
+                  style={{ background: '#f8fafc' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
                   onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
                 >
-                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  <FileText className="w-4 h-4 flex-shrink-0" />
                   Ver relatório
                 </button>
 
                 {signer?.signed_document_path && (
                   <button
                     onClick={handleShare}
-                    className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
-                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
+                    className="flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-[13px] font-semibold text-slate-600 transition-all active:scale-[0.98]"
+                    style={{ background: '#f8fafc' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
                   >
-                    <Share2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    <Share2 className="w-4 h-4 flex-shrink-0" />
                     Compartilhar
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Rodapé */}
-            <div className="px-5 pb-5">
-              <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
-                <Lock className="w-3 h-3 flex-shrink-0" style={{ color: '#94a3b8' }} />
-                <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
-                  Uma cópia ficará disponível para download.
-                  {signer?.verification_hash && <> Verifique a autenticidade a qualquer momento.</>}
-                </p>
-              </div>
+            {/* Rodapé — texto integrado, sem caixa */}
+            <div className="px-6 pb-6 flex items-start gap-2">
+              <Shield className="w-3.5 h-3.5 flex-shrink-0 mt-px" style={{ color: '#cbd5e1' }} />
+              <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                Uma cópia ficará disponível para download.
+                {signer?.verification_hash && <> Verifique a autenticidade a qualquer momento pelo código acima.</>}
+              </p>
             </div>
           </div>
 
           {/* JURIUS branding abaixo do card */}
-          <p className="text-center mt-4 text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: '#cbd5e1' }}>
-            JURIUS · Assinatura Digital Certificada
+          <p className="text-center mt-5 text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: '#cbd5e1' }}>
+            Jurius · Assinatura Digital Certificada
           </p>
         </div>
         </div>

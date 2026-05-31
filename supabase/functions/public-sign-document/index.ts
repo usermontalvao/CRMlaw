@@ -333,6 +333,30 @@ Deno.serve(async (req: Request) => {
       console.error('Audit log failed (non-blocking):', auditErr);
     }
 
+    // Send confirmation email to the signer who just signed (non-blocking)
+    try {
+      const supabaseUrl_ = Deno.env.get('SUPABASE_URL') ?? ''
+      const anonKey_     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      if (supabaseUrl_ && anonKey_) {
+        const emailPayload = {
+          request_id: updatedSigner.signature_request_id,
+          signer_id:  updatedSigner.id,
+          origin:     'https://jurius.com.br',
+        }
+        fetch(`${supabaseUrl_}/functions/v1/send-signature-link`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${anonKey_}`,
+          },
+          body: JSON.stringify(emailPayload),
+        }).catch((e: unknown) => console.error('Email dispatch error (non-blocking):', e))
+        console.log('📧 Email de confirmação disparado para', updatedSigner.id)
+      }
+    } catch (emailErr) {
+      console.error('Email trigger failed (non-blocking):', emailErr)
+    }
+
     // Check if all signers have signed and update request status
     try {
       const { data: allSigners } = await supabase

@@ -17,7 +17,8 @@ export type UserNotificationType =
   | 'feed_comment'
   | 'chat_message'
   | 'access_request'
-  | 'access_request_resolved';
+  | 'access_request_resolved'
+  | 'profile_update_request';
 
 export interface UserNotification {
   id: string;

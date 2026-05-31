@@ -538,12 +538,34 @@ class PetitionEditorService {
       .order('updated_at', { ascending: false });
 
     if (error) throw new Error(error.message);
-    return (data ?? []).map((petition) => ({
+
+    const all = (data ?? []).map((petition) => ({
       ...petition,
       content: '',
       content_delta: null,
       blocks_used: petition.blocks_used ?? [],
     }));
+
+    // Normaliza título para dedup: remove sufixos do Windows ` (N)` repetidos no final.
+    // Ex: "MODELO MASCULINO (8) (1) (2)" → "MODELO MASCULINO"
+    //     "MODELO MASCULINO (14)"         → "MODELO MASCULINO"
+    //     "Nova Petição Trabalhista"       → "Nova Petição Trabalhista" (sem mudança)
+    const normalizeTitle = (title: string) =>
+      title.trim().replace(/(\s*\(\d+\))+$/g, '').trim().toLowerCase();
+
+    // Dedup: para cada (título normalizado + client_id), manter apenas o mais recente.
+    const seen = new Map<string, SavedPetition>();
+    for (const p of all) {
+      const key = `${normalizeTitle(p.title ?? '')}|${p.client_id ?? ''}`;
+      const existing = seen.get(key);
+      if (!existing || new Date(p.updated_at).getTime() > new Date(existing.updated_at).getTime()) {
+        seen.set(key, p);
+      }
+    }
+
+    return Array.from(seen.values()).sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
   }
 
   async getPetition(id: string): Promise<SavedPetition | null> {

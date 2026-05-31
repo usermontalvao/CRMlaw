@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Shield, CheckCircle, XCircle, Loader2, FileText, User, Calendar, Hash, AlertCircle, Download, Eye } from 'lucide-react';
+import { Shield, CheckCircle, XCircle, Loader2, FileText, User, Calendar, Hash, AlertCircle, Download, Eye, Lock } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import BrandLogo from '@/components/ui/BrandLogo';
@@ -69,8 +69,17 @@ const PublicVerificationPage: React.FC = () => {
       setLoading(true);
       setSearched(true);
       const data = await signatureService.verifySignatureByHash(codeToUse);
-      if (data) {
+      if (data && data.status === 'valid') {
         setResult({ valid: true, signer: data.signer, request: data.request, message: 'Assinatura válida e autêntica.' });
+      } else if (data && data.status === 'blocked') {
+        setResult({
+          valid: false,
+          signer: data.signer,
+          request: data.request,
+          message: data.reason
+            ? `Validação pública desativada pelo emissor. Motivo: ${data.reason}`
+            : 'A validação pública deste documento foi desativada pelo emissor. Os dados de auditoria abaixo comprovam que a assinatura ocorreu.',
+        });
       } else {
         setResult({ valid: false, message: 'Nenhuma assinatura encontrada com este código.' });
       }
@@ -286,18 +295,70 @@ const PublicVerificationPage: React.FC = () => {
               </div>
             ) : (
               <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-red-600 px-6 py-4 flex items-center gap-3">
-                  <XCircle className="w-5 h-5 text-white" />
-                  <div>
-                    <p className="text-white font-medium">Documento não encontrado</p>
-                    <p className="text-red-100 text-xs">Verifique o código informado</p>
+                {/* Header — blocked vs not found */}
+                {result.signer || result.request ? (
+                  <div className="bg-amber-500 px-6 py-4 flex items-center gap-3">
+                    <Lock className="w-5 h-5 text-white" />
+                    <div>
+                      <p className="text-white font-medium">Validação pública desativada</p>
+                      <p className="text-amber-100 text-xs">A assinatura ocorreu — dados de auditoria disponíveis abaixo</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-red-600 px-6 py-4 flex items-center gap-3">
+                    <XCircle className="w-5 h-5 text-white" />
+                    <div>
+                      <p className="text-white font-medium">Documento não encontrado</p>
+                      <p className="text-red-100 text-xs">Verifique o código informado</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-6">
-                  <p className="text-sm text-slate-600">
-                    Não foi possível localizar um documento com o código <span className="font-mono font-medium">{hash}</span>.
-                    Certifique-se de que o código foi digitado corretamente. Ele está localizado no rodapé do documento assinado.
-                  </p>
+                  <p className="text-sm text-slate-600 mb-4">{result.message}</p>
+
+                  {/* Audit data — shown even for blocked documents */}
+                  {(result.signer || result.request) && (
+                    <div className="border border-slate-200 rounded-lg overflow-hidden mt-2">
+                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Registro de auditoria</p>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {result.request && (
+                          <div>
+                            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Documento</p>
+                            <p className="text-sm text-slate-900 font-medium">{result.request.document_name}</p>
+                          </div>
+                        )}
+                        {result.signer && (
+                          <div>
+                            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Signatário</p>
+                            <p className="text-sm text-slate-900 font-medium font-mono tracking-wide">{maskName(result.signer.name)}</p>
+                          </div>
+                        )}
+                        {result.signer?.signed_at && (
+                          <div>
+                            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Data da assinatura</p>
+                            <p className="text-sm text-slate-900">{formatDate(result.signer.signed_at)}</p>
+                          </div>
+                        )}
+                        {(result.signer?.verification_hash || hash) && (
+                          <div>
+                            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Código</p>
+                            <p className="text-sm text-slate-900 font-mono">{result.signer?.verification_hash || hash}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Not found guidance */}
+                  {!result.signer && !result.request && (
+                    <p className="text-sm text-slate-600">
+                      Não foi possível localizar um documento com o código <span className="font-mono font-medium">{hash}</span>.
+                      Certifique-se de que o código foi digitado corretamente. Ele está localizado no rodapé do documento assinado.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

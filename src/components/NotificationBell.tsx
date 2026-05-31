@@ -16,6 +16,7 @@ import {
   VolumeX,
   Trash2,
   PenTool,
+  UserCheck,
 } from 'lucide-react';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -106,97 +107,118 @@ const PopupItem = memo<PopupItemProps>(({
 
   const urgency = notification.metadata?.urgency as string | undefined;
   const isSig = isSignatureNotification(notification);
+  const isCompleted = notification.metadata?.signature_type === 'completed';
 
-  // Accent color per type / urgency
-  const accentClass = urgency === 'critica'
-    ? 'border-l-red-500'
-    : urgency === 'alta'
-    ? 'border-l-orange-500'
-    : isSig
-    ? 'border-l-emerald-500'
-    : notification.type === 'deadline_assigned' || notification.type === 'deadline_reminder'
-    ? 'border-l-amber-500'
-    : notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder'
-    ? 'border-l-blue-500'
-    : 'border-l-violet-500';
-
-  const barColor = urgency === 'critica' ? 'bg-red-500'
-    : urgency === 'alta' ? 'bg-orange-500'
-    : isSig ? 'bg-emerald-500'
-    : 'bg-blue-500';
+  // Cor de destaque (topo + barra de contagem) por tipo/urgência
+  const accent =
+    urgency === 'critica' ? '#ef4444'
+    : urgency === 'alta' ? '#f97316'
+    : isSig ? (isCompleted ? '#10b981' : '#0d9488')
+    : notification.type === 'deadline_assigned' || notification.type === 'deadline_reminder' ? '#f59e0b'
+    : '#ea580c';
 
   return (
     <div
-      className={`pointer-events-auto border-l-4 ${accentClass} bg-white rounded-xl shadow-2xl border border-slate-200/80 max-w-[calc(100vw-2rem)] sm:max-w-[340px] cursor-pointer select-none overflow-hidden transition-all duration-350 ${
-        exiting ? 'opacity-0 translate-x-4 scale-95' : 'opacity-100 translate-x-0 scale-100'
+      className={`pointer-events-auto bg-white cursor-pointer select-none overflow-hidden transition-all duration-300 ${
+        exiting ? 'opacity-0 translate-x-4 scale-[0.97]' : 'opacity-100 translate-x-0 scale-100'
       }`}
+      style={{
+        width: 'min(calc(100vw - 2rem), 360px)',
+        borderRadius: 16,
+        boxShadow: '0 12px 40px -8px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.05)',
+      }}
       onClick={() => { if (!exiting) { setExiting(true); setTimeout(() => onNavigate(notification), 150); } }}
     >
-      <div className="flex items-start gap-3 px-4 py-3">
-        {/* Icon */}
-        <div className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${getIconBgColor(notification)}`}>
+      {/* Faixa fina no topo */}
+      <div style={{ height: 3, background: accent }} />
+
+      <div style={{ display: 'flex', gap: 12, padding: '14px 14px 12px' }}>
+        {/* Ícone */}
+        <div className={`flex-shrink-0 ${getIconBgColor(notification)}`}
+          style={{ width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {getIcon(notification)}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-slate-900 line-clamp-2 leading-tight">{notification.title}</p>
-          <p className="text-xs text-slate-500 line-clamp-2 mt-0.5 leading-snug">{notification.message}</p>
-
-          {/* Badges row */}
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+        {/* Conteúdo */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Linha de status (badge sutil) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
             {urgency === 'critica' && (
-              <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded-md animate-pulse">
-                🔴 CRÍTICA
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', color: '#dc2626', textTransform: 'uppercase' }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444' }} />Crítica
               </span>
             )}
             {urgency === 'alta' && (
-              <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-md">
-                🟠 URGENTE
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', color: '#ea580c', textTransform: 'uppercase' }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316' }} />Urgente
               </span>
             )}
             {isSig && (
-              <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded-md ${
-                notification.metadata?.signature_type === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-teal-100 text-teal-700'
-              }`}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', color: isCompleted ? '#059669' : '#0d9488', textTransform: 'uppercase' }}>
+                {isCompleted && <Check className="w-2.5 h-2.5" strokeWidth={3} />}
                 {getSignatureBadge(notification)}
               </span>
             )}
             {notification.metadata?.tribunal && (
-              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600 rounded-md">
+              <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                 {String(notification.metadata.tribunal)}
               </span>
             )}
           </div>
 
-          {/* Signature progress */}
+          {/* Título */}
+          <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: '#0f172a', lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {notification.title}
+          </p>
+          {/* Mensagem */}
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {notification.message}
+          </p>
+
+          {/* Progresso de assinatura com contagem */}
           {isSig && (() => {
             const p = getSignatureProgress(notification);
             if (!p) return null;
             return (
-              <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${p.pct}%` }} />
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: '#64748b' }}>
+                    {p.signedCount} de {p.totalSigners} {p.totalSigners === 1 ? 'assinatura' : 'assinaturas'}
+                  </span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: accent }}>{p.pct}%</span>
+                </div>
+                <div style={{ height: 4, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${p.pct}%`, background: accent, borderRadius: 999, transition: 'width 0.4s ease' }} />
+                </div>
               </div>
             );
           })()}
 
-          <p className="text-[10px] text-blue-600 font-semibold mt-1.5">Clique para ver detalhes →</p>
+          {/* CTA sutil */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>
+            Ver detalhes
+            <ChevronRight className="w-3 h-3" />
+          </div>
         </div>
 
-        {/* Close button */}
+        {/* Fechar */}
         <button
           onClick={(e) => { e.stopPropagation(); dismiss(); }}
-          className="flex-shrink-0 p-1 rounded-full hover:bg-slate-100 transition mt-0.5"
+          style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', color: '#cbd5e1' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#64748b'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#cbd5e1'; }}
         >
-          <X className="w-3.5 h-3.5 text-slate-400" />
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Countdown progress bar */}
-      <div className="h-0.5 bg-slate-100 overflow-hidden">
+      {/* Barra de countdown */}
+      <div style={{ height: 2, background: '#f1f5f9', overflow: 'hidden' }}>
         <div
-          className={`h-full ${barColor} rounded-full`}
           style={{
+            height: '100%',
+            background: accent,
+            opacity: 0.5,
             animation: `shrinkBar ${POPUP_DURATION}ms linear forwards`,
           }}
         />
@@ -480,6 +502,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       } else {
         onNavigateToModule('feed');
       }
+    } else if (notification.type === 'profile_update_request') {
+      const clientId = notification.metadata?.client_id;
+      if (clientId) {
+        onNavigateToModule('clientes', { mode: 'details', entityId: String(clientId) });
+      } else {
+        onNavigateToModule('clientes');
+      }
     } else if (notification.type === 'access_request') {
       // Admin recebeu solicitação de acesso → abre Configurações > Solicitações
       console.log('➡️ Navegando para configuracoes > access_requests');
@@ -672,6 +701,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
         return <Check className="w-4 h-4 text-pink-500" />;
       case 'feed_comment':
         return <ChevronRight className="w-4 h-4 text-sky-500" />;
+      case 'profile_update_request':
+        return <UserCheck className="w-4 h-4 text-orange-500" />;
       default:
         if (isSignatureNotification(notification)) {
           return <PenTool className="w-4 h-4 text-emerald-500" />;
@@ -682,6 +713,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
   const getIconBgColor = (notification: UserNotification) => {
     const urgency = notification.metadata?.urgency;
+    if (notification.type === 'profile_update_request') return 'bg-orange-100';
     if (isSignatureNotification(notification)) return 'bg-emerald-100';
     if (urgency === 'critica') return 'bg-red-100';
     if (urgency === 'alta') return 'bg-orange-100';
