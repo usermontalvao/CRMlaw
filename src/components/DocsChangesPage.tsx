@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.159': { name: 'Café Portal Completo', emoji: '🚪' },
   '1.10.158': { name: 'Café Corretor Ligado', emoji: '✍️' },
   '1.10.157': { name: 'Café Compromisso Certo', emoji: '📌' },
   '1.10.156': { name: 'Café Blocos Limpos', emoji: '🧹' },
@@ -856,6 +857,53 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.159',
+    date: '31/05/2026',
+    summary: 'Portal do Cliente completo: atualização cadastral com aprovação admin, notificações push, central de notificações navegável e controle de módulos nas configurações.',
+    modules: [
+      {
+        moduleId: 'Portal',
+        changes: [
+          {
+            type: 'new' as const,
+            title: 'Portal do Cliente — módulo completo',
+            description: 'Portal isolado para clientes com autenticação por CPF + 4 dígitos. Inclui Dashboard, Processos (com explicação IA dos andamentos), Documentos, Assinaturas, Financeiro, Agenda, Mensagens, Notificações e Perfil.',
+          },
+          {
+            type: 'new' as const,
+            title: 'Atualização cadastral com aprovação',
+            description: 'Cliente edita nome, e-mail, telefone, endereço, estado civil e demais dados no portal. A solicitação fica pendente até o admin aprovar ou rejeitar. CPF permanece bloqueado.',
+          },
+          {
+            type: 'new' as const,
+            title: 'Notificações push para o cliente',
+            description: 'Polling de 30s detecta novos eventos e dispara toast in-app + push do browser. Cobre: aprovação/rejeição de cadastro, mudança de status do processo, nova assinatura e novo contrato. Central de notificações com ícones por tipo e navegação para o destino correto.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Configurações',
+        changes: [
+          {
+            type: 'new' as const,
+            title: 'Seção Portal — controle de módulos',
+            description: 'Nova seção em Configurações para ativar ou desativar cada submódulo do portal do cliente (Processos, Documentos, Assinaturas, Financeiro, Agenda, Mensagens, Notificações, Perfil). Portal respeita a config em tempo real.',
+          },
+        ],
+      },
+      {
+        moduleId: 'Dashboard',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Painel de aprovação cadastral expansível',
+            description: 'Quando há solicitações pendentes de atualização cadastral, o dashboard exibe um painel expansível com old→new values, botões de aprovar/rejeitar inline e link para abrir a ficha do cliente em modal sem sair do dashboard.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.158',
     date: '27/05/2026',
