@@ -19,7 +19,7 @@ const PortalLogin = lazy(() => import('./pages/PortalLogin').then((m) => ({ defa
 const PortalDashboard = lazy(() => import('./pages/PortalDashboard').then((m) => ({ default: m.PortalDashboard })));
 const PortalProcesses = lazy(() => import('./pages/PortalProcesses').then((m) => ({ default: m.PortalProcesses })));
 const PortalProcessDetails = lazy(() => import('./pages/PortalProcessDetails').then((m) => ({ default: m.PortalProcessDetails })));
-const PortalDocuments = lazy(() => import('./pages/PortalDocuments').then((m) => ({ default: m.PortalDocuments })));
+const PortalDocuments = lazy(() => import('./pages/PortalDocumentRequests').then((m) => ({ default: m.PortalDocumentRequests })));
 const PortalSignatures = lazy(() => import('./pages/PortalSignatures').then((m) => ({ default: m.PortalSignatures })));
 const PortalFinancial = lazy(() => import('./pages/PortalFinancial').then((m) => ({ default: m.PortalFinancial })));
 const PortalCalendar = lazy(() => import('./pages/PortalCalendar').then((m) => ({ default: m.PortalCalendar })));

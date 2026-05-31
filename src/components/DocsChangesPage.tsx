@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.160': { name: 'Café Docs Inteligentes', emoji: '📄' },
   '1.10.159': { name: 'Café Portal Completo', emoji: '🚪' },
   '1.10.158': { name: 'Café Corretor Ligado', emoji: '✍️' },
   '1.10.157': { name: 'Café Compromisso Certo', emoji: '📌' },
@@ -857,6 +858,26 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.160',
+    date: '31/05/2026',
+    summary: 'Módulo de solicitação e upload de documentos com IA: admin cria checklist, cliente fotografa no mobile, IA converte para PDF, identifica e renomeia automaticamente.',
+    modules: [
+      {
+        moduleId: 'Clientes',
+        changes: [
+          { type: 'new' as const, title: 'Solicitar documentos ao cliente', description: 'Na aba Documentos da ficha do cliente, o admin cria checklists de documentos necessários com prazo, instruções e sugestões rápidas (RG, CPF, CNH, comprovante, laudo, etc.). O cliente recebe notificação push no portal.' },
+          { type: 'new' as const, title: 'Revisão de documentos enviados', description: 'Admin visualiza o PDF processado, aprova ou rejeita com motivo. Cliente recebe notificação do resultado e pode reenviar documentos rejeitados.' },
+        ],
+      },
+      {
+        moduleId: 'Portal',
+        changes: [
+          { type: 'new' as const, title: 'Upload de documentos mobile-first', description: 'Cliente tira foto com câmera nativa ou seleciona arquivo. Suporte a múltiplas páginas (frente/verso) com preview em grade. Merge automático em PDF único pela IA com identificação do tipo e renomeação automática.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.159',
     date: '31/05/2026',

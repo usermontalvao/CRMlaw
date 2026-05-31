@@ -11,6 +11,37 @@
 import { supabase } from '../../config/supabase';
 import { clientAuthService } from './clientAuth.service';
 
+export interface DocumentUpload {
+  id: string;
+  processing_status: 'pending' | 'processing' | 'ready' | 'error';
+  review_status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string | null;
+  final_name?: string | null;
+  ai_document_type?: string | null;
+  pages_count?: number | null;
+  uploaded_at: string;
+}
+
+export interface DocumentRequestItem {
+  id: string;
+  label: string;
+  description?: string | null;
+  required: boolean;
+  sort_order: number;
+  status: 'pending' | 'uploaded' | 'approved' | 'rejected';
+  upload?: DocumentUpload | null;
+}
+
+export interface DocumentRequest {
+  id: string;
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+  status: 'pending' | 'partial' | 'complete' | 'reviewed' | 'cancelled';
+  created_at: string;
+  items: DocumentRequestItem[];
+}
+
 export interface ClientProfile {
   full_name?: string | null;
   email?: string | null;
@@ -338,9 +369,57 @@ class ClientPortalService {
     return (data as unknown[]) || [];
   }
 
-  /**
-   * Configuração de módulos habilitados no portal
-   */
+  /** Lista solicitações de documentos do cliente */
+  async listDocumentRequests(portalUserId: string) {
+    const { data, error } = await supabase.rpc('portal_list_document_requests', {
+      p_portal_user_id: portalUserId,
+    });
+    if (error) { handleRpcError('listDocumentRequests', error); return []; }
+    return (Array.isArray(data) ? data : []) as DocumentRequest[];
+  }
+
+  /** Faz upload de arquivos para um item de solicitação */
+  async uploadDocumentFiles(
+    portalUserId: string,
+    requestItemId: string,
+    clientId: string,
+    files: File[],
+  ): Promise<{ upload_id: string } | null> {
+    // 1. Salva arquivos no Storage
+    const paths: string[] = [];
+    for (const file of files) {
+      const ext = file.name.split('.').pop() || 'bin';
+      const path = `${clientId}/raw/${requestItemId}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: storageErr } = await supabase.storage
+        .from('client-documents')
+        .upload(path, file, { upsert: false });
+      if (storageErr) { console.error('Storage upload error:', storageErr); return null; }
+      paths.push(path);
+    }
+
+    // 2. Cria registro de upload
+    const { data: uploadRec, error: dbErr } = await supabase
+      .from('document_uploads')
+      .insert({ request_item_id: requestItemId, client_id: clientId, original_paths: paths })
+      .select('id')
+      .single();
+    if (dbErr || !uploadRec) { console.error('DB insert error:', dbErr); return null; }
+
+    // 3. Notifica admins
+    await supabase.rpc('portal_notify_document_uploaded', {
+      p_portal_user_id: portalUserId,
+      p_upload_id: uploadRec.id,
+    }).catch(() => {});
+
+    // 4. Dispara processamento assíncrono
+    supabase.functions.invoke('process-document-upload', {
+      body: { upload_id: uploadRec.id },
+    }).catch(() => {});
+
+    return { upload_id: uploadRec.id };
+  }
+
+  /** Configuração de módulos habilitados no portal */
   async getModulesConfig(): Promise<Record<string, boolean>> {
     const { data, error } = await supabase.rpc('portal_get_modules_config');
     if (error) { handleRpcError('getModulesConfig', error); return {}; }

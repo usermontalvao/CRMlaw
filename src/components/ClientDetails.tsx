@@ -16,6 +16,7 @@ import type { Agreement, Installment, PaymentMethod } from '../types/financial.t
 import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import { supabase } from '../config/supabase';
+import { DocumentRequestsAdmin } from './DocumentRequestsAdmin';
 import { signatureService } from '../services/signature.service';
 import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
@@ -2855,6 +2856,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'documents' && (
             <div className="space-y-6">
+              {/* Solicitações de documentos — sempre no topo */}
+              <DocumentRequestsAdmin client={client} />
+
               {signatureLoading || petitionsLoading || cloudFoldersLoading ? (
                 <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando documentos...</div>
               ) : (
