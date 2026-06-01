@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.167': { name: 'Café Doc Aberto', emoji: '📄' },
   '1.10.166': { name: 'Café Portal Novo', emoji: '🌐' },
   '1.10.163': { name: 'Café Upload Liberado', emoji: '📤' },
   '1.10.162': { name: 'Café Docs Notificados', emoji: '📬' },
@@ -862,6 +863,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.167',
+    date: '01/06/2026',
+    summary: 'Fix: "Ver documento" no portal do cliente abre em nova aba sem redirecionar para a home.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Ver documento abre em nova aba', description: 'Botão "Ver documento" nas assinaturas virou um link com target="_blank". Hashes #/documento/TOKEN agora roteiam para o viewer do CRM em vez de cair na tela de login do portal.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.166',
     date: '01/06/2026',

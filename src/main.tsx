@@ -50,6 +50,8 @@ const currentHash = window.location.hash;
 const isAdminRoute  = currentPath.startsWith('/admin');
 const isPortalRoute = currentPath.startsWith('/portal') || currentPath === '/';
 const isCronRoute   = currentHash.includes('/cron/djen');
+// Documentos públicos de assinatura vivem no CRM — rota pública sem auth
+const isDocRoute    = currentHash.startsWith('#/documento/');
 
 // Normalizar URLs: fora das rotas conhecidas → redirecionar para /
 if (!isAdminRoute && !isPortalRoute && !isCronRoute) {
@@ -57,7 +59,7 @@ if (!isAdminRoute && !isPortalRoute && !isCronRoute) {
 }
 
 const rootElement = (
-  isAdminRoute
+  (isAdminRoute || isDocRoute)
     ? (
       <NavigationProvider initialModule="dashboard">
         <AuthProvider>

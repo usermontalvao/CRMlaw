@@ -249,7 +249,15 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
   const mySigner = (s.signers || []).find((sg) => sg.status === 'signed');
   const multi = totalSigners > 1;
 
-  const handleCardClick = () => { if (actionUrl) window.location.href = actionUrl; };
+  const handleCardClick = () => {
+    if (!actionUrl) return;
+    // Documentos assinados abrem em nova aba (viewer vive no CRM)
+    if (!st.isPending && docUrl && actionUrl === docUrl) {
+      window.open(docUrl, '_blank', 'noopener');
+    } else {
+      window.location.href = actionUrl;
+    }
+  };
 
   return (
     <div
@@ -303,9 +311,15 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
         </div>
       )}
       {!st.isPending && !st.isExpired && actionUrl && (
-        <div className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-600">
+        <a
+          href={docUrl || actionUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+        >
           <Eye className="h-4 w-4" /> Ver documento <ExternalLink className="h-3.5 w-3.5 opacity-40" />
-        </div>
+        </a>
       )}
       {st.iAmSigner && st.isPending && !signUrl && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
