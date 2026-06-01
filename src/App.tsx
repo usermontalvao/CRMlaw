@@ -42,6 +42,7 @@ import {
   Send,
   Clock,
   MessageSquare,
+  FolderOpen,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -102,6 +103,7 @@ import { formatCPF } from './utils/formatters';
 import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
+import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -1077,6 +1079,8 @@ const MainApp: React.FC = () => {
 
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  const [docRequestsOpen, setDocRequestsOpen] = useState(false);
+  const [docRequestsBadge, setDocRequestsBadge] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
   const [collaboratorSearchResults, setCollaboratorSearchResults] = useState<any[]>([]);
@@ -2085,6 +2089,24 @@ useEffect(() => {
                   )}
                 </button>
 
+                {/* Tracker de Solicitações de Documentos — discreto, ao lado de Tarefas */}
+                <button
+                  onClick={() => setDocRequestsOpen(o => !o)}
+                  className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
+                    docRequestsOpen
+                      ? 'text-orange-600 bg-orange-50'
+                      : 'text-slate-500 hover:text-orange-600 hover:bg-orange-50/60'
+                  }`}
+                  title="Solicitações de documentos"
+                >
+                  <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+                  {docRequestsBadge > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-orange-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
+                      {docRequestsBadge > 99 ? '99+' : docRequestsBadge}
+                    </span>
+                  )}
+                </button>
+
                 <NotificationBell
                   onNavigateToModule={(moduleKey: string, params?: any) => {
                     safeNavigateTo(moduleKey as any, params);
@@ -2342,6 +2364,13 @@ useEffect(() => {
             )}
           </Suspense>
         </main>
+
+        {/* Tracker de solicitações de documentos */}
+        <DocumentRequestsTracker
+          open={docRequestsOpen}
+          onClose={() => setDocRequestsOpen(false)}
+          onBadgeCountChange={setDocRequestsBadge}
+        />
 
         {activeModule !== 'chat' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">

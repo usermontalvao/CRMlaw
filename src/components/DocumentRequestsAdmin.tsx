@@ -122,15 +122,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
         }))
       );
 
-      // Notifica o cliente no portal
-      await supabase.from('portal_client_notifications').insert({
-        client_id: client.id,
-        type: 'new_document_request',
-        title: 'Documentos solicitados pelo escritório',
-        message: `O escritório solicitou o envio de documentos: "${title.trim()}". Acesse o portal para enviar.`,
-        metadata: { request_id: req.id, item_count: validItems.length },
-      }).then(() => null, () => null);
-
+      // Notificação disparada automaticamente pelo trigger no banco
       onCreated();
     } catch (err: any) {
       setError(err.message || 'Erro ao salvar.');

@@ -409,7 +409,11 @@ export const PortalDocumentRequests: React.FC = () => {
                       {/* Barra de progresso */}
                       <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-orange-400 transition-all"
+                          className={`h-full rounded-full transition-all ${
+                            req.status === 'complete' || req.status === 'reviewed' || doneCount === totalCount
+                              ? 'bg-emerald-500'
+                              : 'bg-orange-400'
+                          }`}
                           style={{ width: totalCount ? `${(doneCount / totalCount) * 100}%` : '0%' }}
                         />
                       </div>

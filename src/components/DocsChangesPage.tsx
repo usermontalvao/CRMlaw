@@ -862,6 +862,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.164',
+    date: '31/05/2026',
+    summary: 'Tracker de solicitações de documentos no header: criar, acompanhar, visualizar e baixar docs, corrigir nome da IA, marcar como concluído direto do card.',
+    modules: [
+      { moduleId: 'Documentos', changes: [
+        { type: 'new' as const, title: 'Tracker de solicitações no header', description: 'Ícone de pasta ao lado de Tarefas com badge laranja. Drawer deslizante lista todas as solicitações ativas agrupadas por cliente, com barra de progresso verde quando completo.' },
+        { type: 'new' as const, title: 'Criar solicitação direto do tracker', description: 'Botão "Nova solicitação" no drawer: busca cliente, preenche título, instruções, prazo e lista de documentos com sugestões rápidas — sem precisar abrir a ficha do cliente.' },
+        { type: 'new' as const, title: 'Preview de documento em modal', description: 'Botão de olho abre o PDF em modal com header branco/laranja, botões de baixar e abrir em nova aba.' },
+        { type: 'new' as const, title: 'Botão Concluído no card fechado', description: 'Quando todos os docs estão enviados (status Completo), botão verde aparece diretamente no card sem precisar expandir.' },
+        { type: 'fix' as const, title: 'Download força o arquivo em vez de abrir', description: 'Substituído <a download> (não funciona cross-origin) por fetch → blob → createObjectURL, garantindo download real do PDF.' },
+        { type: 'fix' as const, title: 'Notificação ao criar solicitação', description: 'Trigger SECURITY DEFINER no banco garante que o cliente seja notificado no portal ao receber nova solicitação, corrigindo falha silenciosa do insert direto bloqueado pelo RLS.' },
+        { type: 'fix' as const, title: 'Barra de progresso verde ao completar', description: 'Barra agora fica verde quando status = complete ou reviewed, tanto no tracker admin quanto no portal do cliente.' },
+        { type: 'improvement' as const, title: 'Corrigir nome identificado pela IA', description: 'Ícone de lápis ao lado do nome do arquivo permite corrigir inline o final_name quando a IA identificou errado (ex: CNH reconhecido como RG).' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.163',
     date: '31/05/2026',
     summary: 'Fix CORS na edge function de upload + melhorias na UI do portal: múltiplos envios por item, estados visuais claros e badge de aprovação.',
