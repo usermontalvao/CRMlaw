@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.169': { name: 'Café Edge Limpo', emoji: '⚡' },
   '1.10.168': { name: 'Café Rota Certa', emoji: '🛣️' },
   '1.10.167': { name: 'Café Doc Aberto', emoji: '📄' },
   '1.10.166': { name: 'Café Portal Novo', emoji: '🌐' },
@@ -864,6 +865,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.169',
+    date: '01/06/2026',
+    summary: 'Refatoração da edge function de upload de documentos.',
+    modules: [
+      { moduleId: 'Documentos', changes: [
+        { type: 'improvement' as const, title: 'Refatoração da edge function de upload', description: 'Código da função process-document-upload simplificado e otimizado.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.168',
     date: '01/06/2026',
