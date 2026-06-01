@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.171': { name: 'Café Rota Única', emoji: '🎯' },
   '1.10.170': { name: 'Café Sessão Viva', emoji: '🔐' },
   '1.10.169': { name: 'Café Edge Limpo', emoji: '⚡' },
   '1.10.168': { name: 'Café Rota Certa', emoji: '🛣️' },
@@ -866,6 +867,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.171',
+    date: '01/06/2026',
+    summary: 'Fix definitivo do 404 em /admin: tudo roda em "/" e o main.tsx detecta sessão Supabase para decidir qual app carregar.',
+    modules: [
+      { moduleId: 'Infraestrutura', changes: [
+        { type: 'fix' as const, title: 'Eliminado /admin como rota de servidor', description: 'main.tsx agora detecta sessão Supabase no localStorage de forma síncrona. Se sessão ativa → carrega CRM. Caso contrário → carrega Portal. Tudo roda em "/" sem depender de rotas no servidor.' },
+        { type: 'fix' as const, title: 'Login Área Restrita redireciona para "/"', description: 'Após login bem-sucedido do funcionário, redireciona para "/" em vez de "/admin". O main.tsx detecta a sessão e carrega o CRM automaticamente.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.170',
     date: '01/06/2026',

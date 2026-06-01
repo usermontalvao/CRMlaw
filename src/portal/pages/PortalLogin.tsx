@@ -76,10 +76,10 @@ export const PortalLogin: React.FC = () => {
       window.location.hash = '#/portal/dashboard';
       return;
     }
-    // Funcionário já logado no Supabase → vai direto ao CRM
+    // Funcionário já logado no Supabase → recarrega (main.tsx detecta sessão e carrega CRM)
     supabase.auth.getSession().then(({ data }) => {
       if (data?.session?.user) {
-        window.location.href = '/admin';
+        window.location.reload();
       }
     });
   }, [clientSession]);
@@ -224,7 +224,7 @@ export const PortalLogin: React.FC = () => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: staffEmail, password: staffPw });
       if (error) throw error;
-      window.location.href = '/admin';
+      window.location.href = '/';   // main.tsx detecta sessão Supabase e carrega o CRM
     } catch (err: any) { setStaffError(err.message || 'Credenciais inválidas.'); }
     finally { setStaffLoading(false); }
   };
