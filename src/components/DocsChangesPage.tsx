@@ -869,6 +869,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.175',
+    date: '01/06/2026',
+    summary: 'Compromissos da agenda aparecem no módulo de processo do portal. Modal do calendário exibe número do processo e local.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Aba Compromissos no detalhe do processo', description: 'PortalProcessDetails exibe nova aba "Compromissos" com os eventos da agenda vinculados ao processo (process_id). Mostra tipo, data, horário e modalidade (presencial/online).' },
+      ]},
+      { moduleId: 'Calendário', changes: [
+        { type: 'fix' as const, title: 'Número do processo e local aparecem no modal do evento', description: 'Eventos customizados com process_id agora setam entityId e moduleLink=processos no extendedProps, permitindo que selectedEventProcess seja encontrado e o número + local da tramitação apareçam nos detalhes.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.174',
     date: '01/06/2026',
     summary: 'Fix de build: tipo "feat" inválido no changelog substituído por "feature".',

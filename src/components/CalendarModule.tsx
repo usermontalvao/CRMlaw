@@ -653,7 +653,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     if (!selectedEvent?.extendedProps?.data) return [] as { label: string; value: string; secondaryValue?: string }[];
     const data = selectedEvent.extendedProps.data as Record<string, any>;
     const details: { label: string; value: string; secondaryValue?: string }[] = [];
-    const processCourt = data.court || selectedEventProcess?.court || selectedEventProcessOrgao || data.forum || data.vara || data.comarca;
+
+    // Para eventos customizados (calendar_events), process_code não existe em `data`
+    // — buscamos no processo encontrado via entityId/selectedEventProcess.
+    const linkedProcess = selectedEventProcess
+      || processes.find((p) => p.id === (data as any).process_id);
+    const processCode = data.process_code ?? linkedProcess?.process_code;
+    const processCourt = data.court
+      || linkedProcess?.court
+      || selectedEventProcessOrgao
+      || data.forum
+      || data.vara
+      || data.comarca;
 
     const pushDetail = (label: string, value?: any, formatter?: (value: any) => string, secondaryValue?: string) => {
       if (value === undefined || value === null || value === '') return;
@@ -661,7 +672,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       details.push({ label, value: formatted, secondaryValue });
     };
 
-    pushDetail('Processo', data.process_code, undefined, processCourt);
+    pushDetail('Processo', processCode, undefined, processCourt);
     pushDetail('Protocolo', data.protocol);
     pushDetail('Responsável', data.responsible_lawyer);
     pushDetail('Beneficiário', data.beneficiary);
@@ -984,14 +995,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           description: item.description,
           status: item.status,
           data: item,
+          // process_id tem prioridade: qualquer tipo de evento vinculado a um processo
+          // aponta para o módulo Processos, independentemente do event_type.
           moduleLink:
-            item.event_type === 'deadline'
+            item.process_id
+              ? 'processos'
+              : item.event_type === 'deadline'
               ? 'prazos'
               : item.event_type === 'hearing'
               ? 'processos'
               : item.event_type === 'requirement'
               ? 'requerimentos'
               : undefined,
+          // entityId conecta o evento ao registro do módulo (necessário para
+          // selectedEventProcess, "Ir para módulo" e exibição de detalhes).
+          entityId: item.process_id ?? item.deadline_id ?? item.requirement_id ?? undefined,
           clientName: resolvedClientName,
           clientPhone: relatedClient?.mobile || relatedClient?.phone,
           clientId: item.client_id ?? undefined,

@@ -12,6 +12,16 @@ import { statusMeta, TONE_CLASSES, JOURNEY } from '../lib/domain';
 interface Movement { id?: string; nome?: string; data_hora?: string; data?: string; tribunal?: string; grau?: string; complemento?: string; }
 interface Deadline { id: string; title: string; due_date: string; status: string; priority?: string; }
 interface Publication { id?: string; data?: string; tipo?: string; orgao?: string; texto?: string; }
+interface Appointment {
+  id: string;
+  title: string;
+  event_type: string;
+  event_mode?: string | null;
+  start_at: string;
+  end_at?: string | null;
+  status: string;
+  description?: string | null;
+}
 interface ProcessFull {
   id: string; process_code: string; status: string;
   practice_area?: string | null; court?: string | null;
@@ -19,9 +29,10 @@ interface ProcessFull {
   hearing_scheduled?: boolean | null; hearing_date?: string | null; hearing_time?: string | null; hearing_mode?: string | null;
   responsible_lawyer?: string | null;
   movements?: Movement[]; deadlines?: Deadline[]; publications?: Publication[];
+  appointments?: Appointment[];
 }
 
-type Tab = 'resumo' | 'andamentos' | 'prazos';
+type Tab = 'resumo' | 'andamentos' | 'prazos' | 'compromissos';
 
 /** O que o cliente precisa fazer (ou não) — reduz ansiedade e mensagens. */
 function nextAction(p: ProcessFull): { tone: 'ok' | 'attention'; label: string; text: string } {
@@ -83,6 +94,9 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   );
   const deadlines = data.deadlines || [];
   const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
+  const appointments = (data.appointments || []).sort(
+    (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+  );
   const action = nextAction(data);
 
   const handleExplainProcess = async () => {
@@ -103,6 +117,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     { id: 'resumo', label: 'Resumo' },
     { id: 'andamentos', label: 'Andamentos', badge: movements.length },
     { id: 'prazos', label: 'Prazos', badge: pendingDeadlines },
+    ...(appointments.length > 0 ? [{ id: 'compromissos' as Tab, label: 'Compromissos', badge: appointments.length }] : []),
   ];
 
   return (
@@ -194,6 +209,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
         {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} onSeeAll={() => setTab('andamentos')} />}
         {tab === 'andamentos' && <AndamentosTab movements={movements} statusLabel={meta.label} area={data.practice_area} />}
         {tab === 'prazos' && <PrazosTab deadlines={deadlines} />}
+        {tab === 'compromissos' && <AppointmentsTab appointments={appointments} />}
       </div>
     </div>
   );
@@ -417,6 +433,63 @@ const PrazosTab: React.FC<{ deadlines: Deadline[] }> = ({ deadlines }) => {
                 {!done && <span className="font-medium tabular-nums">{formatDateLong(d.due_date)}</span>}
               </p>
             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ── Labels de tipo de evento (mesmo padrão do CalendarModule) ────────────────
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  hearing:     'Audiência',
+  meeting:     'Reunião',
+  pericia:     'Perícia',
+  deadline:    'Prazo',
+  payment:     'Recebimento',
+  requirement: 'Exigência',
+  personal:    'Pessoal',
+};
+
+const AppointmentsTab: React.FC<{ appointments: Appointment[] }> = ({ appointments }) => {
+  if (!appointments.length) return <EmptyState icon={Calendar} title="Sem compromissos" description="Nenhum compromisso vinculado a este processo." />;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {appointments.map((a) => {
+        const d = new Date(a.start_at);
+        const isPast = d < today;
+        const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const hasTime = a.start_at.includes('T');
+        const typeLabel = EVENT_TYPE_LABELS[a.event_type] || a.event_type;
+        const modeLabel = a.event_mode === 'online' ? 'Online' : a.event_mode === 'presencial' ? 'Presencial' : null;
+
+        return (
+          <div key={a.id} className={`flex items-start gap-3.5 rounded-xl border bg-white p-4 transition ${
+            isPast ? 'border-slate-200 opacity-70' : 'border-l-[3px] border-l-orange-500 border-slate-200'
+          }`}>
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isPast ? 'bg-slate-100 text-slate-400' : 'bg-orange-50 text-orange-600'}`}>
+              <Calendar className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-slate-900 truncate">{a.title}</p>
+                <span className="text-[11px] font-medium text-slate-400">{typeLabel}</span>
+              </div>
+              <p className="mt-0.5 tabular-nums text-xs text-slate-500">
+                {formatDateLong(a.start_at)}{hasTime ? ` · ${time}` : ''}
+              </p>
+              {modeLabel && (
+                <span className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${a.event_mode === 'online' ? 'text-slate-500' : 'text-slate-500'}`}>
+                  <MapPin className="h-3 w-3" />{modeLabel}
+                </span>
+              )}
+              {a.description && (
+                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{a.description}</p>
+              )}
+            </div>
+            {isPast && <span className="shrink-0 text-[11px] text-slate-400">Realizado</span>}
           </div>
         );
       })}
