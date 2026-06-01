@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.170': { name: 'Café Sessão Viva', emoji: '🔐' },
   '1.10.169': { name: 'Café Edge Limpo', emoji: '⚡' },
   '1.10.168': { name: 'Café Rota Certa', emoji: '🛣️' },
   '1.10.167': { name: 'Café Doc Aberto', emoji: '📄' },
@@ -865,6 +866,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.170',
+    date: '01/06/2026',
+    summary: 'Sessão persistida ao voltar para a home: cliente do portal vai direto ao dashboard, funcionário vai direto ao CRM.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Auto-redirect por sessão ativa na home', description: 'Se cliente do portal já está logado (localStorage), ao acessar / vai direto ao dashboard. Se funcionário tem sessão Supabase ativa, vai direto ao /admin sem precisar logar novamente.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.169',
     date: '01/06/2026',

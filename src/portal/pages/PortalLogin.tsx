@@ -67,7 +67,22 @@ const ErrorMsg: React.FC<{ msg: string }> = ({ msg }) => (
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export const PortalLogin: React.FC = () => {
-  const { loginByCPF } = useClientAuth();
+  const { loginByCPF, session: clientSession } = useClientAuth();
+
+  // ── Auto-redirect: sessão já ativa ───────────────────────────────────────
+  useEffect(() => {
+    // Cliente do portal já logado → vai direto ao dashboard
+    if (clientSession) {
+      window.location.hash = '#/portal/dashboard';
+      return;
+    }
+    // Funcionário já logado no Supabase → vai direto ao CRM
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) {
+        window.location.href = '/admin';
+      }
+    });
+  }, [clientSession]);
 
   // ── Client portal state
   const [mode, setMode]             = useState<Mode>('client');
