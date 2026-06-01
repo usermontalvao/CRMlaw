@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.168': { name: 'Café Rota Certa', emoji: '🛣️' },
   '1.10.167': { name: 'Café Doc Aberto', emoji: '📄' },
   '1.10.166': { name: 'Café Portal Novo', emoji: '🌐' },
   '1.10.163': { name: 'Café Upload Liberado', emoji: '📤' },
@@ -863,6 +864,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.168',
+    date: '01/06/2026',
+    summary: 'Fix de roteamento na hospedagem: netlify.toml garante que /admin e demais rotas SPA sirvam index.html corretamente.',
+    modules: [
+      { moduleId: 'Infraestrutura', changes: [
+        { type: 'fix' as const, title: 'netlify.toml adicionado', description: 'Criado netlify.toml com redirect /* → /index.html 200, garantindo que rotas como /admin não retornem 404 na hospedagem Netlify.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.167',
     date: '01/06/2026',
