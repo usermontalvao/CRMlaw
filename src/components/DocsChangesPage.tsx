@@ -862,15 +862,15 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.10.164',
+    version: '1.10.165',
     date: '31/05/2026',
     summary: 'Tracker de solicitações de documentos no header: criar, acompanhar, visualizar e baixar docs, corrigir nome da IA, marcar como concluído direto do card.',
     modules: [
       { moduleId: 'Documentos', changes: [
-        { type: 'new' as const, title: 'Tracker de solicitações no header', description: 'Ícone de pasta ao lado de Tarefas com badge laranja. Drawer deslizante lista todas as solicitações ativas agrupadas por cliente, com barra de progresso verde quando completo.' },
-        { type: 'new' as const, title: 'Criar solicitação direto do tracker', description: 'Botão "Nova solicitação" no drawer: busca cliente, preenche título, instruções, prazo e lista de documentos com sugestões rápidas — sem precisar abrir a ficha do cliente.' },
-        { type: 'new' as const, title: 'Preview de documento em modal', description: 'Botão de olho abre o PDF em modal com header branco/laranja, botões de baixar e abrir em nova aba.' },
-        { type: 'new' as const, title: 'Botão Concluído no card fechado', description: 'Quando todos os docs estão enviados (status Completo), botão verde aparece diretamente no card sem precisar expandir.' },
+        { type: 'feature' as const, title: 'Tracker de solicitações no header', description: 'Ícone de pasta ao lado de Tarefas com badge laranja. Drawer deslizante lista todas as solicitações ativas agrupadas por cliente, com barra de progresso verde quando completo.' },
+        { type: 'feature' as const, title: 'Criar solicitação direto do tracker', description: 'Botão "Nova solicitação" no drawer: busca cliente, preenche título, instruções, prazo e lista de documentos com sugestões rápidas — sem precisar abrir a ficha do cliente.' },
+        { type: 'feature' as const, title: 'Preview de documento em modal', description: 'Botão de olho abre o PDF em modal com header branco/laranja, botões de baixar e abrir em nova aba.' },
+        { type: 'feature' as const, title: 'Botão Concluído no card fechado', description: 'Quando todos os docs estão enviados (status Completo), botão verde aparece diretamente no card sem precisar expandir.' },
         { type: 'fix' as const, title: 'Download força o arquivo em vez de abrir', description: 'Substituído <a download> (não funciona cross-origin) por fetch → blob → createObjectURL, garantindo download real do PDF.' },
         { type: 'fix' as const, title: 'Notificação ao criar solicitação', description: 'Trigger SECURITY DEFINER no banco garante que o cliente seja notificado no portal ao receber nova solicitação, corrigindo falha silenciosa do insert direto bloqueado pelo RLS.' },
         { type: 'fix' as const, title: 'Barra de progresso verde ao completar', description: 'Barra agora fica verde quando status = complete ou reviewed, tanto no tracker admin quanto no portal do cliente.' },
@@ -911,14 +911,14 @@ const releases: ReleaseNote[] = [
       {
         moduleId: 'Clientes',
         changes: [
-          { type: 'new' as const, title: 'Solicitar documentos ao cliente', description: 'Na aba Documentos da ficha do cliente, o admin cria checklists de documentos necessários com prazo, instruções e sugestões rápidas (RG, CPF, CNH, comprovante, laudo, etc.). O cliente recebe notificação push no portal.' },
-          { type: 'new' as const, title: 'Revisão de documentos enviados', description: 'Admin visualiza o PDF processado, aprova ou rejeita com motivo. Cliente recebe notificação do resultado e pode reenviar documentos rejeitados.' },
+          { type: 'feature' as const, title: 'Solicitar documentos ao cliente', description: 'Na aba Documentos da ficha do cliente, o admin cria checklists de documentos necessários com prazo, instruções e sugestões rápidas (RG, CPF, CNH, comprovante, laudo, etc.). O cliente recebe notificação push no portal.' },
+          { type: 'feature' as const, title: 'Revisão de documentos enviados', description: 'Admin visualiza o PDF processado, aprova ou rejeita com motivo. Cliente recebe notificação do resultado e pode reenviar documentos rejeitados.' },
         ],
       },
       {
         moduleId: 'Portal',
         changes: [
-          { type: 'new' as const, title: 'Upload de documentos mobile-first', description: 'Cliente tira foto com câmera nativa ou seleciona arquivo. Suporte a múltiplas páginas (frente/verso) com preview em grade. Merge automático em PDF único pela IA com identificação do tipo e renomeação automática.' },
+          { type: 'feature' as const, title: 'Upload de documentos mobile-first', description: 'Cliente tira foto com câmera nativa ou seleciona arquivo. Suporte a múltiplas páginas (frente/verso) com preview em grade. Merge automático em PDF único pela IA com identificação do tipo e renomeação automática.' },
         ],
       },
     ],
@@ -932,17 +932,17 @@ const releases: ReleaseNote[] = [
         moduleId: 'Portal',
         changes: [
           {
-            type: 'new' as const,
+            type: 'feature' as const,
             title: 'Portal do Cliente — módulo completo',
             description: 'Portal isolado para clientes com autenticação por CPF + 4 dígitos. Inclui Dashboard, Processos (com explicação IA dos andamentos), Documentos, Assinaturas, Financeiro, Agenda, Mensagens, Notificações e Perfil.',
           },
           {
-            type: 'new' as const,
+            type: 'feature' as const,
             title: 'Atualização cadastral com aprovação',
             description: 'Cliente edita nome, e-mail, telefone, endereço, estado civil e demais dados no portal. A solicitação fica pendente até o admin aprovar ou rejeitar. CPF permanece bloqueado.',
           },
           {
-            type: 'new' as const,
+            type: 'feature' as const,
             title: 'Notificações push para o cliente',
             description: 'Polling de 30s detecta novos eventos e dispara toast in-app + push do browser. Cobre: aprovação/rejeição de cadastro, mudança de status do processo, nova assinatura e novo contrato. Central de notificações com ícones por tipo e navegação para o destino correto.',
           },
@@ -952,7 +952,7 @@ const releases: ReleaseNote[] = [
         moduleId: 'Configurações',
         changes: [
           {
-            type: 'new' as const,
+            type: 'feature' as const,
             title: 'Seção Portal — controle de módulos',
             description: 'Nova seção em Configurações para ativar ou desativar cada submódulo do portal do cliente (Processos, Documentos, Assinaturas, Financeiro, Agenda, Mensagens, Notificações, Perfil). Portal respeita a config em tempo real.',
           },
