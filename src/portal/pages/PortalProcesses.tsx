@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Briefcase, Search, Scale, Calendar, Clock, ChevronRight, Gavel, AlertCircle, X,
-} from 'lucide-react';
+import { Search, Scale, X, ChevronRight } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
@@ -67,13 +65,15 @@ export const PortalProcesses: React.FC = () => {
   }, [processes, search, filter]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Meus Processos</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          {counts.andamento} em andamento · {counts.arquivado} encerrados
+    <div className="flex flex-col gap-5">
+      <header>
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Meus processos</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          <span className="tabular-nums">{counts.andamento}</span> em andamento
+          <span className="mx-1.5 text-slate-300">·</span>
+          <span className="tabular-nums">{counts.arquivado}</span> encerrado{counts.arquivado === 1 ? '' : 's'}
         </p>
-      </div>
+      </header>
 
       {/* Busca */}
       <div className="relative">
@@ -82,34 +82,37 @@ export const PortalProcesses: React.FC = () => {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por número, área ou situação..."
-          className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+          placeholder="Buscar por número, área ou situação"
+          className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
         />
         {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:text-slate-600">
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:text-slate-700">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* Filtros */}
+      {/* Filtros — segmentado sóbrio (preto/branco; laranja fica reservado) */}
       <div className="flex gap-2 overflow-x-auto pb-0.5">
         {([
           { id: 'andamento' as Filter, label: 'Em andamento', count: counts.andamento },
           { id: 'arquivado' as Filter, label: 'Encerrados',   count: counts.arquivado },
           { id: 'all' as Filter,       label: 'Todos',        count: counts.all },
-        ]).map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold ring-1 transition ${
-              filter === f.id ? 'bg-orange-500 text-white ring-orange-500 shadow-sm' : 'bg-white text-slate-600 ring-slate-200 active:bg-slate-100'
-            }`}
-          >
-            {f.label}
-            <span className={`min-w-[18px] rounded-full px-1.5 text-[10px] font-bold ${filter === f.id ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>
-          </button>
-        ))}
+        ]).map((f) => {
+          const on = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${
+                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {f.label}
+              <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-white/60' : 'text-slate-400'}`}>{f.count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Lista */}
@@ -122,71 +125,68 @@ export const PortalProcesses: React.FC = () => {
           description={search ? 'Tente outros termos de busca.' : 'Quando o escritório vincular processos ao seu CPF, eles aparecerão aqui.'}
         />
       ) : (
-        <div className="flex flex-col gap-3">
-          {filtered.map((p) => <ProcessCard key={p.id} process={p} onClick={() => navigate('processos', p.id)} />)}
-        </div>
+        <ul className="flex flex-col gap-2.5">
+          {filtered.map((p) => <ProcessRow key={p.id} process={p} onClick={() => navigate('processos', p.id)} />)}
+        </ul>
       )}
     </div>
   );
 };
 
-const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ process: p, onClick }) => {
+const ProcessRow: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ process: p, onClick }) => {
   const meta = statusMeta(p.status);
   const tone = TONE_CLASSES[meta.tone];
   const hasHearing = p.hearing_scheduled && p.hearing_date;
   const lastMov = p.last_movement?.nome;
   const lastMovDate = p.last_movement?.data_hora || p.last_movement?.data;
   const overdue = p.pending_deadlines ?? 0;
+  const subtitle = [p.practice_area, p.court].filter(Boolean).join(' · ');
 
   return (
-    <button
-      onClick={onClick}
-      className="group flex w-full flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] hover:border-orange-200 hover:shadow-md sm:p-5"
-    >
-      {/* Topo: ícone + código/área · badge de status */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-          <Briefcase className="h-5 w-5" />
+    <li>
+      <button
+        onClick={onClick}
+        className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
+      >
+        {/* Linha 1: número + status */}
+        <div className="flex items-center gap-3">
+          <p className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold tabular-nums text-slate-900">{p.process_code}</p>
+          <span className="inline-flex shrink-0 items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+            <span className={`text-xs font-medium ${tone.text}`}>{meta.label}</span>
+          </span>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-[13px] font-bold text-slate-900">{p.process_code}</p>
-          {p.practice_area && <p className="text-xs capitalize text-slate-400">{p.practice_area}</p>}
-        </div>
-        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${tone.badge}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-          {meta.label}
-        </span>
-        <ChevronRight className="h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />
-      </div>
 
-      {/* Explicação curta */}
-      <p className="text-[13px] leading-relaxed text-slate-600">{meta.explain}</p>
+        {subtitle && <p className="mt-0.5 truncate text-xs capitalize text-slate-400">{subtitle}</p>}
 
-      {/* Última atualização */}
-      {lastMov && (
-        <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
-          <span className="truncate">{lastMov}</span>
-          <span className="ml-auto shrink-0 text-slate-400">{formatRelative(lastMovDate)}</span>
-        </div>
-      )}
+        {/* Última atualização */}
+        {lastMov && (
+          <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-[13px] text-slate-600">
+            <span className="min-w-0 flex-1 truncate">{lastMov}</span>
+            <span className="shrink-0 tabular-nums text-xs text-slate-400">{formatRelative(lastMovDate)}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+          </div>
+        )}
 
-      {/* Alertas (audiência / prazos) */}
-      {(hasHearing || overdue > 0) && (
-        <div className="flex flex-wrap gap-2">
-          {hasHearing && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
-              <Calendar className="h-3 w-3" /> Audiência {formatDate(p.hearing_date)}
-            </span>
-          )}
-          {overdue > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
-              <Clock className="h-3 w-3" /> {overdue} prazo{overdue > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      )}
-    </button>
+        {/* Alertas discretos (texto + ponto, sem pílula gritante) */}
+        {(hasHearing || overdue > 0) && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            {hasHearing && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Audiência {formatDate(p.hearing_date)}
+              </span>
+            )}
+            {overdue > 0 && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                <span className="tabular-nums">{overdue}</span> prazo{overdue > 1 ? 's' : ''} em aberto
+              </span>
+            )}
+          </div>
+        )}
+      </button>
+    </li>
   );
 };
 

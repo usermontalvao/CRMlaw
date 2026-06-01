@@ -104,6 +104,14 @@ type NewEventForm = {
   responsible_id: string;
   is_private: boolean;
   shared_with_ids: string[];
+  // Vínculo com processo ou requerimento (opcional — todos os tipos exceto 'personal')
+  process_id: string;
+  // Requerimento administrativo (para tipo 'pericia' + requerimentos previdenciários)
+  requirement_id: string;
+  // Controla qual vínculo está ativo quando tipo = 'pericia'
+  pericia_link_type: 'process' | 'requirement';
+  // Modalidade: presencial ou online (visível para Audiência, Reunião, Perícia)
+  event_mode: 'presencial' | 'online' | '';
 };
 
 interface CalendarModuleProps {
@@ -223,6 +231,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     responsible_id: '',
     is_private: false,
     shared_with_ids: [],
+    process_id: '',
+    requirement_id: '',
+    pericia_link_type: 'process',
+    event_mode: '',
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
@@ -464,6 +476,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         responsible_id: '',
         is_private: false,
         shared_with_ids: [],
+        process_id: '',
+        requirement_id: '',
+        pericia_link_type: 'process',
+        event_mode: '',
         ...initialValues,
       };
 
@@ -1299,6 +1315,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       setSavingEvent(true);
       // Eventos pessoais são sempre privados do criador
       const isPersonal = newEventForm.type === 'personal';
+      // Resolve o vínculo de processo/requerimento conforme tipo de evento.
+      // - Pessoal: sem vínculo.
+      // - Perícia: usa process_id OU requirement_id conforme pericia_link_type.
+      // - Demais: usa process_id.
+      const linkProcessId = (!isPersonal && newEventForm.process_id &&
+        (newEventForm.type !== 'pericia' || newEventForm.pericia_link_type === 'process'))
+        ? newEventForm.process_id : null;
+      const linkRequirementId = (!isPersonal && newEventForm.requirement_id &&
+        newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement')
+        ? newEventForm.requirement_id : null;
+
       const basePayload = {
         title: newEventForm.title.trim(),
         description: newEventForm.description.trim() || null,
@@ -1312,6 +1339,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         user_id: isPersonal ? (user?.id || null) : (newEventForm.responsible_id || null),
         is_private: isPersonal ? true : newEventForm.is_private,
         shared_with_ids: (isPersonal || newEventForm.is_private) ? newEventForm.shared_with_ids : [],
+        process_id: linkProcessId,
+        requirement_id: linkRequirementId,
+        // event_mode só faz sentido para Audiência, Reunião e Perícia; nos outros tipos vai null
+        event_mode: (['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type)
+          ? (newEventForm.event_mode || null)
+          : null,
       };
 
       const isAllDay = !newEventForm.time;
@@ -1511,6 +1544,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           responsible_id: existing.user_id ?? '',
           is_private: existing.is_private ?? false,
           shared_with_ids: existing.shared_with_ids ?? [],
+          process_id: existing.process_id ?? '',
+          requirement_id: existing.requirement_id ?? '',
+          pericia_link_type: existing.requirement_id ? 'requirement' : 'process',
+          event_mode: (existing as any).event_mode ?? '',
         },
         calendarEventId,
       );
@@ -2987,6 +3024,24 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   </div>
                 )}
 
+                {/* Modalidade (presencial / online) */}
+                {(() => {
+                  const mode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
+                  if (!mode) return null;
+                  const isOnline = mode === 'online';
+                  return (
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                        isOnline
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}>
+                        {isOnline ? '📹' : '📍'} {isOnline ? 'Online' : 'Presencial'}
+                      </span>
+                    </div>
+                  );
+                })()}
+
                 {/* Descrição */}
                 {selectedEvent.extendedProps.description && (
                   <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
@@ -3202,7 +3257,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       <button
                         key={value}
                         type="button"
-                        onClick={() => setNewEventForm(prev => ({ ...prev, type: value }))}
+                        onClick={() => setNewEventForm(prev => ({
+                          ...prev,
+                          type: value,
+                          // Pessoal não tem vínculo; troca de tipo limpa seleção
+                          ...(value === 'personal' ? { process_id: '', requirement_id: '' } : {}),
+                          // Ao sair de perícia, limpa o requerimento
+                          ...(value !== 'pericia' ? { requirement_id: '', pericia_link_type: 'process' as const } : {}),
+                        }))}
                         className={`py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
                           newEventForm.type === value ? active : idle
                         }`}
@@ -3212,6 +3274,38 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     ))}
                   </div>
                 </div>
+
+                {/* Modalidade — presencial / online (Audiência, Reunião, Perícia) */}
+                {(['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                      Modalidade
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { value: '',           label: 'Não definida' },
+                        { value: 'presencial', label: 'Presencial'   },
+                        { value: 'online',     label: 'Online'       },
+                      ] as const).map(({ value, label }) => {
+                        const on = newEventForm.event_mode === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setNewEventForm(prev => ({ ...prev, event_mode: value }))}
+                            className={`py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                              on
+                                ? 'bg-slate-800 text-white border-slate-800'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Cliente + Responsável — linha dividida */}
                 <div className="col-span-2 grid grid-cols-2 gap-5 pt-1 border-t border-slate-100">
@@ -3235,7 +3329,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              setNewEventForm(prev => ({ ...prev, client_id: '', client_name: '' }));
+                              setNewEventForm(prev => ({ ...prev, client_id: '', client_name: '', process_id: '', requirement_id: '' }));
                               setCreateFormInitialClientName('');
                               setClientSearchTerm('');
                             }}
@@ -3274,7 +3368,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                       type="button"
                                       onMouseDown={(e) => {
                                         e.preventDefault();
-                                        setNewEventForm(prev => ({ ...prev, client_id: c.id, client_name: '' }));
+                                        setNewEventForm(prev => ({ ...prev, client_id: c.id, client_name: '', process_id: '', requirement_id: '' }));
                                         setCreateFormInitialClientName(c.full_name);
                                         setClientSearchTerm('');
                                         setClientSearchOpen(false);
@@ -3314,6 +3408,123 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {/* Vínculo com processo ou requerimento — oculto para Pessoal e quando não há cliente cadastrado */}
+                  {newEventForm.type !== 'personal' && newEventForm.client_id && (
+                    <div className="col-span-2 pt-1 border-t border-slate-100">
+                      {/* Toggle Processo / Requerimento — apenas para Perícia */}
+                      {newEventForm.type === 'pericia' && (
+                        <div className="flex gap-2 mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'process', requirement_id: '' }))}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                              newEventForm.pericia_link_type === 'process'
+                                ? 'bg-purple-500 text-white border-purple-500'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                            }`}
+                          >
+                            Processo judicial
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'requirement', process_id: '' }))}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                              newEventForm.pericia_link_type === 'requirement'
+                                ? 'bg-purple-500 text-white border-purple-500'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                            }`}
+                          >
+                            Requerimento adm.
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Seletor de Processo */}
+                      {(newEventForm.type !== 'pericia' || newEventForm.pericia_link_type === 'process') && (() => {
+                        const clientProcesses = processes.filter(p => p.client_id === newEventForm.client_id);
+                        const selectedProcess = clientProcesses.find(p => p.id === newEventForm.process_id);
+                        return (
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                              Processo <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                            </label>
+                            {selectedProcess ? (
+                              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-blue-50 border border-blue-300 rounded-xl">
+                                <span className="flex-1 text-sm font-semibold text-blue-800 truncate font-mono">{selectedProcess.process_code}</span>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full shrink-0 capitalize">{selectedProcess.practice_area}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewEventForm(prev => ({ ...prev, process_id: '' }))}
+                                  className="w-5 h-5 flex items-center justify-center text-blue-400 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={newEventForm.process_id}
+                                onChange={e => setNewEventForm(prev => ({ ...prev, process_id: e.target.value }))}
+                                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all"
+                              >
+                                <option value="">— Sem vínculo —</option>
+                                {clientProcesses.length === 0 && (
+                                  <option disabled>Nenhum processo para este cliente</option>
+                                )}
+                                {clientProcesses.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.process_code}{p.practice_area ? ` · ${p.practice_area}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Seletor de Requerimento (apenas Perícia + requerimento adm.) */}
+                      {newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement' && (() => {
+                        const clientRequirements = requirements.filter(r => r.client_id === newEventForm.client_id);
+                        const selectedReq = clientRequirements.find(r => r.id === newEventForm.requirement_id);
+                        return (
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                              Requerimento adm. <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                            </label>
+                            {selectedReq ? (
+                              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-purple-50 border border-purple-300 rounded-xl">
+                                <span className="flex-1 text-sm font-semibold text-purple-800 truncate">{selectedReq.beneficiary}</span>
+                                {selectedReq.protocol && <span className="text-[10px] font-mono text-purple-600 shrink-0">{selectedReq.protocol}</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => setNewEventForm(prev => ({ ...prev, requirement_id: '' }))}
+                                  className="w-5 h-5 flex items-center justify-center text-purple-400 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={newEventForm.requirement_id}
+                                onChange={e => setNewEventForm(prev => ({ ...prev, requirement_id: e.target.value }))}
+                                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
+                              >
+                                <option value="">— Sem vínculo —</option>
+                                {clientRequirements.length === 0 && (
+                                  <option disabled>Nenhum requerimento para este cliente</option>
+                                )}
+                                {clientRequirements.map(r => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.beneficiary}{r.protocol ? ` · ${r.protocol}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {/* Responsável — oculto para eventos pessoais */}
                   {newEventForm.type !== 'personal' && <div>

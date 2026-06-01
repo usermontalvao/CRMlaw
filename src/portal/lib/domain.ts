@@ -119,13 +119,21 @@ export function statusMeta(status?: string | null): StatusMeta {
   return STATUS_MAP[status as ProcessStatus] ?? FALLBACK;
 }
 
-/** Cores Tailwind por tom de status — usado em badges e barras. */
-export const TONE_CLASSES: Record<StatusTone, { badge: string; dot: string; bar: string }> = {
-  prep:      { badge: 'bg-slate-100 text-slate-600 ring-slate-200',   dot: 'bg-slate-400',   bar: 'bg-slate-400' },
-  active:    { badge: 'bg-blue-50 text-blue-700 ring-blue-200',       dot: 'bg-blue-500',    bar: 'bg-blue-500' },
-  attention: { badge: 'bg-amber-50 text-amber-700 ring-amber-200',    dot: 'bg-amber-500',   bar: 'bg-amber-500' },
-  decision:  { badge: 'bg-violet-50 text-violet-700 ring-violet-200', dot: 'bg-violet-500',  bar: 'bg-violet-500' },
-  done:      { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500', bar: 'bg-emerald-500' },
+/**
+ * Tons de status — paleta SÓBRIA (banco digital). Laranja é o acento da marca;
+ * os demais tons são neutros/semânticos de baixa saturação. Nada de pastel
+ * gritante nem azul. Use `dot` para o ponto de status, `text` para rótulo,
+ * `soft`/`ring` para realces discretos e `bar` para a régua fina do topo.
+ */
+export const TONE_CLASSES: Record<
+  StatusTone,
+  { dot: string; text: string; soft: string; ring: string; bar: string }
+> = {
+  prep:      { dot: 'bg-slate-400',   text: 'text-slate-600',   soft: 'bg-slate-50',    ring: 'ring-slate-200',   bar: 'bg-slate-300' },
+  active:    { dot: 'bg-orange-500',  text: 'text-orange-700',  soft: 'bg-orange-50',   ring: 'ring-orange-200',  bar: 'bg-orange-500' },
+  attention: { dot: 'bg-amber-500',   text: 'text-amber-700',   soft: 'bg-amber-50',    ring: 'ring-amber-200',   bar: 'bg-amber-400' },
+  decision:  { dot: 'bg-slate-900',   text: 'text-slate-800',   soft: 'bg-slate-100',   ring: 'ring-slate-300',   bar: 'bg-slate-800' },
+  done:      { dot: 'bg-emerald-500', text: 'text-emerald-700', soft: 'bg-emerald-50',  ring: 'ring-emerald-200', bar: 'bg-emerald-500' },
 };
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -869,6 +869,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.173',
+    date: '01/06/2026',
+    summary: 'Portal do cliente com JWT real e redesign sóbrio premium. Calendário com vínculo a processo/requerimento e modalidade presencial/online. Fix de assinatura pública.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'security' as const, title: 'JWT real com role portal_client (deny-by-default)', description: 'Login do portal emite sessão GoTrue real via edge function portal-login. Role Postgres portal_client sem grants nas tabelas do staff — fecha vazamento de dados. Client supabasePortal dedicado não conflita com sessão do staff.' },
+        { type: 'feat' as const, title: 'Redesign sóbrio premium em todos os módulos', description: 'Visual alinhado ao padrão banco digital: branco/grafite base, laranja só como acento, sem gradientes pastel, sem Sparkles, sem azul. Aplicado em Processos, Documentos, Assinaturas, DocumentRequests, Dashboard, Financeiro, Agenda, Notificações, Mensagens, Sidebar, Header e Layout.' },
+        { type: 'fix' as const, title: 'Link de assinatura pública pedia login', description: 'Rotas públicas (/assinar, /documento, /preencher, /cloud/share) agora são verificadas antes do guard de autenticação no App.tsx — signatários externos acessam sem conta no sistema.' },
+      ]},
+      { moduleId: 'Calendário', changes: [
+        { type: 'feat' as const, title: 'Vínculo com processo ou requerimento no evento', description: 'Ao selecionar cliente + tipo ≠ Pessoal, seletor de processo aparece no formulário. Para Perícia: toggle Processo judicial / Requerimento administrativo.' },
+        { type: 'feat' as const, title: 'Campo de modalidade: presencial ou online', description: 'Para Audiência, Reunião e Perícia aparece seletor de modalidade no formulário. Valor salvo em nova coluna event_mode. Exibido como badge no painel de detalhe do evento.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.172',
     date: '27/05/2026',
     summary: 'Links públicos (/assinar, /p/, /preencher, etc) não pedem mais login — detecta rotas públicas antes de decidir entre App e PortalApp.',

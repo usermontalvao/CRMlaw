@@ -81,15 +81,15 @@ const PushToastOverlay: React.FC<{ toasts: PushToast[]; onDismiss: (id: string) 
     <div className="fixed top-4 right-4 z-[200] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map((t) => (
         <div key={t.id}
-          className="pointer-events-auto flex items-start gap-3 rounded-2xl bg-white shadow-xl ring-1 ring-black/5 p-4 animate-in slide-in-from-right-4 duration-300">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bgFor(t.type)} shadow-sm`}>
+          className="pointer-events-auto flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-lg animate-in slide-in-from-right-4 duration-200">
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${bgFor(t.type)}`}>
             {iconFor(t.type)}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-slate-900 leading-tight">{t.title}</p>
-            {t.message && <p className="mt-0.5 text-xs text-slate-600 line-clamp-2">{t.message}</p>}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold leading-tight text-slate-900">{t.title}</p>
+            {t.message && <p className="mt-0.5 line-clamp-2 text-xs text-slate-600">{t.message}</p>}
           </div>
-          <button onClick={() => onDismiss(t.id)} className="shrink-0 text-slate-300 hover:text-slate-500 transition mt-0.5">
+          <button onClick={() => onDismiss(t.id)} className="mt-0.5 shrink-0 text-slate-400 transition hover:text-slate-700">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -242,25 +242,21 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       </div>
 
       {/* ── BOTTOM NAV (mobile only) ── */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 backdrop-blur-sm lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
         <div className="flex h-16 items-stretch">
           {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as any)).map(({ id, icon: Icon, label }) => {
-            const active = route === id || (id === 'processos' && route === 'processos');
+            const active = route === id;
             return (
               <button
                 key={id}
                 onClick={() => navigate(id)}
-                className={`flex flex-1 flex-col items-center justify-center gap-0.5 transition active:scale-95 ${
+                className={`relative flex flex-1 flex-col items-center justify-center gap-0.5 transition ${
                   active ? 'text-orange-600' : 'text-slate-400'
                 }`}
               >
-                <Icon className={`h-5 w-5 transition ${active ? 'scale-110' : ''}`} />
-                <span className={`text-[10px] font-semibold ${active ? 'text-orange-600' : 'text-slate-400'}`}>
-                  {label}
-                </span>
-                {active && (
-                  <span className="absolute bottom-0 h-0.5 w-8 rounded-full bg-orange-500" />
-                )}
+                {active && <span className="absolute inset-x-0 top-0 h-0.5 bg-orange-500" />}
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium">{label}</span>
               </button>
             );
           })}

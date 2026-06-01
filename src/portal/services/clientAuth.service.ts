@@ -8,7 +8,7 @@
  *   - email-send-otp / email-verify-otp
  *   - smsdev-send-otp / smsdev-verify-otp
  */
-import { supabase } from '../../config/supabase';
+import { supabasePortal } from '../lib/supabasePortal';
 import type { ClientPortalUser, PortalSession } from '../types/portal.types';
 
 const SESSION_STORAGE_KEY = 'jurius_portal_session';
@@ -49,27 +49,53 @@ class ClientAuthService {
       throw new Error('Senha inválida. Digite os 4 últimos dígitos do seu telefone.');
     }
 
-    const { data, error } = await supabase.rpc('portal_login', {
-      p_cpf: normalizedCpf,
-      p_password: normalizedPwd,
+    // 1. Valida credenciais e obtém um OTP via edge function. A edge function
+    //    emite a identidade no GoTrue (sessão real, assinada, com refresh token).
+    const { data, error } = await supabasePortal.functions.invoke('portal-login', {
+      body: { cpf: normalizedCpf, password: normalizedPwd },
     });
 
     if (error) {
-      // Limpa qualquer sessão fantasma antes de propagar o erro
       this.logout();
-      // Mensagens vindas do RAISE EXCEPTION da função
-      const msg = error.message || 'Erro ao validar acesso.';
-      // Limpa prefixos típicos do PostgREST (ex: "P0001: ...")
-      const clean = msg.replace(/^[A-Z0-9]+:\s*/, '');
-      throw new Error(clean);
+      // Erros da edge function chegam com a mensagem no corpo (FunctionsHttpError).
+      let msg = 'Erro ao validar acesso.';
+      try {
+        const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+        const bodyJson = ctx?.json ? await ctx.json() : null;
+        if (bodyJson?.error) msg = bodyJson.error;
+      } catch { /* mantém msg padrão */ }
+      throw new Error(msg.replace(/^[A-Z0-9]+:\s*/, ''));
     }
 
-    if (!data || typeof data !== 'object') {
-      throw new Error('Resposta inválida do servidor.');
+    const resp = data as {
+      success?: boolean;
+      error?: string;
+      email?: string;
+      token?: string;
+      user?: PortalLoginRpcResponse['user'];
+      client?: PortalLoginRpcResponse['client'];
+    } | null;
+
+    if (!resp?.success || !resp.email || !resp.token) {
+      this.logout();
+      throw new Error(resp?.error || 'Não foi possível validar o acesso.');
     }
 
-    const payload = data as PortalLoginRpcResponse;
+    // 2. Conclui a sessão no client dedicado do portal (verifyOtp gera a sessão
+    //    Supabase real — daqui pra frente RPCs e realtime usam o JWT do cliente).
+    const { error: otpError } = await supabasePortal.auth.verifyOtp({
+      email: resp.email,
+      token: resp.token,
+      type: 'magiclink',
+    });
+    if (otpError) {
+      this.logout();
+      throw new Error('Falha ao estabelecer a sessão do portal.');
+    }
+
+    const payload = resp as PortalLoginRpcResponse;
     if (!payload.user?.id || !payload.client?.id) {
+      this.logout();
       throw new Error('Resposta inválida do servidor.');
     }
 
@@ -97,7 +123,7 @@ class ClientAuthService {
   async resolvePhotoUrl(path: string | null | undefined): Promise<string | null> {
     if (!path) return null;
     try {
-      const { data, error } = await supabase.storage
+      const { data, error } = await supabasePortal.storage
         .from(STORAGE_BUCKET)
         .createSignedUrl(path, PHOTO_SIGNED_TTL);
       if (error || !data?.signedUrl) return null;
@@ -115,7 +141,7 @@ class ClientAuthService {
     const session = this.getStoredSession();
     if (!session) return null;
     try {
-      const { data: path, error } = await supabase.rpc('portal_get_client_photo', {
+      const { data: path, error } = await supabasePortal.rpc('portal_get_client_photo', {
         p_portal_user_id: session.user.id,
       });
       if (error) return session.client.photo_url ?? null;
@@ -169,6 +195,8 @@ class ClientAuthService {
   logout(): void {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    // Encerra a sessão Supabase do portal (escopo local — não toca no staff).
+    void supabasePortal.auth.signOut({ scope: 'local' }).catch(() => null);
   }
 }
 

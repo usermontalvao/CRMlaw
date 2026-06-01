@@ -3,12 +3,8 @@ import {
   FileSignature,
   ExternalLink,
   CheckCircle2,
-  Clock,
   Users,
-  CalendarClock,
-  AlertTriangle,
   PenTool,
-  ChevronRight,
   Eye,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
@@ -16,7 +12,6 @@ import { clientPortalService } from '../services/clientPortal.service';
 import {
   EmptyState,
   SkeletonCard,
-  StatusBadge,
   formatDate,
   formatRelative,
 } from '../components/PortalUI';
@@ -165,49 +160,42 @@ export const PortalSignatures: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-
-      {/* Page title */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Assinaturas</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+    <div className="flex flex-col gap-5">
+      <header>
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Assinaturas</h1>
+        <p className="mt-1 text-sm text-slate-500">
           {items.length
             ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} · ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
             : 'Documentos que precisam da sua assinatura digital.'}
         </p>
-      </div>
+      </header>
 
-      {/* Alerta urgente */}
       {!loading && counts.pending > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+        <div className="flex items-start gap-3 rounded-xl border border-l-[3px] border-orange-200 border-l-orange-500 bg-white px-4 py-3">
           <PenTool className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-          <p className="text-sm font-medium text-orange-800">
-            <strong>{counts.pending} documento{counts.pending !== 1 ? 's' : ''}</strong> aguardando assinatura. Toque no card para assinar.
+          <p className="text-sm text-slate-700">
+            <strong className="font-semibold">{counts.pending} documento{counts.pending !== 1 ? 's' : ''}</strong> aguardando sua assinatura.
           </p>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold ring-1 transition ${
-              tab === t.key
-                ? 'bg-orange-500 text-white ring-orange-500 shadow-sm'
-                : 'bg-white text-slate-600 ring-slate-200 active:bg-slate-100'
-            }`}
-          >
-            {t.label}
-            <span className={`min-w-[18px] rounded-full px-1.5 text-[10px] font-bold ${tab === t.key ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'}`}>
-              {t.count}
-            </span>
-          </button>
-        ))}
+      <div className="flex gap-4 border-b border-slate-200">
+        {TABS.map((t) => {
+          const on = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {t.label}
+              <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-orange-700' : 'text-slate-400'}`}>{t.count}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Lista */}
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /></div>
       ) : filtered.length === 0 ? (
@@ -238,12 +226,6 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
   const totalSigners = s.signers?.length || 0;
   const progress = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
 
-  const iconTile = st.isPending
-    ? 'bg-orange-50 text-orange-600 ring-orange-100'
-    : st.isExpired
-    ? 'bg-rose-50 text-rose-600 ring-rose-100'
-    : 'bg-emerald-50 text-emerald-600 ring-emerald-100';
-
   // Pendente + sou signatário → sign URL; concluído → doc URL ou sign URL como fallback
   const actionUrl = st.isPending && st.iAmSigner ? signUrl : (docUrl || signUrl);
   const mySigner = (s.signers || []).find((sg) => sg.status === 'signed');
@@ -265,20 +247,20 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
       tabIndex={actionUrl ? 0 : undefined}
       onClick={handleCardClick}
       onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}
-      className={`flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition sm:p-5 ${
-        actionUrl ? 'cursor-pointer active:scale-[0.99] hover:border-orange-200 hover:shadow-md' : ''
-      }`}
+      className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 transition sm:p-5 ${
+        actionUrl ? 'cursor-pointer hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]' : ''
+      }${st.isPending ? ' border-l-[3px] border-l-orange-500' : ''}`}
     >
-      {/* Topo: ícone + título + status */}
+      {/* Linha principal: ícone neutro + título + status */}
       <div className="flex items-center gap-3">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${iconTile}`}>
-          <FileSignature className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+          <FileSignature className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-bold leading-snug text-slate-900">
+          <p className="truncate text-sm font-semibold text-slate-900">
             {s.title || s.document_name || 'Documento para assinar'}
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
+          <p className="mt-0.5 tabular-nums text-[11px] text-slate-400">
             {st.isExpired
               ? `Expirou em ${formatDate(s.expires_at)}`
               : st.isPending
@@ -288,17 +270,20 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
               : 'Documento concluído'}
           </p>
         </div>
-        <StatusBadge status={st.badge} label={st.label} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className={`h-1.5 w-1.5 rounded-full ${st.isPending ? 'bg-orange-500' : st.isExpired ? 'bg-slate-300' : 'bg-emerald-500'}`} />
+          <span className={`text-xs font-medium ${st.isPending ? 'text-orange-700' : st.isExpired ? 'text-slate-400' : 'text-emerald-700'}`}>{st.label}</span>
+        </div>
       </div>
 
-      {/* Progresso — só quando há vários signatários */}
+      {/* Progresso quando há múltiplos signatários */}
       {multi && (
-        <div>
-          <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+        <div className="border-t border-slate-100 pt-3">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{signedCount} de {totalSigners} assinaram</span>
-            <span className="font-bold text-slate-700">{progress}%</span>
+            <span className="tabular-nums font-medium">{progress}%</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
             <div className={`h-full rounded-full ${st.isPending ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${progress}%` }} />
           </div>
         </div>
@@ -306,8 +291,8 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
 
       {/* CTA */}
       {st.iAmSigner && st.isPending && signUrl && (
-        <div className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white">
-          <PenTool className="h-4 w-4" /> Toque aqui para assinar <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+        <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
+          <PenTool className="h-4 w-4" /> Assinar documento <ExternalLink className="h-3.5 w-3.5 opacity-60" />
         </div>
       )}
       {!st.isPending && !st.isExpired && actionUrl && (
@@ -316,15 +301,15 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
         >
           <Eye className="h-4 w-4" /> Ver documento <ExternalLink className="h-3.5 w-3.5 opacity-40" />
         </a>
       )}
       {st.iAmSigner && st.isPending && !signUrl && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-          ⚠ Entre em contato com o escritório para obter o link de assinatura.
-        </div>
+        <p className="border-t border-slate-100 pt-3 text-[13px] text-slate-500">
+          Entre em contato com o escritório para obter o link de assinatura.
+        </p>
       )}
     </div>
   );

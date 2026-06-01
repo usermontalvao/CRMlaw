@@ -1,64 +1,48 @@
-/**
- * PortalMessages — Placeholder de mensagens (chat com o advogado).
- *
- * MVP exibe placeholder. Integração futura com chat.service.ts.
- */
 import React from 'react';
-import { MessageSquare, Sparkles, Mail, Phone } from 'lucide-react';
-import { PageHeader } from '../components/PortalUI';
+import { MessageSquare, Mail, Phone } from 'lucide-react';
 
 export const PortalMessages: React.FC = () => {
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Mensagens"
-        subtitle="Converse diretamente com seu advogado."
-        icon={MessageSquare}
-      />
+    <div className="flex flex-col gap-5">
+      <header>
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Mensagens</h1>
+        <p className="mt-1 text-sm text-slate-500">Canais de contato com o escritório.</p>
+      </header>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-8 text-center sm:p-12">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg">
-            <MessageSquare className="h-9 w-9" />
-          </div>
-          <h2 className="mt-5 text-xl font-bold text-slate-900">Chat em breve</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
-            Em breve você poderá enviar mensagens, anexar arquivos e receber respostas do seu
-            advogado diretamente por aqui, com total segurança.
-          </p>
-          <div className="mx-auto mt-5 inline-flex items-center gap-2 rounded-full bg-amber-100/80 px-3 py-1.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
-            <Sparkles className="h-3.5 w-3.5" />
-            Funcionalidade em desenvolvimento
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <MessageSquare className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Atendimento integrado</p>
+              <p className="text-xs text-slate-500">Em breve disponível diretamente aqui no portal.</p>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-          <a
-            href="mailto:contato@jurius.com.br"
-            className="flex items-center gap-3 p-5 transition hover:bg-slate-50"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
-              <Mail className="h-5 w-5" />
+        <div className="divide-y divide-slate-100">
+          <a href="mailto:contato@jurius.com.br" className="flex items-center gap-3 p-4 transition hover:bg-slate-50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Mail className="h-4 w-4" />
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">Enviar e-mail</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-slate-900">E-mail</p>
               <p className="truncate text-xs text-slate-500">contato@jurius.com.br</p>
             </div>
           </a>
-          <a
-            href="tel:+5511000000000"
-            className="flex items-center gap-3 p-5 transition hover:bg-slate-50"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-              <Phone className="h-5 w-5" />
+          <a href="tel:+5511000000000" className="flex items-center gap-3 p-4 transition hover:bg-slate-50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Phone className="h-4 w-4" />
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">Ligar para o escritório</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-slate-900">Telefone</p>
               <p className="truncate text-xs text-slate-500">Horário comercial</p>
             </div>
           </a>
         </div>
-      </div>
+      </section>
     </div>
   );
 };

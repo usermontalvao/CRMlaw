@@ -95,42 +95,35 @@ export const PortalCalendar: React.FC = () => {
   }, [shown]);
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Agenda</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            {upcoming.length > 0
-              ? `${upcoming.length} próximo${upcoming.length !== 1 ? 's' : ''}`
-              : 'Sem próximos compromissos'}
-            {past.length > 0 && ` · ${past.length} no histórico`}
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-5">
+      <header>
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Agenda</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          {upcoming.length > 0
+            ? `${upcoming.length} próximo${upcoming.length !== 1 ? 's' : ''}`
+            : 'Sem próximos compromissos'}
+          {past.length > 0 && ` · ${past.length} no histórico`}
+        </p>
+      </header>
 
       {/* Toggle */}
-      <div className="flex gap-2">
+      <div className="flex gap-4 border-b border-slate-200">
         {[
           { id: false, label: 'Próximos', count: upcoming.length, icon: CalendarClock },
           { id: true,  label: 'Histórico', count: past.length,    icon: CalendarDays  },
-        ].map(({ id, label, count, icon: Icon }) => (
-          <button
-            key={String(id)}
-            onClick={() => setShowPast(id)}
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold ring-1 transition ${
-              showPast === id
-                ? 'bg-orange-500 text-white ring-orange-500 shadow-sm'
-                : 'bg-white text-slate-600 ring-slate-200 active:bg-slate-100'
-            }`}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-            <span className={`min-w-[18px] rounded-full px-1.5 text-[10px] font-bold ${showPast === id ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'}`}>
-              {count}
-            </span>
-          </button>
-        ))}
+        ].map(({ id, label, count }) => {
+          const on = showPast === id;
+          return (
+            <button
+              key={String(id)}
+              onClick={() => setShowPast(id)}
+              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {label}
+              <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-orange-700' : 'text-slate-400'}`}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Conteúdo */}
@@ -148,28 +141,30 @@ export const PortalCalendar: React.FC = () => {
             <div key={key}>
               {/* Cabeçalho do dia */}
               <div className="mb-3 flex items-center gap-3">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                  showPast ? 'bg-slate-100 text-slate-500' : 'bg-orange-100 text-orange-700'
+                <div className={`flex h-8 w-8 shrink-0 flex-col items-center justify-center rounded-lg text-center ${
+                  showPast ? 'bg-slate-100' : 'bg-orange-50'
                 }`}>
-                  {key !== 'sem-data' ? new Date(key + 'T12:00:00').getDate() : '?'}
+                  <span className={`text-sm font-semibold tabular-nums leading-none ${showPast ? 'text-slate-500' : 'text-orange-700'}`}>
+                    {key !== 'sem-data' ? new Date(key + 'T12:00:00').getDate() : '?'}
+                  </span>
                 </div>
                 <div>
-                  <p className={`text-sm font-bold ${showPast ? 'text-slate-500' : 'text-slate-900'}`}>
+                  <p className={`text-sm font-semibold ${showPast ? 'text-slate-500' : 'text-slate-900'}`}>
                     {dayLabel(items[0]?.start_at)}
                   </p>
                   {key !== 'sem-data' && (
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] capitalize text-slate-400">
                       {new Date(key + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}
                     </p>
                   )}
                 </div>
-                <div className="h-px flex-1 bg-slate-100" />
+                <div className="h-px flex-1 bg-slate-200" />
               </div>
 
               {/* Cards do dia */}
-              <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col gap-2">
                 {items.map((ev) => {
-                  const { Icon, bg, ring, label } = eventStyle(ev.event_type);
+                  const { Icon, bg, label } = eventStyle(ev.event_type);
                   const isPast = !isFuture(ev);
                   const start  = timeOf(ev.start_at);
                   const end    = timeOf(ev.end_at);
@@ -177,45 +172,32 @@ export const PortalCalendar: React.FC = () => {
                   return (
                     <div
                       key={ev.id}
-                      className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition ${
-                        isPast ? 'border-slate-200 opacity-60' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'
-                      }`}
+                      className={`flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 transition ${isPast ? 'opacity-60' : 'hover:border-slate-300'}`}
                     >
-                      <div className="flex items-start gap-3.5 p-4">
-                        {/* Ícone */}
-                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white ring-4 ${bg} ${ring}`}>
-                          <Icon className="h-5 w-5" />
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white ${bg}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className={`text-sm font-semibold leading-snug ${isPast ? 'text-slate-400' : 'text-slate-900'}`}>
+                            {ev.title || label}
+                          </h3>
+                          <span className={`shrink-0 text-[11px] font-medium ${isPast ? 'text-slate-400' : 'text-orange-700'}`}>
+                            {isPast ? 'Realizado' : label}
+                          </span>
                         </div>
 
-                        <div className="min-w-0 flex-1">
-                          {/* Título */}
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className={`text-sm font-bold leading-snug ${isPast ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                              {ev.title || label}
-                            </h3>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${
-                              isPast
-                                ? 'bg-slate-100 text-slate-400 ring-slate-200'
-                                : 'bg-orange-50 text-orange-700 ring-orange-200'
-                            }`}>
-                              {isPast ? 'Realizado' : label}
-                            </span>
-                          </div>
+                        {ev.description && (
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-500">{ev.description}</p>
+                        )}
 
-                          {ev.description && (
-                            <p className="mt-1 line-clamp-2 text-xs text-slate-500">{ev.description}</p>
-                          )}
-
-                          {/* Meta */}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                            {start && (
-                              <span className={`inline-flex items-center gap-1 font-semibold ${isPast ? 'text-slate-400' : 'text-slate-700'}`}>
-                                <Clock className="h-3 w-3" />
-                                {start}{end && end !== start && ` – ${end}`}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        {start && (
+                          <p className={`mt-1.5 inline-flex items-center gap-1 text-[11px] tabular-nums font-medium ${isPast ? 'text-slate-400' : 'text-slate-700'}`}>
+                            <Clock className="h-3 w-3" />
+                            {start}{end && end !== start && ` – ${end}`}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );

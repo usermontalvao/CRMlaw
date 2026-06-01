@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ArrowLeft, Briefcase, Calendar, Clock, Gavel, Scale, MapPin,
-  AlertCircle, Activity, CheckCircle2, Loader2, Info, ShieldCheck, Sparkles, ChevronRight,
+  ArrowLeft, Calendar, Clock, Gavel, Scale, MapPin,
+  AlertCircle, Activity, CheckCircle2, Loader2, ShieldCheck, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
@@ -23,21 +23,22 @@ interface ProcessFull {
 
 type Tab = 'resumo' | 'andamentos' | 'prazos';
 
-/** O que o cliente precisa fazer (ou não) — reduz ansiedade e mensagens no WhatsApp. */
-function nextAction(p: ProcessFull): { tone: 'ok' | 'attention'; text: string } {
+/** O que o cliente precisa fazer (ou não) — reduz ansiedade e mensagens. */
+function nextAction(p: ProcessFull): { tone: 'ok' | 'attention'; label: string; text: string } {
   const todayStr = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD local
   const future = p.hearing_scheduled && p.hearing_date && p.hearing_date >= todayStr;
   if (future) {
     return {
       tone: 'attention',
-      text: `Você tem uma audiência marcada para ${formatDate(p.hearing_date)}${p.hearing_time ? ` às ${p.hearing_time.slice(0,5)}` : ''}. Confirme sua presença com seu advogado.`,
+      label: 'Requer atenção',
+      text: `Você tem uma audiência marcada para ${formatDate(p.hearing_date)}${p.hearing_time ? ` às ${p.hearing_time.slice(0, 5)}` : ''}. Confirme sua presença com seu advogado.`,
     };
   }
   const pending = (p.deadlines || []).filter((d) => d.status === 'pendente').length;
   if (pending > 0) {
-    return { tone: 'attention', text: 'Há prazos em aberto sendo cuidados pelo seu advogado. Acompanhe na aba Prazos.' };
+    return { tone: 'attention', label: 'Em acompanhamento', text: 'Há prazos em aberto sendo cuidados pelo seu advogado. Acompanhe na aba Prazos.' };
   }
-  return { tone: 'ok', text: 'Nenhuma ação é necessária da sua parte no momento. Seu advogado está cuidando de tudo.' };
+  return { tone: 'ok', label: 'Nada pendente', text: 'Nenhuma ação é necessária da sua parte no momento. Seu advogado está cuidando de tudo.' };
 }
 
 export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processId }) => {
@@ -61,7 +62,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     return () => { mounted = false; };
   }, [session?.user?.id, processId]);
 
-  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-orange-500" /></div>;
+  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
   if (error || !data) {
     return <div><BackBtn onClick={() => navigate('processos')} /><EmptyState icon={Scale} title="Não foi possível carregar" description={error || 'Processo não encontrado.'} /></div>;
   }
@@ -71,7 +72,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const rawMovements = data.movements || [];
   const djens: Movement[] = (data.publications || []).map((p) => ({
     id: p.id,
-    nome: p.tipo || 'Publicação Oficial',
+    nome: p.tipo || 'Publicação oficial',
     data_hora: p.data,
     data: p.data,
     tribunal: 'djen',
@@ -105,158 +106,92 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <BackBtn onClick={() => navigate('processos')} />
 
-      {/* ── CARD DE STATUS ── */}
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
-        <div className={`h-1 w-full ${tone.bar}`} />
-        <div className="p-4 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                <Briefcase className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${tone.badge}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />{meta.label}
-                </span>
-                <p className="mt-2 font-mono text-xs font-semibold text-slate-600">{data.process_code}</p>
-                <p className="text-xs text-slate-400">{[data.practice_area, data.court].filter(Boolean).join(' · ')}</p>
-              </div>
-            </div>
+      {/* ── CABEÇALHO + SITUAÇÃO ── */}
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="p-5 sm:p-6">
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
+            <span className={`text-sm font-semibold ${tone.text}`}>{meta.label}</span>
           </div>
-
-          {/* Explicação plana */}
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-slate-50 px-4 py-3">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <p className="text-sm leading-relaxed text-slate-600">{meta.explain}</p>
-          </div>
-
-          {/* Jornada macro (5 etapas — etapas anteriores são determinísticas) */}
-          <div className="mt-5">
-            <div className="flex items-center justify-between">
-              {JOURNEY.map((st, i) => {
-                const done = i < meta.stage;
-                const current = i === meta.stage;
-                return (
-                  <React.Fragment key={st.key}>
-                    <div className="flex flex-1 flex-col items-center gap-1.5">
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
-                        current ? 'bg-orange-500 text-white ring-4 ring-orange-100'
-                        : done ? 'bg-emerald-500 text-white'
-                        : 'bg-slate-200 text-slate-400'
-                      }`}>
-                        {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
-                      </div>
-                      <span className={`text-center text-[9px] font-semibold leading-tight sm:text-[10px] ${
-                        current ? 'text-orange-700' : done ? 'text-emerald-600' : 'text-slate-400'
-                      }`}>{st.label}</span>
-                    </div>
-                    {i < JOURNEY.length - 1 && (
-                      <div className={`mb-4 h-0.5 flex-1 ${i < meta.stage ? 'bg-emerald-400' : 'bg-slate-200'}`} />
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </div>
+          <h1 className="mt-3 text-lg font-semibold leading-snug text-slate-900 sm:text-xl">{meta.explain}</h1>
+          <p className="mt-2 font-mono text-xs tabular-nums text-slate-400">{data.process_code}</p>
+          {[data.practice_area, data.court].filter(Boolean).length > 0 && (
+            <p className="mt-0.5 text-xs capitalize text-slate-400">{[data.practice_area, data.court].filter(Boolean).join(' · ')}</p>
+          )}
         </div>
-      </div>
 
-      {/* ── EXPLICAÇÃO DO PROCESSO POR IA ── */}
-      {aiState !== 'done' ? (
-        <button
-          onClick={handleExplainProcess}
-          disabled={aiState === 'loading'}
-          className="group flex w-full items-center gap-3.5 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4 text-left transition active:scale-[0.99] hover:border-orange-300 disabled:opacity-70"
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
-            {aiState === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-orange-900">
-              {aiState === 'loading' ? 'Analisando seu processo...' : 'Quer saber como está seu processo?'}
-            </p>
-            <p className="text-xs text-orange-700">
-              {aiState === 'error' ? 'Não consegui agora — toque para tentar novamente' : 'A IA explica tudo em linguagem simples'}
-            </p>
-          </div>
-          {aiState !== 'loading' && <ChevronRight className="h-5 w-5 shrink-0 text-orange-400 transition group-hover:translate-x-0.5" />}
-        </button>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50 px-4 py-3">
-            <Sparkles className="h-4 w-4 text-orange-600" />
-            <p className="text-sm font-bold text-orange-900">Como está seu processo</p>
-            <span className="ml-auto rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold uppercase text-orange-700">IA</span>
-          </div>
-          <p className="px-4 py-4 text-sm leading-relaxed text-slate-700">{aiText}</p>
-          <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
-            Explicação gerada por inteligência artificial. Em caso de dúvida, fale com seu advogado.
-          </p>
+        {/* Jornada macro — stepper sóbrio */}
+        <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
+          <Journey stage={meta.stage} />
         </div>
-      )}
+      </section>
 
       {/* ── O QUE VOCÊ PRECISA FAZER ── */}
-      <div className={`flex items-start gap-3 rounded-2xl px-4 py-3.5 ${
-        action.tone === 'attention' ? 'border border-amber-200 bg-amber-50' : 'border border-emerald-200 bg-emerald-50'
-      }`}>
-        {action.tone === 'attention'
-          ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          : <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />}
-        <div>
-          <p className={`text-xs font-bold uppercase tracking-wider ${action.tone === 'attention' ? 'text-amber-700' : 'text-emerald-700'}`}>
-            {action.tone === 'attention' ? 'Atenção' : 'Tudo certo'}
-          </p>
-          <p className={`mt-0.5 text-sm ${action.tone === 'attention' ? 'text-amber-900' : 'text-emerald-900'}`}>{action.text}</p>
+      <section className={`rounded-xl border border-slate-200 border-l-[3px] bg-white p-4 sm:p-5 ${action.tone === 'attention' ? 'border-l-amber-400' : 'border-l-emerald-400'}`}>
+        <div className="flex items-start gap-3">
+          {action.tone === 'attention'
+            ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            : <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{action.label}</p>
+            <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{action.text}</p>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Audiência — destaca só se for FUTURA; passada mostra como realizada */}
+      {/* Audiência futura/realizada */}
       {data.hearing_scheduled && data.hearing_date && (() => {
-        const todayStr = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD local
+        const todayStr = new Date().toLocaleDateString('sv-SE');
         const isPast = data.hearing_date < todayStr;
         return (
-          <div className={`flex items-center gap-3 rounded-2xl border p-4 shadow-sm ${isPast ? 'border-slate-200 bg-white' : 'border-amber-200 bg-white'}`}>
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white ${isPast ? 'bg-slate-400' : 'bg-amber-500'}`}>
+          <section className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isPast ? 'bg-slate-100 text-slate-400' : 'bg-amber-50 text-amber-600'}`}>
               {isPast ? <CheckCircle2 className="h-5 w-5" /> : <Gavel className="h-5 w-5" />}
             </div>
             <div className="min-w-0">
-              <p className={`text-xs font-bold uppercase tracking-wider ${isPast ? 'text-slate-400' : 'text-amber-700'}`}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                 {isPast ? 'Audiência realizada' : 'Próxima audiência'}
               </p>
-              <p className={`text-sm font-bold ${isPast ? 'text-slate-500' : 'text-slate-900'}`}>
-                {formatDateLong(data.hearing_date)}{data.hearing_time && ` às ${data.hearing_time.slice(0,5)}`}
+              <p className="text-sm font-semibold text-slate-900">
+                {formatDateLong(data.hearing_date)}{data.hearing_time && ` · ${data.hearing_time.slice(0, 5)}`}
               </p>
               {data.hearing_mode && !isPast && (
-                <p className="inline-flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3" /><span className="capitalize">{data.hearing_mode}</span></p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-xs capitalize text-slate-500"><MapPin className="h-3 w-3" />{data.hearing_mode}</p>
               )}
             </div>
-          </div>
+          </section>
         );
       })()}
 
-      {/* ── TABS ── */}
-      <div className="flex gap-1 rounded-2xl bg-slate-100 p-1">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition ${
-              tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 active:bg-white/50'
-            }`}
-          >
-            {t.label}
-            {t.badge != null && t.badge > 0 && (
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${tab === t.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'}`}>{t.badge}</span>
-            )}
-          </button>
-        ))}
+      {/* ── RESUMO POR IA (discreto, opcional) ── */}
+      <AiSummary state={aiState} text={aiText} onGenerate={handleExplainProcess} />
+
+      {/* ── TABS (underline sóbrio) ── */}
+      <div className="flex gap-6 border-b border-slate-200">
+        {TABS.map((t) => {
+          const on = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${
+                on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {t.label}
+              {t.badge != null && t.badge > 0 && (
+                <span className={`tabular-nums rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none ${on ? 'bg-orange-50 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>{t.badge}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div>
-        {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} />}
+        {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} onSeeAll={() => setTab('andamentos')} />}
         {tab === 'andamentos' && <AndamentosTab movements={movements} statusLabel={meta.label} area={data.practice_area} />}
         {tab === 'prazos' && <PrazosTab deadlines={deadlines} />}
       </div>
@@ -264,37 +199,106 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   );
 };
 
+// ────────────────────────────────────────────────────────────────────────────
+
 const BackBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button onClick={onClick} className="inline-flex items-center gap-1.5 self-start rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900 active:bg-slate-100">
+  <button onClick={onClick} className="inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-900">
     <ArrowLeft className="h-4 w-4" /> Voltar
   </button>
 );
 
-const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null }> = ({ data, movements, responsibleLawyer }) => (
-  <div className="flex flex-col gap-3">
-    {/* Dados gerais */}
-    <div className="grid grid-cols-2 gap-2.5">
-      <InfoTile label="Distribuído em" value={data.distributed_at ? formatDate(data.distributed_at) : '—'} icon={Calendar} />
-      <InfoTile label="Advogado" value={responsibleLawyer || '—'} icon={Gavel} />
-    </div>
-
-    {/* Última atualização */}
-    {movements.length > 0 ? (
-      <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 sm:p-5">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Últimas atualizações</p>
-        <div className="relative ml-1 space-y-4 border-l-2 border-slate-100 pl-4">
-          {movements.slice(0, 4).map((m, i) => (
-            <div key={i} className="relative">
-              <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-orange-400" />
-              <p className="text-sm font-semibold leading-snug text-slate-900">{m.nome}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{formatRelative(m.data_hora || m.data)}</p>
+/** Stepper sóbrio das 5 etapas macro. */
+const Journey: React.FC<{ stage: number }> = ({ stage }) => (
+  <div className="flex items-start">
+    {JOURNEY.map((st, i) => {
+      const done = i < stage;
+      const current = i === stage;
+      return (
+        <React.Fragment key={st.key}>
+          <div className="flex flex-1 flex-col items-center gap-2">
+            <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+              current ? 'bg-white text-orange-600 ring-2 ring-orange-500'
+              : done ? 'bg-slate-900 text-white'
+              : 'bg-white text-slate-300 ring-1 ring-slate-200'
+            }`}>
+              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
             </div>
-          ))}
+            <span className={`text-center text-[10px] font-medium leading-tight ${
+              current ? 'text-slate-900' : done ? 'text-slate-500' : 'text-slate-400'
+            }`}>{st.label}</span>
+          </div>
+          {i < JOURNEY.length - 1 && (
+            <div className={`mt-3 h-px flex-1 ${i < stage ? 'bg-slate-900' : 'bg-slate-200'}`} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+/** Bloco de resumo por IA — texto-first, sem brilho nem gradiente. */
+const AiSummary: React.FC<{
+  state: 'idle' | 'loading' | 'done' | 'error';
+  text: string | null;
+  onGenerate: () => void;
+}> = ({ state, text, onGenerate }) => (
+  <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-900">Resumo do seu caso</h2>
+          <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">IA</span>
         </div>
-        {movements.length > 4 && <p className="mt-3 text-xs text-slate-400">+ {movements.length - 4} na aba Andamentos</p>}
+        <p className="mt-0.5 text-xs text-slate-500">Uma explicação simples de como o processo está hoje.</p>
+      </div>
+      {state !== 'done' && (
+        <button
+          onClick={onGenerate}
+          disabled={state === 'loading'}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+        >
+          {state === 'loading' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Gerando…</> : state === 'error' ? 'Tentar de novo' : 'Gerar resumo'}
+        </button>
+      )}
+    </div>
+    {state === 'done' && text && (
+      <>
+        <p className="mt-3 border-t border-slate-100 pt-3 text-sm leading-relaxed text-slate-700">{text}</p>
+        <p className="mt-2 text-[11px] text-slate-400">Gerado por inteligência artificial — em caso de dúvida, fale com seu advogado.</p>
+      </>
+    )}
+  </section>
+);
+
+const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null; onSeeAll: () => void }> = ({ data, movements, responsibleLawyer, onSeeAll }) => (
+  <div className="flex flex-col gap-3">
+    {/* Dados gerais — lista de definição limpa */}
+    <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 sm:divide-y-0 sm:divide-x">
+      <InfoRow label="Distribuído em" value={data.distributed_at ? formatDate(data.distributed_at) : '—'} icon={Calendar} />
+      <InfoRow label="Advogado responsável" value={responsibleLawyer || '—'} icon={Gavel} />
+    </dl>
+
+    {/* Últimas atualizações (curado: 4 mais recentes) */}
+    {movements.length > 0 ? (
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Últimas atualizações</p>
+        <ol className="relative ml-1 space-y-4 border-l border-slate-200 pl-4">
+          {movements.slice(0, 4).map((m, i) => (
+            <li key={i} className="relative">
+              <span className={`absolute -left-[21px] top-1.5 h-2 w-2 rounded-full border-2 border-white ${i === 0 ? 'bg-orange-500' : 'bg-slate-300'}`} />
+              <p className="text-sm font-medium leading-snug text-slate-900">{m.nome}</p>
+              <p className="mt-0.5 text-xs tabular-nums text-slate-400">{formatRelative(m.data_hora || m.data)}</p>
+            </li>
+          ))}
+        </ol>
+        {movements.length > 4 && (
+          <button onClick={onSeeAll} className="mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-slate-600 transition hover:text-slate-900">
+            Ver todos os {movements.length} andamentos <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
     ) : (
-      <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-slate-200/80">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 text-center">
         <Activity className="mx-auto h-6 w-6 text-slate-300" />
         <p className="mt-2 text-sm text-slate-500">Ainda não há atualizações registradas.</p>
       </div>
@@ -302,10 +306,10 @@ const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibl
   </div>
 );
 
-const InfoTile: React.FC<{ label: string; value: string; icon: React.ComponentType<{ className?: string }> }> = ({ label, value, icon: Icon }) => (
-  <div className="rounded-2xl bg-white p-3.5 ring-1 ring-slate-200/80">
-    <div className="flex items-center gap-1.5 text-slate-400"><Icon className="h-3.5 w-3.5" /><span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span></div>
-    <p className="mt-1 text-sm font-semibold text-slate-800 line-clamp-1">{value}</p>
+const InfoRow: React.FC<{ label: string; value: string; icon: React.ComponentType<{ className?: string }> }> = ({ label, value, icon: Icon }) => (
+  <div className="p-4">
+    <dt className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400"><Icon className="h-3.5 w-3.5" />{label}</dt>
+    <dd className="mt-1 text-sm font-medium text-slate-800">{value}</dd>
   </div>
 );
 
@@ -320,6 +324,7 @@ const MovementItem: React.FC<{
 }> = ({ m, timeline, statusLabel, area }) => {
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
 
   const explain = async () => {
     if (state === 'loading') return;
@@ -336,61 +341,59 @@ const MovementItem: React.FC<{
   };
 
   return (
-    <div className="relative">
-      <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-orange-400 shadow-sm" />
-      <p className="text-sm font-semibold leading-snug text-slate-900">{m.nome}</p>
-      {m.complemento && <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-600">{m.complemento}</p>}
-      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+    <li className="relative">
+      <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full border-2 border-white bg-slate-300" />
+      <p className="text-sm font-medium leading-snug text-slate-900">{m.nome}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] tabular-nums text-slate-400">
         <span>{formatDate(m.data_hora || m.data, { withTime: true })}</span>
-        {m.tribunal && <span>· {sourceLabel(m.tribunal)}</span>}
+        {m.tribunal && <><span className="text-slate-300">·</span><span className="normal-nums">{sourceLabel(m.tribunal)}</span></>}
       </div>
 
-      {/* Explicação por IA */}
-      {state !== 'done' && (
-        <button
-          onClick={explain}
-          disabled={state === 'loading'}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-orange-50 px-2.5 py-1.5 text-[11px] font-bold text-orange-700 ring-1 ring-orange-100 transition hover:bg-orange-100 disabled:opacity-60"
-        >
-          {state === 'loading'
-            ? <><Loader2 className="h-3 w-3 animate-spin" /> Explicando...</>
-            : state === 'error'
-            ? <><Sparkles className="h-3 w-3" /> Tentar novamente</>
-            : <><Sparkles className="h-3 w-3" /> Explicar em linguagem simples</>}
-        </button>
-      )}
-
-      {state === 'done' && explanation && (
-        <div className="mt-2 rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50 px-3 py-2.5">
-          <div className="flex items-start gap-2">
-            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-orange-600">Explicação</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-slate-700">{explanation}</p>
-            </div>
-          </div>
-          <p className="mt-2 border-t border-orange-100 pt-1.5 text-[10px] text-slate-400">
-            Gerado por IA — pode conter imprecisões. Em caso de dúvida, fale com seu advogado.
-          </p>
+      {/* Texto técnico recolhido por padrão */}
+      {m.complemento && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowRaw((v) => !v)}
+            className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-500 transition hover:text-slate-800"
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition ${showRaw ? 'rotate-180' : ''}`} />
+            {showRaw ? 'Ocultar texto oficial' : 'Ver texto oficial'}
+          </button>
+          {showRaw && (
+            <p className="mt-1.5 whitespace-pre-line rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">{m.complemento}</p>
+          )}
         </div>
       )}
-    </div>
+
+      {/* Explicação por IA — link discreto, sem pílula laranja */}
+      <div className="mt-2">
+        {state !== 'done' && (
+          <button
+            onClick={explain}
+            disabled={state === 'loading'}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-orange-700 underline-offset-2 transition hover:underline disabled:opacity-60"
+          >
+            {state === 'loading' ? <><Loader2 className="h-3 w-3 animate-spin" /> Explicando…</> : state === 'error' ? 'Não consegui — tentar de novo' : 'Entender este andamento'}
+          </button>
+        )}
+        {state === 'done' && explanation && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Em linguagem simples</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-700">{explanation}</p>
+          </div>
+        )}
+      </div>
+    </li>
   );
 };
 
 const AndamentosTab: React.FC<{ movements: Movement[]; statusLabel: string; area?: string | null }> = ({ movements, statusLabel, area }) => {
   if (!movements.length) return <EmptyState icon={Activity} title="Sem andamentos" description="Nenhuma atualização registrada ainda." />;
   return (
-    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 sm:p-5">
-      <div className="mb-4 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
-        <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
-        <p className="text-[11px] leading-relaxed text-slate-500">
-          Não entendeu algum andamento? Toque em <strong className="text-orange-700">Explicar em linguagem simples</strong> e a IA traduz para você — considerando o contexto do processo.
-        </p>
-      </div>
-      <div className="relative ml-1 space-y-5 border-l-2 border-slate-100 pl-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <ol className="relative ml-1 space-y-5 border-l border-slate-200 pl-4">
         {movements.map((m, i) => <MovementItem key={i} m={m} timeline={movements} statusLabel={statusLabel} area={area} />)}
-      </div>
+      </ol>
     </div>
   );
 };
@@ -403,15 +406,15 @@ const PrazosTab: React.FC<{ deadlines: Deadline[] }> = ({ deadlines }) => {
         const overdue = d.status === 'pendente' && new Date(d.due_date) < new Date();
         const done = d.status === 'cumprido';
         return (
-          <div key={d.id} className={`flex items-center gap-3.5 rounded-2xl p-4 ring-1 ${overdue ? 'bg-rose-50 ring-rose-200' : done ? 'bg-emerald-50 ring-emerald-200' : 'bg-white ring-slate-200/80'}`}>
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${overdue ? 'bg-rose-500 text-white' : done ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
-              {done ? <CheckCircle2 className="h-5 w-5" /> : overdue ? <AlertCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+          <div key={d.id} className={`flex items-center gap-3.5 rounded-xl border bg-white p-4 ${overdue ? 'border-l-[3px] border-l-rose-400 border-slate-200' : done ? 'border-slate-200' : 'border-l-[3px] border-l-amber-400 border-slate-200'}`}>
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${overdue ? 'bg-rose-50 text-rose-600' : done ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+              {done ? <CheckCircle2 className="h-4 w-4" /> : overdue ? <AlertCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold leading-snug text-slate-900">{d.title}</p>
+              <p className="text-sm font-medium leading-snug text-slate-900">{d.title}</p>
               <p className="mt-0.5 text-xs text-slate-500">
                 {done ? 'Cumprido' : overdue ? 'Venceu em ' : 'Vence em '}
-                {!done && <span className="font-semibold">{formatDateLong(d.due_date)}</span>}
+                {!done && <span className="font-medium tabular-nums">{formatDateLong(d.due_date)}</span>}
               </p>
             </div>
           </div>

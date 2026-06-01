@@ -9,6 +9,8 @@ export type CalendarEventType =
 
 export type CalendarEventStatus = 'pendente' | 'concluido' | 'cancelado';
 
+export type CalendarEventMode = 'presencial' | 'online';
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -26,6 +28,7 @@ export interface CalendarEvent {
   user_id?: string | null;
   is_private?: boolean;
   shared_with_ids?: string[];
+  event_mode?: CalendarEventMode | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +49,7 @@ export interface CreateCalendarEventDTO {
   user_id?: string | null;
   is_private?: boolean;
   shared_with_ids?: string[];
+  event_mode?: CalendarEventMode | null;
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}

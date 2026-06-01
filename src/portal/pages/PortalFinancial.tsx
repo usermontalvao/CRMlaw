@@ -95,10 +95,10 @@ export const PortalFinancial: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Financeiro</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Honorários, contratos e recibos</p>
-      </div>
+      <header>
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Financeiro</h1>
+        <p className="mt-1 text-sm text-slate-500">Honorários, contratos e recibos</p>
+      </header>
 
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /></div>
@@ -108,75 +108,56 @@ export const PortalFinancial: React.FC = () => {
         <>
           {/* RECEBER (acordos) */}
           {summary.hasReceivable && (
-            <>
-              <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-600 p-5 text-white shadow-sm">
-                <div className="flex items-center gap-2 text-emerald-50">
-                  <HandCoins className="h-4 w-4" />
-                  <p className="text-xs font-semibold uppercase tracking-wide">Você recebe</p>
-                </div>
-                <p className="mt-1 text-3xl font-bold">{formatBRL(summary.net)}</p>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20">
-                  <div className="h-full rounded-full bg-white transition-all" style={{ width: `${summary.recvPct}%` }} />
-                </div>
-                <div className="mt-3 flex justify-between text-xs">
-                  <span className="font-semibold">{formatBRL(summary.received)} já recebido</span>
-                  <span className="text-emerald-50">{formatBRL(summary.toReceive)} a receber</span>
-                </div>
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Você recebe</p>
+              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-emerald-700">{formatBRL(summary.net)}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${summary.recvPct}%` }} />
               </div>
-              {/* tranquilizador só faz sentido quando NÃO há honorários a pagar à parte */}
+              <div className="mt-1.5 flex justify-between text-xs text-slate-500">
+                <span className="tabular-nums">{formatBRL(summary.received)} já recebido</span>
+                <span className="tabular-nums">{formatBRL(summary.toReceive)} a receber</span>
+              </div>
               {!summary.hasPayable && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                  <span className="mt-0.5 text-base">✅</span>
-                  <p className="text-xs leading-relaxed text-emerald-900">
-                    <strong>Você não paga nada à parte.</strong> Os honorários do escritório já estão descontados do valor que você recebe — tudo de forma transparente.
-                  </p>
-                </div>
+                <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  Os honorários do escritório já estão descontados do valor acima — você não paga nada além disso.
+                </p>
               )}
-            </>
+            </section>
           )}
 
           {/* PAGAR (honorários contratados pelo cliente) */}
           {summary.hasPayable && (
-            <>
-              <div className="overflow-hidden rounded-2xl bg-slate-900 p-5 text-white shadow-sm">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <Wallet className="h-4 w-4" />
-                  <p className="text-xs font-semibold uppercase tracking-wide">Honorários contratados</p>
-                </div>
-                <p className="mt-1 text-3xl font-bold">{formatBRL(summary.payFee)}</p>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all" style={{ width: `${summary.payPct}%` }} />
-                </div>
-                <div className="mt-3 flex justify-between text-xs">
-                  <span className="font-semibold text-emerald-400">{formatBRL(summary.payPaid)} quitado</span>
-                  <span className={summary.payOverdue > 0 ? 'font-semibold text-rose-400' : 'text-slate-400'}>
-                    {formatBRL(summary.payOpen)} {summary.payOverdue > 0 ? 'em atraso' : 'a pagar'}
-                  </span>
-                </div>
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Honorários contratados</p>
+              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{formatBRL(summary.payFee)}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${summary.payPct}%` }} />
               </div>
-              <div className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <span className="mt-0.5 text-base">⚖️</span>
-                <p className="text-xs leading-relaxed text-slate-600">
-                  {summary.hasReceivable
-                    ? <>Além do valor a receber acima, este é o <strong>honorário contratado</strong> à parte. Veja o detalhamento nos contratos abaixo.</>
-                    : <>Estes são os <strong>honorários advocatícios</strong> contratados com o escritório. Veja o detalhamento de cada parcela abaixo.</>}
-                </p>
+              <div className="mt-1.5 flex justify-between text-xs">
+                <span className="tabular-nums text-emerald-700">{formatBRL(summary.payPaid)} quitado</span>
+                <span className={`tabular-nums ${summary.payOverdue > 0 ? 'font-semibold text-rose-600' : 'text-slate-500'}`}>
+                  {formatBRL(summary.payOpen)} {summary.payOverdue > 0 ? 'em atraso' : 'a pagar'}
+                </span>
               </div>
-            </>
+            </section>
           )}
 
           {/* Tabs */}
-          <div className="flex gap-1 rounded-2xl bg-slate-100 p-1">
+          <div className="flex gap-4 border-b border-slate-200">
             {([
               { id: 'contratos' as Tab, label: 'Contratos', count: agreements.length },
-              { id: 'recibos' as Tab, label: 'Recibos', count: paidInstallments.length },
-            ]).map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition ${tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 active:bg-white/50'}`}>
-                {t.label}
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${tab === t.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'}`}>{t.count}</span>
-              </button>
-            ))}
+              { id: 'recibos' as Tab,   label: 'Recibos',   count: paidInstallments.length },
+            ]).map((t) => {
+              const on = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                  {t.label}
+                  <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-orange-700' : 'text-slate-400'}`}>{t.count}</span>
+                </button>
+              );
+            })}
           </div>
 
           {tab === 'contratos' && (
@@ -210,111 +191,90 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
   const next = a.next_installment;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <button onClick={onToggle} className="flex w-full items-start gap-3.5 p-4 text-left transition hover:bg-slate-50 sm:p-5">
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${v.isAcordo ? 'bg-gradient-to-br from-emerald-500 to-teal-500' : 'bg-gradient-to-br from-orange-500 to-amber-500'}`}>
-          {v.isAcordo ? <HandCoins className="h-5 w-5" /> : <Wallet className="h-5 w-5" />}
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <button onClick={onToggle} className="flex w-full items-start gap-3 p-4 text-left transition hover:bg-slate-50 sm:p-5">
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${v.isAcordo ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+          {v.isAcordo ? <HandCoins className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="line-clamp-1 text-sm font-bold text-slate-900">{a.title || 'Contrato'}</h2>
-              <p className="text-[11px] font-medium text-slate-400">{v.isAcordo ? 'Acordo judicial' : 'Honorários contratados'}</p>
+              <h2 className="line-clamp-1 text-sm font-semibold text-slate-900">{a.title || 'Contrato'}</h2>
+              <p className="text-xs text-slate-500">{v.isAcordo ? 'Acordo judicial' : 'Honorários contratados'}</p>
             </div>
             {a.status && <StatusBadge status={a.status} />}
           </div>
 
           {v.isAcordo ? (
-            <>
-              {/* Destaque: o que o cliente recebe */}
+            <div className="mt-3">
               {v.net > 0 && (
-                <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Você recebe</p>
-                  <p className="text-lg font-bold text-emerald-700">{formatBRL(v.net)}</p>
+                <div className="mb-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Você recebe</p>
+                  <p className="text-lg font-semibold tabular-nums text-emerald-700">{formatBRL(v.net)}</p>
                 </div>
               )}
-              {/* Contexto secundário */}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <Chip label="Valor do acordo" value={formatBRL(v.total)} tone="slate" />
-                <Chip label={`Honorários ${v.percentage}%`} value={formatBRL(v.fee)} tone="orange" />
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                <span>Acordo: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.total)}</span></span>
+                <span>Honorários {v.percentage}%: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></span>
               </div>
-              {/* Progresso do recebimento do cliente */}
-              <div className="mt-3">
-                <div className="mb-1 flex justify-between text-[11px] font-medium text-slate-500">
-                  <span>Você já recebeu</span><span className="font-bold text-emerald-700">{v.clientProgress}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.clientProgress}%` }} />
-                </div>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.clientProgress}%` }} />
               </div>
-            </>
+              <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                <span>Você já recebeu</span><span className="tabular-nums font-medium text-emerald-700">{v.clientProgress}%</span>
+              </div>
+            </div>
           ) : (
-            <>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                <Chip label="Honorários" value={formatBRL(v.fee)} tone="orange" />
+            <div className="mt-3">
+              <p className="text-xs text-slate-500">Honorários: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></p>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${v.feeProgress}%` }} />
               </div>
-              <div className="mt-3">
-                <div className="mb-1 flex justify-between text-[11px] font-medium text-slate-500">
-                  <span>Honorários quitados</span><span className="font-bold text-slate-700">{v.feeProgress}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.feeProgress}%` }} />
-                </div>
+              <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                <span>Quitado</span><span className="tabular-nums font-medium text-slate-700">{v.feeProgress}%</span>
               </div>
-            </>
+            </div>
           )}
         </div>
-        <span className="shrink-0 text-slate-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
+        <span className="shrink-0 text-slate-400 mt-0.5">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
       </button>
 
       {!open && next && (
-        <div className="border-t border-slate-100 bg-amber-50/50 px-4 py-2.5">
-          <p className="flex items-center gap-2 text-xs">
-            <Clock className="h-3.5 w-3.5 text-amber-600" />
-            <span className="font-semibold text-amber-800">Próxima parcela:</span>
-            <span className="text-slate-700">{formatBRL(next.value)} · venc. {formatDate(next.due_date)}</span>
-          </p>
+        <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-600">
+          <Clock className="h-3.5 w-3.5 text-amber-600" />
+          <span className="font-medium">Próxima parcela:</span>
+          <span className="tabular-nums">{formatBRL(next.value)} · venc. {formatDate(next.due_date)}</span>
         </div>
       )}
 
       {open && installments.length > 0 && (
-        <div className="divide-y divide-slate-100 border-t border-slate-100">
-          <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <div className="border-t border-slate-100">
+          <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             {v.isAcordo ? 'Parcelas do acordo' : 'Parcelas dos honorários'}
           </p>
-          {installments.map((inst) => {
-            const st = instStatus(inst);
-            const ring = st.key === 'pago' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-              : st.key === 'vencido' ? 'bg-rose-50 text-rose-700 ring-rose-200'
-              : st.key === 'cancelado' ? 'bg-slate-100 text-slate-500 ring-slate-200'
-              : 'bg-amber-50 text-amber-700 ring-amber-200';
-            return (
-              <div key={inst.id} className="flex items-center gap-3 px-4 py-3">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ring-1 ${ring}`}>{inst.installment_number || '?'}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{formatBRL(inst.value)}</p>
-                  <p className="flex flex-wrap gap-2 text-[11px] text-slate-500">
-                    <span className="inline-flex items-center gap-0.5"><Calendar className="h-3 w-3" />{formatDate(inst.due_date)}</span>
-                    {v.isAcordo && <span className="text-orange-600">honor. {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
-                  </p>
+          <div className="divide-y divide-slate-100">
+            {installments.map((inst) => {
+              const st = instStatus(inst);
+              const dotColor = st.key === 'pago' ? 'bg-emerald-500' : st.key === 'vencido' ? 'bg-rose-500' : st.key === 'cancelado' ? 'bg-slate-300' : 'bg-amber-500';
+              return (
+                <div key={inst.id} className="flex items-center gap-3 px-4 py-3">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
+                  <span className="w-5 text-center text-[11px] font-semibold tabular-nums text-slate-400">#{inst.installment_number || '?'}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBRL(inst.value)}</p>
+                    <p className="flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      <span className="inline-flex items-center gap-0.5"><Calendar className="h-3 w-3" />{formatDate(inst.due_date)}</span>
+                      {v.isAcordo && <span className="tabular-nums text-orange-700">hon. {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
+                    </p>
+                  </div>
+                  <span className={`text-[11px] font-semibold ${st.key === 'pago' ? 'text-emerald-700' : st.key === 'vencido' ? 'text-rose-600' : 'text-slate-500'}`}>{st.label}</span>
                 </div>
-                <StatusBadge status={st.key} label={st.label} />
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
-  );
-};
-
-const Chip: React.FC<{ label: string; value: string; tone: 'slate' | 'orange' | 'emerald' }> = ({ label, value, tone }) => {
-  const cls = tone === 'orange' ? 'bg-orange-50 text-orange-700' : tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600';
-  return (
-    <span className={`inline-flex flex-col rounded-lg px-2.5 py-1.5 ${cls}`}>
-      <span className="text-[9px] font-semibold uppercase tracking-wide opacity-70">{label}</span>
-      <span className="text-xs font-bold leading-tight">{value}</span>
-    </span>
   );
 };
 
@@ -351,24 +311,23 @@ const ReceiptCard: React.FC<{ inst: Installment & { agreement: Agreement } }> = 
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
-      <div className="h-1 w-full bg-emerald-500" />
-      <div className="flex items-center gap-3.5 p-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200"><Receipt className="h-5 w-5" /></div>
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-1 text-xs font-semibold text-slate-500">{inst.agreement.title || 'Contrato'}</p>
-          <p className="mt-0.5 text-base font-bold text-slate-900">{formatBRL(honorarios)}</p>
-          <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-slate-400">
-            {inst.payment_date && <span className="font-semibold text-emerald-700">Pago em {formatDate(inst.payment_date)}</span>}
-            {inst.installment_number && <span>Parcela #{inst.installment_number}</span>}
-          </div>
-        </div>
-        <button
-          onClick={handleReceipt}
-          className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-600 active:scale-95">
-          <Receipt className="h-3.5 w-3.5" /> Recibo
-        </button>
+    <div className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <Receipt className="h-4 w-4" />
       </div>
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-1 text-xs text-slate-500">{inst.agreement.title || 'Contrato'}</p>
+        <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBRL(honorarios)}</p>
+        <div className="flex flex-wrap gap-x-2 text-[11px] text-slate-400">
+          {inst.payment_date && <span className="tabular-nums text-emerald-700">Pago em {formatDate(inst.payment_date)}</span>}
+          {inst.installment_number && <span>· Parcela #{inst.installment_number}</span>}
+        </div>
+      </div>
+      <button
+        onClick={handleReceipt}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
+        <Receipt className="h-3.5 w-3.5" /> Recibo
+      </button>
     </div>
   );
 };

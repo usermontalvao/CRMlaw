@@ -1590,6 +1590,58 @@ useEffect(() => {
     );
   }
 
+  // ── Rotas públicas — renderizadas SEM autenticação de staff ──────────────
+  // Devem ser verificadas ANTES do guard de login para que usuários externos
+  // (signatários, convidados) acessem sem ter conta no sistema.
+  if (!user) {
+    const _hash = window.location.hash;
+    const _path = window.location.pathname;
+
+    // Assinatura de documento (link enviado por e-mail ao signatário)
+    if (_hash.includes('/assinar/') || _path.includes('/assinar/')) {
+      let token = _hash.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+      if (!token && _path.includes('/assinar/')) token = _path.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+      if (token) return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+          <PublicSigningPage token={token} />
+        </Suspense>
+      );
+    }
+
+    // Visualização pública de documento assinado
+    if (_hash.includes('/documento/') || _path.includes('/documento/')) {
+      let token = _hash.split('/documento/')[1]?.split('?')[0]?.split('#')[0];
+      if (!token && _path.includes('/documento/')) token = _path.split('/documento/')[1]?.split('?')[0]?.split('#')[0];
+      if (token) return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>}>
+          <PublicDocumentPage token={token} />
+        </Suspense>
+      );
+    }
+
+    // Preenchimento público de template
+    if (_hash.includes('/preencher/') || _path.includes('/preencher/')) {
+      let token = _hash.split('/preencher/')[1]?.split('?')[0]?.split('#')[0];
+      if (!token && _path.includes('/preencher/')) token = _path.split('/preencher/')[1]?.split('?')[0]?.split('#')[0];
+      if (token) return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>}>
+          <PublicTemplateFillPage token={token} />
+        </Suspense>
+      );
+    }
+
+    // Compartilhamento de pasta cloud
+    if (_hash.includes('/cloud/share/') || _path.includes('/cloud/share/')) {
+      let token = _hash.split('/cloud/share/')[1]?.split('?')[0]?.split('#')[0];
+      if (!token && _path.includes('/cloud/share/')) token = _path.split('/cloud/share/')[1]?.split('?')[0]?.split('#')[0];
+      if (token) return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-sky-600" /></div>}>
+          <PublicCloudSharePage token={token} />
+        </Suspense>
+      );
+    }
+  }
+
   // Enquanto estiver animando login/logout, mantemos o overlay global
   if (!user && !loggingIn && !loggingOut) {
     return <Login onLogin={handleLogin} onResetPassword={resetPassword} />;

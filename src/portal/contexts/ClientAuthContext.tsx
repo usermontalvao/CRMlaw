@@ -6,6 +6,7 @@
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { clientAuthService } from '../services/clientAuth.service';
+import { supabasePortal } from '../lib/supabasePortal';
 import type { PortalSession } from '../types/portal.types';
 
 interface ClientAuthContextType {
@@ -24,9 +25,26 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = clientAuthService.getStoredSession();
-    setSession(stored);
-    setLoading(false);
+    let active = true;
+    (async () => {
+      const stored = clientAuthService.getStoredSession();
+      if (!stored) {
+        if (active) { setSession(null); setLoading(false); }
+        return;
+      }
+      // Confirma que a sessão Supabase real (JWT) ainda existe/renova. Sem ela,
+      // os RPCs rodariam como anon e falhariam — então tratamos como deslogado.
+      const { data } = await supabasePortal.auth.getSession();
+      if (!active) return;
+      if (!data.session) {
+        clientAuthService.logout();
+        setSession(null);
+      } else {
+        setSession(stored);
+      }
+      setLoading(false);
+    })();
+    return () => { active = false; };
   }, []);
 
   const loginByCPF = useCallback(async (cpf: string, password: string) => {

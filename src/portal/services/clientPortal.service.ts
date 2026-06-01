@@ -8,7 +8,7 @@
  * Assinatura: cada método recebe `portalUserId` (UUID do registro em
  * `client_portal_users`), obtido na sessão após o login.
  */
-import { supabase } from '../../config/supabase';
+import { supabasePortal as supabase } from '../lib/supabasePortal';
 import { clientAuthService } from './clientAuth.service';
 
 export interface DocumentUpload {
