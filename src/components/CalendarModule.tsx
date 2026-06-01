@@ -235,6 +235,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+  const [exportPrivate, setExportPrivate] = useState(false);
   const [showTodayPanel, setShowTodayPanel] = useState(true);
   const [calendarTitle, setCalendarTitle] = useState('');
   const [calendarView, setCalendarView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay' | 'listWeek'>('dayGridMonth');
@@ -1829,142 +1830,250 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       }
 
       if (exportFormat === 'pdf') {
-        // Exportar PDF
         const jspdfModule = await loadJsPdf();
         const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
-        const today = new Date().toLocaleDateString('pt-BR');
+        const now = new Date();
+        const today = now.toLocaleDateString('pt-BR');
+        const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         const pageWidth = doc.internal.pageSize.getWidth();
-
-        // Adicionar logo "J" desenhada
-        doc.setFillColor(245, 158, 11); // amber-500
-        doc.roundedRect(40, 30, 50, 50, 8, 8, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(32);
-        doc.text('J', 65, 65, { align: 'center' });
-
-        // Cabeçalho - Título e Informações
-        doc.setFillColor(15, 23, 42); // slate-900
-        doc.rect(0, 0, pageWidth, 25, 'F');
-        
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text('JURIUS.COM.BR - GESTÃO JURÍDICA', pageWidth / 2, 16, { align: 'center' });
-
-        // Título Principal
-        doc.setTextColor(15, 23, 42);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(24);
-        doc.text('Agenda de Compromissos', 110, 55);
-
-        // Linha decorativa
-        doc.setDrawColor(245, 158, 11); // amber-500
-        doc.setLineWidth(3);
-        doc.line(110, 62, 280, 62);
-
-        // Informações do período e data
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(11);
-        doc.setTextColor(71, 85, 105); // slate-600
-        
-        const periodText = exportPeriod === 'custom'
-          ? `Período: ${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
-          : `Próximos ${exportPeriod} dias`;
-        doc.text(periodText, 110, 75);
-        
-        doc.setFontSize(9);
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Gerado em: ${today} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 110, 88);
-        
-        // Nome do usuário
+        const pageHeight = doc.internal.pageSize.getHeight();
         const exportedBy = userName || 'Usuário do Sistema';
-        doc.text(`Exportado por: ${exportedBy}`, 110, 100);
 
-        // Tabela de compromissos
+        // Colunas sigilosas: 4=Telefone, 5=Status, 6=Prioridade, 7=Descrição
+        const REDACTED_COLS = new Set([4, 5, 6, 7]);
+
+        // Mapa de cores por tipo de compromisso (RGB)
+        const TYPE_COLORS: Record<string, [number, number, number]> = {
+          'Prazo':       [220,  38,  38],  // red-600
+          'Audiência':   [ 37, 99, 235],   // blue-600
+          'Reunião':     [124,  58, 237],  // violet-600
+          'Pagamento':   [ 22, 163,  74],  // green-600
+          'Perícia':     [ 20, 184, 166],  // teal-500
+          'Requerimento':[217, 119,   6],  // amber-600
+          'Pessoal':     [100, 116, 139],  // slate-500
+        };
+
+        const drawWatermark = () => {
+          if (!exportPrivate) return;
+          try {
+            doc.saveGraphicsState();
+            (doc as any).setGState(new (jspdfModule as any).GState({ opacity: 0.06 }));
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(100);
+            doc.setTextColor(180, 0, 0);
+            doc.text('SIGILOSO', pageWidth / 2, pageHeight / 2 + 30, {
+              align: 'center',
+              angle: 35,
+            });
+            doc.restoreGraphicsState();
+          } catch (_) { /* GState não suportado na versão carregada */ }
+        };
+
+        const drawPageHeader = () => {
+          // ── Barra superior escura ──────────────────────────────────────────
+          doc.setFillColor(10, 15, 30);
+          doc.rect(0, 0, pageWidth, 30, 'F');
+          // Texto centralizado na barra
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setCharSpace(1.5);
+          doc.text('JURIUS.COM.BR  —  GESTÃO JURÍDICA', pageWidth / 2, 18.5, { align: 'center' });
+          doc.setCharSpace(0);
+
+          // Faixas decorativas: âmbar + escura mais fina
+          doc.setFillColor(245, 158, 11);
+          doc.rect(0, 30, pageWidth, 4, 'F');
+          doc.setFillColor(180, 115, 5);
+          doc.rect(0, 34, pageWidth, 1, 'F');
+
+          // ── Área de fundo do cabeçalho ─────────────────────────────────────
+          doc.setFillColor(250, 250, 252);
+          doc.rect(0, 35, pageWidth, 78, 'F');
+
+          // ── Logo ──────────────────────────────────────────────────────────
+          // Sombra
+          doc.setFillColor(200, 150, 10);
+          doc.roundedRect(43, 47, 48, 48, 8, 8, 'F');
+          // Fundo âmbar
+          doc.setFillColor(245, 158, 11);
+          doc.roundedRect(40, 44, 48, 48, 8, 8, 'F');
+          // Letra J
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(32);
+          doc.text('J', 64, 78, { align: 'center' });
+
+          // ── Título ────────────────────────────────────────────────────────
+          doc.setTextColor(10, 15, 30);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(21);
+          doc.text('Agenda de Compromissos', 103, 62);
+
+          // Sublinhado âmbar preciso
+          doc.setDrawColor(245, 158, 11);
+          doc.setLineWidth(2.5);
+          const titleW = doc.getTextWidth('Agenda de Compromissos');
+          doc.line(103, 67, 103 + titleW, 67);
+
+          // ── Período e meta ────────────────────────────────────────────────
+          const periodText = exportPeriod === 'custom'
+            ? `Período: ${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+            : `Próximos ${exportPeriod} dias`;
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text(periodText, 103, 79);
+
+          doc.setFontSize(8);
+          doc.setTextColor(120, 136, 160);
+          doc.text(`Gerado em: ${today} às ${timeStr}`, 103, 90);
+          doc.text(`Exportado por: ${exportedBy}`, 103, 100);
+
+          // ── Linha divisória entre cabeçalho e tabela ──────────────────────
+          doc.setDrawColor(220, 224, 232);
+          doc.setLineWidth(0.5);
+          doc.line(30, 113, pageWidth - 30, 113);
+
+          // ── Badge de sigilo ───────────────────────────────────────────────
+          if (exportPrivate) {
+            const bW = 130; const bH = 22;
+            const bX = pageWidth - 40 - bW; const bY = 44;
+
+            // Borda vermelha sutil ao redor do badge
+            doc.setDrawColor(180, 20, 20);
+            doc.setLineWidth(0.5);
+            doc.roundedRect(bX - 1, bY - 1, bW + 2, bH + 2, 5, 5, 'S');
+
+            doc.setFillColor(200, 30, 30);
+            doc.roundedRect(bX, bY, bW, bH, 4, 4, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.text('INFORMAÇÕES RESTRITAS', bX + bW / 2, bY + 14, { align: 'center' });
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(160, 30, 30);
+            doc.text('Campos sigilosos suprimidos neste documento.', pageWidth - 40, 78, { align: 'right' });
+          }
+        };
+
+        drawWatermark();
+        drawPageHeader();
+
+        // ── Tabela ─────────────────────────────────────────────────────────
         (doc as any).autoTable({
-          startY: 115,
+          startY: 117,
           head: [['Data', 'Tipo', 'Título', 'Cliente', 'Telefone', 'Status', 'Prioridade', 'Descrição']],
           body: rows.map((row) => [
             row['Data'],
             row['Tipo'],
             row['Título'],
             row['Cliente'],
-            row['Telefone'],
-            row['Status'],
-            row['Prioridade'],
-            row['Descrição'],
+            exportPrivate ? '' : row['Telefone'],
+            exportPrivate ? '' : row['Status'],
+            exportPrivate ? '' : row['Prioridade'],
+            exportPrivate ? '' : row['Descrição'],
           ]),
           styles: {
             font: 'helvetica',
-            fontSize: 8,
-            cellPadding: 4,
-            lineWidth: 0.5,
-            lineColor: [226, 232, 240], // slate-200
+            fontSize: 7.8,
+            cellPadding: { top: 5.5, right: 5, bottom: 5.5, left: 6 },
+            lineWidth: 0.3,
+            lineColor: [220, 224, 232],
             overflow: 'linebreak',
-            cellWidth: 'wrap',
-            textColor: [30, 41, 59], // slate-800
+            textColor: [30, 41, 59],
+            valign: 'middle',
           },
           headStyles: {
-            fillColor: [15, 23, 42], // slate-900
+            fillColor: [10, 15, 30],
             textColor: [255, 255, 255],
             fontStyle: 'bold',
-            fontSize: 9,
+            fontSize: 8,
             halign: 'center',
-            cellPadding: 5,
+            cellPadding: { top: 7, right: 5, bottom: 7, left: 5 },
+            lineWidth: 0,
           },
           alternateRowStyles: {
-            fillColor: [248, 250, 252], // slate-50
+            fillColor: [246, 248, 252],
           },
           columnStyles: {
-            0: { cellWidth: 75, halign: 'center' },
-            1: { cellWidth: 55, halign: 'center', fontStyle: 'bold' },
+            0: { cellWidth: 78,  halign: 'center', fontSize: 7.5 },
+            1: { cellWidth: 60,  halign: 'center', fontStyle: 'bold', fontSize: 7.5 },
             2: { cellWidth: 130 },
-            3: { cellWidth: 90 },
-            4: { cellWidth: 70, halign: 'center' },
-            5: { cellWidth: 65, halign: 'center' },
-            6: { cellWidth: 50, halign: 'center' },
+            3: { cellWidth: 95 },
+            4: { cellWidth: 70,  halign: 'center' },
+            5: { cellWidth: 66,  halign: 'center' },
+            6: { cellWidth: 52,  halign: 'center' },
             7: { cellWidth: 'auto' },
           },
-          margin: { top: 115, left: 30, right: 30, bottom: 40 },
-          didDrawPage: (data: any) => {
-            // Rodapé
-            const pageCount = doc.internal.pages.length - 1;
+          margin: { top: 117, left: 30, right: 30, bottom: 48 },
+          // Colorir bolinha do tipo + redação de células sigilosas
+          didDrawCell: (data: any) => {
+            if (data.section === 'body') {
+              // Bolinha colorida para coluna Tipo (índice 1)
+              if (data.column.index === 1 && !exportPrivate) {
+                const tipo = String(data.cell.raw || '');
+                const color = TYPE_COLORS[tipo];
+                if (color) {
+                  const cx = data.cell.x + 8;
+                  const cy = data.cell.y + data.cell.height / 2;
+                  doc.setFillColor(...color);
+                  doc.circle(cx, cy, 2.2, 'F');
+                }
+              }
+              // Redação preta sobre células sigilosas
+              if (exportPrivate && REDACTED_COLS.has(data.column.index)) {
+                const { x, y, width, height } = data.cell;
+                const pad = 5;
+                doc.setFillColor(22, 22, 28);
+                doc.rect(x + pad, y + pad, width - pad * 2, height - pad * 2, 'F');
+                // Listras sutis para efeito de redação real
+                doc.setFillColor(10, 10, 14);
+                const stripeW = 3;
+                for (let sx = x + pad; sx < x + width - pad; sx += stripeW * 2) {
+                  doc.rect(sx, y + pad, stripeW, height - pad * 2, 'F');
+                }
+              }
+            }
+          },
+          didDrawPage: (_data: any) => {
             const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
-            
-            doc.setFontSize(8);
-            doc.setTextColor(148, 163, 184); // slate-400
-            doc.text(
-              `Página ${pageNumber} de ${pageCount}`,
-              pageWidth / 2,
-              doc.internal.pageSize.getHeight() - 20,
-              { align: 'center' }
-            );
-            
-            // Linha no rodapé
-            doc.setDrawColor(226, 232, 240);
-            doc.setLineWidth(0.5);
-            doc.line(30, doc.internal.pageSize.getHeight() - 30, pageWidth - 30, doc.internal.pageSize.getHeight() - 30);
-            
+            const pageCount = doc.internal.pages.length - 1;
+
+            // Faixa âmbar no rodapé
+            doc.setFillColor(245, 158, 11);
+            doc.rect(0, pageHeight - 36, pageWidth, 1.5, 'F');
+
+            // Fundo escuro do rodapé
+            doc.setFillColor(10, 15, 30);
+            doc.rect(0, pageHeight - 34, pageWidth, 34, 'F');
+
             doc.setFontSize(7);
-            doc.text(
-              'jurius.com.br - Sistema de Gestão Jurídica',
-              30,
-              doc.internal.pageSize.getHeight() - 20
-            );
-            doc.text(
-              `Gerado em ${today}`,
-              pageWidth - 30,
-              doc.internal.pageSize.getHeight() - 20,
-              { align: 'right' }
-            );
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(140, 155, 175);
+            doc.text('jurius.com.br — Sistema de Gestão Jurídica', 30, pageHeight - 15);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(200, 210, 225);
+            doc.text(`Página ${pageNumber} de ${pageCount}`, pageWidth / 2, pageHeight - 15, { align: 'center' });
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(140, 155, 175);
+            doc.text(`Gerado em ${today}`, pageWidth - 30, pageHeight - 15, { align: 'right' });
+
+            if (pageNumber > 1) {
+              drawWatermark();
+              drawPageHeader();
+            }
           },
         });
 
-        const periodLabel = exportPeriod === 'custom' 
+        const periodLabel = exportPeriod === 'custom'
           ? `${exportStartDate}_${exportEndDate}`
           : `proximos_${exportPeriod}_dias`;
-        doc.save(`agenda_${periodLabel}.pdf`);
+        const suffix = exportPrivate ? '_sigiloso' : '';
+        doc.save(`agenda_${periodLabel}${suffix}.pdf`);
       } else {
         // Exportar Excel
         const workbook = XLSX.utils.book_new();
@@ -4028,6 +4137,39 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </p>
             </div>
 
+            {/* Toggle de Sigilo — só disponível no PDF */}
+            {exportFormat === 'pdf' && (
+              <button
+                type="button"
+                onClick={() => setExportPrivate((v) => !v)}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
+                  exportPrivate
+                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20 dark:border-red-600'
+                    : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${
+                    exportPrivate ? 'bg-red-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                  }`}>
+                    {exportPrivate ? '🔒' : '🔓'}
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-sm font-semibold ${exportPrivate ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                      Exportação com Sigilo
+                    </p>
+                    <p className={`text-xs ${exportPrivate ? 'text-red-500 dark:text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                      Telefone, status e descrição serão riscados
+                    </p>
+                  </div>
+                </div>
+                {/* Pill indicator */}
+                <div className={`w-10 h-5 rounded-full flex-shrink-0 transition-colors relative ${exportPrivate ? 'bg-red-500' : 'bg-slate-300 dark:bg-zinc-600'}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${exportPrivate ? 'left-5' : 'left-0.5'}`} />
+                </div>
+              </button>
+            )}
+
             {/* Botões */}
             <div className="flex gap-3 pt-2">
               <button
@@ -4041,12 +4183,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 type="button"
                 onClick={handleExportCalendar}
                 className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap ${
-                  exportFormat === 'pdf'
-                    ? 'bg-purple-600 hover:bg-purple-500 bg-gradient-to-r from-purple-600 to-purple-700'
-                    : 'bg-emerald-600 hover:bg-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-700'
+                  exportFormat === 'pdf' && exportPrivate
+                    ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600'
+                    : exportFormat === 'pdf'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
+                    : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600'
                 }`}
               >
-                {exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
+                {exportFormat === 'pdf' && exportPrivate ? '🔒 Exportar com Sigilo' : exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
               </button>
             </div>
           </div>

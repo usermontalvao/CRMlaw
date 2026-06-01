@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import PortalApp from './portal/PortalApp';
 
 // ── Stale-chunk auto-reload ────────────────────────────────────────────────
 // Após um novo deploy os nomes dos chunks mudam (hash Vite).
@@ -40,34 +41,41 @@ if (syncfusionLicenseKey) {
 
 const isDev = import.meta.env.DEV;
 
-// Detectar rotas especiais antes de forçar "/"
+// ── Roteamento de entrada ──────────────────────────────────────────────────
+// /admin          → CRM interno (App)
+// /portal ou /    → Portal do Cliente (PortalApp)
 const currentPath = window.location.pathname;
 const currentHash = window.location.hash;
 
-// Permitir rota /cron/djen para endpoint público
-if (currentHash.includes('/cron/djen')) {
-  // Não alterar a URL, permitir que o app processe a rota
-} else if (currentPath.startsWith('/portal')) {
-  // Portal do Cliente — preservar URL para o PortalApp processar
-} else if (currentPath !== '/') {
-  // Garante que a URL sempre seja "/" (raiz) para outras rotas
+const isAdminRoute  = currentPath.startsWith('/admin');
+const isPortalRoute = currentPath.startsWith('/portal') || currentPath === '/';
+const isCronRoute   = currentHash.includes('/cron/djen');
+
+// Normalizar URLs: fora das rotas conhecidas → redirecionar para /
+if (!isAdminRoute && !isPortalRoute && !isCronRoute) {
   window.history.replaceState({}, '', '/');
 }
 
+const rootElement = (
+  isAdminRoute
+    ? (
+      <NavigationProvider initialModule="dashboard">
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <DeleteConfirmProvider>
+                <App />
+              </DeleteConfirmProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </NavigationProvider>
+    )
+    : <PortalApp />
+);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <NavigationProvider initialModule="dashboard">
-      <AuthProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <DeleteConfirmProvider>
-              <App />
-            </DeleteConfirmProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </AuthProvider>
-    </NavigationProvider>
-  </React.StrictMode>,
+  <React.StrictMode>{rootElement}</React.StrictMode>,
 );
 
 if (!isDev && 'serviceWorker' in navigator) {

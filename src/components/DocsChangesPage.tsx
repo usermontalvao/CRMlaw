@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.166': { name: 'Café Portal Novo', emoji: '🌐' },
   '1.10.163': { name: 'Café Upload Liberado', emoji: '📤' },
   '1.10.162': { name: 'Café Docs Notificados', emoji: '📬' },
   '1.10.161': { name: 'Café Build Limpo', emoji: '🔧' },
@@ -861,6 +862,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.166',
+    date: '01/06/2026',
+    summary: 'Nova landing page do portal do cliente, Área Restrita com busca de perfil, exportação de agenda com modo sigiloso e roteamento separado CRM/portal.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Nova landing page do portal', description: 'Página inicial redesenhada com hero, features em grid, stats e card de login. No mobile o formulário aparece primeiro.' },
+        { type: 'feature' as const, title: 'Área Restrita com busca de perfil', description: 'Login de funcionários em 2 etapas: CPF (com formatação automática) ou e-mail → busca e exibe foto e nome do colaborador → campo de senha. Animação premium de loading ao buscar.' },
+        { type: 'feature' as const, title: 'Roteamento separado: portal vs CRM', description: '/ e /portal carregam o PortalApp. /admin carrega o CRM interno. Logout redireciona para / automaticamente.' },
+      ]},
+      { moduleId: 'Agenda', changes: [
+        { type: 'feature' as const, title: 'Exportação PDF com sigilo', description: 'Novo toggle "Exportação com Sigilo" redige Telefone, Status, Prioridade e Descrição com barras pretas texturizadas, badge vermelho "Informações Restritas", marca d\'água diagonal e sufixo _sigiloso no nome do arquivo.' },
+        { type: 'improvement' as const, title: 'Layout do PDF melhorado', description: 'Faixa âmbar dupla, rodapé escuro com três colunas, coloração por tipo de compromisso (bolinha colorida na coluna Tipo) e cabeçalho redesenhado em páginas subsequentes.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.165',
     date: '31/05/2026',

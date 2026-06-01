@@ -243,6 +243,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
     setUser(null);
     persistSessionStart(null);
+    window.location.href = '/';
   };
 
   const resetPassword = async (email: string) => {
