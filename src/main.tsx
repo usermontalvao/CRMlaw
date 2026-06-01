@@ -68,7 +68,20 @@ if (currentPath !== '/') {
 
 const isDocRoute  = currentHash.startsWith('#/documento/');
 const isCronRoute = currentHash.includes('/cron/djen');
-const isStaff     = hasSupabaseSession() || isDocRoute || isCronRoute;
+
+// Rotas públicas que são renderizadas pelo App (não pelo PortalApp)
+const isPublicCrmRoute =
+  currentHash.includes('/assinar/') ||
+  currentHash.includes('/p/') ||
+  currentHash.includes('/preencher/') ||
+  currentHash.includes('/cloud/share/') ||
+  currentHash.includes('/verificar') ||
+  currentHash.includes('/terms') ||
+  currentHash.includes('/privacidade') ||
+  currentHash.includes('/privacy') ||
+  currentHash.includes('/docs');
+
+const isStaff = hasSupabaseSession() || isDocRoute || isCronRoute || isPublicCrmRoute;
 
 const rootElement = isStaff
   ? (

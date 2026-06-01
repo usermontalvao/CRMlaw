@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.172': { name: 'Café Link Público', emoji: '🔗' },
   '1.10.171': { name: 'Café Rota Única', emoji: '🎯' },
   '1.10.170': { name: 'Café Sessão Viva', emoji: '🔐' },
   '1.10.169': { name: 'Café Edge Limpo', emoji: '⚡' },
@@ -867,6 +868,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.172',
+    date: '27/05/2026',
+    summary: 'Links públicos (/assinar, /p/, /preencher, etc) não pedem mais login — detecta rotas públicas antes de decidir entre App e PortalApp.',
+    modules: [
+      { moduleId: 'Infraestrutura', changes: [
+        { type: 'fix' as const, title: 'Rotas públicas não redirecionam para login', description: 'O main.tsx agora detecta rotas públicas do CRM (/assinar, /p/, /preencher, /cloud/share, /verificar, /terms, /docs) e carrega o App mesmo sem sessão Supabase ativa, permitindo acesso público correto.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.171',
     date: '01/06/2026',
