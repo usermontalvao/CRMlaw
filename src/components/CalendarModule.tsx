@@ -1487,6 +1487,42 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     }
   };
 
+  const handleDeleteSelectedEvent = async () => {
+    if (!selectedEvent?.extendedProps.calendarEventId) return;
+    const eventId = selectedEvent.extendedProps.calendarEventId as string;
+    const eventTitle = selectedEvent.title || '';
+    const confirmed = await confirmDelete({
+      title: 'Excluir compromisso',
+      entityName: eventTitle || undefined,
+      message: 'Deseja realmente excluir este compromisso?',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
+
+    try {
+      setSavingEvent(true);
+      addDeletionLogEntry({
+        id: eventId,
+        title: eventTitle || '(Sem título)',
+        type: selectedEvent.extendedProps.type,
+        start_at: selectedEvent.start?.toISOString() ?? new Date().toISOString(),
+        deleted_at: new Date().toISOString(),
+        deleted_by: userName || 'Usuário',
+      });
+      await calendarService.deleteEvent(eventId);
+      setCalendarEventsData((prev) => prev.filter((e) => e.id !== eventId));
+      const api = calendarRef.current?.getApi();
+      api?.getEventById(`calendar-${eventId}`)?.remove();
+      setSelectedEvent(null);
+      await loadData();
+      setFeedback({ type: 'success', message: 'Compromisso excluído com sucesso!' });
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Não foi possível excluir o compromisso.' });
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
   const handleDeleteEvent = async () => {
     if (!editingEventId) return;
     const confirmed = await confirmDelete({
@@ -3119,11 +3155,22 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              {selectedEvent.extendedProps.calendarEventId ? (
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedEvent}
+                  disabled={savingEvent}
+                  className="shrink-0 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
+                >
+                  Excluir
+                </button>
+              ) : <span />}
+              <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition"
+                className="shrink-0 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition"
               >
                 Fechar
               </button>
@@ -3143,9 +3190,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     });
                     setSelectedEvent(null);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition"
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                   Criar na agenda
                 </button>
               )}
@@ -3156,9 +3203,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     selectedEvent.extendedProps.moduleLink,
                     selectedEvent.extendedProps.entityId
                   )}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition"
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition"
                 >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <ArrowUpRight className="w-3 h-3" />
                   Ir para módulo
                 </button>
               )}
@@ -3166,12 +3213,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={handleEditSelectedEvent}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition"
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium transition"
                 >
-                  <Check className="w-3.5 h-3.5" />
+                  <Check className="w-3 h-3" />
                   {editButtonLabel}
                 </button>
               )}
+              </div>
             </div>
           </div>
         </div>

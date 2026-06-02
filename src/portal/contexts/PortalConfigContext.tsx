@@ -6,7 +6,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { clientPortalService } from '../services/clientPortal.service';
 
 interface PortalConfig {
-  processos:    boolean;
+  casos:        boolean;  // Unifica processos + requerimentos
+  processos:    boolean;  // Alias legado — controla o mesmo módulo
   documentos:   boolean;
   assinar:      boolean;
   financeiro:   boolean;
@@ -17,7 +18,7 @@ interface PortalConfig {
 }
 
 const DEFAULT: PortalConfig = {
-  processos: true, documentos: true, assinar: true,
+  casos: true, processos: true, documentos: true, assinar: true,
   financeiro: true, agenda: true, mensagens: true,
   notificacoes: true, perfil: true,
 };
@@ -47,7 +48,11 @@ export const PortalConfigProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => { load(); }, []);
 
-  const isEnabled = (module: keyof PortalConfig) => config[module] !== false;
+  const isEnabled = (module: keyof PortalConfig) => {
+    // 'casos' é habilitado se 'processos' estiver habilitado (mesma configuração)
+    if (module === 'casos') return config.processos !== false;
+    return config[module] !== false;
+  };
 
   return (
     <Ctx.Provider value={{ config, loading, isEnabled }}>

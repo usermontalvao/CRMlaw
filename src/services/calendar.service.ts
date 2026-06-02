@@ -57,6 +57,12 @@ class CalendarService {
     return data;
   }
 
+  async getEventByAutoKey(key: string): Promise<CalendarEvent | null> {
+    const { data, error } = await supabase.from(this.tableName).select('*').eq('auto_event_key', key).single();
+    if (error) return null;
+    return data;
+  }
+
   async createEvent(payload: CreateCalendarEventDTO): Promise<CalendarEvent> {
     const { data, error } = await supabase
       .from(this.tableName)

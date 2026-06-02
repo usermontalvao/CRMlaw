@@ -24,12 +24,13 @@ export type ProcessStatus =
   | 'cumprimento'
   | 'arquivado';
 
-/** Jornada macro do cliente — 5 etapas que qualquer leigo entende. */
+/** Jornada macro do cliente — 6 etapas que qualquer leigo entende. */
 export const JOURNEY = [
   { key: 'preparacao', label: 'Preparação' },
   { key: 'ingresso',   label: 'Ingresso' },
   { key: 'andamento',  label: 'Andamento' },
   { key: 'julgamento', label: 'Julgamento' },
+  { key: 'recurso',    label: 'Recurso' },
   { key: 'conclusao',  label: 'Conclusão' },
 ] as const;
 
@@ -40,7 +41,7 @@ interface StatusMeta {
   label: string;
   /** Explicação em 1 frase para o cliente leigo. */
   explain: string;
-  /** Índice da etapa macro (0–4). */
+  /** Índice da etapa macro (0–5). */
   stage: number;
   tone: StatusTone;
 }
@@ -94,17 +95,17 @@ export const STATUS_MAP: Record<ProcessStatus, StatusMeta> = {
   recurso: {
     label: 'Recurso',
     explain: 'Há um recurso em análise por um tribunal superior.',
-    stage: 3, tone: 'decision',
+    stage: 4, tone: 'decision',
   },
   cumprimento: {
     label: 'Cumprimento',
     explain: 'Fase final de cumprimento da decisão — recebimento de valores devidos.',
-    stage: 4, tone: 'active',
+    stage: 5, tone: 'active',
   },
   arquivado: {
     label: 'Encerrado',
     explain: 'Este processo foi finalizado e arquivado.',
-    stage: 4, tone: 'done',
+    stage: 5, tone: 'done',
   },
 };
 
@@ -135,6 +136,130 @@ export const TONE_CLASSES: Record<
   decision:  { dot: 'bg-slate-900',   text: 'text-slate-800',   soft: 'bg-slate-100',   ring: 'ring-slate-300',   bar: 'bg-slate-800' },
   done:      { dot: 'bg-emerald-500', text: 'text-emerald-700', soft: 'bg-emerald-50',  ring: 'ring-emerald-200', bar: 'bg-emerald-500' },
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+//  REQUERIMENTOS ADMINISTRATIVOS (INSS)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type RequirementStatus =
+  | 'aguardando_confeccao'
+  | 'em_analise'
+  | 'em_exigencia'
+  | 'aguardando_pericia'
+  | 'deferido'
+  | 'indeferido'
+  | 'ajuizado';
+
+export type BenefitType =
+  | 'bpc_loas'
+  | 'bpc_loas_deficiencia'
+  | 'bpc_loas_idoso'
+  | 'aposentadoria_tempo'
+  | 'aposentadoria_idade'
+  | 'aposentadoria_invalidez'
+  | 'auxilio_acidente'
+  | 'auxilio_doenca'
+  | 'pensao_morte'
+  | 'salario_maternidade'
+  | 'outro';
+
+/** Rótulo curto do benefício para exibir ao cliente. */
+export const BENEFIT_TYPE_LABELS: Record<string, string> = {
+  bpc_loas:               'BPC/LOAS',
+  bpc_loas_deficiencia:   'BPC — Deficiência',
+  bpc_loas_idoso:         'BPC — Idoso',
+  aposentadoria_tempo:    'Aposen. por Tempo de Contribuição',
+  aposentadoria_idade:    'Aposentadoria por Idade',
+  aposentadoria_invalidez:'Aposentadoria por Invalidez',
+  auxilio_acidente:       'Auxílio-Acidente',
+  auxilio_doenca:         'Auxílio-Doença',
+  pensao_morte:           'Pensão por Morte',
+  salario_maternidade:    'Salário-Maternidade',
+  outro:                  'Outro benefício',
+};
+
+interface RequirementMeta {
+  label: string;
+  explain: string;
+  tone: StatusTone;
+  /** Índice da etapa (0–3) na jornada REQUIREMENT_JOURNEY */
+  stage: number;
+  /** Precisa de atenção imediata do cliente? */
+  urgent: boolean;
+}
+
+const REQUIREMENT_STATUS_MAP: Record<RequirementStatus, RequirementMeta> = {
+  aguardando_confeccao: {
+    label:   'Em preparação',
+    explain: 'Seu advogado está organizando os documentos para dar entrada no pedido junto ao INSS.',
+    tone:    'prep',
+    stage:   0,
+    urgent:  false,
+  },
+  em_analise: {
+    label:   'Em análise',
+    explain: 'O INSS está analisando o seu pedido. Esse processo costuma levar alguns meses — seu advogado acompanha tudo.',
+    tone:    'active',
+    stage:   2,
+    urgent:  false,
+  },
+  em_exigencia: {
+    label:   'Exigência pendente',
+    explain: 'O INSS solicitou documentos adicionais e há um prazo para entrega. Seu advogado já está cuidando disso.',
+    tone:    'attention',
+    stage:   2,
+    urgent:  true,
+  },
+  aguardando_pericia: {
+    label:   'Aguardando Perícia',
+    explain: 'Você será convocado para uma perícia médica ou social no INSS. Seu advogado irá orientá-lo sobre como se preparar.',
+    tone:    'attention',
+    stage:   2,
+    urgent:  true,
+  },
+  deferido: {
+    label:   'Deferido',
+    explain: 'Ótima notícia! Seu pedido foi aprovado pelo INSS. O benefício será implantado em breve.',
+    tone:    'done',
+    stage:   3,
+    urgent:  false,
+  },
+  indeferido: {
+    label:   'Indeferido',
+    explain: 'O INSS negou o pedido. Não desanime — seu advogado está avaliando os recursos disponíveis.',
+    tone:    'decision',
+    stage:   3,
+    urgent:  false,
+  },
+  ajuizado: {
+    label:   'Ajuizado',
+    explain: 'O pedido virou um processo judicial. Acompanhe o andamento na aba Processos.',
+    tone:    'active',
+    stage:   3,
+    urgent:  false,
+  },
+};
+
+const REQUIREMENT_FALLBACK: RequirementMeta = {
+  label:   'Em andamento',
+  explain: 'Seu requerimento está sendo acompanhado pelo escritório.',
+  tone:    'active',
+  stage:   1,
+  urgent:  false,
+};
+
+export function requirementMeta(status?: string | null): RequirementMeta {
+  if (!status) return REQUIREMENT_FALLBACK;
+  return REQUIREMENT_STATUS_MAP[status as RequirementStatus] ?? REQUIREMENT_FALLBACK;
+}
+
+/** Jornada macro de um requerimento administrativo (4 etapas). */
+export const REQUIREMENT_JOURNEY = [
+  { key: 'preparacao', label: 'Preparação' },
+  { key: 'protocolo',  label: 'Protocolo'  },
+  { key: 'analise',    label: 'Análise'    },
+  { key: 'decisao',    label: 'Decisão'    },
+] as const;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  FINANCEIRO — dois fluxos de dinheiro distintos

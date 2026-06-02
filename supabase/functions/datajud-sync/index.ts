@@ -134,11 +134,10 @@ serve(async (req) => {
     }
   } catch (_) { /* usa chave padrão */ }
 
-  // Buscar processos ativos com código válido
+  // Buscar TODOS os processos com código válido (incluindo arquivados)
   const { data: processes, error: procErr } = await supabase
     .from('processes')
     .select('id, process_code, status')
-    .neq('status', 'arquivado')
     .not('process_code', 'is', null)
     .neq('process_code', '')
 
@@ -154,7 +153,7 @@ serve(async (req) => {
     return digits.length === 20
   })
 
-  console.log(`📊 [${executionId}] Processos ativos válidos: ${activeProcesses.length}`)
+  console.log(`📊 [${executionId}] Processos válidos (todos os status): ${activeProcesses.length}`)
 
   let totalMovimentos = 0
   let totalNovos = 0

@@ -216,7 +216,7 @@ export const PortalProfile: React.FC = () => {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">CPF</p>
                     <Lock className="h-2.5 w-2.5 text-slate-300" />
                   </div>
-                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatCPF(session.user.cpf)}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatCPF(profile?.cpf || session.user.cpf)}</p>
                 </div>
               </div>
 

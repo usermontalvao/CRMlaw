@@ -37,6 +37,8 @@ serve(async (req) => {
     // Verificar token de segurança
     const url = new URL(req.url)
     const token = url.searchParams.get('token')
+    // Varredura direcionada: ?processCode=XXX força sync histórico só desse processo
+    const onlyProcessCode = (url.searchParams.get('processCode') || '').replace(/[^0-9]/g, '') || null
 
     const nowIso = new Date().toISOString()
     const dateRangeStart = getDateDaysAgo(7)
@@ -139,9 +141,18 @@ serve(async (req) => {
         .select('*')
         .limit(1000)
 
+      // Descobrir quais processos JÁ TÊM publicações DJEN reais (texto integral).
+      // Não confiar na flag djen_has_data — ela é setada também pelo datajud-sync.
+      const { data: djenExistentes } = await supabaseClient
+        .from('djen_comunicacoes')
+        .select('process_id')
+        .not('process_id', 'is', null)
+      const processIdsComDjen = new Set((djenExistentes || []).map((d: any) => d.process_id))
+
       console.log(`\n📊 [${executionId}] DADOS ENCONTRADOS:`)
       console.log(`   👤 Perfis com advogado: ${profiles?.length || 0}`)
-      console.log(`   📁 Processos em andamento: ${processes?.length || 0}`)
+      console.log(`   📁 Processos: ${processes?.length || 0}`)
+      console.log(`   📰 Processos com DJEN existente: ${processIdsComDjen.size}`)
 
       if (profiles && profiles.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 1: Sincronização por advogado`)
@@ -181,15 +192,25 @@ serve(async (req) => {
       // Sincronizar por processos cadastrados
       if (processes && processes.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 2: Sincronização por processo`)
-        const processNumbers = processes
-          .map((p: any) => p.process_code?.replace(/\D/g, ''))
-          .filter((code: any) => code && code.length === 20)
 
-        console.log(`   📋 Processos válidos: ${processNumbers.length}`)
+        // Separar por existência REAL de publicações DJEN (não pela flag djen_has_data)
+        let validos = (processes as any[]).filter(
+          p => p.process_code?.replace(/[^0-9]/g, '').length === 20
+        )
+        // Se varredura direcionada, restringe a um único processo e força histórico
+        if (onlyProcessCode) {
+          validos = validos.filter(p => p.process_code.replace(/[^0-9]/g, '') === onlyProcessCode)
+          processIdsComDjen.clear() // força ramo "sem dados" (varredura histórica)
+        }
+        const processesSemDados = validos.filter(p => !processIdsComDjen.has(p.id))
+        const processesComDados = onlyProcessCode ? [] : validos.filter(p => processIdsComDjen.has(p.id))
 
-        for (const processNumber of processNumbers) { // Buscar TODOS os processos
-          console.log(`   🔍 Buscando: ${processNumber.substring(0, 7)}...`)
+        console.log(`   📋 Processos sem histórico DJEN: ${processesSemDados.length}`)
+        console.log(`   📋 Processos com histórico DJEN: ${processesComDados.length}`)
 
+        // ── Processos COM dados: janela normal de 7 dias ──
+        for (const proc of processesComDados) {
+          const processNumber = proc.process_code.replace(/[^0-9]/g, '')
           const params = new URLSearchParams({
             numeroProcesso: processNumber,
             dataDisponibilizacaoInicio: getDateDaysAgo(7),
@@ -198,22 +219,74 @@ serve(async (req) => {
             itensPorPagina: '100',
             pagina: '1'
           })
-
           const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
-          
           if (response.ok) {
             const data = await response.json()
-            if (data.items && data.items.length > 0) {
+            if (data.items?.length > 0) {
               totalFound += data.items.length
-              
-              // Salvar comunicações no banco
               const result = await saveCommunications(supabaseClient, data.items, processes)
               totalSaved += result.saved
             }
           }
+          await new Promise(r => setTimeout(r, 800))
+        }
 
-          // Aguardar entre requisições
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        // ── Processos SEM dados: varredura histórica em janelas de 1 ANO ──
+        // A API do DJEN aceita janelas amplas (testado: ano inteiro OK).
+        // Varre até 4 anos atrás (1460 dias) — ~5 requisições por processo.
+        const MAX_DAYS_BACK = 1460 // 4 anos
+        const WINDOW = 365         // janela anual por requisição
+
+        for (const proc of processesSemDados) {
+          const processNumber = proc.process_code.replace(/[^0-9]/g, '')
+          console.log(`   🔍 Histórico completo: ${processNumber.substring(0, 7)}...`)
+
+          let foundAny = false
+          let windowEnd = new Date()
+
+          // Varrer do mais recente para o mais antigo
+          while (true) {
+            const windowStart = new Date(windowEnd)
+            windowStart.setDate(windowStart.getDate() - WINDOW)
+
+            // Limite máximo: não buscar além de MAX_DAYS_BACK
+            const cutoff = new Date()
+            cutoff.setDate(cutoff.getDate() - MAX_DAYS_BACK)
+            if (windowEnd <= cutoff) break
+
+            const inicio = windowStart < cutoff ? cutoff : windowStart
+
+            const params = new URLSearchParams({
+              numeroProcesso: processNumber,
+              dataDisponibilizacaoInicio: inicio.toISOString().split('T')[0],
+              dataDisponibilizacaoFim: windowEnd.toISOString().split('T')[0],
+              meio: 'D',
+              itensPorPagina: '100',
+              pagina: '1'
+            })
+
+            const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
+            if (response.ok) {
+              const data = await response.json()
+              if (data.items?.length > 0) {
+                totalFound += data.items.length
+                const result = await saveCommunications(supabaseClient, data.items, processes)
+                totalSaved += result.saved
+                foundAny = true
+                console.log(`      ✅ ${data.items.length} publicações em ${inicio.toISOString().split('T')[0]} ~ ${windowEnd.toISOString().split('T')[0]}`)
+              }
+            }
+
+            // Mover janela para o período anterior
+            windowEnd = new Date(windowStart)
+            windowEnd.setDate(windowEnd.getDate() - 1)
+
+            await new Promise(r => setTimeout(r, 800))
+          }
+
+          if (!foundAny) {
+            console.log(`      ℹ️  Nenhuma publicação DJEN encontrada em 4 anos`)
+          }
         }
       }
 
@@ -467,9 +540,9 @@ async function saveCommunications(supabase: any, communications: any[], processe
       let linkedProcess = null
 
       if (numeroProcesso) {
-        const processNumber = numeroProcesso.replace(/\D/g, '')
+        const processNumber = numeroProcesso.replace(/[^0-9]/g, '')
         linkedProcess = processes.find((p: any) => 
-          p.process_code?.replace(/\D/g, '') === processNumber
+          p.process_code?.replace(/[^0-9]/g, '') === processNumber
         )
         
         if (linkedProcess) {

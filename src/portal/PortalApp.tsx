@@ -11,14 +11,16 @@
 import React, { Suspense, lazy } from 'react';
 import { ClientAuthProvider, useClientAuth } from './contexts/ClientAuthContext';
 import { PortalConfigProvider, usePortalConfig } from './contexts/PortalConfigContext';
+import { PortalNotificationsProvider } from './contexts/PortalNotificationsContext';
 import { usePortalRouter } from './hooks/usePortalRouter';
 import { PortalLayout } from './PortalLayout';
 
 // Lazy imports — cada página vira seu próprio chunk.
 const PortalLogin = lazy(() => import('./pages/PortalLogin').then((m) => ({ default: m.PortalLogin })));
 const PortalDashboard = lazy(() => import('./pages/PortalDashboard').then((m) => ({ default: m.PortalDashboard })));
-const PortalProcesses = lazy(() => import('./pages/PortalProcesses').then((m) => ({ default: m.PortalProcesses })));
+const PortalCasos = lazy(() => import('./pages/PortalCasos').then((m) => ({ default: m.PortalCasos })));
 const PortalProcessDetails = lazy(() => import('./pages/PortalProcessDetails').then((m) => ({ default: m.PortalProcessDetails })));
+const PortalRequirementDetails = lazy(() => import('./pages/PortalRequirementDetails').then((m) => ({ default: m.PortalRequirementDetails })));
 const PortalDocuments = lazy(() => import('./pages/PortalDocumentRequests').then((m) => ({ default: m.PortalDocumentRequests })));
 const PortalSignatures = lazy(() => import('./pages/PortalSignatures').then((m) => ({ default: m.PortalSignatures })));
 const PortalFinancial = lazy(() => import('./pages/PortalFinancial').then((m) => ({ default: m.PortalFinancial })));
@@ -57,9 +59,16 @@ const PortalRouter: React.FC = () => {
     switch (route) {
       case 'dashboard':
         return <PortalDashboard />;
-      case 'processos':
+      case 'casos':
         if (!isEnabled('processos')) { navigate('dashboard'); return <PortalDashboard />; }
-        return param ? <PortalProcessDetails processId={param} /> : <PortalProcesses />;
+        if (!param) return <PortalCasos />;
+        if (param.startsWith('proc:')) return <PortalProcessDetails processId={param.slice(5)} />;
+        if (param.startsWith('req:'))  return <PortalRequirementDetails requirementId={param.slice(4)} />;
+        return <PortalCasos />;
+      case 'processos':
+        // Alias legado → redireciona para 'casos'
+        navigate('casos', param ? `proc:${param}` : undefined);
+        return <PortalDashboard />;
       case 'documentos':
         if (!isEnabled('documentos')) { navigate('dashboard'); return <PortalDashboard />; }
         return <PortalDocuments />;
@@ -97,7 +106,9 @@ const PortalApp: React.FC = () => {
   return (
     <ClientAuthProvider>
       <PortalConfigProvider>
-        <PortalRouter />
+        <PortalNotificationsProvider>
+          <PortalRouter />
+        </PortalNotificationsProvider>
       </PortalConfigProvider>
     </ClientAuthProvider>
   );

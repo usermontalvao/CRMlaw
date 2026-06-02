@@ -16,18 +16,19 @@ import { usePortalRouter } from '../hooks/usePortalRouter';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalConfig } from '../contexts/PortalConfigContext';
 import { ClientAvatar } from './ClientAvatar';
+import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import type { PortalNavItem } from '../types/portal.types';
 
 const NAV_ITEMS: PortalNavItem[] = [
-  { id: 'dashboard',    label: 'Início',          icon: LayoutDashboard },
-  { id: 'processos',   label: 'Meus processos',   icon: Briefcase       },
-  { id: 'documentos',  label: 'Documentos',        icon: FolderOpen      },
-  { id: 'assinar',     label: 'Assinaturas',       icon: PenTool         },
-  { id: 'financeiro',  label: 'Financeiro',        icon: PiggyBank       },
-  { id: 'agenda',      label: 'Agenda',            icon: Calendar        },
-  { id: 'mensagens',   label: 'Mensagens',         icon: MessageCircle   },
-  { id: 'notificacoes',label: 'Notificações',      icon: Bell            },
-  { id: 'perfil',      label: 'Meu perfil',        icon: User            },
+  { id: 'dashboard',     label: 'Início',        icon: LayoutDashboard },
+  { id: 'casos',         label: 'Meus casos',    icon: Briefcase       },
+  { id: 'documentos',   label: 'Documentos',     icon: FolderOpen      },
+  { id: 'assinar',      label: 'Assinaturas',    icon: PenTool         },
+  { id: 'financeiro',   label: 'Financeiro',     icon: PiggyBank       },
+  { id: 'agenda',       label: 'Agenda',         icon: Calendar        },
+  { id: 'mensagens',    label: 'Mensagens',      icon: MessageCircle   },
+  { id: 'notificacoes', label: 'Notificações',   icon: Bell            },
+  { id: 'perfil',       label: 'Meu perfil',     icon: User            },
 ];
 
 interface PortalSidebarProps { isOpen?: boolean; onClose?: () => void; }
@@ -37,42 +38,46 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
   const { session, logout } = useClientAuth();
   const { isEnabled } = usePortalConfig();
 
+  const { unreadCount } = usePortalNotifications();
   const visible = NAV_ITEMS.filter((item) => item.id === 'dashboard' || isEnabled(item.id as any));
   const clientName = session?.client?.nome || 'Cliente';
+  const clientSub  = session?.client?.email || session?.client?.telefone || 'Portal do cliente';
 
   return (
     <>
       {isOpen && (
-        <div className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] lg:hidden" onClick={onClose} aria-hidden />
+        <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-40 flex h-full w-60 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${isOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col bg-white border-r border-slate-100 transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
 
-        {/* Marca */}
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4">
+        {/* Header */}
+        <div className="flex h-16 shrink-0 items-center justify-between px-6 border-b border-slate-100">
           <button onClick={() => navigate('dashboard')} className="flex items-center gap-2.5" aria-label="Início">
-            <img src="/jurius-logo.png" alt="Jurius" className="h-7 w-auto select-none" draggable={false} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Portal</span>
+            <span className="text-[18px] font-black tracking-tight text-slate-900">JURIUS</span>
+            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest text-white">
+              Portal
+            </span>
           </button>
-          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 lg:hidden" aria-label="Fechar menu">
+          <button onClick={onClose} className="lg:hidden flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition" aria-label="Fechar menu">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Perfil compacto */}
+        {/* Perfil */}
         <button
           onClick={() => { navigate('perfil'); onClose?.(); }}
-          className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50"
+          className="group mx-4 mt-4 flex items-center gap-3 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 px-3.5 py-3 text-left transition hover:from-orange-100 hover:to-amber-100"
         >
-          <ClientAvatar size={32} rounded="full" />
+          <ClientAvatar size={36} rounded="full" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold text-slate-900">{clientName}</p>
-            <p className="truncate text-[11px] text-slate-400">{session?.client?.email || session?.client?.telefone || 'Portal do cliente'}</p>
+            <p className="truncate text-[12.5px] font-bold text-slate-800">{clientName}</p>
+            <p className="truncate text-[10.5px] text-slate-400 mt-0.5">{clientSub}</p>
           </div>
         </button>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-1.5">
+        <nav className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
           {visible.map((item) => {
             const Icon = item.icon;
             const active = route === item.id;
@@ -80,28 +85,46 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
               <button
                 key={item.id}
                 onClick={() => { navigate(item.id); onClose?.(); }}
-                className={`group relative flex w-full items-center gap-3 px-4 py-2.5 text-[13px] font-medium transition ${
-                  active ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all mb-0.5 ${
+                  active
+                    ? 'bg-orange-500 text-white shadow-lg shadow-orange-200/60'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                 }`}
               >
-                {active && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-orange-500" />}
-                <Icon className={`h-4 w-4 shrink-0 transition ${active ? 'text-orange-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.badge ? (
-                  <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{item.badge}</span>
-                ) : null}
+                <Icon className={`h-[15px] w-[15px] shrink-0 transition-all ${
+                  active ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'
+                }`} />
+                <span className="flex-1 text-left leading-none">{item.label}</span>
+                {item.id === 'notificacoes' && unreadCount > 0 && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none ${
+                    active ? 'bg-white/30 text-white' : 'bg-orange-500 text-white'
+                  }`}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+                {item.badge && item.id !== 'notificacoes' && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none ${
+                    active ? 'bg-white/25 text-white' : 'bg-rose-500 text-white'
+                  }`}>
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
         </nav>
 
         {/* Rodapé */}
-        <div className="shrink-0 border-t border-slate-200 px-2 py-2">
-          <button onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-600">
-            <LogOut className="h-4 w-4" />
+        <div className="shrink-0 mx-3 mb-4 mt-1">
+          <div className="h-px bg-slate-100 mb-3" />
+          <button
+            onClick={logout}
+            className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+          >
+            <LogOut className="h-[15px] w-[15px] shrink-0 group-hover:text-rose-500 transition" />
             Sair da conta
           </button>
-          <p className="mt-1 px-3 text-[10px] text-slate-400">© {new Date().getFullYear()} Jurius</p>
+          <p className="mt-2 px-3 text-[10px] text-slate-300">© {new Date().getFullYear()} Jurius</p>
         </div>
       </aside>
     </>

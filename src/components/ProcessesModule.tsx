@@ -1019,8 +1019,14 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
         hearing_date: toDateInputValue(processData.hearing_date),
         hearing_time: toTimeInputValue(processData.hearing_time),
         hearing_mode: processData.hearing_mode || 'presencial',
-        notes: processData.notes || '',
+        notes: '',
       });
+      if (processData.hearing_scheduled) {
+        const hearingEvent = await calendarService.getEventByAutoKey(`hearing:${processData.id}`);
+        setHearingResponsibleId(hearingEvent?.user_id || '');
+      } else {
+        setHearingResponsibleId('');
+      }
       const client = clientMap.get(processData.client_id);
       if (client) {
         setClientSearchTerm(client.full_name);
@@ -1321,6 +1327,25 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
         }
 
         await processService.updateProcess(editingProcess.id, updatePayload);
+
+        // Sync DataJud ao arquivar — garante que o histórico fica salvo
+        const statusChangingToArchived =
+          formData.status === 'arquivado' && editingProcess.status !== 'arquivado';
+        if (statusChangingToArchived && trimmedProcessCode) {
+          processDjenSyncService
+            .syncProcessWithDjen({ ...editingProcess, ...updatePayload } as Process)
+            .catch(() => {});
+        }
+
+        if (formData.hearing_scheduled === 'sim') {
+          try {
+            const hearingEvent = await calendarService.getEventByAutoKey(`hearing:${editingProcess.id}`);
+            if (hearingEvent) {
+              await calendarService.updateEvent(hearingEvent.id, { user_id: hearingResponsibleId || null });
+            }
+          } catch {}
+        }
+
         updatedProcess = await processService.getProcessById(editingProcess.id);
         if (updatedProcess) {
           setProcesses((prev) => prev.map((item) => (item.id === updatedProcess!.id ? updatedProcess! : item)));

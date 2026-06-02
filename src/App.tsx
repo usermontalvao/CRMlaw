@@ -92,7 +92,6 @@ import { useAuth } from './contexts/AuthContext';
 import { events, SYSTEM_EVENTS } from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
-import { useDjenSync } from './hooks/useDjenSync';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
 import { taskService } from './services/task.service';
@@ -945,9 +944,6 @@ const MainApp: React.FC = () => {
     const timer = window.setTimeout(prefetch, 600);
     return () => window.clearTimeout(timer);
   }, [user]);
-  
-  // Ativar sincronização automática com DJEN
-  useDjenSync();
   
   // Ativar sistema de presença
   usePresence();

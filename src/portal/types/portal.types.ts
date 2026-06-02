@@ -32,7 +32,8 @@ export interface PortalSession {
 
 export type PortalRoute =
   | 'dashboard'
-  | 'processos'
+  | 'casos'        // Unifica processos judiciais + requerimentos INSS
+  | 'processos'    // Alias legado → redireciona para 'casos'
   | 'documentos'
   | 'assinar'
   | 'financeiro'

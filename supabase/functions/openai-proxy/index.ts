@@ -21,12 +21,15 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { messages, model = 'gpt-4o-mini' } = await req.json();
+    const { messages, model = 'gpt-4o-mini', max_tokens } = await req.json();
 
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiApiKey) {
       throw new Error('OPENAI_API_KEY não configurada');
     }
+
+    const body: Record<string, unknown> = { model, messages, temperature: 0.7 };
+    if (max_tokens) body.max_tokens = max_tokens;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -34,11 +37,7 @@ Deno.serve(async (req: Request) => {
         'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.7,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

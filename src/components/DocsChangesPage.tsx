@@ -869,6 +869,26 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.177',
+    date: '02/06/2026',
+    summary: 'Portal: infraestrutura de notificações, roteamento PortalCasos, journey com 6 etapas, melhorias em CalendarModule e DataJud sync.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'PortalNotificationsContext extraído de PortalLayout', description: 'Lógica de push notifications e polling movida para contexto dedicado. PortalLayout simplificado.' },
+        { type: 'feature' as const, title: 'PortalNotificationBell: componente de sino com contagem', description: 'Novo componente isolado para o sino de notificações no header.' },
+        { type: 'feature' as const, title: 'Roteamento PortalCasos e PortalRequirementDetails', description: 'PortalApp atualizado: rota "casos" agora suporta proc:id e req:id. Alias "processos" redireciona para "casos". PortalRequirementDetails adicionado ao router.' },
+        { type: 'improvement' as const, title: 'Journey com 6 etapas (adicionado Recurso)', description: 'domain.ts: JOURNEY expandido de 5 para 6 etapas incluindo "Recurso". Índices de stage ajustados em sentenca, recurso, cumprimento e arquivado.' },
+      ]},
+      { moduleId: 'Calendário', changes: [
+        { type: 'improvement' as const, title: 'CalendarModule: melhorias diversas', description: 'Ajustes no CalendarModule e calendar.service.' },
+      ]},
+      { moduleId: 'DataJud', changes: [
+        { type: 'improvement' as const, title: 'datajud-sync e run-djen-sync: melhorias de sync', description: 'Edge functions atualizadas com melhorias no processo de sincronização de andamentos e DJEN.' },
+        { type: 'improvement' as const, title: 'openai-proxy: ajustes no proxy', description: 'Edge function openai-proxy atualizada.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.176',
     date: '02/06/2026',
     summary: 'Portal do cliente: correções visuais, UX e novas funcionalidades — jornada laranja, análise IA compacta, histórico de requerimento, contador de casos corrigido.',

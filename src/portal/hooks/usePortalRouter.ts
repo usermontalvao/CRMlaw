@@ -7,7 +7,8 @@ import type { PortalRoute } from '../types/portal.types';
 
 const VALID_ROUTES: PortalRoute[] = [
   'dashboard',
-  'processos',
+  'casos',
+  'processos',   // alias legado — PortalApp redireciona para 'casos'
   'documentos',
   'assinar',
   'financeiro',
