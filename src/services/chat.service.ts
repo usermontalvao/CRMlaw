@@ -648,6 +648,17 @@ class ChatService {
     };
   }
 
+  subscribeToNewTicketRooms(params: { onNewRoom: (room: ChatRoom) => void }): () => void {
+    const channel = supabase.channel('chat_rooms_portal_insert');
+    channel.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: this.roomsTable, filter: 'type=eq.portal_client' },
+      (payload) => params.onNewRoom(payload.new as ChatRoom),
+    );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }
+
   subscribeToAllMessages(params: { onInsert: (message: ChatMessage) => void }): () => void {
     const channel = supabase.channel('chat_messages_all');
 

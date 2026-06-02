@@ -869,6 +869,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.190',
+    date: '02/06/2026',
+    summary: 'ChatModule: alerta visual na aba TICKET quando novo ticket chega + carregamento automático de novas salas.',
+    modules: [
+      { moduleId: 'Chat', changes: [
+        { type: 'feature' as const, title: 'Ponto pulsante na aba TICKET ao receber novo ticket', description: 'Quando um cliente abre um ticket pelo portal, a aba TICKET exibe um ponto laranja pulsante. Ao clicar na aba o ponto some. Também toca o som de notificação e muda automaticamente para a aba TICKET.' },
+        { type: 'fix' as const, title: 'Novas salas de ticket não apareciam sem recarregar', description: 'Subscription de INSERT em chat_rooms type=portal_client recarrega a lista automaticamente quando um novo ticket é criado. Mensagens de salas desconhecidas também disparam reload.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.189',
     date: '02/06/2026',
     summary: 'Fix crítico: intimações urgentes não eram mais reenviadas pelo scheduler. Melhorias no widget de chat e notificações.',

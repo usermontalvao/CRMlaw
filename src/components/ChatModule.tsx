@@ -374,6 +374,7 @@ const ChatModule: React.FC = () => {
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomMembers, setRoomMembers] = useState<Map<string, string[]>>(new Map());
+  const [roomUnreadCounts, setRoomUnreadCounts] = useState<Map<string, number>>(new Map());
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId);
 
   const [membersLoading, setMembersLoading] = useState(false);
@@ -412,6 +413,7 @@ const ChatModule: React.FC = () => {
   const [nudgeFlash, setNudgeFlash] = useState<string | null>(null);
   const [nudgeCooldown, setNudgeCooldown] = useState(false);
   const [unreadThreshold, setUnreadThreshold] = useState<string | null>(null);
+  const [newTicketAlert, setNewTicketAlert] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialRoomId) return;
@@ -437,6 +439,7 @@ const ChatModule: React.FC = () => {
     playSound: () => {},
     scrollToBottom: () => {},
     markRead: (_roomId: string) => Promise.resolve(),
+    loadRooms: () => Promise.resolve() as Promise<void>,
   });
 
   const insertTextAtCursor = (text: string) => {
@@ -840,6 +843,18 @@ const ChatModule: React.FC = () => {
     }
   };
 
+  const loadRoomUnreadCounts = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('chat_room_members')
+      .select('room_id, unread_count')
+      .eq('user_id', user.id);
+    if (!data) return;
+    const map = new Map<string, number>();
+    data.forEach((row: any) => map.set(String(row.room_id), Number(row.unread_count ?? 0)));
+    setRoomUnreadCounts(map);
+  };
+
   const loadRooms = async () => {
     if (!user) return;
     setLoadingRooms(true);
@@ -901,6 +916,7 @@ const ChatModule: React.FC = () => {
 
       const unread = await chatService.getUnreadCount(user.id);
       setUnreadCount(unread);
+      await loadRoomUnreadCounts();
     } finally {
       setLoadingRooms(false);
     }
@@ -922,6 +938,11 @@ const ChatModule: React.FC = () => {
         await chatService.markAsRead({ roomId, userId: user.id });
         const unread = await chatService.getUnreadCount(user.id);
         setUnreadCount(unread);
+        setRoomUnreadCounts((prev) => {
+          const next = new Map(prev);
+          next.set(roomId, 0);
+          return next;
+        });
       }
     } finally {
       setLoadingMessages(false);
@@ -946,7 +967,11 @@ const ChatModule: React.FC = () => {
       onInsert: (msg) => {
         // Always update room preview / sort
         setRooms((prev) => {
-          if (!prev.some((r) => r.id === msg.room_id)) return prev;
+          if (!prev.some((r) => r.id === msg.room_id)) {
+            // Sala desconhecida — recarrega lista (ex: novo ticket criado pelo portal)
+            stableModuleRef.current.loadRooms();
+            return prev;
+          }
           const updated = prev.map((r) =>
             r.id === msg.room_id
               ? { ...r, last_message_at: msg.created_at, last_message_preview: getMessagePreview(msg.content) }
@@ -977,6 +1002,11 @@ const ChatModule: React.FC = () => {
         if (!isMine) {
           stableModuleRef.current.playSound();
           setUnreadCount((prev) => prev + 1);
+          setRoomUnreadCounts((prev) => {
+            const next = new Map(prev);
+            next.set(msg.room_id, (next.get(msg.room_id) ?? 0) + 1);
+            return next;
+          });
           if ('Notification' in window && Notification.permission === 'granted') {
             const author = stableModuleRef.current.membersByUserId.get(msg.user_id);
             const preview = getMessagePreview(msg.content);
@@ -1037,6 +1067,23 @@ const ChatModule: React.FC = () => {
     return () => unsub();
   }, [user, triggerShake]);
 
+  // Subscription para novos tickets do portal — mostra alerta e muda para aba TICKET
+  useEffect(() => {
+    if (!user) return;
+    const unsub = chatService.subscribeToNewTicketRooms({
+      onNewRoom: async (room) => {
+        const list = await chatService.listRooms(user.id);
+        setRooms(list);
+        setChatTab('ticket');
+        stableModuleRef.current.playSound();
+        const clientName = room.name || 'Novo cliente';
+        setNewTicketAlert(clientName);
+        window.setTimeout(() => setNewTicketAlert(null), 6000);
+      },
+    });
+    return () => unsub();
+  }, [user]);
+
   const handleSendNudgeModule = useCallback(async () => {
     if (!user || !selectedRoomId || nudgeCooldown) return;
     const memberIds = roomMembers.get(selectedRoomId) || [];
@@ -1068,6 +1115,7 @@ const ChatModule: React.FC = () => {
   };
   stableModuleRef.current.markRead = (roomId: string) =>
     user ? chatService.markAsRead({ roomId, userId: user.id }).catch(() => {}) : Promise.resolve();
+  stableModuleRef.current.loadRooms = loadRooms;
 
   // Recebe presença do widget via evento — sem criar canal Supabase próprio (evita conflito)
   useEffect(() => {
@@ -1397,14 +1445,14 @@ const ChatModule: React.FC = () => {
           {(() => {
             const ticketUnread = rooms
               .filter(r => !!r.portal_client_id)
-              .reduce((s, r) => s + ((r as any).unread_count ?? 0), 0);
+              .reduce((s, r) => s + (roomUnreadCounts.get(r.id) ?? 0), 0);
             return (
               <div className="flex shrink-0 border-b border-[#e9edef] dark:border-[#2a3942]">
                 {(['equipe', 'ticket'] as const).map(tab => (
                   <button
                     key={tab}
                     type="button"
-                    onClick={() => setChatTab(tab)}
+                    onClick={() => { setChatTab(tab); if (tab === 'ticket') setNewTicketAlert(null); }}
                     className={`relative flex-1 py-2.5 text-[12px] font-semibold tracking-wide uppercase transition-colors ${
                       chatTab === tab
                         ? 'text-[#f97316]'
@@ -1415,6 +1463,13 @@ const ChatModule: React.FC = () => {
                     {tab === 'ticket' && ticketUnread > 0 && (
                       <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#f97316] text-white text-[9px] font-bold">
                         {ticketUnread > 9 ? '9+' : ticketUnread}
+                      </span>
+                    )}
+                    {/* Ponto pulsante quando novo ticket chega e a aba não está ativa */}
+                    {tab === 'ticket' && newTicketAlert && chatTab !== 'ticket' && ticketUnread === 0 && (
+                      <span className="ml-1.5 inline-flex relative">
+                        <span className="w-2 h-2 rounded-full bg-[#f97316] animate-ping absolute inline-flex opacity-75" />
+                        <span className="w-2 h-2 rounded-full bg-[#f97316] relative inline-flex" />
                       </span>
                     )}
                     {chatTab === tab && (
@@ -1457,7 +1512,7 @@ const ChatModule: React.FC = () => {
               const displayName = otherUser?.name || room.name;
               const avatarUrl = otherUser?.avatar_url;
               const isOnline = otherUser?.presence_status === 'online';
-              const roomUnreadCount = (room as any).unread_count ?? 0;
+              const roomUnreadCount = roomUnreadCounts.get(room.id) ?? 0;
 
               return (
                 <button
