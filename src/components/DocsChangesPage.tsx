@@ -869,6 +869,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.188',
+    date: '02/06/2026',
+    summary: 'Módulo Chat: aba TICKET com aceitar, encerrar e reabrir atendimentos. Histórico único por cliente.',
+    modules: [
+      { moduleId: 'Chat', changes: [
+        { type: 'feature' as const, title: 'Aba TICKET no módulo principal de chat', description: 'Tabs EQUIPE | TICKET com badge de não lidos. Cada cliente aparece uma única vez (deduplicação por portal_client_id); tickets encerrados somem da lista automaticamente.' },
+        { type: 'feature' as const, title: 'Botões Aceitar / Encerrar / Reabrir no header', description: 'Aceitar ativa o atendimento, Encerrar envia mensagem de despedida e remove o ticket da lista, Reabrir devolve a conversa ao fluxo ativo.' },
+        { type: 'improvement' as const, title: 'Auto-aceite ao responder ticket', description: 'Ao enviar a primeira mensagem como operador em um ticket não aceito, o sistema aceita automaticamente sem precisar clicar no botão.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.187',
     date: '02/06/2026',
     summary: 'Fix crítico: horário de audiências no calendário agora usa timezone correto de Cuiabá (UTC-4). Ajustes finais no chat portal.',
