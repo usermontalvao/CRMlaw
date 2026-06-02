@@ -480,6 +480,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [members, setMembers] = useState<Profile[]>([]);
   const [roomMembers, setRoomMembers] = useState<Map<string, string[]>>(new Map());
 
+  const [chatTab, setChatTab] = useState<'equipe' | 'ticket'>('equipe');
+
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -1816,7 +1818,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-white/40 font-medium">{rooms.length} {rooms.length === 1 ? 'conversa' : 'conversas'}</span>
+                    <span className="text-[11px] text-white/40 font-medium">
+                      {rooms.filter(r => !r.portal_client_id).length + rooms.filter(r => r.portal_client_id).length} {rooms.length === 1 ? 'conversa' : 'conversas'}
+                    </span>
                   </div>
                 </>
               )}
@@ -1918,6 +1922,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 </div>
               </>
             ) : (
+              <>
+              {/* ── Tabs EQUIPE | TICKET ── */}
+              {(() => {
+                const ticketRooms = rooms.filter(r => r.portal_client_id);
+                const ticketUnread = ticketRooms.reduce((s, r) => s + (roomUnreadCounts.get(r.id) ?? 0), 0);
+                return (
+                  <div className="flex shrink-0 border-b border-white/[0.06] mx-3 mb-1">
+                    {(['equipe', 'ticket'] as const).map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setChatTab(tab)}
+                        className={`relative flex-1 py-2.5 text-[12px] font-semibold tracking-wide uppercase transition-colors ${
+                          chatTab === tab ? 'text-white' : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        {tab === 'equipe' ? 'Equipe' : 'Ticket'}
+                        {tab === 'ticket' && ticketUnread > 0 && (
+                          <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold">
+                            {ticketUnread > 9 ? '9+' : ticketUnread}
+                          </span>
+                        )}
+                        {chatTab === tab && (
+                          <span className="absolute bottom-0 left-1/4 right-1/4 h-[2px] rounded-full bg-orange-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <div className="flex-1 overflow-y-auto chat-scrollbar py-1">
                 {loadingRooms && rooms.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-8 text-sm text-white/50">
@@ -1933,7 +1967,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     <p className="text-xs text-white/40 mt-1">Clique em + para iniciar</p>
                   </div>
                 ) : (
-                  [...rooms].sort((a, b) => {
+                  [...rooms]
+                  .filter(r => chatTab === 'ticket' ? !!r.portal_client_id : !r.portal_client_id)
+                  .sort((a, b) => {
                     const ua = roomUnreadCounts.get(a.id) ?? 0;
                     const ub = roomUnreadCounts.get(b.id) ?? 0;
                     if ((ua > 0) !== (ub > 0)) return ua > 0 ? -1 : 1;
@@ -1941,11 +1977,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     const bt = b.last_message_at ?? b.created_at;
                     return bt.localeCompare(at);
                   }).map((room) => {
-                  const otherUser = getOtherUserForRoom(room);
+                  const isTicketRoom = !!room.portal_client_id;
+                  const otherUser = isTicketRoom ? null : getOtherUserForRoom(room);
                   const displayName = otherUser?.name || room.name;
-                  const avatarUrl = otherUser?.avatar_url;
+                  const avatarUrl = isTicketRoom ? null : otherUser?.avatar_url;
                   const online = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
-                  const verified = getVerifiedVariant(otherUser);
+                  const verified = isTicketRoom ? null : getVerifiedVariant(otherUser);
                   const roomUnread = roomUnreadCounts.get(room.id) ?? 0;
                   const subtitle = room.is_public
                     ? `${room.type === 'team' ? 'Grupo' : 'Sala'} · ${(roomMembers.get(room.id) ?? []).length || ''} membros`
@@ -1977,7 +2014,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       }`}
                       style={{ width: 'calc(100% - 16px)' }}
                     >
-                      <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
+                      {isTicketRoom ? (
+                        <div className="relative shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white text-[13px] font-bold shadow-[0_2px_8px_rgba(251,146,60,.4)]">
+                            {displayName.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()}
+                          </div>
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-orange-500 border-2 border-[#1e1e2e]" />
+                        </div>
+                      ) : (
+                        <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -2016,6 +2062,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 })
                 )}
               </div>
+              </>
             )
           ) : (
             <div className="flex flex-col flex-1 overflow-hidden relative">

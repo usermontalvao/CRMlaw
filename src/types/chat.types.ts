@@ -1,4 +1,4 @@
-export type ChatRoomType = 'team' | 'dm';
+export type ChatRoomType = 'team' | 'dm' | 'portal_client';
 export type ChatRoomMemberRole = 'member' | 'admin';
 
 export interface ChatRoom {
@@ -10,6 +10,15 @@ export interface ChatRoom {
   created_at: string;
   last_message_at: string | null;
   last_message_preview: string | null;
+  portal_client_id?: string | null;
+}
+
+export interface PortalChatMessage {
+  id: string;
+  content: string;
+  created_at: string;
+  from_client: boolean;
+  sender_name?: string | null;
 }
 
 export interface ChatRoomMember {

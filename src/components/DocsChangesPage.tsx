@@ -869,6 +869,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.183',
+    date: '02/06/2026',
+    summary: 'Módulo de mensagens portal: chat integrado com tabs EQUIPE | TICKET no widget + página de mensagens funcional no portal.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Portal Mensagens: chat em tempo real com o escritório', description: 'PortalMessages substituída por chat completo com bolhas, separadores de dia, realtime via Supabase, textarea auto-resize e envio por Enter.' },
+        { type: 'feature' as const, title: 'Push: notificação ao cliente quando advogado responde', description: 'Trigger _portal_notify_on_chat_reply cria portal_client_notification quando um advogado responde no ticket.' },
+      ]},
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'feature' as const, title: 'Tabs EQUIPE | TICKET no widget de chat', description: 'ChatFloatingWidget ganhou duas tabs no topo da lista: EQUIPE (salas internas) e TICKET (conversas com clientes do portal). Badge laranja com contador de não lidos na aba TICKET. Avatar laranja com iniciais para clientes.' },
+        { type: 'feature' as const, title: 'Salas portal_client no banco', description: 'chat_rooms.portal_client_id + chat_messages.portal_client_id. RPCs portal_get_or_create_chat_room, portal_send_chat_message, portal_list_chat_messages.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.182',
     date: '02/06/2026',
     summary: 'Notificação automática ao cliente quando DataJud registra movimento relevante (sentença, recurso, audiência, cumprimento, etc.).',

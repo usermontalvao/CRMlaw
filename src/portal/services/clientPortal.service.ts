@@ -460,6 +460,26 @@ Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta orde
     } catch { /* silencia */ }
   }
 
+  // ── Chat Portal ────────────────────────────────────────────────────────────
+
+  async getChatMessages(portalUserId: string) {
+    const { data, error } = await supabase.rpc('portal_list_chat_messages', {
+      p_portal_user_id: portalUserId,
+      p_limit: 100,
+    });
+    if (error) { handleRpcError('getChatMessages', error); return null; }
+    return data as { room: { id: string; name: string }; messages: import('../../types/chat.types').PortalChatMessage[] } | null;
+  }
+
+  async sendChatMessage(portalUserId: string, content: string) {
+    const { data, error } = await supabase.rpc('portal_send_chat_message', {
+      p_portal_user_id: portalUserId,
+      p_content: content,
+    });
+    if (error) { handleRpcError('sendChatMessage', error); return null; }
+    return data;
+  }
+
   /**
    * Detalhes de um processo (validação interna do dono)
    */
