@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Calendar, Clock, Gavel, Scale, MapPin,
-  AlertCircle, Activity, CheckCircle2, Loader2, ShieldCheck, ChevronRight, ChevronDown,
+  AlertCircle, Activity, CheckCircle2, Loader2, ShieldCheck, ChevronRight, ChevronDown, Sparkles,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
@@ -9,7 +9,7 @@ import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, formatDate, formatDateLong, formatRelative } from '../components/PortalUI';
 import { statusMeta, TONE_CLASSES, JOURNEY } from '../lib/domain';
 
-interface Movement { id?: string; nome?: string; data_hora?: string; data?: string; tribunal?: string; grau?: string; complemento?: string; }
+interface Movement { id?: string; nome?: string; data_hora?: string; data?: string; tribunal?: string; grau?: string; complemento?: string; complementos?: any; }
 interface Deadline { id: string; title: string; due_date: string; status: string; priority?: string; }
 interface Publication { id?: string; data?: string; tipo?: string; orgao?: string; texto?: string; }
 interface Appointment {
@@ -28,21 +28,53 @@ interface ProcessFull {
   distributed_at?: string | null;
   hearing_scheduled?: boolean | null; hearing_date?: string | null; hearing_time?: string | null; hearing_mode?: string | null;
   responsible_lawyer?: string | null;
+  notes?: string | null;
   movements?: Movement[]; deadlines?: Deadline[]; publications?: Publication[];
   appointments?: Appointment[];
 }
 
 type Tab = 'resumo' | 'andamentos' | 'prazos' | 'compromissos';
 
-/** O que o cliente precisa fazer (ou não) — reduz ansiedade e mensagens. */
-function nextAction(p: ProcessFull): { tone: 'ok' | 'attention'; label: string; text: string } {
-  const todayStr = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD local
-  const future = p.hearing_scheduled && p.hearing_date && p.hearing_date >= todayStr;
-  if (future) {
+/** Extrai um texto legível dos complementos tabelados do DataJud (array de objetos ou string). */
+function extractComplemento(m: Movement): string | undefined {
+  if (m.complemento) return m.complemento;
+  const c = m.complementos;
+  if (!c) return undefined;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) {
+    const parts = c
+      .map((item: any) => {
+        if (typeof item === 'string') return item;
+        // formato DataJud: { nome, descricao, valor }
+        const nome = item?.nome || item?.descricao || '';
+        const valor = item?.valor ?? item?.complemento ?? '';
+        return [nome, valor].filter(Boolean).join(': ');
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(' | ') : undefined;
+  }
+  return undefined;
+}
+
+const APT_TYPE_LABELS: Record<string, { noun: string; fem: boolean }> = {
+  hearing:  { noun: 'audiência',  fem: true  },
+  pericia:  { noun: 'perícia',    fem: true  },
+  meeting:  { noun: 'encontro',   fem: false },
+  deadline: { noun: 'prazo',      fem: false },
+};
+
+/** O que o cliente precisa fazer — usa o appointments unificado (calendar + hearing_date). */
+function nextAction(p: ProcessFull, upcomingApts: Appointment[]): { tone: 'ok' | 'attention'; label: string; text: string } {
+  if (upcomingApts.length > 0) {
+    const next = upcomingApts[0];
+    const d = new Date(next.start_at);
+    const hasTime = next.start_at.includes('T');
+    const time = hasTime ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+    const { noun, fem } = APT_TYPE_LABELS[next.event_type] ?? { noun: 'compromisso', fem: false };
     return {
       tone: 'attention',
       label: 'Requer atenção',
-      text: `Você tem uma audiência marcada para ${formatDate(p.hearing_date)}${p.hearing_time ? ` às ${p.hearing_time.slice(0, 5)}` : ''}. Confirme sua presença com seu advogado.`,
+      text: `Você tem ${fem ? 'uma' : 'um'} ${noun} marcad${fem ? 'a' : 'o'} para ${formatDateLong(next.start_at)}${time ? ` às ${time}` : ''}. Confirme sua presença com seu advogado.`,
     };
   }
   const pending = (p.deadlines || []).filter((d) => d.status === 'pendente').length;
@@ -61,6 +93,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const [tab, setTab] = useState<Tab>('resumo');
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [aiText, setAiText] = useState<string | null>(null);
+  const [aiGeneratedAt, setAiGeneratedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!session?.user?.id || !processId) return;
@@ -75,12 +108,21 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
   if (error || !data) {
-    return <div><BackBtn onClick={() => navigate('processos')} /><EmptyState icon={Scale} title="Não foi possível carregar" description={error || 'Processo não encontrado.'} /></div>;
+    return <div><BackBtn onClick={() => navigate('casos')} /><EmptyState icon={Scale} title="Não foi possível carregar" description={error || 'Processo não encontrado.'} /></div>;
   }
 
   const meta = statusMeta(data.status);
   const tone = TONE_CLASSES[meta.tone];
   const rawMovements = data.movements || [];
+
+  // Fallback para data de distribuição quando o campo está vazio no banco.
+  // Usa o movimento mais antigo do DataJud como aproximação.
+  const distributedAt = data.distributed_at ?? rawMovements.reduce<string | null>((earliest, m) => {
+    const d = m.data_hora || m.data;
+    if (!d) return earliest;
+    if (!earliest || new Date(d) < new Date(earliest)) return d;
+    return earliest;
+  }, null);
   const djens: Movement[] = (data.publications || []).map((p) => ({
     id: p.id,
     nome: p.tipo || 'Publicação oficial',
@@ -97,19 +139,40 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const appointments = (data.appointments || []).sort(
     (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
   );
-  const action = nextAction(data);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const upcomingApts = appointments.filter(a => new Date(a.start_at) >= today);
+  const action = nextAction(data, upcomingApts);
 
   const handleExplainProcess = async () => {
     if (aiState === 'loading') return;
     if (aiText) { setAiState('done'); return; }
     setAiState('loading');
+
+    // Extrair notas do advogado (JSON serializado)
+    let lawyerNotes: string | undefined;
+    try {
+      const parsed = JSON.parse(data.notes || '[]') as { text?: string; author_name?: string; created_at?: string }[];
+      if (parsed.length > 0) {
+        lawyerNotes = parsed
+          .map((n) => `[${n.author_name || 'Advogado'} - ${n.created_at ? new Date(n.created_at).toLocaleDateString('pt-BR') : ''}]: ${n.text || ''}`)
+          .join('\n');
+      }
+    } catch {}
+
     const text = await clientPortalService.explainProcess({
       statusLabel: meta.label,
+      processCode: data.process_code,
+      court: data.court,
+      distributedAt: distributedAt,
+      responsibleLawyer: data.responsible_lawyer,
       area: data.practice_area,
-      movements: rawMovements.map((m) => ({ nome: m.nome, data: m.data_hora || m.data, detalhe: m.complemento })),
+      lawyerNotes,
+      movements: rawMovements.map((m) => ({ nome: m.nome, data: m.data_hora || m.data, detalhe: extractComplemento(m) })),
       publications: (data.publications || []).map((p) => ({ data: p.data, tipo: p.tipo, orgao: p.orgao, texto: p.texto })),
+      appointments: appointments.map((a) => ({ title: a.title, event_type: a.event_type, start_at: a.start_at, event_mode: a.event_mode })),
+      deadlines: deadlines.map((d) => ({ title: d.title, due_date: d.due_date, status: d.status, priority: d.priority })),
     });
-    if (text) { setAiText(text); setAiState('done'); }
+    if (text) { setAiText(text); setAiState('done'); setAiGeneratedAt(new Date()); }
     else setAiState('error');
   };
 
@@ -122,7 +185,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
 
   return (
     <div className="flex flex-col gap-5">
-      <BackBtn onClick={() => navigate('processos')} />
+      <BackBtn onClick={() => navigate('casos')} />
 
       {/* ── CABEÇALHO + SITUAÇÃO ── */}
       <section className="rounded-xl border border-slate-200 bg-white">
@@ -142,6 +205,11 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
         <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
           <Journey stage={meta.stage} />
         </div>
+
+        {/* Análise por IA — linha compacta dentro do card */}
+        <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
+          <AiSummary state={aiState} text={aiText} generatedAt={aiGeneratedAt} onGenerate={handleExplainProcess} />
+        </div>
       </section>
 
       {/* ── O QUE VOCÊ PRECISA FAZER ── */}
@@ -157,32 +225,35 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
         </div>
       </section>
 
-      {/* Audiência futura/realizada */}
-      {data.hearing_scheduled && data.hearing_date && (() => {
-        const todayStr = new Date().toLocaleDateString('sv-SE');
-        const isPast = data.hearing_date < todayStr;
+      {/* Próximo compromisso (unificado: calendar_events + hearing_date do processo) */}
+      {upcomingApts.length > 0 && (() => {
+        const next = upcomingApts[0];
+        const d = new Date(next.start_at);
+        const hasTime = next.start_at.includes('T');
+        const time = hasTime ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+        const { noun, fem } = APT_TYPE_LABELS[next.event_type] ?? { noun: 'compromisso', fem: false };
+        const modeLabel = next.event_mode === 'online' ? 'Online' : next.event_mode === 'presencial' ? 'Presencial' : null;
         return (
           <section className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isPast ? 'bg-slate-100 text-slate-400' : 'bg-amber-50 text-amber-600'}`}>
-              {isPast ? <CheckCircle2 className="h-5 w-5" /> : <Gavel className="h-5 w-5" />}
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+              <Gavel className="h-5 w-5" />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                {isPast ? 'Audiência realizada' : 'Próxima audiência'}
+                Próxim{fem ? 'a' : 'o'} {noun}
               </p>
               <p className="text-sm font-semibold text-slate-900">
-                {formatDateLong(data.hearing_date)}{data.hearing_time && ` · ${data.hearing_time.slice(0, 5)}`}
+                {formatDateLong(next.start_at)}{time ? ` · ${time}` : ''}
               </p>
-              {data.hearing_mode && !isPast && (
-                <p className="mt-0.5 inline-flex items-center gap-1 text-xs capitalize text-slate-500"><MapPin className="h-3 w-3" />{data.hearing_mode}</p>
+              {modeLabel && (
+                <p className="mt-0.5 inline-flex items-center gap-1 text-xs capitalize text-slate-500">
+                  <MapPin className="h-3 w-3" />{modeLabel}
+                </p>
               )}
             </div>
           </section>
         );
       })()}
-
-      {/* ── RESUMO POR IA (discreto, opcional) ── */}
-      <AiSummary state={aiState} text={aiText} onGenerate={handleExplainProcess} />
 
       {/* ── TABS (underline sóbrio) ── */}
       <div className="flex gap-6 border-b border-slate-200">
@@ -206,7 +277,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       </div>
 
       <div>
-        {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} onSeeAll={() => setTab('andamentos')} />}
+        {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} distributedAt={distributedAt} onSeeAll={() => setTab('andamentos')} />}
         {tab === 'andamentos' && <AndamentosTab movements={movements} statusLabel={meta.label} area={data.practice_area} />}
         {tab === 'prazos' && <PrazosTab deadlines={deadlines} />}
         {tab === 'compromissos' && <AppointmentsTab appointments={appointments} />}
@@ -223,74 +294,91 @@ const BackBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   </button>
 );
 
-/** Stepper sóbrio das 5 etapas macro. */
-const Journey: React.FC<{ stage: number }> = ({ stage }) => (
-  <div className="flex items-start">
-    {JOURNEY.map((st, i) => {
-      const done = i < stage;
-      const current = i === stage;
-      return (
-        <React.Fragment key={st.key}>
-          <div className="flex flex-1 flex-col items-center gap-2">
-            <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition ${
-              current ? 'bg-white text-orange-600 ring-2 ring-orange-500'
-              : done ? 'bg-slate-900 text-white'
-              : 'bg-white text-slate-300 ring-1 ring-slate-200'
-            }`}>
-              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+/** Stepper com trilho laranja mostrando o progresso da jornada. */
+const Journey: React.FC<{ stage: number }> = ({ stage }) => {
+  const isTerminal = stage >= JOURNEY.length - 1;
+  return (
+    <div className="flex items-start">
+      {JOURNEY.map((st, i) => {
+        const done = i < stage || (isTerminal && i === stage);
+        const current = !isTerminal && i === stage;
+        return (
+          <React.Fragment key={st.key}>
+            <div className="flex flex-1 flex-col items-center gap-2">
+              <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+                current ? 'bg-orange-500 text-white ring-2 ring-orange-300 ring-offset-1'
+                : done  ? 'bg-orange-500 text-white'
+                :         'bg-white text-slate-300 ring-1 ring-slate-200'
+              }`}>
+                {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+              </div>
+              <span className={`text-center text-[10px] font-medium leading-tight ${
+                current ? 'text-orange-600' : done ? 'text-slate-600' : 'text-slate-400'
+              }`}>{st.label}</span>
             </div>
-            <span className={`text-center text-[10px] font-medium leading-tight ${
-              current ? 'text-slate-900' : done ? 'text-slate-500' : 'text-slate-400'
-            }`}>{st.label}</span>
-          </div>
-          {i < JOURNEY.length - 1 && (
-            <div className={`mt-3 h-px flex-1 ${i < stage ? 'bg-slate-900' : 'bg-slate-200'}`} />
-          )}
-        </React.Fragment>
-      );
-    })}
-  </div>
-);
+            {i < JOURNEY.length - 1 && (
+              <div className={`mt-3 h-0.5 flex-1 rounded-full transition-all ${
+                i < stage ? 'bg-orange-500' : 'bg-slate-200'
+              }`} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+};
 
-/** Bloco de resumo por IA — texto-first, sem brilho nem gradiente. */
 const AiSummary: React.FC<{
   state: 'idle' | 'loading' | 'done' | 'error';
   text: string | null;
+  generatedAt: Date | null;
   onGenerate: () => void;
-}> = ({ state, text, onGenerate }) => (
-  <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">Resumo do seu caso</h2>
-          <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">IA</span>
+}> = ({ state, text, generatedAt, onGenerate }) => {
+  if (state === 'done' && text) {
+    const timeLabel = generatedAt
+      ? generatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : null;
+    return (
+      <div className="pt-1">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">Análise por IA</p>
+          </div>
+          {timeLabel && <span className="text-[11px] text-slate-400">Gerada às {timeLabel}</span>}
         </div>
-        <p className="mt-0.5 text-xs text-slate-500">Uma explicação simples de como o processo está hoje.</p>
+        <p className="text-sm leading-relaxed text-slate-700">{text}</p>
+        <p className="mt-2 text-[11px] text-slate-400">Pode cometer erros — consulte seu advogado em caso de dúvida.</p>
       </div>
-      {state !== 'done' && (
-        <button
-          onClick={onGenerate}
-          disabled={state === 'loading'}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-        >
-          {state === 'loading' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Gerando…</> : state === 'error' ? 'Tentar de novo' : 'Gerar resumo'}
-        </button>
-      )}
-    </div>
-    {state === 'done' && text && (
-      <>
-        <p className="mt-3 border-t border-slate-100 pt-3 text-sm leading-relaxed text-slate-700">{text}</p>
-        <p className="mt-2 text-[11px] text-slate-400">Gerado por inteligência artificial — em caso de dúvida, fale com seu advogado.</p>
-      </>
-    )}
-  </section>
-);
+    );
+  }
 
-const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null; onSeeAll: () => void }> = ({ data, movements, responsibleLawyer, onSeeAll }) => (
+  return (
+    <div className="flex items-center justify-between gap-3 pt-1">
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Sparkles className="h-3.5 w-3.5 text-orange-400" />
+        <span className="text-[13px]">Entenda este processo em linguagem simples</span>
+      </div>
+      <button
+        onClick={onGenerate}
+        disabled={state === 'loading'}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
+      >
+        {state === 'loading'
+          ? <><Loader2 className="h-3 w-3 animate-spin" /> Analisando…</>
+          : state === 'error'
+          ? 'Tentar de novo'
+          : 'Analisar com IA'}
+      </button>
+    </div>
+  );
+};
+
+const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null; distributedAt: string | null; onSeeAll: () => void }> = ({ data, movements, responsibleLawyer, distributedAt, onSeeAll }) => (
   <div className="flex flex-col gap-3">
     {/* Dados gerais — lista de definição limpa */}
     <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 sm:divide-y-0 sm:divide-x">
-      <InfoRow label="Distribuído em" value={data.distributed_at ? formatDate(data.distributed_at) : '—'} icon={Calendar} />
+      <InfoRow label="Distribuído em" value={distributedAt ? formatDate(distributedAt) : '—'} icon={Calendar} />
       <InfoRow label="Advogado responsável" value={responsibleLawyer || '—'} icon={Gavel} />
     </dl>
 
@@ -365,6 +453,11 @@ const MovementItem: React.FC<{
         {m.tribunal && <><span className="text-slate-300">·</span><span className="normal-nums">{sourceLabel(m.tribunal)}</span></>}
       </div>
 
+      {/* Publicação sem texto — aviso discreto */}
+      {m.tribunal === 'djen' && !m.complemento && (
+        <p className="mt-1.5 text-[11px] text-slate-400">Texto da publicação não disponível.</p>
+      )}
+
       {/* Texto técnico recolhido por padrão */}
       {m.complemento && (
         <div className="mt-2">
@@ -381,24 +474,26 @@ const MovementItem: React.FC<{
         </div>
       )}
 
-      {/* Explicação por IA — link discreto, sem pílula laranja */}
-      <div className="mt-2">
-        {state !== 'done' && (
-          <button
-            onClick={explain}
-            disabled={state === 'loading'}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-orange-700 underline-offset-2 transition hover:underline disabled:opacity-60"
-          >
-            {state === 'loading' ? <><Loader2 className="h-3 w-3 animate-spin" /> Explicando…</> : state === 'error' ? 'Não consegui — tentar de novo' : 'Entender este andamento'}
-          </button>
-        )}
-        {state === 'done' && explanation && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Em linguagem simples</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-700">{explanation}</p>
-          </div>
-        )}
-      </div>
+      {/* Explicação por IA — não exibe para publicações DataJud sem texto */}
+      {(m.tribunal !== 'djen' || !!m.complemento) && (
+        <div className="mt-2">
+          {state !== 'done' && (
+            <button
+              onClick={explain}
+              disabled={state === 'loading'}
+              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-orange-700 underline-offset-2 transition hover:underline disabled:opacity-60"
+            >
+              {state === 'loading' ? <><Loader2 className="h-3 w-3 animate-spin" /> Explicando…</> : state === 'error' ? 'Não consegui — tentar de novo' : 'Entender este andamento'}
+            </button>
+          )}
+          {state === 'done' && explanation && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Em linguagem simples</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-700">{explanation}</p>
+            </div>
+          )}
+        </div>
+      )}
     </li>
   );
 };
@@ -415,7 +510,7 @@ const AndamentosTab: React.FC<{ movements: Movement[]; statusLabel: string; area
 };
 
 const PrazosTab: React.FC<{ deadlines: Deadline[] }> = ({ deadlines }) => {
-  if (!deadlines.length) return <EmptyState icon={Clock} title="Sem prazos" description="Nenhum prazo cadastrado para este processo." />;
+  if (!deadlines.length) return <EmptyState icon={Clock} title="Sem prazos registrados" description="Os prazos processuais são monitorados pelo seu advogado. Quando houver algo relevante para você acompanhar, aparecerá aqui." />;
   return (
     <div className="flex flex-col gap-2.5">
       {deadlines.map((d) => {

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
+import { PortalNotificationBell } from '../components/PortalNotificationBell';
 import { clientPortalService } from '../services/clientPortal.service';
 import { SecurityBanner } from '../components/SecurityBanner';
 import {
@@ -33,6 +34,8 @@ interface FinancialSummary {
 interface DashboardData {
   processesTotal: number;
   processesActive: number;
+  requirementsTotal: number;
+  casesTotal: number;
   signaturesPending: number;
   deadlinesPending: number;
   deadlinesOverdue: number;
@@ -70,10 +73,13 @@ export const PortalDashboard: React.FC = () => {
   return (
     <div className="flex flex-col gap-5">
 
-      {/* ── SAUDAÇÃO ── limpa, sem hero escuro */}
-      <header>
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{greeting}</p>
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">{firstName}</h1>
+      {/* ── SAUDAÇÃO ── */}
+      <header className="flex items-center justify-between">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{greeting}</p>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">{firstName}</h1>
+        </div>
+        <PortalNotificationBell />
       </header>
 
       {/* ── BANNER DE SEGURANÇA (anti-golpe) ── */}
@@ -121,7 +127,7 @@ export const PortalDashboard: React.FC = () => {
           <><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /></>
         ) : (
           <>
-            <StatCell icon={Briefcase} label="Processos" value={data?.processesTotal ?? 0} sub={`${data?.processesActive ?? 0} em andamento`} onClick={() => navigate('processos')} />
+            <StatCell icon={Briefcase} label="Casos" value={data?.casesTotal ?? data?.processesTotal ?? 0} sub={`${data?.processesActive ?? 0} em andamento`} onClick={() => navigate('casos')} />
             <StatCell icon={PenTool}   label="Assinaturas" value={data?.signaturesPending ?? 0} sub={(data?.signaturesPending ?? 0) > 0 ? 'pendentes' : 'em dia'} urgent={(data?.signaturesPending ?? 0) > 0} onClick={() => navigate('assinar')} />
             <StatCell icon={Clock}     label="Prazos" value={data?.deadlinesPending ?? 0} sub={(data?.deadlinesOverdue ?? 0) > 0 ? `${data?.deadlinesOverdue} vencidos` : 'em aberto'} urgent={(data?.deadlinesOverdue ?? 0) > 0} onClick={() => navigate('agenda')} />
             <StatCell icon={FileText}  label="Documentos" value={data?.documentsCount ?? 0} sub="disponíveis" onClick={() => navigate('documentos')} />
@@ -130,7 +136,7 @@ export const PortalDashboard: React.FC = () => {
       </div>
 
       {/* ── FINANCEIRO ── */}
-      {!loading && data?.financial && (
+      {!loading && data?.financial && ((data.financial.total > 0) || ((data.financial.net ?? 0) > 0)) && (
         <FinancialOverview financial={data.financial} nextInstallment={data.nextInstallment} onClick={() => navigate('financeiro')} />
       )}
 
@@ -154,7 +160,7 @@ export const PortalDashboard: React.FC = () => {
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-[13px] font-semibold text-slate-900">Últimas movimentações</h2>
-            <button onClick={() => navigate('processos')} className="text-xs font-medium text-orange-600 hover:text-orange-700">Ver tudo</button>
+            <button onClick={() => navigate('casos')} className="text-xs font-medium text-orange-600 hover:text-orange-700">Ver tudo</button>
           </div>
           <div className="flex flex-col gap-1.5">
             {loading ? <SkeletonCard /> : !data?.recentMovements?.length ? (

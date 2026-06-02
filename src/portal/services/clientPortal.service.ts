@@ -43,6 +43,7 @@ export interface DocumentRequest {
 }
 
 export interface ClientProfile {
+  cpf?: string | null;
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -213,59 +214,178 @@ class ClientPortalService {
    */
   async explainProcess(params: {
     statusLabel: string;
+    processCode?: string | null;
+    court?: string | null;
+    distributedAt?: string | null;
+    responsibleLawyer?: string | null;
     area?: string | null;
+    lawyerNotes?: string;
     movements: { nome?: string; data?: string; detalhe?: string }[];
     publications?: { data?: string; tipo?: string; orgao?: string; texto?: string }[];
+    appointments?: { title?: string; event_type?: string; start_at?: string; event_mode?: string | null }[];
+    deadlines?: { title?: string; due_date?: string; status?: string; priority?: string }[];
   }): Promise<string | null> {
-    const fmt = (d?: string) => (d ? new Date(d).toLocaleDateString('pt-BR') : 's/data');
-
-    // Esqueleto da tramitação (nomes dos movimentos)
-    const skeleton = params.movements
-      .slice(0, 25)
-      .map((m) => `- ${fmt(m.data)}: ${m.nome || ''}`)
-      .join('\n');
-
-    // Publicações com TEXTO INTEGRAL do DJEN — base factual (tutela, sentença, recurso).
-    // Em documentos longos (sentença/decisão), o DESFECHO fica no FIM (dispositivo),
-    // então enviamos início + fim para a IA não perder o resultado.
-    const clip = (t: string) => {
-      const s = (t || '').replace(/\s+/g, ' ').trim();
-      if (s.length <= 3800) return s;
-      return `${s.slice(0, 2200)}\n[...trecho omitido...]\n${s.slice(-1600)}`;
+    const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
+    const fmtDt = (d?: string) => {
+      if (!d) return '';
+      const dt = new Date(d);
+      return dt.toLocaleDateString('pt-BR') + (d.includes('T') ? ` às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '');
     };
-    const pubs = (params.publications || [])
-      .slice(0, 10)
-      .map((p) => `### ${fmt(p.data)} — ${p.tipo || 'Publicação'}${p.orgao ? ` (${p.orgao})` : ''}\n${clip(p.texto || '')}`)
+
+    // Determina limite por publicação baseado no volume total
+    const allPubs = (params.publications || [])
+      .filter(p => p.texto && p.texto.trim().length > 10)
+      .sort((a, b) => new Date(a.data || 0).getTime() - new Date(b.data || 0).getTime());
+    // 4 mais antigas (sentença/valor) + 8 mais recentes (estado atual)
+    const selectedPubs = allPubs.length <= 12
+      ? allPubs
+      : [...allPubs.slice(0, 4), ...allPubs.slice(-8)];
+    const totalPubChars = selectedPubs.reduce((s, p) => s + (p.texto?.length || 0), 0);
+    // Se muito texto, reduz limite por publicação proporcionalmente (mín 800, máx 2500)
+    const perPubLimit = Math.max(800, Math.min(2500, Math.floor(18000 / Math.max(selectedPubs.length, 1))));
+
+    const clip = (t: string, maxLen = perPubLimit) => {
+      const s = (t || '').replace(/\s+/g, ' ').trim();
+      if (s.length <= maxLen) return s;
+      const half = Math.floor(maxLen / 2);
+      return `${s.slice(0, half)}\n[...]\n${s.slice(-half)}`;
+    };
+
+    const pubs = selectedPubs
+      .map((p) => `=== ${fmt(p.data)} — ${p.tipo || 'Publicação'}${p.orgao ? ` (${p.orgao})` : ''} ===\n${clip(p.texto || '')}`)
       .join('\n\n');
 
-    const content =
-      `Situação atual: ${params.statusLabel}` +
-      (params.area ? `\nÁrea: ${params.area}` : '') +
-      (skeleton ? `\n\nTRAMITAÇÃO (mais recente primeiro):\n${skeleton}` : '') +
-      (pubs ? `\n\nPUBLICAÇÕES OFICIAIS DO DJEN (texto integral — esta é a fonte para qualquer afirmação sobre decisões, tutela, recursos):\n\n${pubs}` : '');
+    // ── Tramitação processual (DataJud) ──
+    // Os movimentos contam a história do caso. Selecionamos de forma inteligente:
+    // TODOS os marcos decisivos + os recentes, em ordem cronológica (antigo→recente).
+    const MARCO_KEYWORDS = [
+      'procedente', 'procedência', 'improcedente', 'improcedência', 'parcialmente',
+      'sentença', 'senten', 'acórdão', 'acordao', 'homolog', 'acordo',
+      'trânsito em julgado', 'transito em julgado', 'cumprimento', 'execução', 'execucao',
+      'liquidação', 'liquidacao', 'recurso', 'apelação', 'apelacao', 'agravo', 'embargos',
+      'arquiv', 'extinção', 'extincao', 'distribuição', 'distribuicao',
+      'citação', 'citacao', 'audiência', 'audiencia', 'pagamento', 'penhora', 'alvará', 'alvara',
+      'tutela', 'liminar', 'designada', 'expedição de alvará',
+    ];
+    const isMarco = (nome: string) => {
+      const n = (nome || '').toLowerCase();
+      return MARCO_KEYWORDS.some((k) => n.includes(k));
+    };
+
+    const movsAsc = [...params.movements].sort(
+      (a, b) => new Date(a.data || 0).getTime() - new Date(b.data || 0).getTime()
+    );
+    const marcos = movsAsc.filter((m) => isMarco(m.nome || ''));
+    const recentes = movsAsc.slice(-25); // últimos 25 (contexto recente)
+    // União sem duplicar, preservando ordem cronológica
+    const selecionados = movsAsc.filter(
+      (m) => marcos.includes(m) || recentes.includes(m)
+    );
+
+    const skeleton = selecionados
+      .map((m) => {
+        const marca = isMarco(m.nome || '') ? '★ ' : '  ';
+        const det = m.detalhe ? ` — ${m.detalhe}` : '';
+        return `${marca}${fmt(m.data)}: ${m.nome || ''}${det}`;
+      })
+      .join('\n');
+
+    const totalMovs = params.movements.length;
+
+    const TYPE_LABEL: Record<string, string> = {
+      hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião', deadline: 'Prazo',
+    };
+    const apts = (params.appointments || [])
+      .sort((a, b) => new Date(a.start_at || 0).getTime() - new Date(b.start_at || 0).getTime())
+      .map((a) => {
+        const tipo = TYPE_LABEL[a.event_type || ''] || a.event_type || 'Compromisso';
+        const modo = a.event_mode ? ` (${a.event_mode})` : '';
+        return `- ${fmtDt(a.start_at)}: ${tipo}${modo} — ${a.title || ''}`;
+      }).join('\n');
+
+    const dlsPendentes = (params.deadlines || [])
+      .filter(d => d.status === 'pendente')
+      .sort((a, b) => new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime())
+      .map(d => `- [PENDENTE] Vence ${fmt(d.due_date)}: ${d.title || ''}${d.priority === 'alta' ? ' [URGENTE]' : ''}`)
+      .join('\n');
+
+    const dlsCumpridos = (params.deadlines || [])
+      .filter(d => d.status === 'cumprido')
+      .sort((a, b) => new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime())
+      .map(d => `- [CUMPRIDO] ${fmt(d.due_date)}: ${d.title || ''}`)
+      .join('\n');
+
+    const dls = [dlsCumpridos, dlsPendentes].filter(Boolean).join('\n');
+
+    // Monta o conteúdo final — guard simples: truncar no total a 28k chars
+    const rawParts = [
+      `NÚMERO DO PROCESSO: ${params.processCode || 'não informado'}`,
+      params.court          ? `VARA/TRIBUNAL: ${params.court}` : '',
+      params.distributedAt  ? `DISTRIBUÍDO EM: ${fmt(params.distributedAt)}` : '',
+      params.area           ? `ÁREA: ${params.area}` : '',
+      `SITUAÇÃO ATUAL: ${params.statusLabel}`,
+      params.lawyerNotes    ? `\nOBSERVAÇÕES DO ADVOGADO:\n${params.lawyerNotes}` : '',
+      skeleton              ? `\nTRAMITAÇÃO PROCESSUAL (${totalMovs} andamentos no total; ★ = marco decisivo; ordem cronológica):\n${skeleton}` : '',
+      apts                  ? `\nCOMPROMISSOS VINCULADOS:\n${apts}` : '',
+      dls                   ? `\nPRAZOS DO PROCESSO (cumpridos e pendentes):\n${dls}` : '',
+      pubs                  ? `\nPUBLICAÇÕES OFICIAIS DO DJEN (texto integral):\n\n${pubs}` : '',
+    ].filter(Boolean);
+
+    let content = rawParts.join('\n');
+    if (content.length > 28000) content = content.slice(0, 28000) + '\n[conteúdo truncado por limite]';
+    void totalPubChars; // suprime warning
+
+    const systemPrompt = `Você é um assistente jurídico que explica o processo para o PRÓPRIO CLIENTE (leigo), em português claro, acolhedor e sem juridiquês. Fale na 2ª pessoa ("seu processo", "você").
+
+══ FONTES DE DADOS (entenda a diferença) ══
+1. TRAMITAÇÃO PROCESSUAL = lista oficial de andamentos do tribunal (DataJud). NÃO tem texto, só o NOME e a DATA de cada ato. As linhas com ★ são os MARCOS decisivos (sentença, procedência, trânsito em julgado, cumprimento, recurso, etc.). USE a sequência desses marcos para reconstruir a história do caso, mesmo sem texto.
+2. PUBLICAÇÕES DO DJEN = texto integral de decisões/intimações. É aqui que ficam os VALORES (R$) e os detalhes do dispositivo da sentença.
+3. OBSERVAÇÕES DO ADVOGADO = contexto interno do escritório; trate como verdade prioritária.
+
+══ TAREFA ══
+Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta ordem de prioridade:
+1. DESFECHO: o caso foi ganho, perdido, parcialmente ganho, ainda em andamento? Baseie-se nos marcos ★ (ex.: "Procedência" = você ganhou; "Improcedência" = perdeu; "Parcialmente procedente" = ganhou em parte) e/ou no texto das publicações.
+2. VALOR: se houver condenação/acordo, diga QUANTO em R$ (extraído do texto das publicações). Se o marco indica vitória mas o valor não está no texto disponível, diga: "o valor da condenação será confirmado pelo seu advogado".
+3. FASE ATUAL: o que está acontecendo agora.
+   - ATENÇÃO: o campo "SITUAÇÃO ATUAL" pode estar desatualizado (ex.: marcado como "arquivado/encerrado" mas com intimações recentes de execução). SEMPRE priorize o que as publicações DJEN mais recentes dizem sobre a fase. Se a intimação mais recente fala em "cumprimento", "execução", "pagar", "intimar o executado" — o processo está EM EXECUÇÃO, não encerrado.
+   - Exemplos: trânsito em julgado = decisão definitiva; intimação para pagar = fase de receber o valor; arquivado sem atividade recente = encerrado.
+4. PRÓXIMO PASSO: o que esperar, com datas quando relevante.
+
+══ REGRAS SOBRE VALORES ══
+- O valor da condenação fica no DISPOSITIVO da sentença ("condeno... ao pagamento de R$...").
+- Em cumprimento/execução, informe o valor cobrado (danos morais + materiais + honorários se houver).
+- NUNCA diga "há um valor a receber" sem dizer QUANTO, se o número estiver em alguma publicação.
+
+══ REGRAS GERAIS ══
+- Seja ESPECÍFICO: cite datas dos marcos importantes (ex.: "a sentença foi favorável em 27/11/2025 e tornou-se definitiva em 13/02/2026").
+- Afirme desfecho SOMENTE com base nos marcos ★ ou no texto das publicações. Se ambíguo, descreva o estado sem inventar resultado.
+- Não comece por tecnicismos. Comece pelo que mais importa para o cliente.
+- Não invente fatos nem prometa resultados futuros.
+- Tom honesto, tranquilizador e realista.
+- Finalize SEMPRE com: "Seu advogado acompanha cada etapa e está à disposição para esclarecer dúvidas pelo canal oficial."`;
 
     try {
       const { data, error } = await supabase.functions.invoke('openai-proxy', {
         body: {
           model: 'gpt-4o',
+          max_tokens: 600,
           messages: [
-            {
-              role: 'system',
-              content:
-                'Você é um assistente jurídico que explica para um CLIENTE LEIGO como está o processo dele, em português claro e acolhedor, sem juridiquês.\n\nLEIA o texto integral de TODAS as publicações e ESCREVA um panorama de 4 a 6 frases, específico para ESTE caso (nunca genérico). COMECE pelo que MAIS IMPORTA para o cliente.\n\nVALORES — REGRA CENTRAL: sempre que houver condenação, indenização, acordo ou execução, INFORME O VALOR EM REAIS, extraindo-o do texto. O valor da condenação fica no DISPOSITIVO da sentença (ex.: "condenar a Ré ao pagamento de R$ 2.000,00"). Se o processo está em CUMPRIMENTO/EXECUÇÃO e a intimação atual não repete o valor, BUSQUE o valor na sentença anterior e diga claramente quanto o cliente tem a receber, mencionando que incidem correção monetária e juros. NUNCA diga que há um valor a pagar/receber sem dizer QUANTO, se o número estiver disponível em alguma publicação.\n\nFONTE DA VERDADE: as PUBLICAÇÕES OFICIAIS DO DJEN (texto integral). Extraia: resultado da sentença (procedente/improcedente/parcial) + VALOR; tutela deferida/indeferida; estágio do recurso/cumprimento.\n\nREGRAS:\n- NÃO comece por tecnicismos ("efeito devolutivo", "trânsito em julgado") — mencione só de passagem se couber.\n- Afirme desfechos e valores SOMENTE se estiverem no texto, citando-os.\n- NÃO afirme QUEM recorreu se o texto não disser; diga "há um recurso aguardando julgamento".\n- Nunca invente nem prometa resultado futuro.\n\nTom honesto e tranquilizador. Finalize lembrando que o advogado acompanha tudo e que dúvidas devem ser tiradas pelo canal oficial.',
-            },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content },
           ],
         },
       });
       if (error) {
+        const detail = (data as any)?.error || error.message;
+        console.error('[Portal] explainProcess OpenAI error:', detail);
         handleRpcError('explainProcess', error);
         return null;
       }
       const text = (data as { choices?: { message?: { content?: string } }[] })
         ?.choices?.[0]?.message?.content?.trim();
       return text || null;
-    } catch {
+    } catch (e) {
+      console.error('[Portal] explainProcess exception:', e);
       return null;
     }
   }
@@ -353,6 +473,19 @@ class ClientPortalService {
       return [];
     }
     return (data as unknown[]) || [];
+  }
+
+  async markNotificationRead(portalUserId: string, notificationId: string) {
+    await supabase.rpc('portal_mark_notification_read', {
+      p_portal_user_id: portalUserId,
+      p_notification_id: notificationId,
+    });
+  }
+
+  async markAllNotificationsRead(portalUserId: string) {
+    await supabase.rpc('portal_mark_all_notifications_read', {
+      p_portal_user_id: portalUserId,
+    });
   }
 
   /**
@@ -493,8 +626,9 @@ class ClientPortalService {
    * Tolerante a falhas: cada parte que falhar entra com zero/null.
    */
   private async composeDashboardSummary(portalUserId: string) {
-    const [processes, signatures, deadlines, documents, agreements, events] = await Promise.all([
+    const [processes, requirements, signatures, deadlines, documents, agreements, events] = await Promise.all([
       this.listProcesses(portalUserId).catch(() => []),
+      this.listRequirements(portalUserId).catch(() => []),
       this.listSignaturesPending(portalUserId).catch(() => []),
       this.listDeadlines(portalUserId).catch(() => []),
       this.listDocuments(portalUserId).catch(() => []),
@@ -508,6 +642,7 @@ class ClientPortalService {
     const str = (x: unknown): string | undefined => (typeof x === 'string' ? x : undefined);
 
     const procs = arr<Anyrec>(processes);
+    const reqs  = arr<Anyrec>(requirements);
     const sigs = arr<Anyrec>(signatures);
     const dls = arr<Anyrec>(deadlines);
     const ags = arr<Anyrec>(agreements);
@@ -517,8 +652,8 @@ class ClientPortalService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Processos
-    const processesActive = procs.filter((p) => str(p.status) === 'ativo').length;
+    // Processos — ativo = qualquer status exceto 'arquivado'
+    const processesActive = procs.filter((p) => str(p.status) !== 'arquivado').length;
 
     // Assinaturas pendentes
     const signaturesPending = sigs.filter((s) => {
@@ -586,6 +721,8 @@ class ClientPortalService {
     return {
       processesTotal: procs.length,
       processesActive,
+      requirementsTotal: reqs.length,
+      casesTotal: procs.length + reqs.length,
       signaturesPending,
       deadlinesPending,
       deadlinesOverdue,
@@ -596,6 +733,123 @@ class ClientPortalService {
       nextInstallment,
       recentMovements,
     };
+  }
+
+  // ── IA — Requerimento administrativo ────────────────────────────────────────
+
+  /**
+   * Gera uma análise em linguagem simples do requerimento INSS para o cliente.
+   * Inclui o contexto dos processos vinculados e das datas relevantes.
+   */
+  async explainRequirement(params: {
+    benefitLabel: string;
+    statusLabel: string;
+    entryDate?: string | null;
+    exigencyDueDate?: string | null;
+    pericaMedicaAt?: string | null;
+    pericaSocialAt?: string | null;
+    observations?: string | null;
+    linkedProcesses?: { process_code: string; status: string; practice_area?: string | null; requirement_role?: string | null }[];
+    appointments?: { title?: string; event_type?: string; start_at?: string; event_mode?: string | null }[];
+  }): Promise<string | null> {
+    const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString('pt-BR') : null);
+    const fmtDt = (d?: string | null) => {
+      if (!d) return 's/data';
+      const dt = new Date(d);
+      return dt.toLocaleDateString('pt-BR') + (d.includes('T') ? ` às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '');
+    };
+
+    const lines: string[] = [
+      `Benefício: ${params.benefitLabel}`,
+      `Situação atual: ${params.statusLabel}`,
+    ];
+    if (params.entryDate) lines.push(`Data de entrada do pedido: ${fmt(params.entryDate)}`);
+    if (params.exigencyDueDate) lines.push(`Prazo da exigência INSS: ${fmt(params.exigencyDueDate)}`);
+    if (params.pericaMedicaAt) lines.push(`Perícia médica (campo): ${fmt(params.pericaMedicaAt)}`);
+    if (params.pericaSocialAt) lines.push(`Perícia social (campo): ${fmt(params.pericaSocialAt)}`);
+    if (params.observations) lines.push(`\nObservações do escritório: ${params.observations}`);
+
+    if (params.appointments?.length) {
+      const TYPE_LABEL: Record<string, string> = {
+        hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião',
+      };
+      lines.push('\nCompromissos vinculados (agenda):');
+      [...params.appointments]
+        .sort((a, b) => new Date(a.start_at || 0).getTime() - new Date(b.start_at || 0).getTime())
+        .forEach(a => {
+          const tipo = TYPE_LABEL[a.event_type || ''] || a.event_type || 'Compromisso';
+          const modo = a.event_mode ? ` (${a.event_mode})` : '';
+          lines.push(`- ${fmtDt(a.start_at)}: ${tipo}${modo} — ${a.title || ''}`);
+        });
+    }
+
+    if (params.linkedProcesses?.length) {
+      lines.push('\nProcessos judiciais vinculados:');
+      params.linkedProcesses.forEach(p => {
+        const role = p.requirement_role === 'ms'
+          ? 'Mandado de Segurança (demora na análise)'
+          : 'Processo nascido do requerimento negado';
+        lines.push(`- ${p.process_code} | ${role} | Situação: ${p.status}${p.practice_area ? ` (${p.practice_area})` : ''}`);
+      });
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('openai-proxy', {
+        body: {
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um assistente jurídico especializado em Direito Previdenciário (INSS). ' +
+                'Explique a situação do requerimento administrativo para um CLIENTE LEIGO, em português simples e acolhedor, sem juridiquês. ' +
+                'Escreva de 3 a 5 frases específicas para ESTE caso.\n\n' +
+                'REGRAS:\n' +
+                '- Se houver processos vinculados, explique CLARAMENTE: o INSS negou, mas o advogado entrou com ação judicial (ou MS) em busca do benefício — e informe o número do processo e sua situação.\n' +
+                '- Se status = "indeferido" SEM processo vinculado, diga que o pedido foi negado e que o advogado avalia o recurso.\n' +
+                '- Se status = "em_exigencia", diga que o INSS pediu documentos e que o advogado está providenciando — mencione o prazo se houver.\n' +
+                '- Se status = "aguardando_pericia", explique que será chamado para perícia médica ou social.\n' +
+                '- Se status = "deferido", celebre a aprovação e explique os próximos passos (implantação do benefício).\n' +
+                '- Nunca invente datas, valores ou resultados. Tom honesto e tranquilizador.\n' +
+                '- Termine lembrando que dúvidas devem ser tiradas com o advogado pelo canal oficial.',
+            },
+            { role: 'user', content: lines.join('\n') },
+          ],
+        },
+      });
+      if (error) { handleRpcError('explainRequirement', error); return null; }
+      const text = (data as { choices?: { message?: { content?: string } }[] })
+        ?.choices?.[0]?.message?.content?.trim();
+      return text || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Requerimentos administrativos (INSS) ─────────────────────────────────
+
+  /**
+   * Lista requerimentos do cliente (sem campos sensíveis como inss_password).
+   * Ordenados por urgência: em_exigencia e aguardando_pericia primeiro.
+   */
+  async listRequirements(portalUserId: string) {
+    const { data, error } = await supabase.rpc('portal_list_requirements', {
+      p_portal_user_id: portalUserId,
+    });
+    if (error) { handleRpcError('listRequirements', error); return []; }
+    return (data as unknown[]) || [];
+  }
+
+  /**
+   * Detalhes de um requerimento (validado por client_id) + compromissos vinculados.
+   */
+  async getRequirement(portalUserId: string, requirementId: string) {
+    const { data, error } = await supabase.rpc('portal_get_requirement', {
+      p_portal_user_id: portalUserId,
+      p_requirement_id: requirementId,
+    });
+    if (error) { handleRpcError('getRequirement', error); return null; }
+    return data;
   }
 }
 

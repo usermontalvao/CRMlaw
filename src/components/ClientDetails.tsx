@@ -778,12 +778,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   }, [pendingDeadlines]);
 
   const activeProcesses = useMemo(
-    () => processes.filter((p) => p.status !== 'arquivado'),
+    () => processes,
     [processes],
   );
 
   const activeRequirements = useMemo(
-    () => requirements.filter((r) => r.status !== 'deferido' && r.status !== 'indeferido'),
+    () => requirements,
     [requirements],
   );
 

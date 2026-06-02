@@ -869,6 +869,26 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.176',
+    date: '02/06/2026',
+    summary: 'Portal do cliente: correções visuais, UX e novas funcionalidades — jornada laranja, análise IA compacta, histórico de requerimento, contador de casos corrigido.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Journey map: "6" solto na Conclusão corrigido', description: 'Quando o processo está em stage terminal (cumprimento/arquivado), todos os passos incluindo Conclusão aparecem com ✓ laranja em vez do número "6".' },
+        { type: 'improvement' as const, title: 'Trilho da jornada em laranja', description: 'Círculos e conectores das etapas concluídas agora usam bg-orange-500 em ambos processo e requerimento, tornando o progresso visualmente claro.' },
+        { type: 'improvement' as const, title: 'Botão IA compacto dentro do card de cabeçalho', description: 'Design substituído: de card dashed full-width para linha compacta (texto + botão laranja pequeno) dentro do card, abaixo da jornada. Aplicado em processo e requerimento.' },
+        { type: 'feature' as const, title: 'Timestamp na análise IA', description: 'Após geração, exibe "Gerada às HH:MM" para que o cliente saiba que já existe uma análise e não clique desnecessariamente.' },
+        { type: 'fix' as const, title: 'Publicações DataJud sem texto: oculta botão IA', description: 'Entradas do DataJud sem campo texto (p.texto null) agora mostram "Texto da publicação não disponível." e não exibem "Entender este andamento".' },
+        { type: 'improvement' as const, title: 'Prazos cumpridos passados para contexto da IA', description: 'A IA agora recebe todos os prazos (cumpridos e pendentes) com status explícito [CUMPRIDO]/[PENDENTE], permitindo inferir que a petição de execução já foi protocolada.' },
+        { type: 'fix' as const, title: 'Data de distribuição: fallback para movimento mais antigo', description: 'Quando distributed_at é null no banco, o portal usa o data_hora do movimento DataJud mais antigo como aproximação.' },
+        { type: 'fix' as const, title: 'Dashboard financeiro: não exibe zeros', description: 'Seção financeira só aparece quando total > 0 ou net > 0, evitando confusão com R$ 0,00 em tudo.' },
+        { type: 'fix' as const, title: 'Mensagens: remove "Em breve" enganoso', description: 'Página renomeada para "Contato" e o bloco "Atendimento integrado — Em breve disponível" foi removido.' },
+        { type: 'feature' as const, title: 'Histórico de movimentações no requerimento', description: 'PortalRequirementDetails exibe timeline "De → Para" com nome do advogado e data/hora. RPC portal_get_requirement atualizado com join em requirement_status_history + profiles.' },
+        { type: 'fix' as const, title: 'Contador de Casos corrigido no dashboard e CRM', description: 'Dashboard portal usa casesTotal (processos + requerimentos). RPC portal_dashboard_summary corrigido: processesActive usava status="ativo" (nunca batia), agora usa status!="arquivado". CRM ClientDetails conta todos os casos incluindo arquivados/encerrados.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.175',
     date: '01/06/2026',
     summary: 'Compromissos da agenda aparecem no módulo de processo do portal. Modal do calendário exibe número do processo e local.',
