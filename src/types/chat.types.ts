@@ -18,6 +18,7 @@ export interface PortalChatMessage {
   content: string;
   created_at: string;
   from_client: boolean;
+  is_system?: boolean;
   sender_name?: string | null;
 }
 

@@ -869,6 +869,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.184',
+    date: '02/06/2026',
+    summary: 'Chat portal: fix mensagens sistema, encerramento melhorado, some do widget ao fechar, typing preview em tempo real.',
+    modules: [
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'fix' as const, title: 'Mensagens de sistema sem emoji no DB', description: 'Conteúdo armazenado como texto puro. Lock icon é renderizado pelo frontend (Lucide). Regex de strip removido.' },
+        { type: 'feature' as const, title: 'Typing preview do cliente no widget', description: 'Advogado vê o texto que o cliente está digitando em tempo real via Supabase Broadcast. Na lista TICKET: pontos animados + primeiros 30 chars. No chat aberto: bolha ghost translúcida acima do input.' },
+        { type: 'improvement' as const, title: 'TICKET tab: some conversas fechadas', description: 'Salas com created_by != null (fechadas) são filtradas do TICKET tab. Advogado só vê conversas ativas.' },
+      ]},
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Tela de conversa encerrada melhorada', description: 'Quando fechada, mostra mensagem explicativa e botão "Iniciar nova mensagem". Ao clicar, o RPC portal_send_chat_message reabre automaticamente a conversa.' },
+        { type: 'feature' as const, title: 'Reabertura automática ao enviar mensagem', description: 'Se o cliente enviar mensagem em conversa fechada, o backend reabre automaticamente e insere mensagem de sistema "Conversa reaberta".' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.183',
     date: '02/06/2026',
     summary: 'Módulo de mensagens portal: chat integrado com tabs EQUIPE | TICKET no widget + página de mensagens funcional no portal.',

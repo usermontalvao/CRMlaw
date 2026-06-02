@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, Lock, Unlock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -481,6 +481,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [roomMembers, setRoomMembers] = useState<Map<string, string[]>>(new Map());
 
   const [chatTab, setChatTab] = useState<'equipe' | 'ticket'>('equipe');
+  const [ticketTyping, setTicketTyping] = useState<Map<string, string>>(new Map());
+  const [liveTypingText, setLiveTypingText] = useState('');
 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1345,6 +1347,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     [user]
   );
 
+  // Typing preview: subscreve aos canais de digitação das salas ticket
+  useEffect(() => {
+    if (!user) return;
+    const ticketRooms = rooms.filter(r => r.portal_client_id && !r.created_by);
+    if (!ticketRooms.length) return;
+
+    const channels = ticketRooms.map(room => {
+      const ch = supabase.channel(`portal-typing:${room.id}`);
+      ch.on('broadcast', { event: 'typing' }, (payload: any) => {
+        const typingText = payload?.payload?.text ?? '';
+        setTicketTyping(prev => {
+          const next = new Map(prev);
+          next.set(room.id, typingText);
+          return next;
+        });
+        if (selectedRoomId === room.id) {
+          setLiveTypingText(typingText);
+        }
+      }).subscribe();
+      return ch;
+    });
+
+    return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
+  }, [rooms, user, selectedRoomId]);
+
+  // Limpa live typing quando troca de sala
+  useEffect(() => {
+    setLiveTypingText(ticketTyping.get(selectedRoomId ?? '') ?? '');
+  }, [selectedRoomId, ticketTyping]);
+
   useEffect(() => {
     if (!user) return;
     loadMembers();
@@ -1826,6 +1858,30 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               )}
             </div>
             <div className="flex items-center gap-1">
+              {/* Encerrar / Reabrir conversa — só em salas ticket */}
+              {selectedRoomId && selectedRoom?.portal_client_id && (
+                <button
+                  type="button"
+                  title={selectedRoom.created_by ? 'Reabrir conversa' : 'Encerrar conversa'}
+                  onClick={async () => {
+                    if (!user) return;
+                    if (selectedRoom.created_by) {
+                      await supabase.rpc('portal_reopen_chat_room', { p_room_id: selectedRoomId });
+                    } else {
+                      await supabase.rpc('portal_close_chat_room', { p_room_id: selectedRoomId, p_closed_by: user.id });
+                    }
+                    const list = await chatService.listRooms(user.id);
+                    setRooms(list);
+                  }}
+                  className={`h-9 w-9 rounded-xl active:scale-95 transition-all duration-150 flex items-center justify-center ${
+                    selectedRoom.created_by
+                      ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                      : 'bg-white/[0.04] text-white/50 hover:bg-rose-500/20 hover:text-rose-400'
+                  }`}
+                >
+                  {selectedRoom.created_by ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                </button>
+              )}
               {!selectedRoomId && !showNewChatModal && (
                 <button
                   type="button"
@@ -1968,7 +2024,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </div>
                 ) : (
                   [...rooms]
-                  .filter(r => chatTab === 'ticket' ? !!r.portal_client_id : !r.portal_client_id)
+                  .filter(r => chatTab === 'ticket'
+                    ? !!r.portal_client_id && !r.created_by  // ticket: só abertas
+                    : !r.portal_client_id                     // equipe: sem portal
+                  )
                   .sort((a, b) => {
                     const ua = roomUnreadCounts.get(a.id) ?? 0;
                     const ub = roomUnreadCounts.get(b.id) ?? 0;
@@ -2036,7 +2095,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <div className={`text-[11.5px] truncate ${roomUnread > 0 ? 'text-white/85 font-medium' : 'text-white/50'}`}>
-                            {(roomTypingUsers.get(room.id)?.length ?? 0) > 0 ? (
+                            {/* Preview de digitação do cliente */}
+                            {isTicketRoom && ticketTyping.get(room.id) ? (
+                              <span className="flex items-center gap-1 text-orange-400/90 font-medium italic">
+                                <span className="inline-flex gap-[2px] items-center">
+                                  {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                                </span>
+                                {ticketTyping.get(room.id)!.slice(0, 30)}{(ticketTyping.get(room.id)?.length ?? 0) > 30 ? '…' : ''}
+                              </span>
+                            ) : (roomTypingUsers.get(room.id)?.length ?? 0) > 0 ? (
                               <span className="flex items-center gap-1.5 text-emerald-400">
                                 {roomTypingUsers.get(room.id)!.length === 1
                                   ? 'digitando'
@@ -2240,6 +2307,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               )}
 
               <div className="shrink-0">
+                {/* Live typing preview do cliente portal */}
+                {selectedRoom?.portal_client_id && liveTypingText && (
+                  <div className="flex items-end gap-2 px-3 pt-2 pb-0.5">
+                    <div className="max-w-[75%] flex flex-col items-start">
+                      <span className="text-[10px] text-white/40 mb-1 ml-1">digitando…</span>
+                      <div className="bg-white/[0.08] ring-1 ring-white/10 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] text-white/60 italic leading-relaxed">
+                        {liveTypingText.length > 80 ? liveTypingText.slice(0, 80) + '…' : liveTypingText}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {/* Typing indicator — fora do scroll, sempre visível acima da barra de input */}
                 {typingUsers.length > 0 && (
                   <div className="flex items-center px-3 pt-1.5 pb-0.5">
