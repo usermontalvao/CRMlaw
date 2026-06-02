@@ -869,6 +869,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.178',
+    date: '02/06/2026',
+    summary: 'Cache de análise IA no banco, Web Push PWA para o portal do cliente, backfill de distributed_at e trigger automático de push.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Cache de análise IA (portal_ai_cache)', description: 'Análise gerada pelo GPT-4o é salva no banco com TTL de 7 dias. O portal carrega do cache ao abrir o processo/requerimento, mostra "há X dias" e oferece botão "Atualizar" para regenerar manualmente.' },
+        { type: 'feature' as const, title: 'Web Push Notifications (PWA)', description: 'Infraestrutura completa de push: tabela portal_push_subscriptions, edge function portal-push com VAPID, trigger SQL em portal_client_notifications, botão "Ativar notificações" no sino. Requer VITE_VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY configurados.' },
+        { type: 'fix' as const, title: 'Backfill de distributed_at', description: 'SQL aplicado: preenche distributed_at de processos que tinham movimentos DataJud mas o campo estava null. Usa a data_hora mais antiga como aproximação da data de ajuizamento.' },
+      ]},
+      { moduleId: 'DataJud', changes: [
+        { type: 'improvement' as const, title: 'Sync já rodando via cron — confirmado', description: 'job #5 (DJEN a cada 6h) e job #16 (DataJud a cada 2 dias) estavam ativos. Backfill de distributed_at aplicado para processos já sincronizados.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.177',
     date: '02/06/2026',
     summary: 'Portal: infraestrutura de notificações, roteamento PortalCasos, journey com 6 etapas, melhorias em CalendarModule e DataJud sync.',

@@ -55,7 +55,7 @@ function routeFor(n: NotifItem): { route: PortalRoute; param?: string } | null {
 }
 
 export const PortalNotificationBell: React.FC = () => {
-  const { items, unreadCount, newIds, markRead, markAllRead, clearNew } = usePortalNotifications();
+  const { items, unreadCount, newIds, markRead, markAllRead, clearNew, pushEnabled, requestPushPermission } = usePortalNotifications();
   const { navigate } = usePortalRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -185,7 +185,15 @@ export const PortalNotificationBell: React.FC = () => {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-slate-100 px-4 py-2.5">
+          <div className="border-t border-slate-100 px-4 py-2.5 flex flex-col gap-1">
+            {!pushEnabled && 'Notification' in window && Notification.permission !== 'denied' && (
+              <button
+                onClick={async () => { await requestPushPermission(); }}
+                className="w-full rounded-lg py-1.5 text-center text-[11.5px] font-medium text-slate-500 transition hover:bg-slate-50 flex items-center justify-center gap-1.5"
+              >
+                <Bell className="h-3 w-3" /> Ativar notificações no celular
+              </button>
+            )}
             <button
               onClick={() => { navigate('notificacoes'); setOpen(false); }}
               className="w-full rounded-lg py-2 text-center text-[12.5px] font-medium text-orange-600 transition hover:bg-orange-50"

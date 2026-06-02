@@ -390,6 +390,76 @@ Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta orde
     }
   }
 
+  // ── Cache de Análise IA ────────────────────────────────────────────────────
+
+  /** Lê cache de análise IA. Retorna null se não existir ou se expirado (ttlDays). */
+  async getAiCache(
+    portalUserId: string,
+    entityType: 'process' | 'requirement',
+    entityId: string,
+    ttlDays = 7,
+  ): Promise<{ text: string; generatedAt: Date } | null> {
+    try {
+      const { data, error } = await supabase.rpc('portal_get_ai_cache', {
+        p_portal_user_id: portalUserId,
+        p_entity_type:    entityType,
+        p_entity_id:      entityId,
+      });
+      if (error || !data) return null;
+      const d = data as { generated_text: string; generated_at: string };
+      const generatedAt = new Date(d.generated_at);
+      const ageDays = (Date.now() - generatedAt.getTime()) / 86_400_000;
+      if (ageDays > ttlDays) return null;
+      return { text: d.generated_text, generatedAt };
+    } catch { return null; }
+  }
+
+  /** Persiste análise IA no cache. */
+  async saveAiCache(
+    portalUserId: string,
+    entityType: 'process' | 'requirement',
+    entityId: string,
+    text: string,
+  ): Promise<void> {
+    try {
+      await supabase.rpc('portal_upsert_ai_cache', {
+        p_portal_user_id: portalUserId,
+        p_entity_type:    entityType,
+        p_entity_id:      entityId,
+        p_text:           text,
+        p_model:          'gpt-4o',
+      });
+    } catch { /* silencia — cache é best-effort */ }
+  }
+
+  // ── Push Subscriptions (PWA) ───────────────────────────────────────────────
+
+  async savePushSubscription(
+    portalUserId: string,
+    sub: PushSubscriptionJSON,
+  ): Promise<void> {
+    const keys = sub.keys as { p256dh: string; auth: string } | undefined;
+    if (!sub.endpoint || !keys?.p256dh || !keys?.auth) return;
+    try {
+      await supabase.rpc('portal_save_push_subscription', {
+        p_portal_user_id: portalUserId,
+        p_endpoint:       sub.endpoint,
+        p_p256dh:         keys.p256dh,
+        p_auth:           keys.auth,
+        p_user_agent:     navigator.userAgent.slice(0, 200),
+      });
+    } catch { /* silencia */ }
+  }
+
+  async removePushSubscription(portalUserId: string, endpoint: string): Promise<void> {
+    try {
+      await supabase.rpc('portal_remove_push_subscription', {
+        p_portal_user_id: portalUserId,
+        p_endpoint:       endpoint,
+      });
+    } catch { /* silencia */ }
+  }
+
   /**
    * Detalhes de um processo (validação interna do dono)
    */

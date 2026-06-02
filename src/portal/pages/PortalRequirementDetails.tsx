@@ -109,6 +109,20 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiGeneratedAt, setAiGeneratedAt] = useState<Date | null>(null);
+  const [aiFromCache, setAiFromCache] = useState(false);
+
+  // Carrega cache IA ao abrir o requerimento
+  useEffect(() => {
+    if (!session?.user?.id || !requirementId) return;
+    clientPortalService.getAiCache(session.user.id, 'requirement', requirementId).then(cached => {
+      if (cached) {
+        setAiText(cached.text);
+        setAiGeneratedAt(cached.generatedAt);
+        setAiFromCache(true);
+        setAiState('done');
+      }
+    });
+  }, [session?.user?.id, requirementId]);
 
   useEffect(() => {
     if (!session?.user?.id || !requirementId) return;
@@ -173,8 +187,11 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
         requirement_role: p.requirement_role,
       })),
     });
-    if (text) { setAiText(text); setAiState('done'); setAiGeneratedAt(new Date()); }
-    else setAiState('error');
+    if (text) {
+      const now = new Date();
+      setAiText(text); setAiState('done'); setAiGeneratedAt(now); setAiFromCache(false);
+      clientPortalService.saveAiCache(session!.user.id, 'requirement', requirementId, text);
+    } else setAiState('error');
   };
 
   return (
@@ -211,7 +228,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
 
         {/* Análise por IA — dentro do card, abaixo da jornada */}
         <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
-          <ReqAiSummary state={aiState} text={aiText} generatedAt={aiGeneratedAt} onGenerate={handleExplain} />
+          <ReqAiSummary state={aiState} text={aiText} generatedAt={aiGeneratedAt} fromCache={aiFromCache} onGenerate={handleExplain} />
         </div>
       </section>
 
@@ -394,24 +411,37 @@ const REQ_STATUS_LABELS: Record<string, string> = {
   ajuizado:             'Ajuizado',
 };
 
+function fmtAiAge(d: Date): string {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days > 1 ? 's' : ''}`;
+}
+
 const ReqAiSummary: React.FC<{
   state: 'idle' | 'loading' | 'done' | 'error';
   text: string | null;
   generatedAt: Date | null;
+  fromCache: boolean;
   onGenerate: () => void;
-}> = ({ state, text, generatedAt, onGenerate }) => {
+}> = ({ state, text, generatedAt, fromCache, onGenerate }) => {
   if (state === 'done' && text) {
-    const timeLabel = generatedAt
-      ? generatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      : null;
+    const ageLabel = generatedAt ? fmtAiAge(generatedAt) : null;
     return (
       <div className="pt-1">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-orange-500" />
             <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">Análise por IA</p>
+            {ageLabel && <span className="text-[11px] text-slate-400">· {ageLabel}</span>}
           </div>
-          {timeLabel && <span className="text-[11px] text-slate-400">Gerada às {timeLabel}</span>}
+          {fromCache && (
+            <button onClick={onGenerate} className="text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-orange-600 hover:underline">
+              Atualizar
+            </button>
+          )}
         </div>
         <p className="text-sm leading-relaxed text-slate-700">{text}</p>
         <p className="mt-2 text-[11px] text-slate-400">Pode cometer erros — consulte seu advogado em caso de dúvida.</p>

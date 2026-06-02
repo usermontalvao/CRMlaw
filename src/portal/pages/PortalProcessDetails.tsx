@@ -94,6 +94,20 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiGeneratedAt, setAiGeneratedAt] = useState<Date | null>(null);
+  const [aiFromCache, setAiFromCache] = useState(false);
+
+  // Carrega cache IA ao abrir o processo
+  useEffect(() => {
+    if (!session?.user?.id || !processId) return;
+    clientPortalService.getAiCache(session.user.id, 'process', processId).then(cached => {
+      if (cached) {
+        setAiText(cached.text);
+        setAiGeneratedAt(cached.generatedAt);
+        setAiFromCache(true);
+        setAiState('done');
+      }
+    });
+  }, [session?.user?.id, processId]);
 
   useEffect(() => {
     if (!session?.user?.id || !processId) return;
@@ -172,8 +186,11 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       appointments: appointments.map((a) => ({ title: a.title, event_type: a.event_type, start_at: a.start_at, event_mode: a.event_mode })),
       deadlines: deadlines.map((d) => ({ title: d.title, due_date: d.due_date, status: d.status, priority: d.priority })),
     });
-    if (text) { setAiText(text); setAiState('done'); setAiGeneratedAt(new Date()); }
-    else setAiState('error');
+    if (text) {
+      const now = new Date();
+      setAiText(text); setAiState('done'); setAiGeneratedAt(now); setAiFromCache(false);
+      clientPortalService.saveAiCache(session!.user.id, 'process', processId, text);
+    } else setAiState('error');
   };
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
@@ -208,7 +225,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
 
         {/* Análise por IA — linha compacta dentro do card */}
         <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
-          <AiSummary state={aiState} text={aiText} generatedAt={aiGeneratedAt} onGenerate={handleExplainProcess} />
+          <AiSummary state={aiState} text={aiText} generatedAt={aiGeneratedAt} fromCache={aiFromCache} onGenerate={handleExplainProcess} />
         </div>
       </section>
 
@@ -332,20 +349,25 @@ const AiSummary: React.FC<{
   state: 'idle' | 'loading' | 'done' | 'error';
   text: string | null;
   generatedAt: Date | null;
+  fromCache: boolean;
   onGenerate: () => void;
-}> = ({ state, text, generatedAt, onGenerate }) => {
+}> = ({ state, text, generatedAt, fromCache, onGenerate }) => {
   if (state === 'done' && text) {
-    const timeLabel = generatedAt
-      ? generatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      : null;
+    const ageLabel = generatedAt ? formatAiAge(generatedAt) : null;
     return (
       <div className="pt-1">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-orange-500" />
             <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">Análise por IA</p>
+            {ageLabel && <span className="text-[11px] text-slate-400">· {ageLabel}</span>}
           </div>
-          {timeLabel && <span className="text-[11px] text-slate-400">Gerada às {timeLabel}</span>}
+          {fromCache && (
+            <button onClick={onGenerate} disabled={state === 'loading'}
+              className="text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-orange-600 hover:underline">
+              Atualizar
+            </button>
+          )}
         </div>
         <p className="text-sm leading-relaxed text-slate-700">{text}</p>
         <p className="mt-2 text-[11px] text-slate-400">Pode cometer erros — consulte seu advogado em caso de dúvida.</p>
@@ -373,6 +395,15 @@ const AiSummary: React.FC<{
     </div>
   );
 };
+
+function formatAiAge(d: Date): string {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days > 1 ? 's' : ''}`;
+}
 
 const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null; distributedAt: string | null; onSeeAll: () => void }> = ({ data, movements, responsibleLawyer, distributedAt, onSeeAll }) => (
   <div className="flex flex-col gap-3">

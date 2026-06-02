@@ -28,11 +28,13 @@ interface PortalNotificationsContextType {
   newIds: Set<string>;
   toasts: PushToast[];
   loading: boolean;
+  pushEnabled: boolean;
   reload: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   clearNew: () => void;
   dismissToast: (id: string) => void;
+  requestPushPermission: () => Promise<boolean>;
 }
 
 const Ctx = createContext<PortalNotificationsContextType | undefined>(undefined);
@@ -70,11 +72,22 @@ function addSeenId(id: string) {
   localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen).slice(-200)));
 }
 
+// Chave pública VAPID — configurada em VITE_VAPID_PUBLIC_KEY
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from(Array.from(raw).map(c => c.charCodeAt(0)));
+}
+
 export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { session } = useClientAuth();
   const [items, setItems]       = useState<NotifItem[]>([]);
   const [loading, setLoading]   = useState(false);
   const [toasts, setToasts]     = useState<PushToast[]>([]);
+  const [pushEnabled, setPushEnabled] = useState(false);
   const [lastOpened, setLastOpened] = useState<number>(getLastOpened);
   const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef  = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
@@ -166,6 +179,39 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     await clientPortalService.markAllNotificationsRead(session.user.id);
   }, [session?.user?.id]);
 
+  // Web Push: verifica subscription existente ao iniciar
+  useEffect(() => {
+    if (!session?.user?.id || !VAPID_PUBLIC_KEY || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(reg =>
+      reg.pushManager.getSubscription().then(sub => {
+        setPushEnabled(!!sub);
+      })
+    ).catch(() => {});
+  }, [session?.user?.id]);
+
+  const requestPushPermission = useCallback(async (): Promise<boolean> => {
+    if (!session?.user?.id || !VAPID_PUBLIC_KEY) return false;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return false;
+
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly:      true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+
+      await clientPortalService.savePushSubscription(session.user.id, sub.toJSON());
+      setPushEnabled(true);
+      return true;
+    } catch (e) {
+      console.error('[portal-push] subscription error:', e);
+      return false;
+    }
+  }, [session?.user?.id]);
+
   const clearNew = useCallback(() => {
     saveLastOpened();
     setLastOpened(Date.now());
@@ -183,7 +229,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   );
 
   return (
-    <Ctx.Provider value={{ items, unreadCount, newIds, toasts, loading, reload, markRead, markAllRead, clearNew, dismissToast }}>
+    <Ctx.Provider value={{ items, unreadCount, newIds, toasts, loading, pushEnabled, reload, markRead, markAllRead, clearNew, dismissToast, requestPushPermission }}>
       {children}
     </Ctx.Provider>
   );
