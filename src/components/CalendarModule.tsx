@@ -1504,8 +1504,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       addDeletionLogEntry({
         id: eventId,
         title: eventTitle || '(Sem título)',
-        type: selectedEvent.extendedProps.type,
-        start_at: selectedEvent.start?.toISOString() ?? new Date().toISOString(),
+        type: (selectedEvent.extendedProps.type ?? 'personal') as EventType,
+        start_at: (selectedEvent.start instanceof Date ? selectedEvent.start.toISOString() : selectedEvent.start) ?? new Date().toISOString(),
         deleted_at: new Date().toISOString(),
         deleted_by: userName || 'Usuário',
       });

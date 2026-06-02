@@ -869,6 +869,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.179',
+    date: '02/06/2026',
+    summary: 'Fix de build: 4 erros TypeScript corrigidos (CalendarModule, PortalNotificationsContext, PortalProcessDetails).',
+    modules: [
+      { moduleId: 'Infraestrutura', changes: [
+        { type: 'fix' as const, title: 'CalendarModule: EventType undefined e start.toISOString()', description: 'extendedProps.type castado para EventType com fallback "personal". selectedEvent.start tratado como Date | string para evitar erro de tipo.' },
+        { type: 'fix' as const, title: 'PortalNotificationsContext: Uint8Array<ArrayBufferLike> incompatível', description: 'urlBase64ToUint8Array agora retorna ArrayBuffer em vez de Uint8Array<ArrayBufferLike>, compatível com applicationServerKey do PushManager.' },
+        { type: 'fix' as const, title: 'PortalProcessDetails: disabled desnecessário no branch done', description: 'Removido disabled={state === "loading"} dentro do bloco state === "done" — comparação sempre false causava erro TS2367.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.178',
     date: '02/06/2026',
     summary: 'Cache de análise IA no banco, Web Push PWA para o portal do cliente, backfill de distributed_at e trigger automático de push.',

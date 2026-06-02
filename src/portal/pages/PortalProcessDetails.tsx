@@ -363,7 +363,7 @@ const AiSummary: React.FC<{
             {ageLabel && <span className="text-[11px] text-slate-400">· {ageLabel}</span>}
           </div>
           {fromCache && (
-            <button onClick={onGenerate} disabled={state === 'loading'}
+            <button onClick={onGenerate}
               className="text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-orange-600 hover:underline">
               Atualizar
             </button>
