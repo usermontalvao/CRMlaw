@@ -21,35 +21,51 @@ interface NotificationPayload {
 
 async function createNotification(payload: NotificationPayload) {
   // Deduplicação:
-  // - se metadata.dedupe_key existir: dedupe permanente por (user_id,type,requirement_id?,deadline_id?,appointment_id?,process_id?,intimation_id?,dedupe_key)
-  // - caso contrário: dedupe por 24h (como era antes)
+  // - se metadata.dedupe_key existir: dedupe PERMANENTE apenas por (user_id, type, dedupe_key)
+  //   NÃO adicionar condições extras de NULL — elas causam falso-negativo e re-envio.
+  // - caso contrário: dedupe por 24h usando as foreign keys presentes
   const dedupeKey = payload.metadata?.dedupe_key;
-  let existingQuery = supabase
-    .from("user_notifications")
-    .select("id")
-    .eq("user_id", payload.user_id)
-    .eq("type", payload.type)
-    .eq("deadline_id", payload.deadline_id || null)
-    .eq("appointment_id", payload.appointment_id || null)
-    .eq("process_id", payload.process_id || null)
-    .eq("intimation_id", payload.intimation_id || null)
-    .eq("requirement_id", payload.requirement_id || null)
-    .limit(1);
 
   if (dedupeKey) {
-    existingQuery = existingQuery.filter('metadata->>dedupe_key', 'eq', String(dedupeKey));
+    const { data: existing } = await supabase
+      .from("user_notifications")
+      .select("id")
+      .eq("user_id", payload.user_id)
+      .eq("type", payload.type)
+      .filter("metadata->>dedupe_key", "eq", String(dedupeKey))
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      console.log(`⏭️ Notificação duplicada ignorada: ${payload.title}`);
+      return null;
+    }
   } else {
-    existingQuery = existingQuery.gte(
-      "created_at",
-      new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    );
-  }
+    // Sem dedupe_key: janela de 24h com as colunas de FK presentes no payload
+    const applyNullableEq = (
+      q: ReturnType<typeof supabase.from>,
+      col: string,
+      val: string | undefined
+    ) => (val ? (q as any).eq(col, val) : (q as any).is(col, null));
 
-  const { data: existing } = await existingQuery;
+    let existingQuery = supabase
+      .from("user_notifications")
+      .select("id")
+      .eq("user_id", payload.user_id)
+      .eq("type", payload.type)
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-  if (existing && existing.length > 0) {
-    console.log(`⏭️ Notificação duplicada ignorada: ${payload.title}`);
-    return null;
+    existingQuery = applyNullableEq(existingQuery as any, "deadline_id", payload.deadline_id);
+    existingQuery = applyNullableEq(existingQuery as any, "appointment_id", payload.appointment_id);
+    existingQuery = applyNullableEq(existingQuery as any, "process_id", payload.process_id);
+    existingQuery = applyNullableEq(existingQuery as any, "intimation_id", payload.intimation_id);
+    existingQuery = applyNullableEq(existingQuery as any, "requirement_id", payload.requirement_id);
+
+    const { data: existing } = await (existingQuery as any).limit(1);
+
+    if (existing && existing.length > 0) {
+      console.log(`⏭️ Notificação duplicada ignorada: ${payload.title}`);
+      return null;
+    }
   }
 
   const { data, error } = await supabase
@@ -276,12 +292,9 @@ async function checkUrgentIntimations() {
 
   console.log(`📋 ${analyses?.length || 0} intimações urgentes encontradas`);
 
-  const { data: users } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("is_active", true);
-
-  if (!users || users.length === 0) return;
+  // Apenas usuários com acesso ao módulo intimacoes (respeita role_permissions + overrides)
+  const userIds = await getUsersWithModuleAccess("intimacoes");
+  if (userIds.length === 0) return;
 
   for (const analysis of analyses || []) {
     const intimation = analysis.djen_comunicacoes;
@@ -294,9 +307,9 @@ async function checkUrgentIntimations() {
     const title = "⚠️ Intimação Urgente";
     const message = `${prazoInfo} • Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`;
 
-    for (const user of users) {
+    for (const userId of userIds) {
       await createNotification({
-        user_id: user.user_id,
+        user_id: userId,
         title,
         message,
         type: "intimation_new",
@@ -305,6 +318,7 @@ async function checkUrgentIntimations() {
           urgency: analysis.urgency,
           deadline_days: analysis.deadline_days,
           tribunal: intimation.sigla_tribunal,
+          dedupe_key: `urgent_intimation_${intimation.id}`,
         },
       });
     }
@@ -314,12 +328,9 @@ async function checkUrgentIntimations() {
 async function checkRequirementAlerts() {
   console.log("📌 Verificando alertas de requerimentos (MS / tempo em análise)...");
 
-  const { data: users } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("is_active", true);
-
-  if (!users || users.length === 0) return;
+  // Apenas usuários com acesso ao módulo requerimentos (respeita role_permissions + overrides)
+  const userIds = await getUsersWithModuleAccess("requerimentos");
+  if (userIds.length === 0) return;
 
   const { data: requirements, error } = await supabase
     .from("requirements")
@@ -364,9 +375,9 @@ async function checkRequirementAlerts() {
     const message = messageParts.join(" • ");
     const dedupeKey = `requirement_alert_${req.id}_${milestone}`;
 
-    for (const user of users) {
+    for (const userId of userIds) {
       await createNotification({
-        user_id: user.user_id,
+        user_id: userId,
         title,
         message,
         type: "requirement_alert",
@@ -384,44 +395,196 @@ async function checkRequirementAlerts() {
   }
 }
 
+// Retorna os user_ids de todos os usuários ativos com acesso (can_view) ao módulo,
+// respeitando role_permissions e user_module_overrides individuais.
+async function getUsersWithModuleAccess(module: string): Promise<string[]> {
+  // 1. Roles que têm can_view no módulo
+  const { data: rolePerms } = await supabase
+    .from("role_permissions")
+    .select("role")
+    .eq("module", module)
+    .eq("can_view", true);
+
+  const allowedRoles = new Set((rolePerms || []).map((r: any) => r.role.toLowerCase()));
+
+  // 2. Usuários ativos cuja role está na lista permitida
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, role")
+    .eq("is_active", true);
+
+  const now = new Date().toISOString();
+
+  // 3. Overrides individuais não expirados
+  const { data: overrides } = await supabase
+    .from("user_module_overrides")
+    .select("user_id, can_view")
+    .eq("module", module)
+    .or(`expires_at.is.null,expires_at.gt.${now}`);
+
+  const overrideMap = new Map<string, boolean>();
+  for (const o of overrides || []) overrideMap.set(o.user_id, o.can_view);
+
+  const userIds: string[] = [];
+  for (const p of profiles || []) {
+    if (!p.user_id) continue;
+    const roleMatch = allowedRoles.has((p.role || "").toLowerCase());
+    const override = overrideMap.get(p.user_id);
+    // Override tem prioridade sobre a role
+    const hasAccess = override !== undefined ? override : roleMatch;
+    if (hasAccess) userIds.push(p.user_id);
+  }
+
+  return userIds;
+}
+
+// Busca o client_id do portal pelo email ou CPF do signatário.
+// Emails do portal seguem o padrão: public+{auth_user_id}@crm.local
+async function findPortalClientId(email: string, cpf?: string | null): Promise<string | null> {
+  const match = email?.match(/^public\+([0-9a-f-]{36})@crm\.local$/i);
+  if (match) {
+    const authUserId = match[1];
+    const { data } = await supabase
+      .from("client_portal_users")
+      .select("client_id")
+      .eq("auth_user_id", authUserId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (data?.client_id) return data.client_id;
+  }
+
+  if (cpf) {
+    const cpfClean = cpf.replace(/\D/g, "");
+    if (cpfClean.length === 11) {
+      const { data } = await supabase
+        .from("client_portal_users")
+        .select("client_id")
+        .eq("cpf", cpfClean)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (data?.client_id) return data.client_id;
+    }
+  }
+
+  return null;
+}
+
+async function createPortalNotification(payload: {
+  client_id: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata: Record<string, any>;
+}) {
+  const dedupeKey = payload.metadata?.dedupe_key;
+
+  if (dedupeKey) {
+    const { data: existing } = await supabase
+      .from("portal_client_notifications")
+      .select("id")
+      .eq("client_id", payload.client_id)
+      .eq("type", payload.type)
+      .filter("metadata->>dedupe_key", "eq", String(dedupeKey))
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      console.log(`⏭️ Notificação portal duplicada ignorada para client ${payload.client_id}`);
+      return null;
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("portal_client_notifications")
+    .insert({ ...payload, is_read: false, created_at: new Date().toISOString() })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Erro ao criar notificação portal:", error);
+    return null;
+  }
+
+  console.log(`✅ Notificação portal criada: ${payload.title} → client ${payload.client_id}`);
+  return data;
+}
+
 async function checkPendingSignatures() {
   console.log("✍️ Verificando assinaturas pendentes...");
 
-  // Buscar signatários pendentes há mais de 1 dia
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const today = new Date().toISOString().split("T")[0];
 
+  // Apenas signers de requests genuinamente abertos
   const { data: pendingSigners, error } = await supabase
     .from("signature_signers")
-    .select("*, signature_requests(document_name, created_by)")
+    .select("id, name, email, cpf, created_at, signature_requests!inner(document_name, status)")
     .eq("status", "pending")
-    .lte("created_at", oneDayAgo.toISOString());
+    .eq("signature_requests.status", "pending")
+    .lte("created_at", oneDayAgo);
 
   if (error) {
     console.error("Erro ao buscar assinaturas pendentes:", error);
     return;
   }
 
-  console.log(`📋 ${pendingSigners?.length || 0} assinaturas pendentes encontradas`);
+  const signers = pendingSigners || [];
+  console.log(`📋 ${signers.length} assinaturas realmente pendentes`);
 
-  for (const signer of pendingSigners || []) {
-    const request = signer.signature_requests;
-    if (!request || !request.created_by) continue;
+  // Carregar mapa email → user_id de todos os usuários CRM ativos (para identificar se o
+  // signatário é um membro da equipe que também precisa assinar)
+  const { data: crmProfiles } = await supabase
+    .from("profiles")
+    .select("user_id, email")
+    .eq("is_active", true);
 
-    const title = "⏳ Assinatura Pendente";
-    const message = `${signer.name} ainda não assinou "${request.document_name}"`;
+  const crmEmailToUserId = new Map<string, string>();
+  for (const p of crmProfiles || []) {
+    if (p.email) crmEmailToUserId.set(p.email.toLowerCase(), p.user_id);
+  }
 
-    await createNotification({
-      user_id: request.created_by,
-      title,
-      message,
-      type: "process_updated",
-      metadata: {
-        signer_name: signer.name,
-        signer_email: signer.email,
-        document_name: request.document_name,
-        pending_since: signer.created_at,
-      },
-    });
+  for (const signer of signers) {
+    const request = (signer as any).signature_requests;
+    if (!request) continue;
+
+    const dedupeKey = `pending_sig_${signer.id}_${today}`;
+    const signerEmail = (signer.email || "").toLowerCase();
+
+    // 1. Signatário é usuário CRM? (ex: advogado que também precisa assinar)
+    //    Notifica ele diretamente no CRM para que não esqueça.
+    const crmUserId = signerEmail ? crmEmailToUserId.get(signerEmail) : undefined;
+    if (crmUserId) {
+      await createNotification({
+        user_id: crmUserId,
+        title: "✍️ Você ainda não assinou um documento",
+        message: `Sua assinatura está pendente em "${request.document_name}"`,
+        type: "signature_pending_self",
+        metadata: {
+          document_name: request.document_name,
+          signer_id: signer.id,
+          dedupe_key: dedupeKey,
+        },
+      });
+      continue; // usuário CRM identificado — não precisa verificar portal
+    }
+
+    // 2. Signatário é cliente com conta no portal?
+    //    Lembra o cliente de que ele ainda precisa assinar.
+    const portalClientId = await findPortalClientId(signer.email, signer.cpf);
+    if (portalClientId) {
+      await createPortalNotification({
+        client_id: portalClientId,
+        type: "signature_pending",
+        title: "📝 Documento aguardando sua assinatura",
+        message: `O documento "${request.document_name}" aguarda a sua assinatura.`,
+        metadata: { document_name: request.document_name, signer_id: signer.id, dedupe_key: dedupeKey },
+      });
+      continue;
+    }
+
+    // 3. Signatário externo sem portal → skip.
+    //    O link de assinatura já foi enviado por e-mail quando o request foi criado.
+    //    Não há motivo para notificar o advogado criador — ele não pode agir.
+    console.log(`⏭️ Signatário externo sem portal, pulando: ${signer.name}`);
   }
 }
 

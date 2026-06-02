@@ -6,6 +6,7 @@ export type UserNotificationType =
   | 'process_created'
   | 'process_updated'
   | 'signature_completed'
+  | 'signature_pending_self'
   | 'intimation_new'
   | 'intimation_urgent'
   | 'deadline_reminder'

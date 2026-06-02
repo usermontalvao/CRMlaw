@@ -1622,7 +1622,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             // Toast: auto-dismiss em 6s, cancelado se o usuário interagir antes
             setToast({ id: msg.id, roomId: msg.room_id, senderUserId: msg.user_id, senderName, avatarUrl, senderRole: profile?.role, senderOab: profile?.oab, preview });
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-            toastTimerRef.current = window.setTimeout(() => setToast(null), 6000);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 7000);
 
             if (!profile) {
               void profileService.getProfile(msg.user_id).then((p) => {
@@ -1772,9 +1772,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         @keyframes chatGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0)}50%{box-shadow:0 0 0 8px rgba(251,146,60,.15)}}
         @keyframes chatLauncherGlow{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 0 rgba(251,146,60,.4)}50%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 12px rgba(251,146,60,0)}}
         @keyframes chatTypingDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-3px);opacity:1}}
-        @keyframes chatToastIn{0%{opacity:0;transform:translateX(36px) scale(.91)}55%{opacity:1;transform:translateX(-6px) scale(1.015)}75%{transform:translateX(4px) scale(.997)}100%{opacity:1;transform:translateX(0) scale(1)}}
+        @keyframes chatToastIn{0%{opacity:0;transform:translateY(20px) scale(.92)}55%{opacity:1;transform:translateY(-4px) scale(1.02)}75%{transform:translateY(2px) scale(.995)}100%{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes chatToastOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(10px) scale(.95)}}
+        @keyframes chatToastProgress{0%{transform:scaleX(1)}100%{transform:scaleX(0)}}
         @keyframes chatWaveBar{0%,100%{transform:scaleY(.22);opacity:.45}50%{transform:scaleY(1);opacity:1}}
-        @keyframes chatToastBarShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
         .chat-scrollbar::-webkit-scrollbar{width:6px}
         .chat-scrollbar::-webkit-scrollbar-track{background:transparent}
         .chat-scrollbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
@@ -2678,68 +2679,82 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
       {showToast && toast && (
         <div
-          className="mb-3 w-[380px] max-w-[calc(100vw-24px)] rounded-[20px] text-white overflow-hidden relative"
+          className="mb-3 w-[300px] max-w-[calc(100vw-24px)] overflow-hidden"
           style={{
-            animation: 'chatToastIn 500ms cubic-bezier(.22,1,.36,1) both',
-            background: 'linear-gradient(180deg, rgba(15,23,42,.97) 0%, rgba(10,15,28,.98) 100%)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            boxShadow: '0 30px 70px -10px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.08)',
+            background: '#ffffff',
+            borderRadius: '20px',
+            boxShadow: '0 8px 30px rgba(0,0,0,.13), 0 2px 6px rgba(0,0,0,.07)',
+            animation: 'chatToastIn 420ms cubic-bezier(.34,1.56,.64,1) both, chatToastOut 550ms 6.5s ease-in both',
           }}
         >
-          {/* Barra de destaque âmbar com shimmer */}
-          <div
-            className="h-[3px]"
-            style={{
-              background: 'linear-gradient(90deg, #f97316 0%, #fbbf24 30%, #fff7 50%, #fbbf24 70%, #f97316 100%)',
-              backgroundSize: '200% auto',
-              animation: 'chatToastBarShimmer 2s linear infinite',
-            }}
-          />
-          <div className="px-4 py-3 flex items-center gap-3">
-            <button
-              type="button"
-              className="shrink-0"
-              onClick={async () => {
-                if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
-                setToast(null);
-                setNotifyCount(0);
-                await ensureAudioContext();
-                setOpen(true);
-                setSelectedRoomId(toast.roomId);
-              }}
-            >
-              <Avatar src={toast.avatarUrl} name={toast.senderName} />
-            </button>
-            <button
-              type="button"
-              className="min-w-0 flex-1 text-left"
-              onClick={async () => {
-                if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
-                setToast(null);
-                setNotifyCount(0);
-                await ensureAudioContext();
-                setOpen(true);
-                setSelectedRoomId(toast.roomId);
-              }}
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="text-[13.5px] font-semibold truncate tracking-tight">{toast.senderName}</div>
-                {toastVerified && <VerifiedBadge variant={toastVerified} />}
-              </div>
-              <div className="text-[11.5px] text-white/65 truncate mt-0.5">{toast.preview}</div>
-            </button>
+          {/* Header: ícone + origem + tempo + fechar */}
+          <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
+            <div className="h-5 w-5 rounded-full shrink-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
+              <MessageCircle className="w-3 h-3 text-white" />
+            </div>
+            <span className="flex-1 text-[11.5px] font-semibold text-gray-400">Mensagens</span>
+            <span className="text-[11.5px] text-gray-400">agora</span>
             <button
               type="button"
               onClick={() => {
                 if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
                 setToast(null);
               }}
-              className="shrink-0 h-7 w-7 rounded-full hover:bg-white/10 active:scale-95 flex items-center justify-center transition-all"
+              className="ml-1 h-6 w-6 rounded-full bg-gray-100 hover:bg-gray-200 active:scale-90 flex items-center justify-center transition-all shrink-0"
               title="Fechar"
             >
-              <X className="w-3.5 h-3.5 text-white/60" />
+              <X className="w-3.5 h-3.5 text-gray-500" />
             </button>
+          </div>
+
+          {/* Divisor */}
+          <div className="h-px bg-gray-100 mx-4" />
+
+          {/* Corpo */}
+          <button
+            type="button"
+            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            onClick={async () => {
+              if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+              setToast(null);
+              setNotifyCount(0);
+              await ensureAudioContext();
+              setOpen(true);
+              setSelectedRoomId(toast.roomId);
+            }}
+          >
+            {/* Avatar com anel gradiente estilo Instagram */}
+            <div className="shrink-0 p-[2.5px] rounded-full" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
+              <div className="p-[2px] bg-white rounded-full">
+                {toast.avatarUrl ? (
+                  <img src={toast.avatarUrl} alt={toast.senderName} className="h-10 w-10 rounded-full object-cover block" />
+                ) : (
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
+                    {toast.senderName.split(' ').filter(Boolean).map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Texto */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[13.5px] font-bold text-gray-900 truncate">{toast.senderName}</span>
+                {toastVerified && <VerifiedBadge variant={toastVerified} />}
+              </div>
+              <p className="text-[12.5px] text-gray-500 truncate mt-0.5">{toast.preview}</p>
+            </div>
+          </button>
+
+          {/* Barra de progresso que depleta */}
+          <div className="h-[3px] overflow-hidden" style={{ borderRadius: '0 0 20px 20px' }}>
+            <div
+              className="h-full w-full origin-left"
+              style={{
+                background: 'linear-gradient(90deg,#f97316,#fbbf24)',
+                animation: 'chatToastProgress 7s linear both',
+              }}
+            />
           </div>
         </div>
       )}

@@ -292,6 +292,17 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   const processedNotificationIds = useRef<Set<string>>(new Set());
   const processedNotificationKeys = useRef<Set<string>>(new Set());
 
+  // Ref espelhando soundEnabled — evita recriar canal realtime a cada toggle de som
+  const soundEnabledRef = useRef(soundEnabled);
+  useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
+
+  // Throttle de som: máx 1 beep a cada 3 s independente de quantas notificações cheguem
+  const lastSoundRef = useRef(0);
+
+  // Fila para batching: notificações chegando em rajada são processadas juntas num único setState
+  const pendingQueue = useRef<UserNotification[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     pushNotifications.initialize().catch(() => {});
   }, []);
@@ -419,6 +430,37 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     playNotificationSound();
   };
 
+  // Processa toda a fila pendente num único ciclo de setState (evita N re-renders por rajada)
+  const flushPending = useCallback(() => {
+    const queued = pendingQueue.current.splice(0);
+    if (!queued.length) return;
+
+    setNotifications(prev => dedupeNotifications([...queued, ...prev]).slice(0, 50));
+
+    setPopupNotifications(prev => {
+      let next = [...prev];
+      for (const n of queued) {
+        const key = getNotificationDedupeKey(n);
+        if (!next.some(x => getNotificationDedupeKey(x) === key)) {
+          next.push(n);
+        }
+      }
+      return next.slice(-MAX_POPUPS);
+    });
+
+    // Som throttled: 1 beep por rajada, no máximo 1 a cada 3 s
+    const now = Date.now();
+    if (soundEnabledRef.current && now - lastSoundRef.current >= 3000) {
+      lastSoundRef.current = now;
+      playNotificationSound();
+    }
+
+    for (const n of queued) {
+      showBrowserNotification(n).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dedupeNotifications, getNotificationDedupeKey]);
+
   // Toggle som
   const toggleSound = () => {
     const newValue = !soundEnabled;
@@ -520,6 +562,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       if (moduleKey) {
         onNavigateToModule(moduleKey as any);
       }
+    } else if (notification.type === 'signature_pending_self') {
+      const signerId = notification.metadata?.signer_id;
+      console.log('➡️ Navegando para assinaturas (self-pending), signerId:', signerId);
+      onNavigateToModule('assinaturas');
     } else if (notification.type === 'process_created' || notification.type === 'process_updated' || notification.process_id) {
       console.log('➡️ Navegando para processos');
       onNavigateToModule('processos');
@@ -592,17 +638,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   // Carregar ao montar e polling
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 30000); // 30s
+    const interval = setInterval(loadNotifications, 60000); // 60s — realtime já traz as novas
     return () => clearInterval(interval);
   }, [loadNotifications]);
 
   // Realtime: escutar novas notificações
+  // IMPORTANTE: soundEnabled propositalmente fora das deps — lido via soundEnabledRef para evitar
+  // recriar o canal a cada toggle de som (o que causava canais zumbis e processamento duplicado).
   useEffect(() => {
     if (!user?.id) return;
 
     // Nome único do canal para evitar conflitos com StrictMode
     const channelName = `user_notifications_${user.id}_${Date.now()}`;
-    
+
     const channel = supabase
       .channel(channelName)
       .on(
@@ -621,54 +669,36 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
           }
 
           const dedupeKey = getNotificationDedupeKey(newNotification);
-          
+
           // Evitar processar a mesma notificação duas vezes (StrictMode)
-          if (processedNotificationIds.current.has(newNotification.id)) {
-            console.log('⏭️ Notificação já processada, ignorando:', newNotification.id);
-            return;
+          // Cap em 1000 entradas para evitar vazamento de memória em sessões longas
+          if (processedNotificationIds.current.size > 1000) {
+            processedNotificationIds.current.clear();
           }
+          if (processedNotificationIds.current.has(newNotification.id)) return;
           processedNotificationIds.current.add(newNotification.id);
 
-          if (processedNotificationKeys.current.has(dedupeKey)) {
-            console.log('⏭️ Notificação já processada (dedupeKey), ignorando:', dedupeKey);
-            return;
+          if (processedNotificationKeys.current.size > 1000) {
+            processedNotificationKeys.current.clear();
           }
+          if (processedNotificationKeys.current.has(dedupeKey)) return;
           processedNotificationKeys.current.add(dedupeKey);
-          
-          console.log('🔔 Nova notificação recebida via Realtime:', newNotification.id, newNotification.title);
-          
-          // Adicionar no topo da lista
-          setNotifications(prev => {
-            const next = dedupeNotifications([newNotification, ...prev]);
-            return next.slice(0, 50);
-          });
-          
-          // Mostrar popup na tela (estilo Facebook/Instagram)
-          console.log('🎯 Adicionando popup para notificação:', newNotification.id);
-          setPopupNotifications(prev => {
-            const already = prev.some((n) => getNotificationDedupeKey(n) === dedupeKey);
-            if (already) return prev;
-            const updated = [...prev, newNotification].slice(-MAX_POPUPS);
-            console.log('📦 Popups ativos:', updated.length);
-            return updated;
-          });
-          
-          // Tocar som
-          if (soundEnabled) {
-            playNotificationSound();
-          }
 
-          showBrowserNotification(newNotification).catch(() => {});
+          // Enfileira a notificação e agenda flush em lote (150 ms de debounce)
+          // Notificações em rajada são processadas num único setState em vez de N re-renders
+          pendingQueue.current.push(newNotification);
+          if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+          flushTimerRef.current = setTimeout(flushPending, 150);
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Canal Realtime status:', status);
-      });
+      .subscribe();
 
     return () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user?.id, soundEnabled, canSeeIntimacoes, isIntimationNotification]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, canSeeIntimacoes, isIntimationNotification, getNotificationDedupeKey, flushPending]);
 
   // Ícone por tipo e urgência
   const getIcon = (notification: UserNotification) => {
@@ -692,6 +722,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       case 'process_updated':
         return <Briefcase className="w-4 h-4 text-cyan-500" />;
       case 'signature_completed':
+      case 'signature_pending_self':
         return <PenTool className="w-4 h-4 text-emerald-500" />;
       case 'poll_invite':
         return <Bell className="w-4 h-4 text-fuchsia-500" />;

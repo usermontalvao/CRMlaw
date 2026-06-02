@@ -356,14 +356,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     });
     console.log(`👥 Mapa de clientes criado com ${clientNameMap.size} nomes`);
 
-    // Criar mapa de números de processos (normalizado) -> process_id
+    // Criar mapa de números de processos -> process_id
+    // Indexa por formato original E por dígitos apenas, para cobrir variações de formatação
+    // entre o que o DJEN retorna e o que está cadastrado no CRM.
     const processNumberMap = new Map<string, string>();
+    const toDigits = (v: string) => v.replace(/\D/g, '');
     if (processesData) {
       processesData.forEach(process => {
-        const normalizedNumber = (process.process_code || '').trim().toUpperCase();
-        processNumberMap.set(normalizedNumber, process.id);
+        const original = (process.process_code || '').trim().toUpperCase();
+        const digits = toDigits(original);
+        if (original) processNumberMap.set(original, process.id);
+        if (digits && digits !== original) processNumberMap.set(digits, process.id);
       });
-      console.log(`⚖️ Mapa de processos criado com ${processNumberMap.size} números`);
+      console.log(`⚖️ Mapa de processos criado com ${processNumberMap.size} entradas`);
     }
 
     let linkedCount = 0;
@@ -398,16 +403,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         }
       }
 
-      // Verificar se o número do processo corresponde a algum processo cadastrado
-      if (intimation.numero_processo && !intimation.process_id) {
-        const normalizedProcessNumber = intimation.numero_processo.trim().toUpperCase();
-        const matchedProcessId = processNumberMap.get(normalizedProcessNumber);
-        
+      // Verificar se o número do processo corresponde a algum processo cadastrado.
+      // Tenta primeiro o formato original, depois só dígitos, depois o numero_processo_mascara.
+      if (!intimation.process_id) {
+        const candidates = [
+          intimation.numero_processo,
+          intimation.numero_processo_mascara,
+        ].filter(Boolean) as string[];
+
+        let matchedProcessId: string | undefined;
+        let matchedBy = '';
+
+        for (const candidate of candidates) {
+          const original = candidate.trim().toUpperCase();
+          const digits = toDigits(original);
+          matchedProcessId = processNumberMap.get(original) ?? processNumberMap.get(digits);
+          if (matchedProcessId) { matchedBy = candidate; break; }
+        }
+
         if (matchedProcessId) {
           try {
             await djenLocalService.vincularProcesso(intimation.id, matchedProcessId);
             linkedCount++;
-            console.log(`🔗 Vinculação automática: processo "${intimation.numero_processo}" -> ${matchedProcessId.substring(0, 8)}`);
+            console.log(`🔗 Vinculação automática: processo "${matchedBy}" -> ${matchedProcessId.substring(0, 8)}`);
           } catch (err) {
             console.error(`Erro ao vincular processo automaticamente:`, err);
           }
@@ -1094,9 +1112,41 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return Array.from(tribunals).sort();
   }, [intimations]);
 
-  // Contadores
-  const unreadCount = intimations.filter((i) => !i.lida).length;
-  const readCount = intimations.filter((i) => i.lida).length;
+  // Base filtrada sem statusFilter — usada para contar as abas corretamente.
+  // Garante que os contadores reflitam apenas o que o filtro ativo deixa passar,
+  // evitando o bug onde a aba mostra "37" mas a lista está vazia.
+  const baseFiltered = useMemo(() => {
+    let f = intimations;
+    if (tribunalFilter !== 'all') f = f.filter((i) => i.sigla_tribunal === tribunalFilter);
+    if (urgencyFilter !== 'all') f = f.filter((i) => {
+      const analysis = aiAnalysis.get(i.id);
+      return analysis && analysis.urgency === urgencyFilter;
+    });
+    if (dateFilter !== 'all') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (dateFilter === '60days' ? 60 : dateFilter === '90days' ? 90 : 30));
+      f = f.filter((i) => new Date(i.data_disponibilizacao) >= cutoff);
+    }
+    if (customDateStart) f = f.filter((i) => new Date(i.data_disponibilizacao) >= new Date(customDateStart));
+    if (customDateEnd) {
+      const end = new Date(customDateEnd);
+      end.setHours(23, 59, 59, 999);
+      f = f.filter((i) => new Date(i.data_disponibilizacao) <= end);
+    }
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      f = f.filter((i) =>
+        i.numero_processo?.toLowerCase().includes(term) ||
+        i.numero_processo_mascara?.toLowerCase().includes(term) ||
+        i.texto?.toLowerCase().includes(term)
+      );
+    }
+    return f;
+  }, [intimations, tribunalFilter, urgencyFilter, dateFilter, customDateStart, customDateEnd, searchTerm, aiAnalysis]);
+
+  // Contadores das abas — derivados do baseFiltered para ficarem em sincronia com os filtros ativos
+  const unreadCount = baseFiltered.filter((i) => !i.lida).length;
+  const readCount = baseFiltered.filter((i) => i.lida).length;
 
   const newTodayCount = useMemo(() => {
     const startOfDay = startOfToday();
@@ -1188,7 +1238,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     filteredIntimations.forEach((intimation) => {
       const processId = (intimation as any).process_id as string | null | undefined;
       const processCode = processId ? processCodeById.get(processId) : undefined;
-      const processKey = processCode || intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número';
+      const isSigiloso = !intimation.numero_processo && !intimation.numero_processo_mascara
+        && (intimation.texto || '').toLowerCase().includes('sigiloso');
+      const processKey = processCode || intimation.numero_processo_mascara || intimation.numero_processo
+        || (isSigiloso ? '🔒 Processo Sigiloso' : 'Sem número');
       if (!groups.has(processKey)) {
         groups.set(processKey, []);
       }
@@ -1744,11 +1797,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           {/* Underline tabs */}
           <div className="flex items-center gap-1 flex-shrink-0">
             {([
-              { key: 'unread'   as const, label: 'Não lidas',   count: unreadCount,                                 highlight: true },
-              { key: 'linked'   as const, label: 'Vinculadas',  count: intimations.filter(isLinked).length,        highlight: false },
-              { key: 'unlinked' as const, label: 'Sem vínculo', count: intimations.filter(isUnlinked).length,      highlight: false },
+              { key: 'unread'   as const, label: 'Não lidas',   count: unreadCount,                                  highlight: true },
+              { key: 'linked'   as const, label: 'Vinculadas',  count: baseFiltered.filter(isLinked).length,       highlight: false },
+              { key: 'unlinked' as const, label: 'Sem vínculo', count: baseFiltered.filter(isUnlinked).length,     highlight: false },
               { key: 'read'     as const, label: 'Lidas',       count: readCount,                                  highlight: false },
-              { key: 'all'      as const, label: 'Todas',       count: intimations.length,                         highlight: false },
+              { key: 'all'      as const, label: 'Todas',       count: baseFiltered.length,                        highlight: false },
             ]).map((tab) => {
               const active = statusFilter === tab.key;
               return (

@@ -869,6 +869,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.189',
+    date: '02/06/2026',
+    summary: 'Fix crítico: intimações urgentes não eram mais reenviadas pelo scheduler. Melhorias no widget de chat e notificações.',
+    modules: [
+      { moduleId: 'Notificações', changes: [
+        { type: 'fix' as const, title: 'Intimações urgentes sendo reenviadas repetidamente', description: 'A lógica de deduplicação do scheduler aplicava condições NULL desnecessárias quando dedupe_key estava presente, causando falso-negativo e re-envio a cada ciclo. Agora com dedupe_key usa apenas user_id + type + dedupe_key.' },
+        { type: 'fix' as const, title: 'limit(1) na query de dedupe não era atribuído', description: 'Resultado do .limit(1) não era salvo de volta na variável, causando query sem limite. Corrigido no caminho sem dedupe_key.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.188',
     date: '02/06/2026',
     summary: 'Módulo Chat: aba TICKET com aceitar, encerrar e reabrir atendimentos. Histórico único por cliente.',
