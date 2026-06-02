@@ -869,14 +869,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.10.186',
+    version: '1.10.187',
     date: '02/06/2026',
-    summary: 'Fix crítico: horário de audiências no calendário agora usa timezone correto de Cuiabá (UTC-4).',
+    summary: 'Fix crítico: horário de audiências no calendário agora usa timezone correto de Cuiabá (UTC-4). Ajustes finais no chat portal.',
     modules: [
       { moduleId: 'Processos', changes: [
         { type: 'fix' as const, title: 'Edição de audiência não atualizava o calendário', description: 'Ao editar data/hora da audiência no módulo de processos, o evento do calendário não era atualizado. Corrigido: start_at é atualizado com offset -04:00 (Cuiabá).' },
         { type: 'fix' as const, title: 'Trigger de sincronização usava UTC em vez de Cuiabá', description: 'O trigger sync_process_hearing_calendar usava +00 (UTC) ao montar o timestamp, causando exibição 4 horas antes do correto. Corrigido para AT TIME ZONE America/Cuiaba.' },
         { type: 'fix' as const, title: 'Sincronização reversa calendário → processo usava São Paulo', description: 'O trigger _trg_calendar_hearing_update_sync usava America/Sao_Paulo (UTC-3) em vez de America/Cuiaba (UTC-4), gerando 1h de diferença ao editar pela agenda.' },
+      ]},
+      { moduleId: 'Chat', changes: [
+        { type: 'improvement' as const, title: 'Ajustes finais no chat portal e widget flutuante', description: 'Correções e melhorias no ChatFloatingWidget, PortalMessages, chat.service e tipos de chat.' },
       ]},
     ],
   },

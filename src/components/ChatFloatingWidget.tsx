@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, Lock, Unlock } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -483,6 +483,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [chatTab, setChatTab] = useState<'equipe' | 'ticket'>('equipe');
   const [ticketTyping, setTicketTyping] = useState<Map<string, string>>(new Map());
   const [liveTypingText, setLiveTypingText] = useState('');
+  const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -535,6 +536,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioUrlRef = useRef<string | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const portalAttendantTypingRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const nudgeCooldownTimerRef = useRef<number | null>(null);
 
@@ -927,12 +929,25 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       })
       .subscribe();
     typingChannelRef.current = channel;
+
+    // Para salas portal_client, cria canal para broadcast de digitação ao cliente
+    const selectedRoom = rooms.find(r => r.id === selectedRoomId);
+    if (selectedRoom?.portal_client_id) {
+      const portalCh = supabase.channel(`portal-attendant-typing:${selectedRoomId}`);
+      portalCh.subscribe();
+      portalAttendantTypingRef.current = portalCh;
+    }
+
     return () => {
       supabase.removeChannel(channel);
       typingChannelRef.current = null;
       setTypingUsers([]);
+      if (portalAttendantTypingRef.current) {
+        supabase.removeChannel(portalAttendantTypingRef.current);
+        portalAttendantTypingRef.current = null;
+      }
     };
-  }, [selectedRoomId, user]);
+  }, [selectedRoomId, user, rooms]);
 
   // Typing indicator nas salas — subscibe a todos os canais quando a lista está visível
   useEffect(() => {
@@ -1272,10 +1287,21 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const handleSendMessage = useCallback(async () => {
     if (!user || !selectedRoomId || !messageText.trim() || sendingMessage) return;
     broadcastTyping(false);
+    void portalAttendantTypingRef.current?.send({
+      type: 'broadcast', event: 'typing', payload: { typing: false },
+    });
     if (typingTimeoutRef.current) { window.clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     setSendingMessage(true);
     const pendingReplyTo = replyTo;
     try {
+      // Auto-aceita ticket ao enviar primeira mensagem (evita responder sem aceitar)
+      // A mensagem de sistema "Atendimento iniciado" chega ao cliente ANTES da resposta
+      if (selectedRoom?.portal_client_id && !selectedRoom?.accepted_by && !selectedRoom?.created_by) {
+        await supabase.rpc('portal_accept_ticket', { p_room_id: selectedRoomId });
+        const list = await chatService.listRooms(user.id);
+        setRooms(list);
+      }
+
       await chatService.sendMessage({
         roomId: selectedRoomId,
         userId: user.id,
@@ -1356,14 +1382,22 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     const channels = ticketRooms.map(room => {
       const ch = supabase.channel(`portal-typing:${room.id}`);
       ch.on('broadcast', { event: 'typing' }, (payload: any) => {
-        const typingText = payload?.payload?.text ?? '';
-        setTicketTyping(prev => {
-          const next = new Map(prev);
-          next.set(room.id, typingText);
-          return next;
-        });
-        if (selectedRoomId === room.id) {
-          setLiveTypingText(typingText);
+        const typingText = (payload?.payload?.text ?? '').trim();
+
+        // Cancela timer anterior
+        const prev = typingClearTimers.current.get(room.id);
+        if (prev) clearTimeout(prev);
+
+        setTicketTyping(prev => { const n = new Map(prev); n.set(room.id, typingText); return n; });
+        if (selectedRoomId === room.id) setLiveTypingText(typingText);
+
+        // Auto-limpa após 4s sem atualização
+        if (typingText) {
+          const t = setTimeout(() => {
+            setTicketTyping(prev => { const n = new Map(prev); n.set(room.id, ''); return n; });
+            if (selectedRoomId === room.id) setLiveTypingText('');
+          }, 4000);
+          typingClearTimers.current.set(room.id, t);
         }
       }).subscribe();
       return ch;
@@ -1372,10 +1406,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
   }, [rooms, user, selectedRoomId]);
 
-  // Limpa live typing quando troca de sala
+  // Atualiza live typing quando troca de sala ou ticketTyping muda
   useEffect(() => {
-    setLiveTypingText(ticketTyping.get(selectedRoomId ?? '') ?? '');
+    setLiveTypingText((ticketTyping.get(selectedRoomId ?? '') ?? '').trim());
   }, [selectedRoomId, ticketTyping]);
+
+  // Limpa typing preview quando o cliente porta envia uma mensagem
+  useEffect(() => {
+    if (!selectedRoomId || !messages.length) return;
+    const last = messages[messages.length - 1];
+    // Só limpa quando a última mensagem é do cliente (user_id !== atendente)
+    if (last?.user_id === user?.id) return;
+    setLiveTypingText('');
+    setTicketTyping(prev => {
+      const n = new Map(prev);
+      n.set(selectedRoomId, '');
+      return n;
+    });
+  }, [messages, selectedRoomId, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -1697,8 +1745,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
   const otherUser = selectedRoom ? getOtherUserForRoom(selectedRoom) : null;
   const displayName = otherUser?.name || selectedRoom?.name || '';
-  const avatarUrl = otherUser?.avatar_url;
-  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
+  const avatarUrl = otherUser?.avatar_url || (selectedRoom as any)?.portal_client_avatar || null;
+  // Para salas portal: "online" se houve mensagem nos últimos 10 min
+  const portalRecentlyActive = !!selectedRoom?.portal_client_id &&
+    !!selectedRoom.last_message_at &&
+    (Date.now() - new Date(selectedRoom.last_message_at).getTime()) < 10 * 60 * 1000;
+  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : portalRecentlyActive;
   const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
 
@@ -1810,13 +1862,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       <span className="text-[14px] font-semibold tracking-tight truncate max-w-[160px]">{displayName}</span>
                       {headerVerified && <VerifiedBadge variant={headerVerified} />}
                     </div>
-                    {otherUser && !selectedRoom?.is_public && (
+                    {(otherUser || selectedRoom?.portal_client_id) && !selectedRoom?.is_public && (
                       <span className={`flex items-center gap-1.5 text-[11px] font-medium mt-0.5 ${headerOnline ? 'text-emerald-400' : 'text-white/40'}`}>
                         {headerOnline
-                          ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.7)] animate-pulse" />Online agora</>
-                          : otherUser.last_seen_at
-                            ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
-                            : 'Offline'}
+                          ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.7)] animate-pulse" />Ativo agora</>
+                          : selectedRoom?.portal_client_id
+                            ? 'Aguardando'
+                            : otherUser?.last_seen_at
+                              ? `visto ${formatLastSeen(otherUser.last_seen_at).replace(/^Online /, '').replace(/^Online$/, 'agora')}`
+                              : 'Offline'}
                       </span>
                     )}
                   </div>
@@ -1858,29 +1912,53 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               )}
             </div>
             <div className="flex items-center gap-1">
-              {/* Encerrar / Reabrir conversa — só em salas ticket */}
+              {/* Botões de ação — salas ticket */}
               {selectedRoomId && selectedRoom?.portal_client_id && (
-                <button
-                  type="button"
-                  title={selectedRoom.created_by ? 'Reabrir conversa' : 'Encerrar conversa'}
-                  onClick={async () => {
-                    if (!user) return;
-                    if (selectedRoom.created_by) {
-                      await supabase.rpc('portal_reopen_chat_room', { p_room_id: selectedRoomId });
-                    } else {
-                      await supabase.rpc('portal_close_chat_room', { p_room_id: selectedRoomId, p_closed_by: user.id });
-                    }
-                    const list = await chatService.listRooms(user.id);
-                    setRooms(list);
-                  }}
-                  className={`h-9 w-9 rounded-xl active:scale-95 transition-all duration-150 flex items-center justify-center ${
-                    selectedRoom.created_by
-                      ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                      : 'bg-white/[0.04] text-white/50 hover:bg-rose-500/20 hover:text-rose-400'
-                  }`}
-                >
-                  {selectedRoom.created_by ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                </button>
+                <>
+                  {/* Aceitar ticket — só se não foi aceito ainda e está aberto */}
+                  {!selectedRoom.accepted_by && !selectedRoom.created_by && (
+                    <button
+                      type="button"
+                      title="Aceitar atendimento"
+                      onClick={async () => {
+                        if (!user) return;
+                        await supabase.rpc('portal_accept_ticket', { p_room_id: selectedRoomId });
+                        const list = await chatService.listRooms(user.id);
+                        setRooms(list);
+                      }}
+                      className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 active:scale-95 transition-all duration-150 text-[12px] font-semibold"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      Aceitar
+                    </button>
+                  )}
+                  {/* Encerrar / Reabrir */}
+                  <button
+                    type="button"
+                    title={selectedRoom.created_by ? 'Reabrir conversa' : 'Encerrar atendimento'}
+                    onClick={async () => {
+                      if (!user) return;
+                      if (selectedRoom.created_by) {
+                        await supabase.rpc('portal_reopen_chat_room', { p_room_id: selectedRoomId });
+                      } else {
+                        const toTC = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+                        const firstName = toTC(selectedRoom.name || 'Cliente').split(' ')[0];
+                        const farewell = `Sr. ${firstName}, agradecemos seu contato. Este atendimento foi encerrado. Caso precise de mais informações, utilize o botão "Iniciar nova conversa". Estamos à disposição.`;
+                        await chatService.sendMessage({ roomId: selectedRoomId, userId: user.id, content: farewell });
+                        await supabase.rpc('portal_close_chat_room', { p_room_id: selectedRoomId, p_closed_by: user.id });
+                      }
+                      const list = await chatService.listRooms(user.id);
+                      setRooms(list);
+                    }}
+                    className={`h-9 w-9 rounded-xl active:scale-95 transition-all duration-150 flex items-center justify-center ${
+                      selectedRoom.created_by
+                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                        : 'bg-white/[0.04] text-white/50 hover:bg-rose-500/20 hover:text-rose-400'
+                    }`}
+                  >
+                    {selectedRoom.created_by ? <RotateCcw className="w-4 h-4" /> : <PhoneOff className="w-4 h-4" />}
+                  </button>
+                </>
               )}
               {!selectedRoomId && !showNewChatModal && (
                 <button
@@ -2096,7 +2174,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <div className={`text-[11.5px] truncate ${roomUnread > 0 ? 'text-white/85 font-medium' : 'text-white/50'}`}>
                             {/* Preview de digitação do cliente */}
-                            {isTicketRoom && ticketTyping.get(room.id) ? (
+                            {isTicketRoom && (ticketTyping.get(room.id) ?? '').trim() ? (
                               <span className="flex items-center gap-1 text-orange-400/90 font-medium italic">
                                 <span className="inline-flex gap-[2px] items-center">
                                   {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
@@ -2181,11 +2259,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   const otherReadAt = otherReads.length ? otherReads[otherReads.length - 1] : null;
                   let lastDayKey = '';
 
+                  const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
                   return messages.map((msg) => {
                     const isMine = msg.user_id === user?.id;
                     const isDeleted = !!msg.deleted_at;
                     const sender = membersByUserIdRef.current.get(msg.user_id) || members.find((m) => m.user_id === msg.user_id);
-                    const senderName = isMine ? 'Você' : sender?.name || 'Usuário';
+                    // Salas portal: mensagens do cliente têm user_id nulo — usa nome da sala
+                    const isPortalClientMsg = !!selectedRoom?.portal_client_id && !msg.user_id;
+                    const senderName = isMine
+                      ? 'Você'
+                      : sender?.name
+                        || (isPortalClientMsg ? toTitleCase(selectedRoom?.name || 'Cliente') : 'Usuário');
                     const seen = isMine && otherReadAt != null && otherReadAt >= msg.created_at;
                     const dayKey = getDayKey(msg.created_at);
                     const showSeparator = dayKey !== lastDayKey;
@@ -2308,11 +2392,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
               <div className="shrink-0">
                 {/* Live typing preview do cliente portal */}
-                {selectedRoom?.portal_client_id && liveTypingText && (
+                {selectedRoom?.portal_client_id && liveTypingText.trim() && (
                   <div className="flex items-end gap-2 px-3 pt-2 pb-0.5">
                     <div className="max-w-[75%] flex flex-col items-start">
-                      <span className="text-[10px] text-white/40 mb-1 ml-1">digitando…</span>
-                      <div className="bg-white/[0.08] ring-1 ring-white/10 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] text-white/60 italic leading-relaxed">
+                      <span className="text-[10px] text-white/40 mb-1 ml-1">escrevendo…</span>
+                      <div className="bg-slate-700 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] text-white/70 italic leading-relaxed">
                         {liveTypingText.length > 80 ? liveTypingText.slice(0, 80) + '…' : liveTypingText}
                       </div>
                     </div>
@@ -2534,12 +2618,21 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     value={messageText}
                     onChange={(e) => {
                       setMessageText(e.target.value);
-                      if (e.target.value.trim()) {
-                        broadcastTyping(true);
-                        if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
-                        typingTimeoutRef.current = window.setTimeout(() => broadcastTyping(false), 3000);
+                      const isTyping = e.target.value.trim().length > 0;
+                      // Salas portal_client: notifica o cliente que o atendente está escrevendo
+                      if (selectedRoom?.portal_client_id) {
+                        void portalAttendantTypingRef.current?.send({
+                          type: 'broadcast', event: 'typing', payload: { typing: isTyping },
+                        });
                       } else {
-                        broadcastTyping(false);
+                        // Salas de equipe: broadcast normal de digitação
+                        if (isTyping) {
+                          broadcastTyping(true);
+                          if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+                          typingTimeoutRef.current = window.setTimeout(() => broadcastTyping(false), 3000);
+                        } else {
+                          broadcastTyping(false);
+                        }
                       }
                     }}
                     onKeyDown={(e) => {

@@ -380,10 +380,19 @@ class ChatService {
       .select(`room:${this.roomsTable}(*)`)
       .eq('user_id', userId);
 
-    const [{ data: publicRooms, error: publicErr }, { data: memberRows, error: memberErr }] = await Promise.all([
-      publicRoomsReq,
-      memberRoomsReq,
-    ]);
+    // Salas portal_client: inclui foto do cliente via join
+    const portalRoomsReq = supabase
+      .from(this.roomsTable)
+      .select(`*, portal_user:client_portal_users!portal_client_id(client:clients!client_id(photo_path))`)
+      .eq('type', 'portal_client')
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+
+    const [
+      { data: publicRooms, error: publicErr },
+      { data: memberRows, error: memberErr },
+      { data: portalRooms },
+    ] = await Promise.all([publicRoomsReq, memberRoomsReq, portalRoomsReq]);
 
     if (publicErr) {
       console.error('Erro ao listar salas públicas:', publicErr);
@@ -403,9 +412,20 @@ class ChatService {
 
     (memberRows ?? []).forEach((row: any) => {
       const room = row.room as ChatRoom | null;
-      if (room) {
-        merged.set(room.id, room);
+      if (room) merged.set(room.id, room);
+    });
+
+    (portalRooms ?? []).forEach((room: any) => {
+      // Extrai foto do cliente do join — bucket 'perfil' é público
+      const photoPath = room.portal_user?.client?.photo_path;
+      const enriched: any = { ...room, portal_user: undefined };
+      if (photoPath) {
+        try {
+          const { data } = supabase.storage.from('perfil').getPublicUrl(photoPath);
+          if (data?.publicUrl) enriched.portal_client_avatar = data.publicUrl;
+        } catch { /* sem foto, usa iniciais */ }
       }
+      merged.set(room.id, enriched as ChatRoom);
     });
 
     return Array.from(merged.values()).sort((a, b) => {
