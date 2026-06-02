@@ -1341,7 +1341,11 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
           try {
             const hearingEvent = await calendarService.getEventByAutoKey(`hearing:${editingProcess.id}`);
             if (hearingEvent) {
-              await calendarService.updateEvent(hearingEvent.id, { user_id: hearingResponsibleId || null });
+              const hearingUpdatePayload: Record<string, any> = { user_id: hearingResponsibleId || null };
+              if (formData.hearing_date) {
+                hearingUpdatePayload.start_at = `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`;
+              }
+              await calendarService.updateEvent(hearingEvent.id, hearingUpdatePayload);
             }
           } catch {}
         }
@@ -1401,7 +1405,7 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
               description: formData.court ? `Audiência do processo ${newProcess.process_code || ''} • ${formData.court}` : undefined,
               event_type: 'hearing',
               status: 'pendente',
-              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`,
+              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`,
               process_id: newProcess.id,
               client_id: (newProcess as any).client_id || null,
               user_id: hearingResponsibleId || null,

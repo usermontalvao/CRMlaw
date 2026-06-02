@@ -11,18 +11,22 @@ class CalendarService {
 
   // Converte data/hora local para formato com timezone
   private toLocalTimestamp(dateTimeString: string): string {
-    // Se já tem timezone, retorna como está
+    // Se já tem timezone (positivo, negativo ou Z), retorna como está
     if (dateTimeString.includes('+') || dateTimeString.includes('Z')) {
       return dateTimeString;
     }
-    
+    // Offset negativo no final, ex: "2026-07-17T16:00:00-04:00"
+    if (/T\d{2}:\d{2}:\d{2}-\d{2}:\d{2}$/.test(dateTimeString)) {
+      return dateTimeString;
+    }
+
     // Adiciona o timezone local (ex: -03:00 para Brasília)
     const date = new Date(dateTimeString);
     const offset = -date.getTimezoneOffset();
     const offsetHours = Math.floor(Math.abs(offset) / 60).toString().padStart(2, '0');
     const offsetMinutes = (Math.abs(offset) % 60).toString().padStart(2, '0');
     const sign = offset >= 0 ? '+' : '-';
-    
+
     return `${dateTimeString}${sign}${offsetHours}:${offsetMinutes}`;
   }
 
