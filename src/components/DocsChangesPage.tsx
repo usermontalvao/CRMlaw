@@ -869,6 +869,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.182',
+    date: '02/06/2026',
+    summary: 'Notificação automática ao cliente quando DataJud registra movimento relevante (sentença, recurso, audiência, cumprimento, etc.).',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Trigger: notificação automática por movimentos DataJud', description: 'Trigger _portal_notify_on_datajud_movimento detecta movimentos relevantes (sentença, trânsito em julgado, recurso, audiência, cumprimento, citação, arquivamento) e cria portal_client_notifications automaticamente. Dedup de 6h por processo+tipo. O trigger portal_push_on_notification existente envia o push para o celular.' },
+        { type: 'improvement' as const, title: 'Sino: ícones e rotas para tipos DataJud', description: 'PortalNotificationBell reconhece os 7 novos tipos (process_sentenca, process_transito_julgado, etc.) com ícones corretos e navega diretamente para o processo ao clicar.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.181',
     date: '02/06/2026',
     summary: 'Fix de infraestrutura: crons com 401/500 corrigidos, run-djen-sync não estoura mais o timeout de 150s.',

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Briefcase, Calendar, CheckCheck, DollarSign, FileSignature, FileText, FolderOpen, Scale, UserCheck, UserX, X } from 'lucide-react';
+import { Bell, Briefcase, Calendar, CheckCheck, CheckCircle2, DollarSign, FileSignature, FileText, FolderOpen, Scale, UserCheck, UserX, X } from 'lucide-react';
 import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { formatRelative } from './PortalUI';
@@ -26,31 +26,40 @@ function isUnread(n: NotifItem) {
 
 function iconFor(type?: string) {
   const t = type || '';
-  if (t === 'profile_update_approved') return UserCheck;
-  if (t === 'profile_update_rejected') return UserX;
-  if (t === 'process_status_changed')  return Scale;
-  if (t === 'new_signature_request')   return FileSignature;
-  if (t === 'new_agreement')           return DollarSign;
-  if (t === 'new_document_request')    return FolderOpen;
-  if (t.includes('process') || t.includes('andamento')) return Briefcase;
-  if (t.includes('intim') || t.includes('public'))      return FileText;
-  if (t.includes('financ') || t.includes('parcela'))    return DollarSign;
-  if (t.includes('agend') || t.includes('audien'))      return Calendar;
-  if (t.includes('assin') || t.includes('sign'))        return FileSignature;
+  if (t === 'profile_update_approved')   return UserCheck;
+  if (t === 'profile_update_rejected')   return UserX;
+  if (t === 'new_signature_request')     return FileSignature;
+  if (t === 'new_agreement')             return DollarSign;
+  if (t === 'new_document_request')      return FolderOpen;
+  // Tipos DataJud
+  if (t === 'process_transito_julgado')  return CheckCircle2;
+  if (t === 'process_sentenca')          return Scale;
+  if (t === 'process_cumprimento')       return Briefcase;
+  if (t === 'process_recurso')           return Scale;
+  if (t === 'process_audiencia')         return Calendar;
+  if (t === 'process_arquivado')         return FolderOpen;
+  if (t === 'process_citacao')           return FileText;
+  // Genérico
+  if (t === 'process_status_changed')    return Scale;
+  if (t.includes('process'))             return Briefcase;
+  if (t.includes('intim') || t.includes('public')) return FileText;
+  if (t.includes('financ') || t.includes('parcela')) return DollarSign;
+  if (t.includes('agend') || t.includes('audien'))   return Calendar;
+  if (t.includes('assin') || t.includes('sign'))     return FileSignature;
   return Bell;
 }
 
 function routeFor(n: NotifItem): { route: PortalRoute; param?: string } | null {
   const t = (n.type || '').toLowerCase();
   if (t === 'profile_update_approved' || t === 'profile_update_rejected') return { route: 'perfil' };
-  if (t === 'process_status_changed') {
-    const pid = n.metadata?.process_id || n.process_id;
-    return pid ? { route: 'casos', param: `proc:${pid}` } : { route: 'casos' };
-  }
   if (t === 'new_signature_request') return { route: 'assinar' };
   if (t === 'new_agreement')         return { route: 'financeiro' };
   if (t === 'new_document_request')  return { route: 'documentos' };
-  if (n.process_id)                  return { route: 'casos', param: `proc:${n.process_id}` };
+  // Tipos DataJud e processo — navega direto para o processo
+  const pid = n.metadata?.process_id || n.process_id;
+  if (t.startsWith('process_') && pid) return { route: 'casos', param: `proc:${pid}` };
+  if (t === 'process_status_changed' && pid) return { route: 'casos', param: `proc:${pid}` };
+  if (pid) return { route: 'casos', param: `proc:${pid}` };
   return null;
 }
 
