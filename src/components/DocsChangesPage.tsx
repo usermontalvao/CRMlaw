@@ -869,6 +869,12 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.180',
+    date: '02/06/2026',
+    summary: 'Fix build: cast unknown para instanceof Date no CalendarModule.',
+    modules: [{ moduleId: 'Infraestrutura', changes: [{ type: 'fix' as const, title: 'CalendarModule: cast unknown antes de instanceof Date', description: 'TypeScript não permite instanceof em tipo string — adicionado cast (as unknown) instanceof Date para contornar.' }]}],
+  },
+  {
     version: '1.10.179',
     date: '02/06/2026',
     summary: 'Fix de build: 4 erros TypeScript corrigidos (CalendarModule, PortalNotificationsContext, PortalProcessDetails).',
