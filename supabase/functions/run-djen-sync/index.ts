@@ -193,31 +193,34 @@ serve(async (req) => {
       if (processes && processes.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 2: Sincronização por processo`)
 
-        // Separar por existência REAL de publicações DJEN (não pela flag djen_has_data)
+        // ── Time budget: reserva 30s para log final + analyze-intimations ──
+        const EXEC_BUDGET_MS = 110_000 // para antes dos 150s do Supabase
+        const execStart = Date.now()
+        const timeLeft = () => EXEC_BUDGET_MS - (Date.now() - execStart)
+
         let validos = (processes as any[]).filter(
           p => p.process_code?.replace(/[^0-9]/g, '').length === 20
         )
-        // Se varredura direcionada, restringe a um único processo e força histórico
         if (onlyProcessCode) {
           validos = validos.filter(p => p.process_code.replace(/[^0-9]/g, '') === onlyProcessCode)
-          processIdsComDjen.clear() // força ramo "sem dados" (varredura histórica)
+          processIdsComDjen.clear()
         }
         const processesSemDados = validos.filter(p => !processIdsComDjen.has(p.id))
         const processesComDados = onlyProcessCode ? [] : validos.filter(p => processIdsComDjen.has(p.id))
 
         console.log(`   📋 Processos sem histórico DJEN: ${processesSemDados.length}`)
         console.log(`   📋 Processos com histórico DJEN: ${processesComDados.length}`)
+        console.log(`   ⏱️  Budget disponível: ${(timeLeft()/1000).toFixed(0)}s`)
 
-        // ── Processos COM dados: janela normal de 7 dias ──
+        // ── Processos COM dados: janela de 7 dias, até esgotar tempo ──
         for (const proc of processesComDados) {
+          if (timeLeft() < 15_000) { console.log(`   ⏱️  Budget esgotado — parando processesComDados`); break }
           const processNumber = proc.process_code.replace(/[^0-9]/g, '')
           const params = new URLSearchParams({
             numeroProcesso: processNumber,
             dataDisponibilizacaoInicio: getDateDaysAgo(7),
             dataDisponibilizacaoFim: getDateToday(),
-            meio: 'D',
-            itensPorPagina: '100',
-            pagina: '1'
+            meio: 'D', itensPorPagina: '100', pagina: '1'
           })
           const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
           if (response.ok) {
@@ -228,43 +231,48 @@ serve(async (req) => {
               totalSaved += result.saved
             }
           }
-          await new Promise(r => setTimeout(r, 800))
+          await new Promise(r => setTimeout(r, 500))
         }
 
-        // ── Processos SEM dados: varredura histórica em janelas de 1 ANO ──
-        // A API do DJEN aceita janelas amplas (testado: ano inteiro OK).
-        // Varre até 4 anos atrás (1460 dias) — ~5 requisições por processo.
-        const MAX_DAYS_BACK = 1460 // 4 anos
-        const WINDOW = 365         // janela anual por requisição
+        // ── Processos SEM dados: varredura histórica em batch de 15 por run ──
+        // Rotação: usa hash do dia para garantir cobertura ao longo do tempo
+        const BATCH_SIZE = onlyProcessCode ? processesSemDados.length : 15
+        const MAX_DAYS_BACK = onlyProcessCode ? 1460 : 365 // 1 ano para cron, 4 anos para manual
+        const WINDOW = 365
 
-        for (const proc of processesSemDados) {
+        // Rotação: seleciona batch diferente a cada run usando o dia do mês
+        const dayOfMonth = new Date().getDate()
+        const batchStart = (dayOfMonth * BATCH_SIZE) % Math.max(processesSemDados.length, 1)
+        const batch = [
+          ...processesSemDados.slice(batchStart),
+          ...processesSemDados.slice(0, batchStart)
+        ].slice(0, BATCH_SIZE)
+
+        console.log(`   📦 Processando batch ${batchStart}..${batchStart + batch.length} de ${processesSemDados.length} sem dados (máx ${BATCH_SIZE}/run)`)
+
+        for (const proc of batch) {
+          if (timeLeft() < 15_000) { console.log(`   ⏱️  Budget esgotado — parando batch`); break }
+
           const processNumber = proc.process_code.replace(/[^0-9]/g, '')
-          console.log(`   🔍 Histórico completo: ${processNumber.substring(0, 7)}...`)
+          console.log(`   🔍 Histórico: ${processNumber.substring(0, 7)}... (restam ${(timeLeft()/1000).toFixed(0)}s)`)
 
           let foundAny = false
           let windowEnd = new Date()
 
-          // Varrer do mais recente para o mais antigo
-          while (true) {
+          while (timeLeft() > 10_000) {
             const windowStart = new Date(windowEnd)
             windowStart.setDate(windowStart.getDate() - WINDOW)
-
-            // Limite máximo: não buscar além de MAX_DAYS_BACK
             const cutoff = new Date()
             cutoff.setDate(cutoff.getDate() - MAX_DAYS_BACK)
             if (windowEnd <= cutoff) break
-
             const inicio = windowStart < cutoff ? cutoff : windowStart
 
             const params = new URLSearchParams({
               numeroProcesso: processNumber,
               dataDisponibilizacaoInicio: inicio.toISOString().split('T')[0],
               dataDisponibilizacaoFim: windowEnd.toISOString().split('T')[0],
-              meio: 'D',
-              itensPorPagina: '100',
-              pagina: '1'
+              meio: 'D', itensPorPagina: '100', pagina: '1'
             })
-
             const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
             if (response.ok) {
               const data = await response.json()
@@ -273,20 +281,15 @@ serve(async (req) => {
                 const result = await saveCommunications(supabaseClient, data.items, processes)
                 totalSaved += result.saved
                 foundAny = true
-                console.log(`      ✅ ${data.items.length} publicações em ${inicio.toISOString().split('T')[0]} ~ ${windowEnd.toISOString().split('T')[0]}`)
+                console.log(`      ✅ ${data.items.length} publ. em ${inicio.toISOString().split('T')[0]}~${windowEnd.toISOString().split('T')[0]}`)
               }
             }
-
-            // Mover janela para o período anterior
             windowEnd = new Date(windowStart)
             windowEnd.setDate(windowEnd.getDate() - 1)
-
-            await new Promise(r => setTimeout(r, 800))
+            await new Promise(r => setTimeout(r, 500))
           }
 
-          if (!foundAny) {
-            console.log(`      ℹ️  Nenhuma publicação DJEN encontrada em 4 anos`)
-          }
+          if (!foundAny) console.log(`      ℹ️  Nenhuma publicação DJEN encontrada`)
         }
       }
 

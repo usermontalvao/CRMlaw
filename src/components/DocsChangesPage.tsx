@@ -869,6 +869,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.181',
+    date: '02/06/2026',
+    summary: 'Fix de infraestrutura: crons com 401/500 corrigidos, run-djen-sync não estoura mais o timeout de 150s.',
+    modules: [
+      { moduleId: 'Infraestrutura', changes: [
+        { type: 'fix' as const, title: 'notification-scheduler: 401 toda hora corrigido', description: 'Cron jobs #9 e #10 não enviavam Authorization header. Corrigidos via cron.alter_job com Bearer anon key.' },
+        { type: 'fix' as const, title: 'update-process-status: 500 diário corrigido', description: 'Cron job #12 não enviava Authorization header. Corrigido com Bearer anon key.' },
+        { type: 'fix' as const, title: 'run-djen-sync: não estoura mais o timeout de 150s', description: 'Adicionado time budget de 110s: para antes de esgotar. Processos sem dados agora processam em batch rotativo de 15/run (cobertura total a cada ~10 runs). Histórico reduzido de 4 anos para 1 ano no modo cron (manual ainda usa 4 anos).' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.180',
     date: '02/06/2026',
     summary: 'Fix build: cast unknown para instanceof Date no CalendarModule.',
