@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.191': { name: 'Café Intimação Viva', emoji: '⚖️' },
   '1.10.172': { name: 'Café Link Público', emoji: '🔗' },
   '1.10.171': { name: 'Café Rota Única', emoji: '🎯' },
   '1.10.170': { name: 'Café Sessão Viva', emoji: '🔐' },
@@ -868,6 +869,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.191',
+    date: '02/06/2026',
+    summary: 'CalendarModule: painel DJEN no detalhe do evento — exibe intimação vinculada, datas, horários, modalidade e trecho destacado.',
+    modules: [
+      { moduleId: 'Calendário', changes: [
+        { type: 'feature' as const, title: 'Painel DJEN no detalhe do evento', description: 'Ao abrir um evento com intimação DJEN vinculada, exibe status (confirmado/divergente/pendente), comparação de data e horário, modalidade detectada (online/presencial), processo, tribunal e trecho da publicação com datas e horários destacados em negrito.' },
+        { type: 'feature' as const, title: 'Extração automática de datas e horários do texto da intimação', description: 'Parser regex extrai datas DD/MM/YYYY e horários (14h30, 14:00, 14:00h, 14h30min) do campo texto da djen_comunicacoes para comparação com o evento do calendário.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.190',
     date: '02/06/2026',

@@ -7,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -149,6 +149,8 @@ type SelectedEvent = {
     calendarEventId?: string;
     entityId?: string;
     representativeAppointments?: RepresentativeAppointment[];
+    djenStatus?: string;
+    djenIntimationId?: string;
   };
 };
 
@@ -610,6 +612,68 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
   const [selectedEventProcessOrgao, setSelectedEventProcessOrgao] = useState<string | null>(null);
 
+  // DJEN: dados da intimação que confirmou/divergiu o evento
+  const [selectedEventDjenData, setSelectedEventDjenData] = useState<{
+    numero_processo: string | null;
+    nome_orgao: string | null;
+    sigla_tribunal: string | null;
+    texto: string | null;
+    data_disponibilizacao: string | null;
+    datesFound: string[];
+    timesFound: string[];
+    detectedMode: 'online' | 'presencial' | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const intimationId = selectedEvent?.extendedProps?.djenIntimationId;
+    if (!intimationId) { setSelectedEventDjenData(null); return; }
+
+    const fetchDjenData = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('djen_comunicacoes')
+          .select('numero_processo, nome_orgao, sigla_tribunal, texto, data_disponibilizacao')
+          .eq('id', intimationId)
+          .maybeSingle();
+
+        if (error || !data) { setSelectedEventDjenData(null); return; }
+
+        const texto = data.texto ?? '';
+
+        // Extrair datas DD/MM/YYYY
+        const uniqueDates = [...new Set([...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)].map((m) => m[1]))];
+
+        // Extrair horários: "14:00", "às 14h30", "14h30min", "14:00h"
+        const timeRaw = [...texto.matchAll(/(\d{1,2})[h:](\d{2})(?:min)?(?:h)?/gi)].map((m) => {
+          const h = m[1].padStart(2, '0');
+          const min = m[2].padStart(2, '0');
+          return `${h}:${min}`;
+        });
+        const uniqueTimes = [...new Set(timeRaw)];
+
+        // Detectar modalidade
+        const textLower = texto.toLowerCase();
+        const isOnline = /videoconfer[eê]ncia|virtual|zoom|teams|microsoft\s+teams|online|teleaudiência|plataforma/.test(textLower);
+        const isPresencial = /presencial|in\s+loco/.test(textLower);
+        const detectedMode: 'online' | 'presencial' | null =
+          isOnline ? 'online' : isPresencial ? 'presencial' : null;
+
+        setSelectedEventDjenData({
+          numero_processo: data.numero_processo,
+          nome_orgao: data.nome_orgao,
+          sigla_tribunal: data.sigla_tribunal,
+          texto,
+          data_disponibilizacao: data.data_disponibilizacao,
+          datesFound: uniqueDates,
+          timesFound: uniqueTimes,
+          detectedMode,
+        });
+      } catch { setSelectedEventDjenData(null); }
+    };
+
+    fetchDjenData();
+  }, [selectedEvent?.extendedProps?.djenIntimationId]);
+
   useEffect(() => {
     if (selectedEvent?.extendedProps?.moduleLink !== 'processos' || !selectedEvent.extendedProps.entityId) {
       setSelectedEventProcessOrgao(null);
@@ -1014,6 +1078,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           clientPhone: relatedClient?.mobile || relatedClient?.phone,
           clientId: item.client_id ?? undefined,
           calendarEventId: item.id,
+          djenStatus: item.djen_status ?? undefined,
+          djenIntimationId: item.djen_intimation_id ?? undefined,
           representativeAppointments: linkedRepresentativeAppointments,
         },
       } as EventInput;
@@ -2224,11 +2290,41 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const rawType = extendedProps?.type;
     const type = (rawType ? (rawType as EventType) : 'meeting');
     const linkedRepresentativeAppointments = (extendedProps?.representativeAppointments as RepresentativeAppointment[] | undefined) || [];
+    const showDjenDot = ['hearing', 'pericia'].includes(type);
+    const djenStatus = (extendedProps?.djenStatus as string | undefined) || 'unconfirmed';
 
     const hasRealTime = Boolean(timeText && timeText.trim().length > 0);
 
+    const dotColor =
+      djenStatus === 'confirmed'  ? '#16a34a' :
+      djenStatus === 'divergence' ? '#f59e0b' :
+                                    'rgba(255,255,255,0.45)';
+    const dotShadow =
+      djenStatus === 'confirmed'  ? '0 0 5px #22c55e' :
+      djenStatus === 'divergence' ? '0 0 5px #f59e0b' :
+                                    'none';
+    const djenTitle =
+      djenStatus === 'confirmed'  ? 'Confirmado pelo DJEN' :
+      djenStatus === 'divergence' ? '⚠️ Divergência com DJEN' :
+                                    'Não confirmado no DJEN';
+
     return (
       <div className={`calendar-chip calendar-chip--${type}`}>
+        {showDjenDot && (
+          <span
+            title={djenTitle}
+            style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: dotColor,
+              boxShadow: dotShadow,
+              border: '1.5px solid rgba(255,255,255,0.7)',
+            }}
+          />
+        )}
         {hasRealTime && <span className="calendar-chip__time">{timeText}</span>}
         <span className="calendar-chip__title" title={event.title}>
           {event.title}
@@ -3151,6 +3247,214 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     ))}
                   </div>
                 )}
+
+                {/* DJEN — confronto de confirmação */}
+                {['hearing', 'pericia'].includes(selectedEvent.extendedProps.type ?? '') && (() => {
+                  const djenStatus = selectedEvent.extendedProps.djenStatus as string | undefined;
+                  const eventDateObj = selectedEvent.start ? new Date(selectedEvent.start) : null;
+                  const eventDate = eventDateObj
+                    ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(eventDateObj)
+                    : null;
+                  const eventTime = eventDateObj
+                    ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(eventDateObj)
+                    : null;
+                  const eventMode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
+
+                  const StatusIcon =
+                    djenStatus === 'confirmed'  ? ShieldCheck :
+                    djenStatus === 'divergence' ? AlertTriangle :
+                                                  HelpCircle;
+                  const iconColor =
+                    djenStatus === 'confirmed'  ? 'text-green-600' :
+                    djenStatus === 'divergence' ? 'text-amber-500' :
+                                                  'text-slate-400';
+                  const badgeStyle =
+                    djenStatus === 'confirmed'  ? 'bg-green-100 text-green-700 ring-green-200' :
+                    djenStatus === 'divergence' ? 'bg-amber-100 text-amber-700 ring-amber-200' :
+                                                  'bg-slate-100 text-slate-500 ring-slate-200';
+                  const statusLabel =
+                    djenStatus === 'confirmed'  ? 'Confirmado' :
+                    djenStatus === 'divergence' ? 'Divergência' :
+                                                  'Não confirmado';
+                  const borderColor =
+                    djenStatus === 'confirmed'  ? 'border-green-100' :
+                    djenStatus === 'divergence' ? 'border-amber-100' :
+                                                  'border-slate-100';
+
+                  return (
+                    <div className={`rounded-xl border bg-white px-4 py-3 space-y-3 ${borderColor}`}>
+
+                      {/* Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <StatusIcon className={`w-4 h-4 shrink-0 ${iconColor}`} />
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Verificação DJEN
+                          </p>
+                        </div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${badgeStyle}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+
+                      {/* Confronto data + hora */}
+                      {eventDate && (
+                        <div className="space-y-2">
+                          {/* Data */}
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Data na agenda</p>
+                              <p className="text-sm font-bold text-slate-800">{eventDate}</p>
+                            </div>
+                            <div className="shrink-0">
+                              {djenStatus === 'confirmed'
+                                ? <Check className="w-4 h-4 text-green-500" />
+                                : djenStatus === 'divergence'
+                                ? <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                : <span className="text-slate-300">→</span>}
+                            </div>
+                            <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
+                              djenStatus === 'confirmed' ? 'bg-green-50 border-green-200' :
+                              djenStatus === 'divergence' ? 'bg-amber-50 border-amber-200' :
+                              'bg-slate-50 border-slate-200'
+                            }`}>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Data no DJEN</p>
+                              <p className={`text-sm font-bold ${
+                                djenStatus === 'confirmed' ? 'text-green-700' :
+                                djenStatus === 'divergence' ? 'text-amber-700' : 'text-slate-500'
+                              }`}>
+                                {selectedEventDjenData?.datesFound[0] ?? '—'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Hora */}
+                          {eventTime && (
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
+                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Hora na agenda</p>
+                                <p className="text-sm font-bold text-slate-800">{eventTime}</p>
+                              </div>
+                              <div className="shrink-0">
+                                {selectedEventDjenData?.timesFound.length
+                                  ? <Check className="w-4 h-4 text-green-500" />
+                                  : <span className="text-slate-300">→</span>}
+                              </div>
+                              <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
+                                selectedEventDjenData?.timesFound.length
+                                  ? 'bg-green-50 border-green-200'
+                                  : 'bg-slate-50 border-slate-200'
+                              }`}>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Hora no DJEN</p>
+                                <p className={`text-sm font-bold ${
+                                  selectedEventDjenData?.timesFound.length ? 'text-green-700' : 'text-slate-400'
+                                }`}>
+                                  {selectedEventDjenData?.timesFound.join(' / ') ?? '—'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Modalidade */}
+                          {(eventMode || selectedEventDjenData?.detectedMode) && (
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
+                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Modalidade agenda</p>
+                                <p className="text-sm font-bold text-slate-800 capitalize">
+                                  {eventMode === 'online' ? '📹 Online' : eventMode === 'presencial' ? '📍 Presencial' : '—'}
+                                </p>
+                              </div>
+                              <div className="shrink-0">
+                                {eventMode && selectedEventDjenData?.detectedMode
+                                  ? eventMode === selectedEventDjenData.detectedMode
+                                    ? <Check className="w-4 h-4 text-green-500" />
+                                    : <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                  : <span className="text-slate-300">→</span>}
+                              </div>
+                              <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
+                                !selectedEventDjenData?.detectedMode ? 'bg-slate-50 border-slate-200' :
+                                eventMode === selectedEventDjenData.detectedMode ? 'bg-green-50 border-green-200' :
+                                'bg-amber-50 border-amber-200'
+                              }`}>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Modalidade DJEN</p>
+                                <p className={`text-sm font-bold ${
+                                  !selectedEventDjenData?.detectedMode ? 'text-slate-400' :
+                                  eventMode === selectedEventDjenData.detectedMode ? 'text-green-700' : 'text-amber-700'
+                                }`}>
+                                  {selectedEventDjenData?.detectedMode === 'online' ? '📹 Online' :
+                                   selectedEventDjenData?.detectedMode === 'presencial' ? '📍 Presencial' : '—'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Processo + Tribunal + Data publicação */}
+                      {selectedEventDjenData && (
+                        <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-1.5">
+                          {selectedEventDjenData.numero_processo && (
+                            <div className="flex justify-between gap-2 items-baseline">
+                              <span className="text-[11px] text-slate-400 shrink-0">Processo</span>
+                              <span className="text-[11px] font-semibold text-slate-700 text-right tabular-nums">
+                                {selectedEventDjenData.numero_processo}
+                              </span>
+                            </div>
+                          )}
+                          {selectedEventDjenData.sigla_tribunal && (
+                            <div className="flex justify-between gap-2 items-baseline">
+                              <span className="text-[11px] text-slate-400 shrink-0">Tribunal</span>
+                              <span className="text-[11px] font-semibold text-slate-700 text-right">
+                                {selectedEventDjenData.sigla_tribunal}
+                                {selectedEventDjenData.nome_orgao ? ` · ${selectedEventDjenData.nome_orgao}` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {selectedEventDjenData.data_disponibilizacao && (
+                            <div className="flex justify-between gap-2 items-baseline">
+                              <span className="text-[11px] text-slate-400 shrink-0">Publicado em</span>
+                              <span className="text-[11px] font-semibold text-slate-700 text-right">
+                                {new Intl.DateTimeFormat('pt-BR').format(new Date(selectedEventDjenData.data_disponibilizacao))}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Trecho da intimação — colapsável com highlight */}
+                      {selectedEventDjenData?.texto && (
+                        <details className="group">
+                          <summary className="cursor-pointer list-none flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-slate-600 transition select-none">
+                            <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+                            Ver trecho da intimação
+                          </summary>
+                          <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              {(() => {
+                                const snippet = selectedEventDjenData.texto.slice(0, 800);
+                                const pattern = /(\d{2}\/\d{2}\/\d{4}|\d{1,2}[h:]\d{2}(?:min)?(?:h)?|videoconferência|presencial|virtual|zoom|teams)/gi;
+                                const parts = snippet.split(pattern);
+                                return parts.map((part, i) =>
+                                  pattern.test(part)
+                                    ? <strong key={i} className="text-slate-900 font-bold">{part}</strong>
+                                    : <span key={i}>{part}</span>
+                                );
+                              })()}
+                              {selectedEventDjenData.texto.length > 800 ? '…' : ''}
+                            </p>
+                          </div>
+                        </details>
+                      )}
+
+                      {/* Sem DJEN */}
+                      {(!djenStatus || djenStatus === 'unconfirmed') && !selectedEventDjenData && (
+                        <p className="text-[11px] text-slate-400 italic text-center py-1">
+                          Nenhuma intimação DJEN localizada para este evento.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
