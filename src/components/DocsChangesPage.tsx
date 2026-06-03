@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.192': { name: 'Café Portal Redesign', emoji: '🎨' },
   '1.10.191': { name: 'Café Intimação Viva', emoji: '⚖️' },
   '1.10.172': { name: 'Café Link Público', emoji: '🔗' },
   '1.10.171': { name: 'Café Rota Única', emoji: '🎯' },
@@ -869,6 +870,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.192',
+    date: '03/06/2026',
+    summary: 'PortalLogin: redesign completo com identidade visual Jurius, layout h-screen sem scroll no desktop, métricas ao vivo do banco, status do servidor no rodapé e RPC pública portal_public_stats.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Redesign completo da página de login do portal', description: 'Novo layout inspirado em Material Design 3 com cores do tema Jurius (orange-500/600/700), grid 12 colunas hero + card, h-screen sem scroll no desktop e scroll no mobile.' },
+        { type: 'feature' as const, title: 'Métricas ao vivo na coluna esquerda', description: 'Fetch automático via RPC portal_public_stats() a cada 60s exibindo: Clientes, Processos, Assinaturas digitais, Acordos e Prazos com números reais do banco.' },
+        { type: 'feature' as const, title: 'Status do servidor no rodapé', description: 'Rodapé mostra status em tempo real: API ✓, Database ✓, Auth ✓, latência em ms com cor (verde/âmbar/vermelho) e região sa-east-1 São Paulo.' },
+        { type: 'feature' as const, title: 'RPC pública portal_public_stats', description: 'Nova função SQL SECURITY DEFINER acessível ao anon que retorna contagens agregadas de clientes, processos, assinaturas, acordos e prazos sem expor dados pessoais.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.191',
     date: '02/06/2026',
