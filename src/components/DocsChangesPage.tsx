@@ -871,6 +871,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.194',
+    date: '03/06/2026',
+    summary: 'Requerimentos: status atualizado automaticamente para Aguardando Perícia ao agendar e convertido para Em Análise somente no dia seguinte à perícia.',
+    modules: [
+      { moduleId: 'Requerimentos', changes: [
+        { type: 'fix' as const, title: 'Status atualizado ao agendar perícia pelo detalhe', description: 'Ao salvar agendamento de perícia pelo botão de detalhe do requerimento, o status é atualizado automaticamente para Aguardando Perícia quando não está em estado final (deferido, indeferido ou ajuizado).' },
+        { type: 'improvement' as const, title: 'Conversão para Em Análise somente no dia seguinte', description: 'A conversão automática de Aguardando Perícia para Em Análise agora ocorre apenas a partir da meia-noite do dia seguinte à realização da perícia, não mais no momento exato em que o horário passa.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.193',
     date: '03/06/2026',
     summary: 'Intimações: recuperação automática de numero_processo nulo, reparo de registros históricos, e modal de vínculo aprimorado com busca ajax e criação de processo inline.',

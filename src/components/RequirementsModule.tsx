@@ -1146,7 +1146,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const periciaAutoUpdateRef = useRef(false);
   const autoUpdatePericiaStatuses = async (list: Requirement[]) => {
     if (periciaAutoUpdateRef.current) return;
-    const now = Date.now();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startOfToday = today.getTime();
 
     const candidates = list
       .filter((req) => req.status === 'aguardando_pericia')
@@ -1154,7 +1156,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       .filter((item) => {
         if (!item.endAt) return false;
         const endTime = new Date(item.endAt).getTime();
-        return !Number.isNaN(endTime) && endTime < now;
+        return !Number.isNaN(endTime) && endTime < startOfToday;
       });
 
     if (!candidates.length) return;
@@ -2762,6 +2764,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       }
 
       await Promise.all(periciaEvents);
+
+      const statusesNaoFinalizar: RequirementStatus[] = ['indeferido', 'deferido', 'ajuizado', 'aguardando_pericia'];
+      if (!statusesNaoFinalizar.includes(requirement.status as RequirementStatus)) {
+        await requirementService.updateStatus(requirement.id, 'aguardando_pericia');
+      }
 
       await handleReload();
       setSchedulePromptId(null);
