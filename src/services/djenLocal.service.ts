@@ -147,6 +147,12 @@ class DjenLocalService {
 
     const normalizeProcessNumber = (value: string) => (value ? value.replace(/\D/g, '') : '');
 
+    const CNJ_PATTERN = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/;
+    const extractCnjFromText = (texto: string): string | null => {
+      const match = CNJ_PATTERN.exec(texto || '');
+      return match ? match[0] : null;
+    };
+
     const extractCandidateNamesFromText = (value: string): string[] => {
       if (!value) return [];
 
@@ -314,19 +320,33 @@ class DjenLocalService {
       try {
         const existing = await this.getComunicacaoByHash(comunicacao.hash);
         if (existing) {
-          const needsLink = !existing.process_id || !existing.client_id;
+          const needsLink = !existing.process_id || !existing.client_id || !existing.numero_processo;
           if (!needsLink) {
             skipped++;
             continue;
           }
 
-          console.log(`🔗 Auto-link: intimação existente sem vínculo [${existing.id}] process_id=${existing.process_id} client_id=${existing.client_id}`);
+          console.log(`🔗 Auto-link: intimação existente sem vínculo [${existing.id}] process_id=${existing.process_id} client_id=${existing.client_id} numero_processo=${existing.numero_processo}`);
 
           const updatePayload: UpdateDjenComunicacaoDTO = {};
 
+          // Recupera número do processo de qualquer fonte disponível
+          const numeroRecuperado = comunicacao.numero_processo
+            || extractCnjFromText(comunicacao.texto)
+            || comunicacao.numeroprocessocommascara
+            || null;
+
+          if (!existing.numero_processo && numeroRecuperado) {
+            updatePayload.numero_processo = numeroRecuperado;
+            if (!existing.numero_processo_mascara && comunicacao.numeroprocessocommascara) {
+              updatePayload.numero_processo_mascara = comunicacao.numeroprocessocommascara;
+            }
+          }
+
           if (!existing.process_id) {
-            const processMatch = await getProcessMatch(comunicacao.numero_processo);
-            console.log(`🔍 Process match para [${comunicacao.numero_processo}]:`, processMatch);
+            const numeroParaMatch = existing.numero_processo || numeroRecuperado;
+            const processMatch = await getProcessMatch(numeroParaMatch);
+            console.log(`🔍 Process match para [${numeroParaMatch}]:`, processMatch);
             if (processMatch.processId) {
               updatePayload.process_id = processMatch.processId;
               if (!existing.client_id && processMatch.clientId) {
@@ -380,7 +400,7 @@ class DjenLocalService {
           djen_id: comunicacao.id,
           hash: comunicacao.hash,
           numero_comunicacao: comunicacao.numeroComunicacao || null,
-          numero_processo: comunicacao.numero_processo,
+          numero_processo: comunicacao.numero_processo || extractCnjFromText(comunicacao.texto) || comunicacao.numeroprocessocommascara || null,
           numero_processo_mascara: comunicacao.numeroprocessocommascara || null,
           codigo_classe: comunicacao.codigoClasse || null,
           nome_classe: comunicacao.nomeClasse || null,
@@ -398,7 +418,7 @@ class DjenLocalService {
           lida: false, // Nova intimação = não lida
         };
 
-        const processMatch = await getProcessMatch(comunicacao.numero_processo);
+        const processMatch = await getProcessMatch(payload.numero_processo);
         if (processMatch.processId) {
           payload.process_id = processMatch.processId;
         }
@@ -759,6 +779,42 @@ class DjenLocalService {
     }
 
     return { deleted: data?.length || 0 };
+  }
+
+  /**
+   * Repara registros com numero_processo nulo extraindo do texto ou numero_processo_mascara.
+   * Chamado após cada sync para corrigir registros já persistidos sem número.
+   */
+  async repairNullNumeroProcesso(): Promise<{ repaired: number }> {
+    const CNJ_PATTERN = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/;
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('id, texto, numero_processo_mascara')
+      .eq('ativo', true)
+      .is('numero_processo', null);
+
+    if (error || !data?.length) return { repaired: 0 };
+
+    let repaired = 0;
+    for (const row of data) {
+      const fromText = CNJ_PATTERN.exec(row.texto || '')?.[0] || null;
+      const numero = fromText || row.numero_processo_mascara || null;
+      if (!numero) continue;
+
+      const { error: updateError } = await supabase
+        .from(this.tableName)
+        .update({ numero_processo: numero })
+        .eq('id', row.id);
+
+      if (!updateError) repaired++;
+    }
+
+    if (repaired > 0) {
+      console.log(`🔧 repairNullNumeroProcesso: ${repaired} registro(s) reparado(s)`);
+    }
+
+    return { repaired };
   }
 
   /**

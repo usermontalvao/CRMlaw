@@ -871,6 +871,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.193',
+    date: '03/06/2026',
+    summary: 'Intimações: recuperação automática de numero_processo nulo, reparo de registros históricos, e modal de vínculo aprimorado com busca ajax e criação de processo inline.',
+    modules: [
+      { moduleId: 'Intimações', changes: [
+        { type: 'fix' as const, title: 'Recuperação de numero_processo nulo', description: 'Registros cujo DJEN não informou o número agora tentam extrair o número CNJ do texto da intimação ou do campo numeroprocessocommascara. Função repairNullNumeroProcesso() corrige registros já existentes no banco a cada sincronização.' },
+        { type: 'improvement' as const, title: 'Modal Vincular Intimação aprimorado', description: 'Campo Cliente substituído por busca ajax (ClientSearchSelect). Campo Processo passa a filtrar apenas os processos do cliente selecionado. Botão "Cadastrar novo processo" abre mini-form inline sem navegar para outro módulo.' },
+        { type: 'fix' as const, title: 'Criação de processo sem sair do módulo', description: 'Ao cadastrar novo processo a partir de uma intimação, o número, vara/órgão e data de distribuição são pré-preenchidos automaticamente; o processo é criado e vinculado sem redirecionar para o módulo de Processos.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.192',
     date: '03/06/2026',
     summary: 'PortalLogin: redesign completo com identidade visual Jurius, layout h-screen sem scroll no desktop, métricas ao vivo do banco, status do servidor no rodapé e RPC pública portal_public_stats.',

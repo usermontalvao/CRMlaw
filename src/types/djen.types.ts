@@ -32,7 +32,7 @@ export interface DjenComunicacao {
   tipoComunicacao: string;
   nomeOrgao: string;
   texto: string;
-  numero_processo: string;
+  numero_processo: string | null;
   meio: 'D' | 'E'; // D = Diário, E = Edital
   link: string;
   tipoDocumento: string;
@@ -86,7 +86,7 @@ export interface DjenComunicacaoLocal {
   djen_id: number;
   hash: string;
   numero_comunicacao: number | null;
-  numero_processo: string;
+  numero_processo: string | null;
   numero_processo_mascara: string | null;
   codigo_classe: string | null;
   nome_classe: string | null;
@@ -125,7 +125,7 @@ export interface CreateDjenComunicacaoDTO {
   djen_id: number;
   hash: string;
   numero_comunicacao: number | null;
-  numero_processo: string;
+  numero_processo: string | null;
   numero_processo_mascara: string | null;
   codigo_classe: string | null;
   nome_classe: string | null;
@@ -152,4 +152,6 @@ export interface UpdateDjenComunicacaoDTO {
   process_id?: string | null;
   polo_ativo?: string | null;
   polo_passivo?: string | null;
+  numero_processo?: string | null;
+  numero_processo_mascara?: string | null;
 }

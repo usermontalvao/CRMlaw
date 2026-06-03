@@ -50,6 +50,7 @@ import { intimationAnalysisService } from '../services/intimationAnalysis.servic
 import { aiService } from '../services/ai.service';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '../contexts/NavigationContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { supabase } from '../config/supabase';
@@ -142,6 +143,7 @@ interface IntimationsModuleProps {
 const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
   const { user } = useAuth();
+  const { navigateTo } = useNavigation();
   
   // Estados principais
   const [intimations, setIntimations] = useState<DjenComunicacaoLocal[]>([]);
@@ -174,7 +176,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [linkingIntimation, setLinkingIntimation] = useState<DjenComunicacaoLocal | null>(null);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedProcessId, setSelectedProcessId] = useState('');
-  
+  const [selectedProcessName, setSelectedProcessName] = useState('');
+  const [processSearchTerm, setProcessSearchTerm] = useState('');
+  const [processDropdownOpen, setProcessDropdownOpen] = useState(false);
+  const [creatingProcess, setCreatingProcess] = useState(false);
+  const [newProcessCode, setNewProcessCode] = useState('');
+  const [newProcessArea, setNewProcessArea] = useState<'civel' | 'trabalhista' | 'consumidor' | 'previdenciario' | 'familia'>('civel');
+  const [newProcessSaving, setNewProcessSaving] = useState(false);
+  const processSearchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (processSearchRef.current && !processSearchRef.current.contains(e.target as Node)) {
+        setProcessDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   // Modais de criação
   const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
@@ -717,6 +737,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           }
         }
 
+        // Reparar registros com numero_processo nulo
+        try {
+          await djenLocalService.repairNullNumeroProcesso();
+        } catch (repairErr: any) {
+          console.error('Erro ao reparar numero_processo nulo:', repairErr);
+        }
+
         // Limpar intimações antigas (mais de 30 dias)
         try {
           const cleanResult = await djenLocalService.cleanOldIntimations(30);
@@ -971,7 +998,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleOpenLinkModal = (intimation: DjenComunicacaoLocal) => {
     setLinkingIntimation(intimation);
     setSelectedClientId(intimation.client_id || '');
+    const existingProcess = intimation.process_id ? processes.find(p => p.id === intimation.process_id) : null;
     setSelectedProcessId(intimation.process_id || '');
+    setSelectedProcessName(existingProcess?.process_code || '');
+    setProcessSearchTerm('');
+    setProcessDropdownOpen(false);
+    setCreatingProcess(false);
+    setNewProcessCode(intimation.numero_processo_mascara || intimation.numero_processo || '');
+    setNewProcessArea('civel');
     setLinkModalOpen(true);
   };
 
@@ -992,6 +1026,33 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       toast.success('Vínculos salvos');
     } catch (err: any) {
       toast.error('Erro ao salvar', err.message);
+    }
+  };
+
+  // Criar processo novo e vincular à intimação sem sair do módulo
+  const handleCreateAndLinkProcess = async () => {
+    if (!linkingIntimation || !selectedClientId || !newProcessCode.trim()) return;
+    setNewProcessSaving(true);
+    try {
+      const created = await processService.createProcess({
+        client_id: selectedClientId,
+        process_code: newProcessCode.trim(),
+        practice_area: newProcessArea,
+        status: 'distribuido',
+        distributed_at: linkingIntimation.data_disponibilizacao?.split('T')[0] || null,
+        court: linkingIntimation.nome_orgao || null,
+        djen_synced: true,
+        djen_has_data: true,
+      });
+      await djenLocalService.vincularCliente(linkingIntimation.id, selectedClientId);
+      await djenLocalService.vincularProcesso(linkingIntimation.id, created.id);
+      await reloadIntimations();
+      setLinkModalOpen(false);
+      toast.success('Processo criado', 'Processo criado e intimação vinculada com sucesso');
+    } catch (err: any) {
+      toast.error('Erro ao criar processo', err.message);
+    } finally {
+      setNewProcessSaving(false);
     }
   };
 
@@ -1619,7 +1680,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             </div>
           </div>
           <p className="text-lg font-bold text-white font-mono leading-tight">
-            {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo}
+            {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo || 'Sem número'}
           </p>
           <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-1">
             <span className="text-xs text-slate-400">{formatDate(selectedIntimation.data_disponibilizacao)}</span>
@@ -2409,7 +2470,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <span className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] ${
                       !intimation.lida ? 'font-bold text-[#031636]' : 'font-medium text-slate-500'
                     }`}>
-                      {intimation.numero_processo_mascara || intimation.numero_processo}
+                      {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
                     </span>
 
                     {/* Vinculada ícone */}
@@ -2655,7 +2716,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             onClick={() => setLinkModalOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col" style={{ minHeight: creatingProcess ? 640 : 480 }}>
             <div className="h-2 w-full bg-orange-500" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
@@ -2672,38 +2733,164 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-5">
+              {/* Cliente — AJAX search */}
+              <ClientSearchSelect
+                value={selectedClientId}
+                initialClientName={selectedClientId ? clients.find(c => c.id === selectedClientId)?.full_name : ''}
+                onChange={(id) => {
+                  setSelectedClientId(id);
+                  // Limpa processo se não pertence ao novo cliente
+                  if (selectedProcessId) {
+                    const proc = processes.find(p => p.id === selectedProcessId);
+                    if (proc?.client_id !== id) {
+                      setSelectedProcessId('');
+                      setSelectedProcessName('');
+                      setProcessSearchTerm('');
+                    }
+                  }
+                }}
+                label="Cliente"
+                allowCreate={false}
+                placeholder="Buscar cliente..."
+              />
+
+              {/* Processo — busca filtrada pelo cliente */}
               <div>
-                <label className="block text-sm text-zinc-600 dark:text-zinc-300 mb-1">Cliente</label>
-                <select
-                  value={selectedClientId}
-                  onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                >
-                  <option value="">Nenhum cliente</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.full_name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-zinc-600 dark:text-zinc-300 mb-1">Processo</label>
+                <div ref={processSearchRef} className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={selectedProcessId ? selectedProcessName : processSearchTerm}
+                      onChange={(e) => {
+                        setProcessSearchTerm(e.target.value);
+                        setSelectedProcessId('');
+                        setSelectedProcessName('');
+                        setProcessDropdownOpen(true);
+                            }}
+                      onFocus={() => setProcessDropdownOpen(true)}
+                      placeholder={selectedClientId ? 'Buscar processo do cliente...' : 'Selecione um cliente primeiro'}
+                      disabled={!selectedClientId}
+                      className="w-full h-11 pl-9 pr-9 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    />
+                    {(selectedProcessId || processSearchTerm) && (
+                      <button
+                        onClick={() => { setSelectedProcessId(''); setSelectedProcessName(''); setProcessSearchTerm(''); setProcessDropdownOpen(false); }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {processDropdownOpen && selectedClientId && !selectedProcessId && (() => {
+                    const term = processSearchTerm.toLowerCase().replace(/\D/g, '');
+                    const filtered = processes
+                      .filter(p => p.client_id === selectedClientId)
+                      .filter(p => {
+                        if (!processSearchTerm) return true;
+                        const code = p.process_code.toLowerCase();
+                        const digits = p.process_code.replace(/\D/g, '');
+                        return code.includes(processSearchTerm.toLowerCase()) || (term && digits.includes(term));
+                      });
+                    return (
+                      <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                        {filtered.length === 0 && !processSearchTerm && (
+                          <p className="px-4 py-3 text-sm text-slate-400">Nenhum processo cadastrado para este cliente</p>
+                        )}
+                        {filtered.map(p => (
+                          <button
+                            key={p.id}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { setSelectedProcessId(p.id); setSelectedProcessName(p.process_code); setProcessDropdownOpen(false); setProcessSearchTerm(''); }}
+                            className="w-full text-left px-4 py-2.5 text-sm text-zinc-900 dark:text-white hover:bg-amber-50 dark:hover:bg-zinc-700 font-mono transition-colors"
+                          >
+                            {p.process_code}
+                          </button>
+                        ))}
+                        <button
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            if (processSearchTerm) setNewProcessCode(processSearchTerm);
+                            setProcessDropdownOpen(false);
+                            setCreatingProcess(true);
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-50 dark:hover:bg-zinc-700 font-medium flex items-center gap-2 border-t border-zinc-100 dark:border-zinc-700 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" /> Cadastrar novo processo
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-zinc-600 dark:text-zinc-300 mb-1">Processo</label>
-                <select
-                  value={selectedProcessId}
-                  onChange={(e) => setSelectedProcessId(e.target.value)}
-                  className="w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                >
-                  <option value="">Nenhum processo</option>
-                  {processes.map((process) => (
-                    <option key={process.id} value={process.id}>
-                      {process.process_code}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Mini-form: Novo Processo */}
+              {creatingProcess && selectedClientId && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3 mt-1">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Novo Processo</p>
+
+                  <div>
+                    <label className="block text-xs text-zinc-600 dark:text-zinc-300 mb-1">Número do processo</label>
+                    <input
+                      type="text"
+                      value={newProcessCode}
+                      onChange={(e) => setNewProcessCode(e.target.value)}
+                      placeholder="0000000-00.0000.0.00.0000"
+                      className="w-full h-10 px-3 rounded-lg text-sm font-mono bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-zinc-600 dark:text-zinc-300 mb-1">Área de prática</label>
+                    <select
+                      value={newProcessArea}
+                      onChange={(e) => setNewProcessArea(e.target.value as typeof newProcessArea)}
+                      className="w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                    >
+                      <option value="civel">Cível</option>
+                      <option value="trabalhista">Trabalhista</option>
+                      <option value="consumidor">Consumidor</option>
+                      <option value="previdenciario">Previdenciário</option>
+                      <option value="familia">Família</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Vara / Órgão</label>
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 truncate min-h-[34px]">
+                        {linkingIntimation?.nome_orgao || '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Data de distribuição</label>
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 min-h-[34px]">
+                        {linkingIntimation?.data_disponibilizacao ? formatDate(linkingIntimation.data_disponibilizacao) : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleCreateAndLinkProcess}
+                      disabled={!newProcessCode.trim() || newProcessSaving}
+                      className="flex-1 h-9 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition"
+                    >
+                      {newProcessSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      {newProcessSaving ? 'Criando...' : 'Criar e Vincular'}
+                    </button>
+                    <button
+                      onClick={() => setCreatingProcess(false)}
+                      className="px-4 h-9 text-sm text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 rounded-lg transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
@@ -2802,7 +2989,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-4">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <p className="text-xs text-amber-800">
-                  <strong>Processo:</strong> {currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo}
+                  <strong>Processo:</strong> {currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo || 'Sem número'}
                 </p>
                 <p className="text-xs text-amber-700 mt-1">
                   O sistema criará um compromisso na agenda 6 meses antes da prescrição estimada (data-base + 18 meses).
@@ -3064,7 +3251,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
           <p className="text-sm text-blue-800">
-            <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo}
+            <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
           </p>
           {client && (
             <p className="text-sm text-blue-800">
@@ -3416,7 +3603,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
           <p className="text-sm text-blue-800">
-            <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo}
+            <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
           </p>
           {client && (
             <p className="text-sm text-blue-800">

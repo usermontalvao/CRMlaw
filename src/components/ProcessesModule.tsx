@@ -349,6 +349,9 @@ interface ProcessesModuleProps {
     client_id?: string;
     client_name?: string;
     responsible_lawyer_id?: string;
+    process_code?: string;
+    court?: string;
+    distributed_at?: string;
   };
   initialStatusFilter?: ProcessStatus | 'todos';
   initialSearchQuery?: string;
@@ -882,6 +885,10 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
         setFormData((prev) => ({
           ...prev,
           client_id: prefillData.client_id || prev.client_id,
+          process_code: prefillData.process_code || prev.process_code,
+          court: prefillData.court || prev.court,
+          distributed_at: prefillData.distributed_at || prev.distributed_at,
+          status: prefillData.distributed_at ? 'distribuido' : prev.status,
         }));
 
         if (prefillData.client_name) {

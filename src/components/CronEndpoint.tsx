@@ -150,7 +150,14 @@ const CronEndpoint = () => {
           console.log(`🏛️ Enriquecimento: ${enrichResult.stagesUpdated} estágios, ${enrichResult.comarcasUpdated} comarcas`);
         }
 
-        // ── 5. Atualizar log de sincronização ────────────────────────────────
+        // ── 5. Reparar registros com numero_processo nulo ────────────────────
+        try {
+          await djenLocalService.repairNullNumeroProcesso();
+        } catch (repairErr: any) {
+          console.error('Erro ao reparar numero_processo nulo:', repairErr);
+        }
+
+        // ── 6. Atualizar log de sincronização ────────────────────────────────
         const syncEndTime = new Date().toISOString();
 
         if (syncLog) {
