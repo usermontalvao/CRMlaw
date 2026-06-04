@@ -33,18 +33,11 @@ import {
   Eye,
   Sparkles,
   User,
-  GripVertical,
-  RotateCcw,
   ShieldAlert,
   UserCheck,
   UserX,
   Loader2,
 } from 'lucide-react';
-import { ResponsiveGridLayout, verticalCompactor } from 'react-grid-layout';
-import { useContainerWidth } from 'react-grid-layout/react';
-import type { ResponsiveLayouts, LayoutItem } from 'react-grid-layout';
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -55,7 +48,6 @@ import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
-import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
@@ -176,144 +168,6 @@ const DASHBOARD_CACHE_VERSION = 2;
 const CACHE_DURATION = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15000;
 
-// Grid layout
-const LAYOUT_STORAGE_KEY = 'crm-dashboard-grid-v5';
-const ROW_HEIGHT = 36;
-
-type RLayouts = ResponsiveLayouts<string>;
-
-// Ordem preferêncial dos widgets (mantida no auto-fit)
-const WIDGET_ORDER = ['agenda', 'acoes', 'financeiro', 'prazos', 'tarefas', 'intimacoes', 'processos', 'requerimentos'] as const;
-
-// Alturas padrão por widget (em rows)
-const WIDGET_HEIGHT: Record<string, number> = {
-  agenda: 14,
-  acoes: 4,
-  financeiro: 6,
-  prazos: 6,
-  tarefas: 7,
-  intimacoes: 7,
-  processos: 7,
-  requerimentos: 7,
-};
-
-/**
- * Gera um layout auto-ajustado redistribuindo apenas os widgets visíveis,
- * preenchendo toda a largura disponível sem deixar espaços vazios.
- */
-function buildAutoFitLayout(visibleKeys: Set<string>, bp: string): LayoutItem[] {
-  const cols = bp === 'lg' || bp === 'md' ? 12 : bp === 'sm' ? 6 : bp === 'xs' ? 4 : 2;
-  const visible = WIDGET_ORDER.filter(k => visibleKeys.has(k));
-  if (visible.length === 0) return [];
-
-  const isMobile = bp === 'sm' || bp === 'xs' || bp === 'xxs';
-
-  // Mobile: empilhar verticalmente em largura total
-  if (isMobile) {
-    let y = 0;
-    return visible.map(k => {
-      const h = WIDGET_HEIGHT[k] ?? 7;
-      const item: LayoutItem = { i: k, x: 0, y, w: cols, h };
-      y += h;
-      return item;
-    });
-  }
-
-  // lg/md (12 cols): distribuir uniformemente
-  const n = visible.length;
-  let perRow: number;
-  if (n === 1) perRow = 1;
-  else if (n === 2) perRow = 2;
-  else if (n === 3) perRow = 3;
-  else if (n === 4) perRow = 2;
-  else if (n <= 6) perRow = 3;
-  else perRow = 4;
-
-  const baseW = Math.floor(cols / perRow);
-  const remainder = cols - baseW * perRow;
-
-  const result: LayoutItem[] = [];
-  let col = 0;
-  let rowStartY = 0;
-  let rowMaxH = 0;
-
-  visible.forEach(k => {
-    const h = WIDGET_HEIGHT[k] ?? 7;
-    const w = col < remainder ? baseW + 1 : baseW;
-    const x = col < remainder
-      ? col * (baseW + 1)
-      : remainder * (baseW + 1) + (col - remainder) * baseW;
-
-    result.push({ i: k, x, y: rowStartY, w, h, minW: 2, minH: 3 });
-    rowMaxH = Math.max(rowMaxH, h);
-    col += 1;
-    if (col >= perRow) {
-      col = 0;
-      rowStartY += rowMaxH;
-      rowMaxH = 0;
-    }
-  });
-
-  return result;
-}
-
-const DEFAULT_LAYOUTS: RLayouts = {
-  // ≥ 1100px — 12 cols — 2 rows
-  lg: [
-    { i: 'agenda',        x: 0, y: 0,  w: 7, h: 14, minW: 4, minH: 5 },
-    { i: 'acoes',         x: 7, y: 0,  w: 5, h: 4,  minW: 3, minH: 3 },
-    { i: 'financeiro',    x: 7, y: 4,  w: 5, h: 5,  minW: 3, minH: 4 },
-    { i: 'prazos',        x: 7, y: 9,  w: 5, h: 5,  minW: 3, minH: 3 },
-    { i: 'tarefas',       x: 0, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
-    { i: 'intimacoes',    x: 4, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
-    { i: 'processos',     x: 8, y: 14, w: 4, h: 7,  minW: 2, minH: 3 },
-    { i: 'requerimentos', x: 0, y: 21, w: 4, h: 7,  minW: 2, minH: 3 },
-  ],
-  // 768–1099px — 12 cols
-  md: [
-    { i: 'agenda',        x: 0, y: 0,  w: 7, h: 14 },
-    { i: 'acoes',         x: 7, y: 0,  w: 5, h: 4  },
-    { i: 'financeiro',    x: 7, y: 4,  w: 5, h: 5  },
-    { i: 'prazos',        x: 7, y: 9,  w: 5, h: 5  },
-    { i: 'tarefas',       x: 0, y: 14, w: 4, h: 7  },
-    { i: 'intimacoes',    x: 4, y: 14, w: 4, h: 7  },
-    { i: 'processos',     x: 8, y: 14, w: 4, h: 7  },
-    { i: 'requerimentos', x: 0, y: 21, w: 4, h: 7  },
-  ],
-  // 480–767px — 6 cols, stacked
-  sm: [
-    { i: 'agenda',        x: 0, y: 0,  w: 6, h: 14 },
-    { i: 'acoes',         x: 0, y: 14, w: 6, h: 4  },
-    { i: 'financeiro',    x: 0, y: 18, w: 6, h: 7  },
-    { i: 'prazos',        x: 0, y: 25, w: 6, h: 5  },
-    { i: 'tarefas',       x: 0, y: 30, w: 6, h: 7  },
-    { i: 'intimacoes',    x: 0, y: 37, w: 6, h: 7  },
-    { i: 'processos',     x: 0, y: 44, w: 6, h: 7  },
-    { i: 'requerimentos', x: 0, y: 51, w: 6, h: 7  },
-  ],
-  // < 480px — 4 cols, stacked
-  xs: [
-    { i: 'agenda',        x: 0, y: 0,  w: 4, h: 12 },
-    { i: 'acoes',         x: 0, y: 12, w: 4, h: 4  },
-    { i: 'financeiro',    x: 0, y: 16, w: 4, h: 7  },
-    { i: 'prazos',        x: 0, y: 23, w: 4, h: 5  },
-    { i: 'tarefas',       x: 0, y: 28, w: 4, h: 7  },
-    { i: 'intimacoes',    x: 0, y: 35, w: 4, h: 7  },
-    { i: 'processos',     x: 0, y: 42, w: 4, h: 7  },
-    { i: 'requerimentos', x: 0, y: 49, w: 4, h: 7  },
-  ],
-  xxs: [
-    { i: 'agenda',        x: 0, y: 0,  w: 2, h: 12 },
-    { i: 'acoes',         x: 0, y: 12, w: 2, h: 4  },
-    { i: 'financeiro',    x: 0, y: 16, w: 2, h: 7  },
-    { i: 'prazos',        x: 0, y: 23, w: 2, h: 5  },
-    { i: 'tarefas',       x: 0, y: 28, w: 2, h: 7  },
-    { i: 'intimacoes',    x: 0, y: 35, w: 2, h: 7  },
-    { i: 'processos',     x: 0, y: 42, w: 2, h: 7  },
-    { i: 'requerimentos', x: 0, y: 49, w: 2, h: 7  },
-  ],
-};
-
 interface DashboardCache {
   version: number;
   timestamp: number;
@@ -362,23 +216,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       }
       .scroll-hidden::-webkit-scrollbar { display: none; }
       .scroll-hidden { -ms-overflow-style: none; scrollbar-width: none; }
-      .widget-header { cursor: grab; user-select: none; }
-      .widget-header:active { cursor: grabbing; }
-      .react-grid-item.react-grid-placeholder {
-        background: rgba(245,158,11,0.1) !important;
-        border: 2px dashed rgba(245,158,11,0.4) !important;
-        border-radius: 12px;
-        z-index: 2;
-      }
-      .react-resizable-handle {
-        opacity: 0.2;
-        transition: opacity 0.15s;
-      }
-      .react-resizable-handle:hover { opacity: 0.6; }
-      .react-grid-item.cssTransforms {
-        transition-property: transform !important;
-        transition-duration: 150ms !important;
-      }
     `;
     document.head.appendChild(style);
     return () => { document.head.removeChild(style); };
@@ -435,99 +272,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   // Notificações de acesso negado não lidas (visível para não-admin, persiste até marcar como lida no DB)
   const [userDeniedNotifs, setUserDeniedNotifs] = useState<Array<{ id: string; module_label: string; module_key: string; admin_notes?: string | null }>>([]);
 
-  const [layouts, setLayouts] = useState<RLayouts>(() => {
+  // Limpa layouts antigos de versões anteriores (uma vez)
+  React.useEffect(() => {
     try {
-      const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      ['crm-dashboard-grid', 'crm-dashboard-grid-v2', 'crm-dashboard-grid-v3', 'crm-dashboard-grid-v4', 'crm-dashboard-grid-v5'].forEach(k => localStorage.removeItem(k));
     } catch {}
-    return DEFAULT_LAYOUTS;
-  });
-
-  // Ref para debounce de salvamento remoto (Supabase)
-  const saveLayoutTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Flag para evitar salvar layout durante o carregamento inicial do Supabase
-  const remoteLayoutLoadedRef = React.useRef<boolean>(false);
-  const [layoutSaved, setLayoutSaved] = React.useState(false);
-  const layoutSavedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Carrega o layout salvo no Supabase ao montar (sobrescreve localStorage se existir remotamente)
-  React.useEffect(() => {
-    if (!userAuthId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const remote = await dashboardPreferencesService.getGridLayout(userAuthId);
-        if (cancelled) return;
-        if (remote && typeof remote === 'object') {
-          setLayouts(remote as RLayouts);
-          try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(remote)); } catch {}
-        } else {
-          // No remote layout — clear any stale localStorage so default is used cleanly
-          try { localStorage.removeItem(LAYOUT_STORAGE_KEY); } catch {}
-        }
-      } catch (err) {
-        console.warn('Não foi possível carregar layout do Supabase:', err);
-      } finally {
-        remoteLayoutLoadedRef.current = true;
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [userAuthId]);
-
-  const handleLayoutsChange = useCallback((_layout: readonly LayoutItem[], allLayouts: RLayouts) => {
-    setLayouts((prev: RLayouts) => {
-      const next: RLayouts = { ...prev };
-      Object.entries(allLayouts).forEach(([bp, updatedItems]) => {
-        const prevItems: readonly LayoutItem[] = prev[bp] || DEFAULT_LAYOUTS[bp] || [];
-        const merged: LayoutItem[] = (prevItems as LayoutItem[]).map((item: LayoutItem) => {
-          const updated = (updatedItems as LayoutItem[]).find((u: LayoutItem) => u.i === item.i);
-          return updated ? { ...item, ...updated } : item;
-        });
-        (updatedItems as LayoutItem[]).forEach((item: LayoutItem) => {
-          if (!merged.find((m: LayoutItem) => m.i === item.i)) merged.push(item);
-        });
-        next[bp] = merged;
-      });
-      try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(next)); } catch {}
-
-      // Debounce do salvamento no Supabase (800ms) — evita flood durante drag/resize.
-      // Só salva após o carregamento inicial e se houver usuário autenticado.
-      if (remoteLayoutLoadedRef.current && userAuthId) {
-        if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
-        saveLayoutTimerRef.current = setTimeout(() => {
-          dashboardPreferencesService.saveGridLayout(userAuthId, next as any).then(ok => {
-            if (ok) {
-              setLayoutSaved(true);
-              if (layoutSavedTimerRef.current) clearTimeout(layoutSavedTimerRef.current);
-              layoutSavedTimerRef.current = setTimeout(() => setLayoutSaved(false), 2500);
-            }
-          }).catch(err => {
-            console.warn('Falha ao persistir layout no Supabase:', err);
-          });
-        }, 800);
-      }
-      return next;
-    });
-  }, [userAuthId]);
-
-  // Limpa o timer de debounce ao desmontar
-  React.useEffect(() => {
-    return () => {
-      if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
-    };
   }, []);
-
-  const resetLayouts = useCallback(() => {
-    setLayouts(DEFAULT_LAYOUTS);
-    try { localStorage.removeItem(LAYOUT_STORAGE_KEY); } catch {}
-    // Limpa o layout salvo no Supabase também (define grid_layout como null;
-    // não remove a linha pois ela pode conter left_widgets/right_widgets de outras features)
-    if (userAuthId) {
-      dashboardPreferencesService.saveGridLayout(userAuthId, null).catch(err => {
-        console.warn('Falha ao resetar layout no Supabase:', err);
-      });
-    }
-  }, [userAuthId]);
 
   const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
     return new Promise((resolve, reject) => {
@@ -735,21 +485,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }, [loadDashboardData]);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
-  // Hook nativo do react-grid-layout v2 que mede a largura do container automaticamente.
-  // No mobile (< 768px) a sidebar é oculta (ml-0), então não subtrai offset.
-  const initialGridWidth = typeof window !== 'undefined'
-    ? Math.max(window.innerWidth >= 768 ? window.innerWidth - 80 : window.innerWidth, 320)
-    : 1200;
-  const { width: gridWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth({
-    measureBeforeMount: false,
-    initialWidth: initialGridWidth,
-  });
-  // Limpa layouts antigos de versões anteriores (uma vez)
-  React.useEffect(() => {
-    try {
-      ['crm-dashboard-grid', 'crm-dashboard-grid-v2', 'crm-dashboard-grid-v3', 'crm-dashboard-grid-v4'].forEach(k => localStorage.removeItem(k));
-    } catch {}
-  }, []);
 
   const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;
@@ -989,52 +724,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     return alerts;
   }, [pendingDeadlines, deadlines, djenIntimacoes, financialStats]);
 
-  // Compute filtered layouts for only visible widgets
-  const visibleWidgetKeys = useMemo(() => {
-    const keys = new Set<string>();
-    if (canView('agenda')) keys.add('agenda');
-    if (canView('tarefas')) keys.add('tarefas');
-    if (canView('clientes') || canView('prazos') || canView('tarefas') || canView('agenda') ||
-        canView('requerimentos') || canView('processos') || canView('financeiro')) keys.add('acoes');
-    // Financeiro: aparece sempre que há permissão (mesmo sem stats ainda carregados —
-    // o widget próprio trata o estado vazio/loading)
-    if (canView('financeiro')) keys.add('financeiro');
-    if (canView('prazos')) keys.add('prazos');
-    if (canView('intimacoes')) keys.add('intimacoes');
-    if (canView('processos')) keys.add('processos');
-    if (canView('requerimentos')) keys.add('requerimentos');
-    return keys;
-  }, [canView]);
-
-  // Número de colunas por breakpoint
-  const COLS_PER_BP: Record<string, number> = { lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 };
-
-  const activeLayouts = useMemo<RLayouts>(() => {
-    const result: RLayouts = {};
-    const allBps = ['lg', 'md', 'sm', 'xs', 'xxs'];
-    const allVisible = visibleWidgetKeys.size === WIDGET_ORDER.length;
-    allBps.forEach(bp => {
-      if (allVisible) {
-        const items: readonly LayoutItem[] = layouts[bp] || DEFAULT_LAYOUTS[bp] || [];
-        const cols = COLS_PER_BP[bp] ?? 12;
-        // Filtra widgets visíveis e valida que cada item cabe nas colunas do breakpoint
-        const filtered = (items as LayoutItem[])
-          .filter((item: LayoutItem) => visibleWidgetKeys.has(item.i))
-          .map((item: LayoutItem) => ({
-            ...item,
-            // Garante que o widget não exceda a largura do breakpoint
-            w: Math.min(item.w, cols),
-            x: Math.min(item.x, cols - Math.min(item.w, cols)),
-          }));
-        // Se algum item ficou inválido (w+x > cols), usa auto-fit como fallback
-        const hasInvalid = filtered.some((item: LayoutItem) => item.x + item.w > cols);
-        result[bp] = hasInvalid ? buildAutoFitLayout(visibleWidgetKeys, bp) : filtered;
-      } else {
-        result[bp] = buildAutoFitLayout(visibleWidgetKeys, bp);
-      }
-    });
-    return result;
-  }, [layouts, visibleWidgetKeys]);
+  // Permission-based visibility booleans
+  const showAgenda     = canView('agenda');
+  const showTarefas    = canView('tarefas');
+  const showFinanceiro = canView('financeiro');
+  const showPrazos     = canView('prazos');
+  const showIntimacoes = canView('intimacoes');
+  const showProcessos  = canView('processos');
+  const showRequer     = canView('requerimentos');
+  const showAcoes      = canView('clientes') || canView('prazos') || canView('tarefas') ||
+                         canView('agenda') || canView('requerimentos') || canView('processos') || canView('financeiro');
+  const rightColVisible = showAcoes || showFinanceiro || showPrazos;
+  const bottomWidgets   = [showTarefas, showIntimacoes, showProcessos, showRequer].filter(Boolean).length;
 
   if (loading || permissionsLoading) {
     return (
@@ -1079,16 +780,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   return (
     <>
     <div className="bg-slate-50/50 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 min-h-screen overflow-x-hidden">
-
-      {/* Layout saved toast */}
-      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-full shadow-xl transition-all duration-300 pointer-events-none ${
-        layoutSaved ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-      }`}>
-        <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-        Layout salvo
-      </div>
 
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 mb-4 sm:mb-5">
@@ -1167,10 +858,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 ))}
               </div>
             )}
-            <button onClick={resetLayouts} title="Resetar layout dos widgets"
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
             {canView('clientes') && canCreate('clientes') && (
               <button onClick={() => handleNavigate('clientes?mode=create')}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-all">
@@ -1412,29 +1099,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
       )}
 
-      {/* Draggable / Resizable Widget Grid */}
-      <div ref={gridContainerRef} className="w-full" style={{ width: '100%' }}>
-      {gridMounted && (
-      <ResponsiveGridLayout
-        width={gridWidth}
-        layouts={activeLayouts}
-        breakpoints={{ lg: 1100, md: 768, sm: 480, xs: 320, xxs: 0 }}
-        cols={{ lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 }}
-        rowHeight={ROW_HEIGHT}
-        margin={gridWidth < 480 ? [8, 8] as [number, number] : [12, 12] as [number, number]}
-        containerPadding={[0, 0] as [number, number]}
-        dragConfig={{ enabled: gridWidth >= 480, handle: '.widget-header', cancel: 'button,a', bounded: false, threshold: 3 }}
-        resizeConfig={{ enabled: gridWidth >= 480, handles: ['se'] }}
-        onLayoutChange={handleLayoutsChange}
-        compactor={verticalCompactor}
-      >
-        {/* ── Agenda ── */}
-        {visibleWidgetKeys.has('agenda') && (
-          <div key="agenda" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
+      {/* ── MAIN GRID ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 min-w-0">
+
+        {/* ── AGENDA (7 cols or full) ── */}
+        {showAgenda && (
+          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`} style={{ minHeight: 420 }}>
             {/* Header */}
-            <div className="widget-header px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold text-slate-900 leading-tight">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-bold text-slate-900 leading-tight truncate">
                   {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
                 </h3>
                 <p className="text-[10px] text-slate-400 leading-tight capitalize">
@@ -1450,7 +1124,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   <span className="sm:hidden">Agenda</span>
                   <ChevronRight className="w-3 h-3" />
                 </button>
-                {gridWidth >= 480 && <GripVertical className="w-4 h-4 text-slate-300 ml-0.5 flex-shrink-0" />}
               </div>
             </div>
 
@@ -1568,350 +1241,351 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
         )}
 
-        {/* ── Tarefas ── */}
-        {visibleWidgetKeys.has('tarefas') && (
-          <div key="tarefas" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                </div>
-                <div>
-                  <h2 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Tarefas</h2>
-                  <p className="text-[10px] text-slate-500">{recentTasks.length} pendente{recentTasks.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleNavigate('tarefas')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
-                  Ver todas <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
-              {recentTasks.length === 0 ? (
-                <div className="text-center py-4">
-                  <CheckSquare className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                  <p className="text-slate-500 text-xs">Nenhuma tarefa pendente</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {recentTasks.map(task => (
-                    <div key={task.id} onClick={() => handleNavigate('tarefas')}
-                      className="group flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
-                      <div className="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                        <CheckSquare className="w-3 h-3 text-emerald-600" />
-                      </div>
-                      <p className="flex-1 text-xs font-medium text-slate-800 truncate">{task.title}</p>
-                      <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+        {/* ── RIGHT COLUMN (5 cols or full) ── */}
+        {rightColVisible && (
+          <div className={`min-w-0 ${showAgenda ? 'lg:col-span-5' : 'lg:col-span-12'} flex flex-col gap-3`}>
+            {/* Ações Rápidas */}
+            {showAcoes && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                      <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Ações Rápidas ── */}
-        {visibleWidgetKeys.has('acoes') && (
-          <div key="acoes" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                  <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Ações rápidas</h3>
-                  <p className="text-[10px] sm:text-xs text-slate-500">Crie itens em 1 clique</p>
-                </div>
-              </div>
-              {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-            </div>
-            <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
-              <QuickActions onNavigate={handleNavigate} canView={canView} canCreate={canCreate} />
-            </div>
-          </div>
-        )}
-
-        {/* ── Financeiro ── */}
-        {visibleWidgetKeys.has('financeiro') && (
-          <div key="financeiro" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-              <div className="widget-header p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                    <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm sm:text-base font-semibold text-slate-900">Financeiro</h3>
-                    <p className="text-[10px] sm:text-xs text-slate-500">Resumo do mês</p>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Ações rápidas</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500">Crie itens em 1 clique</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleNavigate('financeiro')}
-                    className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                    Ver <ChevronRight className="w-4 h-4" />
-                  </button>
-                  {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
+                <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
+                  <QuickActions onNavigate={handleNavigate} canView={canView} canCreate={canCreate} />
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto scroll-hidden p-3 sm:p-4 space-y-3">
-                {!financialStats && (
-                  <div className="flex flex-col items-center justify-center h-full text-center py-6">
-                    <Wallet className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-xs text-slate-400">Nenhum dado financeiro</p>
+            )}
+            {/* Financeiro */}
+            {showFinanceiro && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm sm:text-base font-semibold text-slate-900 truncate">Financeiro</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500">Resumo do mês</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('financeiro')}
+                      className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                      Ver <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto scroll-hidden p-3 sm:p-4 space-y-3">
+                  {!financialStats && (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-6">
+                      <Wallet className="w-8 h-8 text-slate-300 mb-2" />
+                      <p className="text-xs text-slate-400">Nenhum dado financeiro</p>
+                    </div>
+                  )}
+                  {financialStats && (() => {
+                    const s = financialStats;
+                    const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-emerald-500" />
+                            <span className="text-sm text-slate-600">Recebido</span>
+                          </div>
+                          <span className="text-sm font-semibold text-emerald-600 truncate tabular-nums">{fmt(s.monthly_fees_received)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <PiggyBank className="w-4 h-4 text-amber-500" />
+                            <span className="text-sm text-slate-600">A receber</span>
+                          </div>
+                          <span className="text-sm font-semibold text-amber-600 truncate tabular-nums">{fmt(s.monthly_fees_pending)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-500" />
+                            <span className="text-sm text-slate-600">Em atraso</span>
+                          </div>
+                          <span className="text-sm font-semibold text-red-600 truncate tabular-nums">{fmt(s.total_overdue)}</span>
+                        </div>
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                          <span className="text-slate-500"><strong className="text-slate-700">{s.paid_installments}</strong> recebidas</span>
+                          <span className="text-amber-600"><strong>{s.pending_installments}</strong> pendentes</span>
+                          <span className="text-red-600"><strong>{s.overdue_installments}</strong> vencidas</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            {/* Prazos */}
+            {showPrazos && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+                      <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Prazos</h3>
+                      <p className="text-[10px] text-slate-400">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('prazos')} className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition">
+                      Ver todos <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                {upcomingDeadlines.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                    <CalendarDays className="w-8 h-8 text-slate-200" />
+                    <p className="text-xs text-slate-400">Nenhum prazo pendente</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                    {upcomingDeadlines.map(deadline => {
+                      const cName = deadline.client_id ? clientMap.get(deadline.client_id)?.full_name : null;
+                      const due = parseLocalDateTime(deadline.due_date!);
+                      const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+                      const diffDays = Math.ceil((due.getTime() - todayMs.getTime()) / 86400000);
+                      const isToday   = diffDays === 0;
+                      const isUrgent  = diffDays <= 2 && diffDays >= 0;
+                      const isOverdue = diffDays < 0;
+                      return (
+                        <div key={deadline.id} onClick={() => handleNavigate('prazos')}
+                          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                          <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0 ${
+                            isOverdue ? 'bg-red-600 text-white' : isToday ? 'bg-rose-500 text-white' : isUrgent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            <span className="text-sm font-bold leading-none">{due.getDate()}</span>
+                            <span className="text-[9px] uppercase leading-none mt-0.5">{due.toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{deadline.title}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{cName || 'Sem cliente'}</p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
+                            isOverdue ? 'bg-red-100 text-red-700' :
+                            isToday   ? 'bg-rose-100 text-rose-700' :
+                            isUrgent  ? 'bg-orange-100 text-orange-700' :
+                            deadline.priority === 'urgente' ? 'bg-red-100 text-red-700' :
+                            deadline.priority === 'alta'    ? 'bg-orange-100 text-orange-700' :
+                            deadline.priority === 'media'   ? 'bg-amber-100 text-amber-700' :
+                                                              'bg-slate-100 text-slate-500'
+                          }`}>
+                            {isOverdue ? 'Vencido' : isToday ? 'Hoje' : `${diffDays}d`}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                {financialStats && (() => {
-                  const s = financialStats;
-                  const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
-                  return (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-emerald-500" />
-                          <span className="text-sm text-slate-600">Recebido</span>
-                        </div>
-                        <span className="text-sm font-semibold text-emerald-600">{fmt(s.monthly_fees_received)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <PiggyBank className="w-4 h-4 text-amber-500" />
-                          <span className="text-sm text-slate-600">A receber</span>
-                        </div>
-                        <span className="text-sm font-semibold text-amber-600">{fmt(s.monthly_fees_pending)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-red-500" />
-                          <span className="text-sm text-slate-600">Em atraso</span>
-                        </div>
-                        <span className="text-sm font-semibold text-red-600">{fmt(s.total_overdue)}</span>
-                      </div>
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <span className="text-slate-500"><strong className="text-slate-700">{s.paid_installments}</strong> recebidas</span>
-                        <span className="text-amber-600"><strong>{s.pending_installments}</strong> pendentes</span>
-                        <span className="text-red-600"><strong>{s.overdue_installments}</strong> vencidas</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-          </div>
-        )}
-
-        {/* ── Prazos ── */}
-        {visibleWidgetKeys.has('prazos') && (
-          <div key="prazos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
-                  <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Prazos</h3>
-                  <p className="text-[10px] text-slate-400">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleNavigate('prazos')} className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition">
-                  Ver todos <ChevronRight className="w-3 h-3" />
-                </button>
-                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-              </div>
-            </div>
-            {upcomingDeadlines.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
-                <CalendarDays className="w-8 h-8 text-slate-200" />
-                <p className="text-xs text-slate-400">Nenhum prazo pendente</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
-                {upcomingDeadlines.map(deadline => {
-                  const cName = deadline.client_id ? clientMap.get(deadline.client_id)?.full_name : null;
-                  const due = parseLocalDateTime(deadline.due_date!);
-                  const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((due.getTime() - todayMs.getTime()) / 86400000);
-                  const isToday   = diffDays === 0;
-                  const isUrgent  = diffDays <= 2 && diffDays >= 0;
-                  const isOverdue = diffDays < 0;
-                  return (
-                    <div key={deadline.id} onClick={() => handleNavigate('prazos')}
-                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                      <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0 ${
-                        isOverdue ? 'bg-red-600 text-white' : isToday ? 'bg-rose-500 text-white' : isUrgent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        <span className="text-sm font-bold leading-none">{due.getDate()}</span>
-                        <span className="text-[9px] uppercase leading-none mt-0.5">{due.toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 truncate">{deadline.title}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{cName || 'Sem cliente'}</p>
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
-                        isOverdue ? 'bg-red-100 text-red-700' :
-                        isToday   ? 'bg-rose-100 text-rose-700' :
-                        isUrgent  ? 'bg-orange-100 text-orange-700' :
-                        deadline.priority === 'urgente' ? 'bg-red-100 text-red-700' :
-                        deadline.priority === 'alta'    ? 'bg-orange-100 text-orange-700' :
-                        deadline.priority === 'media'   ? 'bg-amber-100 text-amber-700' :
-                                                          'bg-slate-100 text-slate-500'
-                      }`}>
-                        {isOverdue ? 'Vencido' : isToday ? 'Hoje' : `${diffDays}d`}
-                      </span>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </div>
         )}
 
-        {/* ── Intimações ── */}
-        {visibleWidgetKeys.has('intimacoes') && (
-          <div key="intimacoes" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
-                  <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-600" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Intimações</h3>
-                  <p className="text-[10px] text-slate-400">{djenIntimacoes.length} pendente{djenIntimacoes.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleNavigate('intimacoes')} className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5 transition">
-                  Ver todas <ChevronRight className="w-3 h-3" />
-                </button>
-                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-              </div>
-            </div>
-            {djenIntimacoes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
-                <Scale className="w-8 h-8 text-slate-200" />
-                <p className="text-xs text-slate-400">Nenhuma intimação pendente</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
-                {djenIntimacoes.slice(0, 5).map(intimacao => (
-                  <div key={intimacao.id} onClick={() => setSelectedIntimacao(intimacao)}
-                    className="px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-orange-100 text-orange-700 truncate">
-                        {intimacao.tipo_comunicacao || 'Intimação'}
-                      </span>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0">
-                        {intimacao.data_disponibilizacao ? new Date(intimacao.data_disponibilizacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''}
-                      </span>
+        {/* ── BOTTOM ROW (full 12 cols) ── */}
+        {bottomWidgets > 0 && (
+          <div className={`lg:col-span-12 min-w-0 grid grid-cols-1 gap-3 ${
+            bottomWidgets >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' :
+            bottomWidgets === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' :
+            bottomWidgets === 2 ? 'sm:grid-cols-2' : ''
+          }`}>
+            {/* Tarefas */}
+            {showTarefas && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
                     </div>
-                    <p className="text-xs font-semibold text-slate-800 truncate">{intimacao.numero_processo_mascara || intimacao.numero_processo}</p>
-                    {intimacao.nome_orgao && <p className="text-[10px] text-slate-400 truncate">{intimacao.nome_orgao}</p>}
-                    {intimacao.polo_ativo && <p className="text-[10px] text-slate-500 truncate mt-0.5"><span className="text-slate-400">Autor:</span> {intimacao.polo_ativo}</p>}
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Tarefas</h2>
+                      <p className="text-[10px] text-slate-500">{recentTasks.length} pendente{recentTasks.length !== 1 ? 's' : ''}</p>
+                    </div>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('tarefas')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+                      Ver todas <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto scroll-hidden p-2 sm:p-3">
+                  {recentTasks.length === 0 ? (
+                    <div className="text-center py-4">
+                      <CheckSquare className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                      <p className="text-slate-500 text-xs">Nenhuma tarefa pendente</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {recentTasks.map(task => (
+                        <div key={task.id} onClick={() => handleNavigate('tarefas')}
+                          className="group flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                          <div className="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                            <CheckSquare className="w-3 h-3 text-emerald-600" />
+                          </div>
+                          <p className="flex-1 text-xs font-medium text-slate-800 truncate">{task.title}</p>
+                          <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Intimações */}
+            {showIntimacoes && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                      <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Intimações</h3>
+                      <p className="text-[10px] text-slate-400">{djenIntimacoes.length} pendente{djenIntimacoes.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('intimacoes')} className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5 transition">
+                      Ver todas <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                {djenIntimacoes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                    <Scale className="w-8 h-8 text-slate-200" />
+                    <p className="text-xs text-slate-400">Nenhuma intimação pendente</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                    {djenIntimacoes.slice(0, 5).map(intimacao => (
+                      <div key={intimacao.id} onClick={() => setSelectedIntimacao(intimacao)}
+                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-orange-100 text-orange-700 truncate">
+                            {intimacao.tipo_comunicacao || 'Intimação'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 flex-shrink-0">
+                            {intimacao.data_disponibilizacao ? new Date(intimacao.data_disponibilizacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-800 truncate">{intimacao.numero_processo_mascara || intimacao.numero_processo}</p>
+                        {intimacao.nome_orgao && <p className="text-[10px] text-slate-400 truncate">{intimacao.nome_orgao}</p>}
+                        {intimacao.polo_ativo && <p className="text-[10px] text-slate-500 truncate mt-0.5"><span className="text-slate-400">Autor:</span> {intimacao.polo_ativo}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Processos */}
+            {showProcessos && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Aguardando Confecção</h3>
+                      <p className="text-[10px] text-slate-400">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('processos')} className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition">
+                      Ver todos <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                {awaitingDraftProcessesList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                    <FileText className="w-8 h-8 text-slate-200" />
+                    <p className="text-xs text-slate-400">Nenhum processo aguardando</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                    {awaitingDraftProcessesList.slice(0, 6).map(process => {
+                      const cName = process.client_id ? clientMap.get(process.client_id)?.full_name : null;
+                      const since = process.distributed_at || process.created_at;
+                      const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
+                      return (
+                        <div key={process.id} onClick={() => handleNavigate('processos')}
+                          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{cName || 'Cliente'}</p>
+                            {sinceDays !== null && <p className="text-[10px] text-slate-400">Há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
+                          </div>
+                          {process.priority === 'urgente' && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-red-100 text-red-700 flex-shrink-0">Urgente</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Requerimentos */}
+            {showRequer && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                      <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Requerimentos</h3>
+                      <p className="text-[10px] text-slate-400">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => handleNavigate('requerimentos')} className="text-[11px] font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-0.5 transition">
+                      Ver todos <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                {pendingRequirementsList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
+                    <Target className="w-8 h-8 text-slate-200" />
+                    <p className="text-xs text-slate-400">Nenhum requerimento pendente</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                    {pendingRequirementsList.slice(0, 6).map(req => {
+                      const since = req.entry_date;
+                      const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
+                      return (
+                        <div key={req.id} onClick={() => handleNavigate('requerimentos')}
+                          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                          <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-violet-600">{(req.beneficiary || 'R').charAt(0).toUpperCase()}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{req.beneficiary || 'Beneficiário'}</p>
+                            {sinceDays !== null && <p className="text-[10px] text-slate-400">Entrada há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {/* ── Processos Aguardando ── */}
-        {visibleWidgetKeys.has('processos') && (
-          <div key="processos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Aguardando Confecção</h3>
-                  <p className="text-[10px] text-slate-400">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleNavigate('processos')} className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition">
-                  Ver todos <ChevronRight className="w-3 h-3" />
-                </button>
-                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-              </div>
-            </div>
-            {awaitingDraftProcessesList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
-                <FileText className="w-8 h-8 text-slate-200" />
-                <p className="text-xs text-slate-400">Nenhum processo aguardando</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
-                {awaitingDraftProcessesList.slice(0, 6).map(process => {
-                  const cName = process.client_id ? clientMap.get(process.client_id)?.full_name : null;
-                  const since = process.distributed_at || process.created_at;
-                  const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
-                  return (
-                    <div key={process.id} onClick={() => handleNavigate('processos')}
-                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 truncate">{cName || 'Cliente'}</p>
-                        {sinceDays !== null && <p className="text-[10px] text-slate-400">Há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
-                      </div>
-                      {process.priority === 'urgente' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-red-100 text-red-700 flex-shrink-0">Urgente</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Requerimentos ── */}
-        {visibleWidgetKeys.has('requerimentos') && (
-          <div key="requerimentos" className="bg-white rounded-xl border border-slate-200/60 overflow-hidden flex flex-col">
-            <div className="widget-header px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
-                  <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-600" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">Requerimentos</h3>
-                  <p className="text-[10px] text-slate-400">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleNavigate('requerimentos')} className="text-[11px] font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-0.5 transition">
-                  Ver todos <ChevronRight className="w-3 h-3" />
-                </button>
-                {gridWidth >= 480 && <GripVertical className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />}
-              </div>
-            </div>
-            {pendingRequirementsList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-1.5 flex-1">
-                <Target className="w-8 h-8 text-slate-200" />
-                <p className="text-xs text-slate-400">Nenhum requerimento pendente</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
-                {pendingRequirementsList.slice(0, 6).map(req => {
-                  const since = req.entry_date;
-                  const sinceDays = since ? Math.floor((Date.now() - new Date(since).getTime()) / 86400000) : null;
-                  return (
-                    <div key={req.id} onClick={() => handleNavigate('requerimentos')}
-                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-violet-600">{(req.beneficiary || 'R').charAt(0).toUpperCase()}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 truncate">{req.beneficiary || 'Beneficiário'}</p>
-                        {sinceDays !== null && <p className="text-[10px] text-slate-400">Entrada há {sinceDays} dia{sinceDays !== 1 ? 's' : ''}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </ResponsiveGridLayout>
-      )}
       </div>
 
       {/* Modal de Detalhes do Evento */}

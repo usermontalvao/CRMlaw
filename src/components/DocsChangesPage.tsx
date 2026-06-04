@@ -871,6 +871,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.195',
+    date: '03/06/2026',
+    summary: 'Dashboard: remove react-grid-layout, layout CSS Grid estático com overflow controlado e auto-ajuste sem buracos.',
+    modules: [
+      { moduleId: 'Dashboard', changes: [
+        { type: 'improvement' as const, title: 'Remove arrastar e redimensionar widgets', description: 'react-grid-layout substituído por CSS Grid puro. GripVertical, handles de resize e persistência remota de layout removidos.' },
+        { type: 'fix' as const, title: 'Overflow corrigido — nada sai da área visível', description: 'Todos os containers com min-w-0, textos com truncate, valores financeiros com tabular-nums.' },
+        { type: 'improvement' as const, title: 'Auto-ajuste sem buracos por permissão', description: 'Quando módulos não estão visíveis, layout reorganiza automaticamente: agenda ocupa 12 colunas se não há coluna direita; bottom row ajusta de 4 para 3, 2 ou 1 colunas.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.194',
     date: '03/06/2026',
     summary: 'Requerimentos: status atualizado automaticamente para Aguardando Perícia ao agendar e convertido para Em Análise somente no dia seguinte à perícia.',
