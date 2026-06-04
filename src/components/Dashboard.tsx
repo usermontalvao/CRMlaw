@@ -1271,7 +1271,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     </div>
                   ) : (() => {
                     const s = financialStats;
-                    const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+                    const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
                     return (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -1280,23 +1280,59 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                               <TrendingUp className="w-3 h-3 text-emerald-500" />
                               <span className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Recebido</span>
                             </div>
-                            <p className="text-base font-bold text-emerald-700 tabular-nums leading-tight">{fmt(s.monthly_fees_received)}</p>
+                            <p className="text-sm font-bold text-emerald-700 tabular-nums leading-tight whitespace-nowrap">{fmt(s.monthly_fees_received)}</p>
                           </div>
                           <div className="bg-amber-50/60 rounded-xl px-3 py-2.5">
                             <div className="flex items-center gap-1.5 mb-1">
                               <PiggyBank className="w-3 h-3 text-amber-500" />
                               <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wide">A receber</span>
                             </div>
-                            <p className="text-base font-bold text-amber-700 tabular-nums leading-tight">{fmt(s.monthly_fees_pending)}</p>
+                            <p className="text-sm font-bold text-amber-700 tabular-nums leading-tight whitespace-nowrap">{fmt(s.monthly_fees_pending)}</p>
                           </div>
                         </div>
                         {s.total_overdue > 0 && (
-                          <div className="bg-red-50/60 rounded-xl px-3 py-2 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <AlertTriangle className="w-3 h-3 text-red-500" />
-                              <span className="text-[10px] font-medium text-red-600 uppercase tracking-wide">Em atraso</span>
+                          <div className="rounded-xl border border-red-100 overflow-hidden">
+                            {/* Header do bloco de atraso */}
+                            <div className="bg-red-50/60 px-3 py-2 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-3 h-3 text-red-500" />
+                                <span className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">Em atraso</span>
+                              </div>
+                              <p className="text-sm font-bold text-red-600 tabular-nums whitespace-nowrap">{fmt(s.total_overdue)}</p>
                             </div>
-                            <p className="text-sm font-bold text-red-600 tabular-nums">{fmt(s.total_overdue)}</p>
+                            {/* Lista dos inadimplentes */}
+                            {overdueInstallments.length > 0 && (
+                              <div className="divide-y divide-red-50">
+                                {overdueInstallments.map(inst => {
+                                  const cName = inst.agreement?.client_id
+                                    ? clientMap.get(inst.agreement.client_id)?.full_name
+                                    : null;
+                                  const due = parseLocalDateTime(inst.due_date);
+                                  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+                                  const daysLate = Math.floor((today0.getTime() - due.getTime()) / 86400000);
+                                  return (
+                                    <button
+                                      key={inst.id}
+                                      onClick={() => handleNavigate(`financeiro?entityId=${inst.agreement_id}&installmentNumber=${inst.installment_number}`)}
+                                      className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-red-50/60 transition-colors text-left group"
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-[11px] font-semibold text-slate-800 truncate group-hover:text-red-700 transition-colors">
+                                          {cName || inst.agreement?.title || 'Cliente'}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 tabular-nums">
+                                          Parcela {inst.installment_number} · {due.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                                        <span className="text-[11px] font-bold text-red-600 tabular-nums">{fmt(inst.value)}</span>
+                                        <span className="text-[9px] font-semibold text-red-400">{daysLate}d atraso</span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         )}
                         <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">

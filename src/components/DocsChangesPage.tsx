@@ -871,6 +871,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.198',
+    date: '03/06/2026',
+    summary: 'Dashboard — financeiro: lista de inadimplentes com link direto para o acordo, valor e dias em atraso.',
+    modules: [
+      { moduleId: 'Dashboard', changes: [
+        { type: 'improvement' as const, title: 'Inadimplentes com link no widget Financeiro', description: 'Quando há parcelas vencidas, o bloco "Em atraso" expande mostrando cada cliente: nome, parcela, data, valor e dias em atraso. Clique navega direto para o acordo no módulo Financeiro.' },
+        { type: 'fix' as const, title: 'Valores financeiros completos com centavos', description: 'Formato restaurado para R$ 3.197,47 (com centavos). whitespace-nowrap evita quebra de linha no meio do número.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.197',
     date: '03/06/2026',
     summary: 'Dashboard: remove espaços vazios — cards ajustam à altura do próprio conteúdo sem esticar.',
