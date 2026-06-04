@@ -871,6 +871,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.197',
+    date: '03/06/2026',
+    summary: 'Dashboard: remove espaços vazios — cards ajustam à altura do próprio conteúdo sem esticar.',
+    modules: [
+      { moduleId: 'Dashboard', changes: [
+        { type: 'fix' as const, title: 'Espaço vazio removido dos cards', description: 'lg:items-start na grade impede que cards estiquem para preencher a linha. Agenda sem minHeight forçado; lista de eventos com max-h scroll em vez de flex-1 vazio.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.196',
     date: '03/06/2026',
     summary: 'Dashboard: polish visual — fundo azul-acinzentado, cards elevados com sombra, faixas coloridas por módulo, financeiro em grid, headers e empty states padronizados.',

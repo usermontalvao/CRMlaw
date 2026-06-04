@@ -1099,11 +1099,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       )}
 
       {/* ── MAIN GRID ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-w-0 lg:items-start">
 
         {/* ── AGENDA (7 cols or full) ── */}
         {showAgenda && (
-          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`} style={{ minHeight: 420 }}>
+          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
             <div className="h-0.5 bg-gradient-to-r from-amber-400 to-orange-400 flex-shrink-0" />
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
@@ -1168,7 +1168,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
             {/* Event list */}
             {upcomingEvents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-10 flex-1">
+              <div className="flex flex-col items-center justify-center gap-3 py-10">
                 <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-slate-300" />
                 </div>
@@ -1182,7 +1182,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 </button>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto scroll-hidden">
+              <div className="overflow-y-auto scroll-hidden max-h-[520px]">
                 {agendaGroups.map((group) => (
                   <div key={group.dateKey}>
                     {/* Day separator */}
