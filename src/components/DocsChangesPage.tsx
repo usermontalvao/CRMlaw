@@ -871,6 +871,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.196',
+    date: '03/06/2026',
+    summary: 'Dashboard: polish visual — fundo azul-acinzentado, cards elevados com sombra, faixas coloridas por módulo, financeiro em grid, headers e empty states padronizados.',
+    modules: [
+      { moduleId: 'Dashboard', changes: [
+        { type: 'improvement' as const, title: 'Fundo e elevação dos cards', description: 'Background #f4f6fb + shadow + ring substituem borda flat. Cards ficam elevados sobre o fundo.' },
+        { type: 'improvement' as const, title: 'Faixas coloridas de identidade por módulo', description: 'Cada card tem um gradiente de 2px no topo: âmbar/laranja (agenda), índigo/violeta (ações), esmeralda/teal (financeiro), rosa/pink (prazos), esmeralda (tarefas), laranja/âmbar (intimações), âmbar/amarelo (confecção), violeta/purple (requerimentos).' },
+        { type: 'improvement' as const, title: 'Financeiro reestruturado em grid', description: 'Recebido e A receber em cards coloridos 2×2; Em atraso aparece apenas quando > 0. Valores em fonte maior e bolder.' },
+        { type: 'improvement' as const, title: 'Headers e empty states padronizados', description: 'Todos os cards usam ícone w-8 h-8 rounded-xl, título 13px semibold, subtítulo 11px. Empty states com ícone em caixa arredondada. Links "Ver" unificados em amber-600.' },
+        { type: 'improvement' as const, title: 'Widget Ações Rápidas removido', description: 'Card suprimido do dashboard. Financeiro e Prazos ocupam toda a coluna direita. Atalhos de criação permanecem acessíveis via sidebar.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.195',
     date: '03/06/2026',
     summary: 'Dashboard: remove react-grid-layout, layout CSS Grid estático com overflow controlado e auto-ajuste sem buracos.',
