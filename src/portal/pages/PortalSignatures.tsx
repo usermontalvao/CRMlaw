@@ -52,16 +52,13 @@ function isBlocked(s: SignatureRequest): boolean {
 
 function resolveSignUrl(s: SignatureRequest, clientEmail?: string): string | null {
   const all = s.signers || [];
-
-  // 1. match por email ou auth_email
   const me = findMe(all, clientEmail);
-  const myToken = me?.access_token || me?.token || (me as any)?.public_token;
+  const myToken = me?.access_token || me?.token || me?.public_token;
   if (myToken) return `/#/assinar/${myToken}`;
 
-  // 2. qualquer token disponível
   for (const sg of all) {
-    const t = sg.access_token || sg.token || (sg as any)?.public_token;
-    if (t) return `/#/assinar/${t}`;
+    const token = sg.access_token || sg.token || sg.public_token;
+    if (token) return `/#/assinar/${token}`;
   }
 
   return null;
@@ -69,47 +66,41 @@ function resolveSignUrl(s: SignatureRequest, clientEmail?: string): string | nul
 
 function findMe(signers: Signer[], clientEmail?: string): Signer | undefined {
   if (!clientEmail) return undefined;
-  const e = clientEmail.toLowerCase();
+  const email = clientEmail.toLowerCase();
   return signers.find(
-    (sg) =>
-      sg.email?.toLowerCase() === e ||
-      (sg as any).auth_email?.toLowerCase() === e
+    (sg) => sg.email?.toLowerCase() === email || sg.auth_email?.toLowerCase() === email,
   );
 }
 
-function getStatus(s: SignatureRequest, clientEmail?: string): { isPending: boolean; isExpired: boolean; label: string; badge: string; iAmSigner: boolean } {
+function getStatus(
+  s: SignatureRequest,
+  clientEmail?: string,
+): { isPending: boolean; isExpired: boolean; label: string; badge: string; iAmSigner: boolean } {
   const all = s.signers || [];
   const me = findMe(all, clientEmail);
   const allSigned = all.length > 0 && all.every((sg) => sg.status === 'signed');
 
-  // Servidor confirmou como concluído
   if (s.status === 'signed' || s.status === 'completed') {
-    return { isPending: false, isExpired: false, label: 'Concluído', badge: 'signed', iAmSigner: !!me };
+    return { isPending: false, isExpired: false, label: 'Conclu?do', badge: 'signed', iAmSigner: !!me };
   }
 
-  // Expirado
   const expired = !!s.expires_at && new Date(s.expires_at) < new Date();
   if (s.status === 'expired' || expired) {
     return { isPending: false, isExpired: true, label: 'Expirado', badge: 'expired', iAmSigner: !!me };
   }
 
-  // Eu assinei
   if (me?.status === 'signed') {
-    return { isPending: false, isExpired: false, label: 'Você assinou', badge: 'signed', iAmSigner: true };
+    return { isPending: false, isExpired: false, label: 'Voc? assinou', badge: 'signed', iAmSigner: true };
   }
 
-  // Eu sou signatário mas ainda não assinei
   if (me && me.status !== 'signed') {
     return { isPending: true, isExpired: false, label: 'Assinar agora', badge: 'pending', iAmSigner: true };
   }
 
-  // Não estou na lista de signatários
   if (allSigned) {
-    // Todos já assinaram — processo concluído
-    return { isPending: false, isExpired: false, label: 'Concluído', badge: 'signed', iAmSigner: false };
+    return { isPending: false, isExpired: false, label: 'Conclu?do', badge: 'signed', iAmSigner: false };
   }
 
-  // Pendente genérico (processo em andamento, aguardando outros)
   return { isPending: false, isExpired: false, label: 'Em andamento', badge: 'in_progress', iAmSigner: false };
 }
 
@@ -128,14 +119,19 @@ export const PortalSignatures: React.FC = () => {
       .then((data) => {
         if (mounted) setItems((data as SignatureRequest[]).filter((s) => !isBlocked(s)));
       })
-      .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, [session]);
 
   const clientEmail = session?.client.email ?? undefined;
 
   const counts = useMemo(() => {
-    let pending = 0, signed = 0;
+    let pending = 0;
+    let signed = 0;
     items.forEach((s) => {
       if (getStatus(s, clientEmail).isPending) pending++;
       else signed++;
@@ -148,15 +144,23 @@ export const PortalSignatures: React.FC = () => {
     return items.filter((s) => {
       const st = getStatus(s, clientEmail);
       if (tab === 'pending') return st.isPending;
-      if (tab === 'signed')  return !st.isPending && !st.isExpired;
+      if (tab === 'signed') return !st.isPending && !st.isExpired;
       return true;
     });
   }, [items, tab, clientEmail]);
 
-  const TABS = [
+  const signedItems = useMemo(
+    () => items.filter((s) => {
+      const st = getStatus(s, clientEmail);
+      return !st.isPending && !st.isExpired;
+    }),
+    [items, clientEmail],
+  );
+
+  const tabs = [
     { key: 'pending' as Tab, label: 'Pendentes', count: counts.pending },
-    { key: 'signed'  as Tab, label: 'Assinados',  count: counts.signed },
-    { key: 'all'     as Tab, label: 'Todos',       count: counts.all },
+    { key: 'signed' as Tab, label: 'Assinados', count: counts.signed },
+    { key: 'all' as Tab, label: 'Todos', count: counts.all },
   ];
 
   return (
@@ -165,7 +169,7 @@ export const PortalSignatures: React.FC = () => {
         <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Assinaturas</h1>
         <p className="mt-1 text-sm text-slate-500">
           {items.length
-            ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} · ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
+            ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} ? ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
             : 'Documentos que precisam da sua assinatura digital.'}
         </p>
       </header>
@@ -179,18 +183,17 @@ export const PortalSignatures: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-4 border-b border-slate-200">
-        {TABS.map((t) => {
-          const on = tab === t.key;
+        {tabs.map((tabItem) => {
+          const active = tab === tabItem.key;
           return (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              key={tabItem.key}
+              onClick={() => setTab(tabItem.key)}
+              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${active ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
             >
-              {t.label}
-              <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-orange-700' : 'text-slate-400'}`}>{t.count}</span>
+              {tabItem.label}
+              <span className={`tabular-nums text-[11px] font-semibold ${active ? 'text-orange-700' : 'text-slate-400'}`}>{tabItem.count}</span>
             </button>
           );
         })}
@@ -199,23 +202,40 @@ export const PortalSignatures: React.FC = () => {
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={tab === 'pending' ? CheckCircle2 : FileSignature}
-          title={tab === 'pending' ? 'Nenhuma assinatura pendente' : tab === 'signed' ? 'Nenhum documento assinado' : 'Sem documentos'}
-          description={tab === 'pending' ? 'Quando houver um documento aguardando você, ele aparecerá aqui.' : 'Os documentos que você já assinou aparecerão nesta lista.'}
-        />
+        tab === 'pending' && signedItems.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            <EmptyState
+              icon={CheckCircle2}
+              title="Nenhuma assinatura pendente"
+              description="No momento, n?o h? nada aguardando sua assinatura. Os documentos j? assinados aparecem logo abaixo."
+            />
+            <section className="flex flex-col gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Arquivos j? assinados</h2>
+                <p className="mt-1 text-xs text-slate-500">Abra aqui os documentos j? conclu?dos, sem precisar trocar de aba.</p>
+              </div>
+              {signedItems.map((item) => (
+                <SignatureCard key={item.id} item={item} clientEmail={clientEmail} />
+              ))}
+            </section>
+          </div>
+        ) : (
+          <EmptyState
+            icon={tab === 'pending' ? CheckCircle2 : FileSignature}
+            title={tab === 'pending' ? 'Nenhuma assinatura pendente' : tab === 'signed' ? 'Nenhum documento assinado' : 'Sem documentos'}
+            description={tab === 'pending' ? 'Quando houver um documento aguardando voc?, ele aparecer? aqui.' : 'Os documentos que voc? j? assinou aparecer?o nesta lista.'}
+          />
+        )
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map((s) => (
-            <SignatureCard key={s.id} item={s} clientEmail={clientEmail} />
+          {filtered.map((item) => (
+            <SignatureCard key={item.id} item={item} clientEmail={clientEmail} />
           ))}
         </div>
       )}
     </div>
   );
 };
-
-// ── Card individual ────────────────────────────────────────────────────────────
 
 const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> = ({ item: s, clientEmail }) => {
   const st = getStatus(s, clientEmail);
@@ -226,14 +246,12 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
   const totalSigners = s.signers?.length || 0;
   const progress = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
 
-  // Pendente + sou signatário → sign URL; concluído → doc URL ou sign URL como fallback
   const actionUrl = st.isPending && st.iAmSigner ? signUrl : (docUrl || signUrl);
-  const mySigner = (s.signers || []).find((sg) => sg.status === 'signed');
+  const mySigner = findMe(s.signers || [], clientEmail);
   const multi = totalSigners > 1;
 
   const handleCardClick = () => {
     if (!actionUrl) return;
-    // Documentos assinados abrem em nova aba (viewer vive no CRM)
     if (!st.isPending && docUrl && actionUrl === docUrl) {
       window.open(docUrl, '_blank', 'noopener');
     } else {
@@ -251,7 +269,6 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
         actionUrl ? 'cursor-pointer hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]' : ''
       }${st.isPending ? ' border-l-[3px] border-l-orange-500' : ''}`}
     >
-      {/* Linha principal: ícone neutro + título + status */}
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
           <FileSignature className="h-4 w-4" />
@@ -267,7 +284,7 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
               ? `Solicitado ${formatRelative(s.created_at)}`
               : mySigner?.signed_at
               ? `Assinado em ${formatDate(mySigner.signed_at)}`
-              : 'Documento concluído'}
+              : 'Documento conclu?do'}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -276,7 +293,6 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
         </div>
       </div>
 
-      {/* Progresso quando há múltiplos signatários */}
       {multi && (
         <div className="border-t border-slate-100 pt-3">
           <div className="mb-1.5 flex items-center justify-between text-[11px] text-slate-500">
@@ -289,12 +305,12 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
         </div>
       )}
 
-      {/* CTA */}
       {st.iAmSigner && st.isPending && signUrl && (
         <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
           <PenTool className="h-4 w-4" /> Assinar documento <ExternalLink className="h-3.5 w-3.5 opacity-60" />
         </div>
       )}
+
       {!st.isPending && !st.isExpired && actionUrl && (
         <a
           href={docUrl || actionUrl}
@@ -306,9 +322,10 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
           <Eye className="h-4 w-4" /> Ver documento <ExternalLink className="h-3.5 w-3.5 opacity-40" />
         </a>
       )}
+
       {st.iAmSigner && st.isPending && !signUrl && (
         <p className="border-t border-slate-100 pt-3 text-[13px] text-slate-500">
-          Entre em contato com o escritório para obter o link de assinatura.
+          Entre em contato com o escrit?rio para obter o link de assinatura.
         </p>
       )}
     </div>

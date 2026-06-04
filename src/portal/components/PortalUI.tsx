@@ -1,11 +1,4 @@
-/**
- * Utilitários compartilhados das páginas do Portal
- */
 import React from 'react';
-
-// ----------------------------------------------------------------------------
-// Formatadores
-// ----------------------------------------------------------------------------
 
 export function formatCurrency(value: number | null | undefined): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -14,74 +7,65 @@ export function formatCurrency(value: number | null | undefined): string {
   }).format(Number(value || 0));
 }
 
-/**
- * Converte string em Date tratando datas-só ("YYYY-MM-DD") como LOCAIS
- * (evita o off-by-one de fuso: new Date('2026-01-27') vira 26/01 em UTC-3/-4).
- */
 function parseDate(date: string): Date {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return new Date(date);
 }
 
 export function formatDate(date: string | null | undefined, opts?: { withTime?: boolean }): string {
   if (!date) return '—';
-  const d = parseDate(date);
-  if (isNaN(d.getTime())) return '—';
+  const parsed = parseDate(date);
+  if (isNaN(parsed.getTime())) return '—';
   return opts?.withTime
-    ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : d.toLocaleDateString('pt-BR');
+    ? parsed.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : parsed.toLocaleDateString('pt-BR');
 }
 
 export function formatDateLong(date: string | null | undefined): string {
   if (!date) return '—';
-  const d = parseDate(date);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const parsed = parseDate(date);
+  if (isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export function formatRelative(date: string | null | undefined): string {
   if (!date) return '—';
-  const d = new Date(date).getTime();
-  if (isNaN(d)) return '—';
-  const diff = Date.now() - d;
-  const sec = Math.round(diff / 1000);
-  if (Math.abs(sec) < 60) return 'agora mesmo';
-  const min = Math.round(sec / 60);
-  if (Math.abs(min) < 60) return `há ${Math.abs(min)} min`;
-  const hr = Math.round(min / 60);
-  if (Math.abs(hr) < 24) return `há ${Math.abs(hr)}h`;
-  const day = Math.round(hr / 24);
-  if (Math.abs(day) < 30) return `há ${Math.abs(day)} dia${Math.abs(day) > 1 ? 's' : ''}`;
+  const parsed = new Date(date).getTime();
+  if (isNaN(parsed)) return '—';
+  const diffSeconds = Math.round((Date.now() - parsed) / 1000);
+  if (Math.abs(diffSeconds) < 60) return 'agora mesmo';
+  const minutes = Math.round(diffSeconds / 60);
+  if (Math.abs(minutes) < 60) return `há ${Math.abs(minutes)} min`;
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return `há ${Math.abs(hours)}h`;
+  const days = Math.round(hours / 24);
+  if (Math.abs(days) < 30) return `há ${Math.abs(days)} dia${Math.abs(days) > 1 ? 's' : ''}`;
   return formatDate(date);
 }
 
 export function formatCPF(cpf: string | null | undefined): string {
   if (!cpf) return '—';
-  const d = cpf.replace(/\D/g, '');
-  if (d.length !== 11) return cpf;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  const digits = cpf.replace(/\D/g, '');
+  if (digits.length !== 11) return cpf;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
 export function formatPhone(phone: string | null | undefined): string {
   if (!phone) return '—';
-  const d = phone.replace(/\D/g, '');
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
   return phone;
 }
 
 export function formatFileSize(bytes: number | null | undefined): string {
-  const n = Number(bytes || 0);
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
-
-// ----------------------------------------------------------------------------
-// Page header
-// ----------------------------------------------------------------------------
 
 interface PageHeaderProps {
   title: string;
@@ -94,22 +78,18 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, subtitle, icon: I
   <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
     <div className="flex items-start gap-3">
       {Icon && (
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 text-orange-600 ring-1 ring-orange-100">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[20px] bg-[linear-gradient(135deg,#fff7ed,#ffedd5)] text-orange-700 ring-1 ring-orange-200 shadow-[0_10px_20px_rgba(249,115,22,0.10)]">
           <Icon className="h-5 w-5" />
         </div>
       )}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="text-[29px] font-extrabold tracking-tight text-slate-900 sm:text-[34px]">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm leading-relaxed text-slate-500">{subtitle}</p>}
       </div>
     </div>
     {actions && <div className="flex items-center gap-2">{actions}</div>}
   </div>
 );
-
-// ----------------------------------------------------------------------------
-// Empty state
-// ----------------------------------------------------------------------------
 
 interface EmptyStateProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -119,26 +99,22 @@ interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon, title, description, action }) => (
-  <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/60 px-6 py-12 text-center">
-    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+  <div className="flex flex-col items-center justify-center rounded-[30px] border border-white/70 bg-white/72 px-6 py-12 text-center shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+    <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#fff7ed,#f8fafc)] text-orange-500 ring-1 ring-orange-100">
       <Icon className="h-7 w-7" />
     </div>
     <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
-    {description && <p className="mt-1 max-w-sm text-sm text-slate-500">{description}</p>}
+    {description && <p className="mt-1 max-w-sm text-sm leading-relaxed text-slate-500">{description}</p>}
     {action && <div className="mt-4">{action}</div>}
   </div>
 );
 
-// ----------------------------------------------------------------------------
-// Loading skeleton
-// ----------------------------------------------------------------------------
-
 export const SkeletonCard: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse rounded-2xl border border-slate-200/80 bg-white p-5 ${className}`}>
-    <div className="h-3 w-24 rounded bg-slate-200" />
-    <div className="mt-3 h-7 w-32 rounded bg-slate-200" />
-    <div className="mt-4 h-2 w-full rounded bg-slate-100" />
-    <div className="mt-2 h-2 w-3/4 rounded bg-slate-100" />
+  <div className={`animate-pulse rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] backdrop-blur-xl ${className}`}>
+    <div className="h-3 w-24 rounded-full bg-slate-200" />
+    <div className="mt-3 h-8 w-32 rounded-2xl bg-slate-200" />
+    <div className="mt-4 h-2.5 w-full rounded-full bg-slate-100" />
+    <div className="mt-2 h-2.5 w-3/4 rounded-full bg-slate-100" />
   </div>
 );
 
@@ -152,22 +128,15 @@ export const PageLoader: React.FC<{ message?: string }> = ({ message = 'Carregan
   </div>
 );
 
-// ----------------------------------------------------------------------------
-// Badges
-// ----------------------------------------------------------------------------
-
 const STATUS_COLORS: Record<string, string> = {
-  // financeiro
   pago: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   pendente: 'bg-amber-50 text-amber-700 ring-amber-200',
   vencido: 'bg-rose-50 text-rose-700 ring-rose-200',
   atrasado: 'bg-rose-50 text-rose-700 ring-rose-200',
   cancelado: 'bg-slate-100 text-slate-600 ring-slate-200',
-  // processo
   ativo: 'bg-blue-50 text-blue-700 ring-blue-200',
   arquivado: 'bg-slate-100 text-slate-600 ring-slate-200',
   suspenso: 'bg-amber-50 text-amber-700 ring-amber-200',
-  // assinatura
   pending: 'bg-amber-50 text-amber-700 ring-amber-200',
   in_progress: 'bg-blue-50 text-blue-700 ring-blue-200',
   signed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -193,7 +162,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export const StatusBadge: React.FC<{ status: string; label?: string }> = ({ status, label }) => (
   <span
-    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${
       STATUS_COLORS[status] || 'bg-slate-100 text-slate-600 ring-slate-200'
     }`}
   >

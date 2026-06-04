@@ -46,6 +46,42 @@
   --apple-shadow-xl: 0 20px 40px -4px rgba(0, 0, 0, 0.1), 0 8px 16px -4px rgba(0, 0, 0, 0.04);
 }
 
+/* Scanner scan-line animation */
+@keyframes scanner-sweep {
+  0%   { top: 4%;  opacity: 0; }
+  6%   { opacity: 1; }
+  94%  { opacity: 1; }
+  100% { top: 92%; opacity: 0; }
+}
+.scanner-sweep-line {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, transparent, rgba(249,115,22,0.9), transparent);
+  animation: scanner-sweep 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Scanner corner pulse */
+@keyframes corner-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+.scanner-corner {
+  animation: corner-pulse 2.4s ease-in-out infinite;
+}
+
+/* Capture flash */
+@keyframes capture-flash {
+  0%   { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+.capture-flash {
+  animation: capture-flash 0.25s ease-out forwards;
+}
+
 .dash-card {
   background-color: #ffffff;
   border-radius: 1.25rem;
@@ -306,6 +342,12 @@ body {
   background: var(--apple-bg);
   color: var(--apple-text-primary);
   transition: background 0.3s ease, color 0.3s ease;
+}
+
+.portal-shell {
+  background:
+    radial-gradient(circle at top, rgba(249, 115, 22, 0.08), transparent 22%),
+    linear-gradient(180deg, #f8fafc 0%, #f5f7fb 100%);
 }
 
 /* ===== COMPONENTES APPLE ===== */

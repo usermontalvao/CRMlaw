@@ -440,6 +440,7 @@ const ChatModule: React.FC = () => {
     scrollToBottom: () => {},
     markRead: (_roomId: string) => Promise.resolve(),
     loadRooms: () => Promise.resolve() as Promise<void>,
+    getRooms: () => [] as ChatRoom[],
   });
 
   const insertTextAtCursor = (text: string) => {
@@ -965,13 +966,24 @@ const ChatModule: React.FC = () => {
 
     const unsubscribe = chatService.subscribeToAllMessages({
       onInsert: (msg) => {
-        // Always update room preview / sort
-        setRooms((prev) => {
-          if (!prev.some((r) => r.id === msg.room_id)) {
-            // Sala desconhecida — recarrega lista (ex: novo ticket criado pelo portal)
+        // ── Verifica se esta sala é visível para o usuário atual ──────────────
+        // Portal rooms aceitas por outro atendente já foram removidas de `rooms`.
+        // Mensagens delas NÃO devem gerar notificação nem recarregar a lista.
+        const visibleRooms = stableModuleRef.current.getRooms();
+        const roomVisible = visibleRooms.some((r) => r.id === msg.room_id);
+
+        if (!roomVisible) {
+          // Sala desconhecida: recarrega APENAS se for mensagem de equipe/DM
+          // (portal messages têm user_id = null e já foram filtradas pelo accepted_by)
+          const isPortalClientMsg = msg.user_id === null;
+          if (!isPortalClientMsg) {
             stableModuleRef.current.loadRooms();
-            return prev;
           }
+          return; // ← nunca notifica salas invisíveis
+        }
+
+        // ── Atualiza preview e ordem da sala ─────────────────────────────────
+        setRooms((prev) => {
           const updated = prev.map((r) =>
             r.id === msg.room_id
               ? { ...r, last_message_at: msg.created_at, last_message_preview: getMessagePreview(msg.content) }
@@ -999,6 +1011,7 @@ const ChatModule: React.FC = () => {
           return;
         }
 
+        // ── Notificação apenas para salas visíveis + mensagem não minha ─────
         if (!isMine) {
           stableModuleRef.current.playSound();
           setUnreadCount((prev) => prev + 1);
@@ -1008,10 +1021,10 @@ const ChatModule: React.FC = () => {
             return next;
           });
           if ('Notification' in window && Notification.permission === 'granted') {
-            const author = stableModuleRef.current.membersByUserId.get(msg.user_id);
+            const author = stableModuleRef.current.membersByUserId.get(msg.user_id ?? '');
             const preview = getMessagePreview(msg.content);
             new Notification('Nova mensagem', {
-              body: `${author?.name || 'Usuário'}: ${preview}`,
+              body: `${author?.name || 'Cliente'}: ${preview}`,
               icon: '/favicon.ico',
             });
           }
@@ -1084,6 +1097,32 @@ const ChatModule: React.FC = () => {
     return () => unsub();
   }, [user]);
 
+  // Subscription para UPDATE em tickets — remove da lista quando outro atendente aceitar
+  useEffect(() => {
+    if (!user) return;
+    const unsub = chatService.subscribeToTicketRoomUpdates({
+      onUpdate: (updatedRoom) => {
+        const acceptedByOther =
+          updatedRoom.accepted_by !== null &&
+          updatedRoom.accepted_by !== undefined &&
+          updatedRoom.accepted_by !== user.id;
+
+        if (acceptedByOther) {
+          // Remove da lista de salas visíveis (outro atendente aceitou)
+          setRooms((prev) => prev.filter((r) => r.id !== updatedRoom.id));
+          // Se estava selecionada, deseleciona
+          setSelectedRoomId((prev) => (prev === updatedRoom.id ? null : prev));
+        } else {
+          // Atualiza os dados da sala na lista (ex: minha aceitação chegou via realtime)
+          setRooms((prev) =>
+            prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r)),
+          );
+        }
+      },
+    });
+    return () => unsub();
+  }, [user]);
+
   const handleSendNudgeModule = useCallback(async () => {
     if (!user || !selectedRoomId || nudgeCooldown) return;
     const memberIds = roomMembers.get(selectedRoomId) || [];
@@ -1116,6 +1155,7 @@ const ChatModule: React.FC = () => {
   stableModuleRef.current.markRead = (roomId: string) =>
     user ? chatService.markAsRead({ roomId, userId: user.id }).catch(() => {}) : Promise.resolve();
   stableModuleRef.current.loadRooms = loadRooms;
+  stableModuleRef.current.getRooms = () => rooms;
 
   // Recebe presença do widget via evento — sem criar canal Supabase próprio (evita conflito)
   useEffect(() => {

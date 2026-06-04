@@ -97,13 +97,13 @@ export const PortalFinancial: React.FC = () => {
     <div className="flex flex-col gap-5">
       <header>
         <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Financeiro</h1>
-        <p className="mt-1 text-sm text-slate-500">Honorários, contratos e recibos</p>
+        <p className="mt-1 text-sm text-slate-500">Acordos e recibos</p>
       </header>
 
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /></div>
       ) : agreements.length === 0 ? (
-        <EmptyState icon={DollarSign} title="Sem contratos" description="Você ainda não possui contratos financeiros cadastrados." />
+        <EmptyState icon={DollarSign} title="Sem movimentações financeiras" description="Quando houver um acordo ou pagamento vinculado ao seu processo, ele aparecerá aqui." />
       ) : (
         <>
           {/* RECEBER (acordos) */}
@@ -120,7 +120,7 @@ export const PortalFinancial: React.FC = () => {
               </div>
               {!summary.hasPayable && (
                 <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  Os honorários do escritório já estão descontados do valor acima — você não paga nada além disso.
+                  A taxa do escritório já está descontada do valor acima — você não paga nada além disso.
                 </p>
               )}
             </section>
@@ -129,7 +129,7 @@ export const PortalFinancial: React.FC = () => {
           {/* PAGAR (honorários contratados pelo cliente) */}
           {summary.hasPayable && (
             <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Honorários contratados</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Valor contratado</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{formatBRL(summary.payFee)}</p>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${summary.payPct}%` }} />
@@ -147,7 +147,7 @@ export const PortalFinancial: React.FC = () => {
           <div className="flex gap-4 border-b border-slate-200">
             {([
               { id: 'contratos' as Tab, label: 'Contratos', count: agreements.length },
-              { id: 'recibos' as Tab,   label: 'Recibos',   count: paidInstallments.length },
+              { id: 'recibos'   as Tab, label: 'Recibos',   count: paidInstallments.length },
             ]).map((t) => {
               const on = tab === t.id;
               return (
@@ -200,7 +200,7 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h2 className="line-clamp-1 text-sm font-semibold text-slate-900">{a.title || 'Contrato'}</h2>
-              <p className="text-xs text-slate-500">{v.isAcordo ? 'Acordo judicial' : 'Honorários contratados'}</p>
+              <p className="text-xs text-slate-500">{v.isAcordo ? 'Acordo judicial' : 'Contrato de serviços'}</p>
             </div>
             {a.status && <StatusBadge status={a.status} />}
           </div>
@@ -214,8 +214,8 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
                 </div>
               )}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                <span>Acordo: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.total)}</span></span>
-                <span>Honorários {v.percentage}%: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></span>
+                <span>Valor do acordo: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.total)}</span></span>
+                <span>Taxa do escritório ({v.percentage}%): <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></span>
               </div>
               <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.clientProgress}%` }} />
@@ -226,7 +226,7 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
             </div>
           ) : (
             <div className="mt-3">
-              <p className="text-xs text-slate-500">Honorários: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></p>
+              <p className="text-xs text-slate-500">Valor contratado: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></p>
               <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${v.feeProgress}%` }} />
               </div>
@@ -250,7 +250,7 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
       {open && installments.length > 0 && (
         <div className="border-t border-slate-100">
           <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            {v.isAcordo ? 'Parcelas do acordo' : 'Parcelas dos honorários'}
+            {v.isAcordo ? 'Parcelas do acordo' : 'Parcelas do contrato'}
           </p>
           <div className="divide-y divide-slate-100">
             {installments.map((inst) => {
@@ -264,7 +264,7 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
                     <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBRL(inst.value)}</p>
                     <p className="flex flex-wrap gap-2 text-[11px] text-slate-500">
                       <span className="inline-flex items-center gap-0.5"><Calendar className="h-3 w-3" />{formatDate(inst.due_date)}</span>
-                      {v.isAcordo && <span className="tabular-nums text-orange-700">hon. {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
+                      {v.isAcordo && <span className="tabular-nums text-orange-700">escritório: {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
                     </p>
                   </div>
                   <span className={`text-[11px] font-semibold ${st.key === 'pago' ? 'text-emerald-700' : st.key === 'vencido' ? 'text-rose-600' : 'text-slate-500'}`}>{st.label}</span>

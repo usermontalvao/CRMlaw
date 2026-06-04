@@ -415,18 +415,21 @@ class ChatService {
       if (room) merged.set(room.id, room);
     });
 
-    (portalRooms ?? []).forEach((room: any) => {
-      // Extrai foto do cliente do join — bucket 'perfil' é público
-      const photoPath = room.portal_user?.client?.photo_path;
-      const enriched: any = { ...room, portal_user: undefined };
-      if (photoPath) {
-        try {
-          const { data } = supabase.storage.from('perfil').getPublicUrl(photoPath);
-          if (data?.publicUrl) enriched.portal_client_avatar = data.publicUrl;
-        } catch { /* sem foto, usa iniciais */ }
-      }
-      merged.set(room.id, enriched as ChatRoom);
-    });
+    (portalRooms ?? [])
+      // Fila: mostra apenas (a) sem dono ainda ou (b) atribuída a este atendente
+      .filter((room: any) => room.accepted_by == null || room.accepted_by === userId)
+      .forEach((room: any) => {
+        // Extrai foto do cliente do join — bucket 'perfil' é público
+        const photoPath = room.portal_user?.client?.photo_path;
+        const enriched: any = { ...room, portal_user: undefined };
+        if (photoPath) {
+          try {
+            const { data } = supabase.storage.from('perfil').getPublicUrl(photoPath);
+            if (data?.publicUrl) enriched.portal_client_avatar = data.publicUrl;
+          } catch { /* sem foto, usa iniciais */ }
+        }
+        merged.set(room.id, enriched as ChatRoom);
+      });
 
     return Array.from(merged.values()).sort((a, b) => {
       const aTime = a.last_message_at ?? a.created_at;
@@ -654,6 +657,22 @@ class ChatService {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: this.roomsTable, filter: 'type=eq.portal_client' },
       (payload) => params.onNewRoom(payload.new as ChatRoom),
+    );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }
+
+  /**
+   * Escuta UPDATE em salas portal_client.
+   * Quando accepted_by é preenchido por outro atendente, o frontend pode
+   * remover a sala da lista de quem não a aceitou.
+   */
+  subscribeToTicketRoomUpdates(params: { onUpdate: (room: ChatRoom) => void }): () => void {
+    const channel = supabase.channel('chat_rooms_portal_update');
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: this.roomsTable, filter: 'type=eq.portal_client' },
+      (payload) => params.onUpdate(payload.new as ChatRoom),
     );
     channel.subscribe();
     return () => { supabase.removeChannel(channel); };

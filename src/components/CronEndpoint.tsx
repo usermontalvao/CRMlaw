@@ -20,14 +20,30 @@ const CronEndpoint = () => {
 
     // Verificar se é uma requisição de cron DJEN
     if (action === 'djen-sync') {
-      // Token simples para proteção
       if (token !== 'djen-sync-2024') {
         setStatus('error');
         setMessage('Token inválido');
         return;
       }
-
       runDjenSync();
+    }
+
+    // Backfill histórico para um processo específico
+    // URL: ?action=djen-backfill&token=djen-sync-2024&process=1014990-67.2023.8.11.0041&start=2023-04-01
+    if (action === 'djen-backfill') {
+      if (token !== 'djen-sync-2024') {
+        setStatus('error');
+        setMessage('Token inválido');
+        return;
+      }
+      const processCode = urlParams.get('process');
+      const startDate   = urlParams.get('start') || '2023-01-01';
+      if (!processCode) {
+        setStatus('error');
+        setMessage('Parâmetro ?process= obrigatório');
+        return;
+      }
+      runDjenBackfill(processCode, startDate);
     }
   }, []);
 
@@ -200,6 +216,52 @@ const CronEndpoint = () => {
       console.error('❌ Erro no cron DJEN:', error);
       setStatus('error');
       setMessage(`Erro: ${error.message}`);
+    }
+  };
+
+  const runDjenBackfill = async (processCode: string, _startDate: string) => {
+    setStatus('running');
+    setMessage(`Backfill DJEN para ${processCode}…`);
+    try {
+      const allClients   = await clientService.listClients();
+      const allProcesses = await processService.listProcesses();
+
+      // A API do DJEN exige o número SÓ COM DÍGITOS (sem máscara) e retorna
+      // TODO o histórico do processo numa única consulta — sem filtro de data
+      // e sem filtro de meio. (Filtrar por data/meio zera o resultado.)
+      const numeroDigits = processCode.replace(/\D/g, '');
+
+      const resp = await djenService.consultarTodasComunicacoes({
+        numeroProcesso: numeroDigits,
+        itensPorPagina: 100,
+        pagina: 1,
+      });
+
+      const totalFound = resp.items?.length || 0;
+      let totalSaved = 0;
+
+      if (totalFound > 0) {
+        setMessage(`${totalFound} publicações encontradas. Salvando…`);
+        // Backfill histórico: marca como já lida qualquer publicação com mais de 7 dias
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 7);
+        const itemsComLida = resp.items.map((item: any) => ({
+          ...item,
+          lida: new Date(item.data_disponibilizacao) < cutoff ? true : item.lida,
+        }));
+        const res = await djenLocalService.saveComunicacoes(itemsComLida, {
+          clients: allClients,
+          processes: allProcesses,
+        });
+        totalSaved = res.saved;
+      }
+
+      setStats({ found: totalFound, saved: totalSaved });
+      setStatus('success');
+      setMessage(`Backfill concluído! ${totalSaved} publicações salvas de ${totalFound} encontradas para ${processCode}.`);
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(`Erro no backfill: ${err.message}`);
     }
   };
 

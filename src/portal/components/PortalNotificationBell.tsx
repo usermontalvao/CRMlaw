@@ -1,5 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Briefcase, Calendar, CheckCheck, CheckCircle2, DollarSign, FileSignature, FileText, FolderOpen, Scale, UserCheck, UserX, X } from 'lucide-react';
+import {
+  Bell,
+  Briefcase,
+  Calendar,
+  CheckCheck,
+  CheckCircle2,
+  DollarSign,
+  FileSignature,
+  FileText,
+  FolderOpen,
+  Scale,
+  UserCheck,
+  UserX,
+  X,
+} from 'lucide-react';
 import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { formatRelative } from './PortalUI';
@@ -25,80 +39,85 @@ function isUnread(n: NotifItem) {
 }
 
 function iconFor(type?: string) {
-  const t = type || '';
-  if (t === 'profile_update_approved')   return UserCheck;
-  if (t === 'profile_update_rejected')   return UserX;
-  if (t === 'new_signature_request')     return FileSignature;
-  if (t === 'new_agreement')             return DollarSign;
-  if (t === 'new_document_request')      return FolderOpen;
-  // Tipos DataJud
-  if (t === 'process_transito_julgado')  return CheckCircle2;
-  if (t === 'process_sentenca')          return Scale;
-  if (t === 'process_cumprimento')       return Briefcase;
-  if (t === 'process_recurso')           return Scale;
-  if (t === 'process_audiencia')         return Calendar;
-  if (t === 'process_arquivado')         return FolderOpen;
-  if (t === 'process_citacao')           return FileText;
-  // Genérico
-  if (t === 'process_status_changed')    return Scale;
-  if (t.includes('process'))             return Briefcase;
-  if (t.includes('intim') || t.includes('public')) return FileText;
-  if (t.includes('financ') || t.includes('parcela')) return DollarSign;
-  if (t.includes('agend') || t.includes('audien'))   return Calendar;
-  if (t.includes('assin') || t.includes('sign'))     return FileSignature;
+  const notificationType = type || '';
+  if (notificationType === 'profile_update_approved') return UserCheck;
+  if (notificationType === 'profile_update_rejected') return UserX;
+  if (notificationType === 'document_upload_approved') return CheckCircle2;
+  if (notificationType === 'document_upload_rejected') return UserX;
+  if (notificationType === 'new_signature_request') return FileSignature;
+  if (notificationType === 'new_agreement') return DollarSign;
+  if (notificationType === 'new_document_request') return FolderOpen;
+  if (notificationType === 'process_transito_julgado') return CheckCircle2;
+  if (notificationType === 'process_sentenca') return Scale;
+  if (notificationType === 'process_cumprimento') return Briefcase;
+  if (notificationType === 'process_recurso') return Scale;
+  if (notificationType === 'process_audiencia') return Calendar;
+  if (notificationType === 'process_arquivado') return FolderOpen;
+  if (notificationType === 'process_citacao') return FileText;
+  if (notificationType === 'process_status_changed') return Scale;
+  if (notificationType.includes('process')) return Briefcase;
+  if (notificationType.includes('intim') || notificationType.includes('public')) return FileText;
+  if (notificationType.includes('financ') || notificationType.includes('parcela')) return DollarSign;
+  if (notificationType.includes('agend') || notificationType.includes('audien')) return Calendar;
+  if (notificationType.includes('assin') || notificationType.includes('sign')) return FileSignature;
   return Bell;
 }
 
-function routeFor(n: NotifItem): { route: PortalRoute; param?: string } | null {
-  const t = (n.type || '').toLowerCase();
-  if (t === 'profile_update_approved' || t === 'profile_update_rejected') return { route: 'perfil' };
-  if (t === 'new_signature_request') return { route: 'assinar' };
-  if (t === 'new_agreement')         return { route: 'financeiro' };
-  if (t === 'new_document_request')  return { route: 'documentos' };
-  // Tipos DataJud e processo — navega direto para o processo
-  const pid = n.metadata?.process_id || n.process_id;
-  if (t.startsWith('process_') && pid) return { route: 'casos', param: `proc:${pid}` };
-  if (t === 'process_status_changed' && pid) return { route: 'casos', param: `proc:${pid}` };
-  if (pid) return { route: 'casos', param: `proc:${pid}` };
+function routeFor(notification: NotifItem): { route: PortalRoute; param?: string } | null {
+  const notificationType = (notification.type || '').toLowerCase();
+  if (notificationType === 'profile_update_approved' || notificationType === 'profile_update_rejected') {
+    return { route: 'perfil' };
+  }
+  if (notificationType === 'document_upload_approved' || notificationType === 'document_upload_rejected') {
+    return { route: 'documentos' };
+  }
+  if (notificationType === 'new_signature_request') return { route: 'assinar' };
+  if (notificationType === 'new_agreement') return { route: 'financeiro' };
+  if (notificationType === 'new_document_request') return { route: 'documentos' };
+
+  const processId = notification.metadata?.process_id || notification.process_id;
+  if (notificationType.startsWith('process_') && processId) return { route: 'casos', param: `proc:${processId}` };
+  if (notificationType === 'process_status_changed' && processId) return { route: 'casos', param: `proc:${processId}` };
+  if (processId) return { route: 'casos', param: `proc:${processId}` };
   return null;
 }
 
-export const PortalNotificationBell: React.FC = () => {
+export const PortalNotificationBell: React.FC<{ className?: string }> = ({ className = '' }) => {
   const { items, unreadCount, newIds, markRead, markAllRead, clearNew, pushEnabled, requestPushPermission } = usePortalNotifications();
   const { navigate } = usePortalRouter();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fechar ao clicar fora
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const handler = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Ao abrir, registra timestamp e limpa badge de "novas"
   const handleToggle = () => {
     if (!open) clearNew();
-    setOpen((v) => !v);
+    setOpen((current) => !current);
   };
 
   const recent = (items as NotifItem[]).filter(isUnread).slice(0, 6);
 
-  const handleClick = (n: NotifItem) => {
-    if (isUnread(n)) markRead(n.id);
-    const dest = routeFor(n);
-    if (dest) { navigate(dest.route, dest.param); setOpen(false); }
+  const handleClick = (notification: NotifItem) => {
+    if (isUnread(notification)) markRead(notification.id);
+    const destination = routeFor(notification);
+    if (destination) {
+      navigate(destination.route, destination.param);
+      setOpen(false);
+    }
   };
 
   return (
-    <div ref={ref} className="relative">
-      {/* Botão sino */}
+    <div ref={containerRef} className={`relative ${className}`}>
       <button
         onClick={handleToggle}
-        className={`relative hidden lg:flex h-10 w-10 items-center justify-center rounded-xl border transition ${
+        className={`relative flex h-10 w-10 items-center justify-center rounded-xl border transition ${
           open
             ? 'border-orange-200 bg-orange-50 text-orange-600'
             : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600'
@@ -113,16 +132,17 @@ export const PortalNotificationBell: React.FC = () => {
         )}
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-xl">
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <span className="text-sm font-semibold text-slate-900">Notificações</span>
             <div className="flex items-center gap-1">
               {unreadCount > 0 && (
                 <button
-                  onClick={() => { markAllRead(); setOpen(false); }}
+                  onClick={() => {
+                    markAllRead();
+                    setOpen(false);
+                  }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                   title="Marcar todas como lidas"
                 >
@@ -138,7 +158,6 @@ export const PortalNotificationBell: React.FC = () => {
             </div>
           </div>
 
-          {/* Lista */}
           <div className="max-h-80 overflow-y-auto">
             {recent.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-10">
@@ -146,25 +165,22 @@ export const PortalNotificationBell: React.FC = () => {
                 <p className="text-sm text-slate-400">Nenhuma notificação</p>
               </div>
             ) : (
-              recent.map((n) => {
-                const unread = isUnread(n);
-                const isNew  = newIds.has(n.id);
-                const Icon   = iconFor(n.type);
-                const dest   = routeFor(n);
+              recent.map((notification) => {
+                const unread = isUnread(notification);
+                const isNew = newIds.has(notification.id);
+                const Icon = iconFor(notification.type);
+                const destination = routeFor(notification);
+
                 return (
                   <button
-                    key={n.id}
-                    onClick={() => handleClick(n)}
-                    disabled={!dest}
+                    key={notification.id}
+                    onClick={() => handleClick(notification)}
+                    disabled={!destination}
                     className={`relative flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 ${
-                      isNew   ? 'bg-orange-50' :
-                      unread  ? 'bg-orange-50/40' : ''
-                    } ${!dest ? 'cursor-default' : ''}`}
+                      isNew ? 'bg-orange-50' : unread ? 'bg-orange-50/40' : ''
+                    } ${!destination ? 'cursor-default' : ''}`}
                   >
-                    {/* Barra lateral para "nova" */}
-                    {isNew && (
-                      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r bg-orange-500" />
-                    )}
+                    {isNew && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r bg-orange-500" />}
                     <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                       unread ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
                     }`}>
@@ -173,19 +189,19 @@ export const PortalNotificationBell: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-1">
                         <p className={`text-[12.5px] leading-snug ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
-                          {n.title || 'Notificação'}
+                          {notification.title || 'Notificação'}
                           {isNew && (
-                            <span className="ml-1.5 inline-flex items-center rounded-full bg-orange-500 px-1.5 py-0.5 text-[9px] font-bold text-white leading-none">
+                            <span className="ml-1.5 inline-flex items-center rounded-full bg-orange-500 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
                               novo
                             </span>
                           )}
                         </p>
                         {unread && !isNew && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-500" />}
                       </div>
-                      {(n.message || n.body) && (
-                        <p className="mt-0.5 line-clamp-2 text-[11.5px] text-slate-500">{n.message || n.body}</p>
+                      {(notification.message || notification.body) && (
+                        <p className="mt-0.5 line-clamp-2 text-[11.5px] text-slate-500">{notification.message || notification.body}</p>
                       )}
-                      <p className="mt-1 text-[10.5px] text-slate-400">{formatRelative(n.created_at)}</p>
+                      <p className="mt-1 text-[10.5px] text-slate-400">{formatRelative(notification.created_at)}</p>
                     </div>
                   </button>
                 );
@@ -193,18 +209,22 @@ export const PortalNotificationBell: React.FC = () => {
             )}
           </div>
 
-          {/* Footer */}
-          <div className="border-t border-slate-100 px-4 py-2.5 flex flex-col gap-1">
+          <div className="flex flex-col gap-1 border-t border-slate-100 px-4 py-2.5">
             {!pushEnabled && 'Notification' in window && Notification.permission !== 'denied' && (
               <button
-                onClick={async () => { await requestPushPermission(); }}
-                className="w-full rounded-lg py-1.5 text-center text-[11.5px] font-medium text-slate-500 transition hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                onClick={async () => {
+                  await requestPushPermission();
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-[11.5px] font-medium text-slate-500 transition hover:bg-slate-50"
               >
                 <Bell className="h-3 w-3" /> Ativar notificações no celular
               </button>
             )}
             <button
-              onClick={() => { navigate('notificacoes'); setOpen(false); }}
+              onClick={() => {
+                navigate('notificacoes');
+                setOpen(false);
+              }}
               className="w-full rounded-lg py-2 text-center text-[12.5px] font-medium text-orange-600 transition hover:bg-orange-50"
             >
               Ver todas as notificações

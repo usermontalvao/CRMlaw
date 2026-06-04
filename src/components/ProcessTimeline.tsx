@@ -36,6 +36,7 @@ import { processService } from '../services/process.service';
 import type { ProcessStatus } from '../types/process.types';
 import { events as globalEvents, SYSTEM_EVENTS } from '../utils/events';
 import { fetchDatajudMovimentos, categorizarMovimento, getTribunalNome, type DatajudComplemento } from '../services/datajud.service';
+import { supabase } from '../config/supabase';
 
 interface ProcessTimelineProps {
   processCode: string;
@@ -82,6 +83,8 @@ const EVENT_TYPES = [
   { key: 'sentenca', label: 'Sentenças' },
   { key: 'decisao', label: 'Decisões' },
   { key: 'recurso', label: 'Recursos' },
+  { key: 'prazo', label: 'Prazos' },
+  { key: 'compromisso', label: 'Compromissos' },
 ];
 
 const GRAU_RECURSAL = [
@@ -104,6 +107,8 @@ const getEventTypeLabel = (type: string) => {
     decisao: 'Decisão',
     recurso: 'Recurso',
     outro: 'Outro',
+    prazo: 'Prazo',
+    compromisso: 'Compromisso',
   };
   return labels[type] || type;
 };
@@ -134,6 +139,8 @@ const getEventIcon = (type: TimelineEvent['type']) => {
     case 'sentenca': return Gavel;
     case 'decisao': return Scale;
     case 'recurso': return TrendingUp;
+    case 'prazo': return Timer;
+    case 'compromisso': return CalendarPlus;
     default: return Clock;
   }
 };
@@ -145,6 +152,8 @@ const getEventColor = (type: TimelineEvent['type']) => {
     case 'despacho': return 'slate';
     case 'sentenca': return 'emerald';
     case 'decisao': return 'amber';
+    case 'prazo': return 'orange';
+    case 'compromisso': return 'teal';
     default: return 'slate';
   }
 };
@@ -222,6 +231,25 @@ const detectCurrentStage = (events: TimelineEvent[]): number => {
   const GRAUS_RECURSO = ['Turma Recursal', 'STJ', 'STF', 'TST', 'TRT'];
   const hasGrauRecurso = graus.some(g => GRAUS_RECURSO.includes(g));
   if (hasGrauRecurso || eventTypes.includes('recurso')) return 6;
+
+  // Fase de EXECUÇÃO / CUMPRIMENTO (estágio 8) — vem DEPOIS da sentença na
+  // cronologia, então é verificada antes do retorno de "sentença". Detecta
+  // quando a parte vira Exequente e há intimação para executar/receber o crédito.
+  // (Inclui intimação de "interesse processual" + "demonstrativo do débito",
+  // típica de pós-trânsito em julgado, mesmo sem ordem de bloqueio.)
+  const execText = [...titles, ...descriptions].join(' ');
+  const hasExecucao =
+    execText.includes('exequente') ||
+    execText.includes('cumprimento de sentença') ||
+    execText.includes('cumprimento de sentenca') ||
+    execText.includes('fase de cumprimento') ||
+    execText.includes('liquidação de sentença') ||
+    execText.includes('liquidacao de sentenca') ||
+    execText.includes('interesse processual') ||
+    (execText.includes('demonstrativo') && (execText.includes('débito') || execText.includes('debito'))) ||
+    (execText.includes('execução') && !hasGrauRecurso) ||
+    (execText.includes('execucao') && !hasGrauRecurso);
+  if (hasExecucao) return 8;
 
   if (eventTypes.includes('sentenca')) return 5;
   if (eventTypes.includes('citacao')) return 1;
@@ -385,6 +413,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   const [statusUpdated, setStatusUpdated] = useState<string | null>(null);
   const [djenEvents, setDjenEvents]   = useState<TimelineEvent[]>([]);
   const [djEvents,   setDjEvents]     = useState<TimelineEvent[]>([]);
+  const [extraEvents, setExtraEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading]         = useState(true);
   const [analyzing, setAnalyzing]     = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
@@ -511,8 +540,8 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
     // Adiciona DataJud sem par DJEN
     const extras = djEvents.filter(dj => !usedDj.has(dj.id));
 
-    return [...result, ...extras].sort((a, b) => safeTime(b.date) - safeTime(a.date));
-  }, [djenEvents, djEvents]);
+    return [...result, ...extras, ...extraEvents].sort((a, b) => safeTime(b.date) - safeTime(a.date));
+  }, [djenEvents, djEvents, extraEvents]);
 
   // Buscar e analisar automaticamente
   // PRIORIZA banco local (djen_comunicacoes_local) com IA já pronta pelo cron
@@ -564,9 +593,11 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       if (processId && data.length > 0) {
         const currentProcess = await processService.getProcessById(processId);
         if (currentProcess) {
-          // Atualiza o DB se o status detectado difere do armazenado
+          // FONTE ÚNICA: grava no banco o MESMO status que alimenta o stepper e o
+          // badge (detectCurrentStage → detectedStatus). Antes recalculava via
+          // detectSuggestedStatus, que podia divergir do estágio visual.
           if (detectedStatus && currentProcess.status !== detectedStatus) {
-            await processTimelineService.autoUpdateProcessStatus(processId, data);
+            await processService.updateStatus(processId, detectedStatus);
             setStatusUpdated(detectedStatus);
             globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
           }
@@ -588,8 +619,9 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         if (processId && data.length > 0) {
           const currentProcess = await processService.getProcessById(processId);
           if (currentProcess) {
+            // FONTE ÚNICA: grava o mesmo detectedStatus do stepper/badge.
             if (detectedStatus && currentProcess.status !== detectedStatus) {
-              await processTimelineService.autoUpdateProcessStatus(processId, data);
+              await processService.updateStatus(processId, detectedStatus);
               setStatusUpdated(detectedStatus);
               globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
             }
@@ -623,7 +655,14 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
       if (detectedStatus) {
         onStatusUpdated?.(detectedStatus);
-        if (processId) globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
+        if (processId) {
+          // Persiste a fonte única ao atualizar manualmente, mantendo banco = stepper = badge.
+          const cur = await processService.getProcessById(processId);
+          if (cur && cur.status !== detectedStatus) {
+            await processService.updateStatus(processId, detectedStatus);
+          }
+          globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao atualizar');
@@ -722,6 +761,66 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   useEffect(() => {
     fetchDatajud();
   }, [processCode]);
+
+  useEffect(() => {
+    if (!processId) return;
+    let mounted = true;
+    const fetch = async () => {
+      const extra: TimelineEvent[] = [];
+
+      // Prazos
+      const { data: dls } = await supabase
+        .from('deadlines')
+        .select('id, title, description, due_date, status, priority')
+        .eq('process_id', processId)
+        .order('due_date', { ascending: true });
+
+      for (const d of dls || []) {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const due = new Date(d.due_date);
+        const isVencido = d.status === 'pendente' && due < today;
+        extra.push({
+          id: `prazo-${d.id}`,
+          date: d.due_date,
+          type: 'prazo',
+          title: d.title,
+          description: d.description || '',
+          orgao: '',
+          source: 'prazo',
+          prazoStatus: isVencido ? 'vencido' : (d.status as 'pendente' | 'cumprido'),
+          prazoData: { priority: d.priority, status: d.status },
+        });
+      }
+
+      // Compromissos (calendar_events)
+      const { data: evts } = await supabase
+        .from('calendar_events')
+        .select('id, title, description, event_type, event_mode, start_at, status')
+        .eq('process_id', processId)
+        .order('start_at', { ascending: true });
+
+      const APT_LABELS: Record<string, string> = {
+        hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião',
+        deadline: 'Prazo', payment: 'Recebimento', requirement: 'Exigência',
+      };
+      for (const e of evts || []) {
+        extra.push({
+          id: `compromisso-${e.id}`,
+          date: e.start_at,
+          type: 'compromisso',
+          title: `${APT_LABELS[e.event_type] || e.event_type}${e.title ? ` — ${e.title}` : ''}`,
+          description: e.description || '',
+          orgao: '',
+          source: 'compromisso',
+          prazoData: { event_type: e.event_type, event_mode: e.event_mode, status: e.status },
+        });
+      }
+
+      if (mounted) setExtraEvents(extra);
+    };
+    fetch();
+    return () => { mounted = false; };
+  }, [processId]);
 
   const toggleExpand = (id: string) => {
     setExpandedEvents(prev => {
@@ -1287,6 +1386,12 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                 const isLatest = index === 0; // Primeiro evento é o mais recente
 
                 const getBgColor = () => {
+                  if (event.type === 'prazo') {
+                    if (event.prazoStatus === 'vencido') return 'bg-red-50/60 border-red-200';
+                    if (event.prazoStatus === 'pendente') return 'bg-amber-50/60 border-amber-200';
+                    return 'bg-emerald-50/50 border-emerald-200';
+                  }
+                  if (event.type === 'compromisso') return 'bg-teal-50/50 border-teal-200';
                   if (isLatest) return 'bg-white border-[#f97316]/30 ring-1 ring-[#f97316]/15 shadow-sm';
                   if (hasAI && event.aiAnalysis?.urgency === 'critica') return 'bg-red-50/60 border-red-200';
                   if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-amber-50/60 border-amber-200';
@@ -1295,6 +1400,12 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                 };
 
                 const getDotColor = () => {
+                  if (event.type === 'prazo') {
+                    if (event.prazoStatus === 'vencido') return 'bg-red-500';
+                    if (event.prazoStatus === 'pendente') return 'bg-amber-500';
+                    return 'bg-emerald-500';
+                  }
+                  if (event.type === 'compromisso') return 'bg-teal-500';
                   if (isLatest) return 'bg-[#f97316] ring-4 ring-[#f97316]/15';
                   if (hasAI && event.aiAnalysis?.urgency === 'critica') return 'bg-red-500';
                   if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-amber-500';
@@ -1305,11 +1416,52 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                   return 'bg-slate-400';
                 };
 
+                // ── Card compacto para Prazo / Compromisso ──────────────────
+                if (event.type === 'prazo' || event.type === 'compromisso') {
+                  const isPrazo = event.type === 'prazo';
+                  const statusLabel = event.prazoStatus === 'vencido' ? 'Vencido'
+                    : event.prazoStatus === 'cumprido' ? 'Cumprido' : 'Pendente';
+                  const statusCls = event.prazoStatus === 'vencido'
+                    ? 'bg-red-100 text-red-700 border-red-200'
+                    : event.prazoStatus === 'cumprido'
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-100 text-amber-700 border-amber-200';
+                  const modeLabel = event.prazoData?.event_mode === 'online' ? 'Online'
+                    : event.prazoData?.event_mode === 'presencial' ? 'Presencial' : null;
+
+                  return (
+                    <div key={event.id} className="relative pl-10">
+                      <div className={`absolute left-0 w-2.5 h-2.5 rounded-full ${getDotColor()}`} style={{ top: '1.05rem' }} />
+                      <div className={`rounded-2xl border px-4 py-3 ${getBgColor()}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap mb-1">
+                              <span>{formatDate(event.date)}</span>
+                              <span className="text-slate-300">·</span>
+                              <span className="font-medium">{getEventTypeLabel(event.type)}</span>
+                              {modeLabel && <span className="text-slate-400">· {modeLabel}</span>}
+                            </div>
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug">{event.title}</p>
+                            {event.description && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{event.description}</p>
+                            )}
+                          </div>
+                          {isPrazo && (
+                            <span className={`shrink-0 inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusCls}`}>
+                              {statusLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={event.id} className="relative pl-10">
                     {/* Timeline dot */}
                     <div
-                      className={`absolute left-0 w-2.5 h-2.5 rounded-full ${isLatest ? 'bg-[#f97316]' : 'bg-slate-300 dark:bg-zinc-600'}`}
+                      className={`absolute left-0 w-2.5 h-2.5 rounded-full ${getDotColor()}`}
                       style={{ top: '1.05rem' }}
                     />
 

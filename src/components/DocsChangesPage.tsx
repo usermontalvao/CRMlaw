@@ -871,6 +871,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.199',
+    date: '04/06/2026',
+    summary: 'Portal do cliente: scanner mobile, notificações mais estáveis, chat com atribuição e ajustes de processos/publicações.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Scanner no portal e navegação mobile refinada', description: 'Novo fluxo de scanner no portal com hook mobile dedicado e ajustes de layout, sidebar, cabeçalho e telas principais para uso em celular.' },
+        { type: 'improvement' as const, title: 'Notificações do portal com leitura e deduplicação', description: 'Contexto, sino e listagem do portal foram ajustados para suportar marcação de visualização, menos duplicidades e navegação mais consistente.' },
+      ]},
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'improvement' as const, title: 'Tickets do portal com atribuição e sincronização melhores', description: 'Chat do CRM e widget flutuante receberam ajustes de atendimento, atribuição de tickets, timeline e sincronização com o portal.' },
+      ]},
+      { moduleId: 'Processos', changes: [
+        { type: 'feature' as const, title: 'Publicações DJEN e cache do portal atualizados automaticamente', description: 'Novas migrations cobrem consulta pública de publicações, invalidação de cache por mudança de status e ajustes de permissões no portal.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.198',
     date: '03/06/2026',
     summary: 'Dashboard — financeiro: lista de inadimplentes com link direto para o acordo, valor e dias em atraso.',

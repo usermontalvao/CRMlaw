@@ -9,6 +9,7 @@ const VALID_ROUTES: PortalRoute[] = [
   'dashboard',
   'casos',
   'processos',   // alias legado — PortalApp redireciona para 'casos'
+  'scanner',
   'documentos',
   'assinar',
   'financeiro',

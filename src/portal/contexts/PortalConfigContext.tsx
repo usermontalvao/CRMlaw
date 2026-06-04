@@ -8,6 +8,7 @@ import { clientPortalService } from '../services/clientPortal.service';
 interface PortalConfig {
   casos:        boolean;  // Unifica processos + requerimentos
   processos:    boolean;  // Alias legado — controla o mesmo módulo
+  scanner:      boolean;
   documentos:   boolean;
   assinar:      boolean;
   financeiro:   boolean;
@@ -18,7 +19,7 @@ interface PortalConfig {
 }
 
 const DEFAULT: PortalConfig = {
-  casos: true, processos: true, documentos: true, assinar: true,
+  casos: true, processos: true, scanner: true, documentos: true, assinar: true,
   financeiro: true, agenda: true, mensagens: true,
   notificacoes: true, perfil: true,
 };

@@ -52,6 +52,8 @@ function styleFor(type?: string, category?: string) {
   const t = `${type || ''} ${category || ''}`.toLowerCase();
   if (t === 'profile_update_approved') return { Icon: UserCheck };
   if (t === 'profile_update_rejected') return { Icon: UserX };
+  if (t === 'document_upload_approved') return { Icon: CheckCheck };
+  if (t === 'document_upload_rejected') return { Icon: UserX };
   if (t === 'process_status_changed')  return { Icon: Scale };
   if (t === 'new_signature_request')   return { Icon: FileSignature };
   if (t === 'new_agreement')           return { Icon: DollarSign };
@@ -71,6 +73,8 @@ function routeFor(n: NotificationItem): { route: string; param?: string } | null
   // Cadastral
   if (t === 'profile_update_approved' || t === 'profile_update_rejected')
     return { route: 'perfil' };
+  if (t === 'document_upload_approved' || t === 'document_upload_rejected')
+    return { route: 'documentos' };
   // Mudança de status do processo
   if (t === 'process_status_changed') {
     const pid = n.metadata?.process_id || n.process_id;

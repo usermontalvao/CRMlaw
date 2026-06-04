@@ -12,6 +12,7 @@ export interface ClientPortalUser {
   phone: string | null;
   is_active: boolean;
   last_login_at: string | null;
+  notifications_last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +35,7 @@ export type PortalRoute =
   | 'dashboard'
   | 'casos'        // Unifica processos judiciais + requerimentos INSS
   | 'processos'    // Alias legado → redireciona para 'casos'
+  | 'scanner'
   | 'documentos'
   | 'assinar'
   | 'financeiro'

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar, Clock, Gavel, Scale, MapPin,
   AlertCircle, Activity, CheckCircle2, Loader2, ShieldCheck, ChevronRight, ChevronDown, Sparkles,
@@ -12,6 +12,15 @@ import { statusMeta, TONE_CLASSES, JOURNEY } from '../lib/domain';
 interface Movement { id?: string; nome?: string; data_hora?: string; data?: string; tribunal?: string; grau?: string; complemento?: string; complementos?: any; }
 interface Deadline { id: string; title: string; due_date: string; status: string; priority?: string; }
 interface Publication { id?: string; data?: string; tipo?: string; orgao?: string; texto?: string; }
+
+interface TimelineEntry {
+  date: string;
+  source: 'datajud' | 'djen' | 'prazo' | 'calendario';
+  title: string;
+  description?: string;
+  marco?: boolean;
+  rawText?: string;
+}
 interface Appointment {
   id: string;
   title: string;
@@ -24,6 +33,7 @@ interface Appointment {
 }
 interface ProcessFull {
   id: string; process_code: string; status: string;
+  updated_at?: string | null;
   practice_area?: string | null; court?: string | null;
   distributed_at?: string | null;
   hearing_scheduled?: boolean | null; hearing_date?: string | null; hearing_time?: string | null; hearing_mode?: string | null;
@@ -33,7 +43,7 @@ interface ProcessFull {
   appointments?: Appointment[];
 }
 
-type Tab = 'resumo' | 'andamentos' | 'prazos' | 'compromissos';
+type Tab = 'resumo' | 'andamentos' | 'prazos' | 'compromissos' | 'timeline';
 
 /** Extrai um texto legível dos complementos tabelados do DataJud (array de objetos ou string). */
 function extractComplemento(m: Movement): string | undefined {
@@ -54,6 +64,81 @@ function extractComplemento(m: Movement): string | undefined {
     return parts.length ? parts.join(' | ') : undefined;
   }
   return undefined;
+}
+
+const MARCO_KEYWORDS_TL = [
+  'procedente', 'improcedente', 'sentença', 'senten', 'acórdão', 'acordao',
+  'homolog', 'acordo', 'trânsito', 'transito', 'cumprimento', 'execução', 'execucao',
+  'liquidação', 'liquidacao', 'recurso', 'apelação', 'apelacao', 'agravo', 'embargos',
+  'arquiv', 'extinção', 'extincao', 'citação', 'citacao',
+  'distribuição', 'distribuicao', 'audiência', 'audiencia',
+  'pagamento', 'penhora', 'alvará', 'alvara', 'tutela', 'liminar',
+];
+const isMarcoTl = (nome: string) => {
+  const n = (nome || '').toLowerCase();
+  return MARCO_KEYWORDS_TL.some((k) => n.includes(k));
+};
+
+function buildTimeline(data: ProcessFull, rawMovements: Movement[]): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+
+  for (const m of rawMovements) {
+    const d = m.data_hora || m.data;
+    if (!d) continue;
+    const comp = extractComplemento(m);
+    entries.push({
+      date: d,
+      source: 'datajud',
+      title: m.nome || 'Andamento',
+      description: comp ? comp.slice(0, 180) : undefined,
+      marco: isMarcoTl(m.nome || ''),
+    });
+  }
+
+  for (const p of data.publications || []) {
+    // Suporta dois formatos:
+    // 1. djen_comunicacoes (após migration): campos data, tipo, orgao, texto
+    // 2. process_notifications (antes da migration): campos movement_date, title, description, source
+    const pAny = p as any;
+    const date = p.data || pAny.movement_date || pAny.created_at;
+    if (!date) continue;
+    // Ignora notificações de andamento DataJud (já presentes em rawMovements)
+    if (pAny.source === 'datajud') continue;
+    entries.push({
+      date,
+      source: 'djen',
+      title: p.tipo || pAny.title || pAny.type || 'Publicação oficial',
+      description: p.orgao || pAny.description || undefined,
+      rawText: p.texto || undefined,
+      marco: false,
+    });
+  }
+
+  for (const a of data.appointments || []) {
+    const tlabels: Record<string, string> = {
+      hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião', deadline: 'Prazo',
+    };
+    entries.push({
+      date: a.start_at,
+      source: 'calendario',
+      title: tlabels[a.event_type] || a.event_type,
+      description: a.title || undefined,
+      marco: a.event_type === 'hearing' || a.event_type === 'pericia',
+    });
+  }
+
+  for (const d of data.deadlines || []) {
+    if (!d.due_date) continue;
+    entries.push({
+      date: d.due_date,
+      source: 'prazo',
+      title: d.status === 'cumprido' ? 'Prazo cumprido' : 'Prazo',
+      description: d.title || undefined,
+      marco: false,
+    });
+  }
+
+  return entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
 const APT_TYPE_LABELS: Record<string, { noun: string; fem: boolean }> = {
@@ -87,6 +172,7 @@ function nextAction(p: ProcessFull, upcomingApts: Appointment[]): { tone: 'ok' |
 export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processId }) => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
+  const autoAiRefreshKeyRef = useRef<string | null>(null);
   const [data, setData] = useState<ProcessFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,19 +181,6 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiGeneratedAt, setAiGeneratedAt] = useState<Date | null>(null);
   const [aiFromCache, setAiFromCache] = useState(false);
-
-  // Carrega cache IA ao abrir o processo
-  useEffect(() => {
-    if (!session?.user?.id || !processId) return;
-    clientPortalService.getAiCache(session.user.id, 'process', processId).then(cached => {
-      if (cached) {
-        setAiText(cached.text);
-        setAiGeneratedAt(cached.generatedAt);
-        setAiFromCache(true);
-        setAiState('done');
-      }
-    });
-  }, [session?.user?.id, processId]);
 
   useEffect(() => {
     if (!session?.user?.id || !processId) return;
@@ -119,6 +192,32 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       .finally(() => mounted && setLoading(false));
     return () => { mounted = false; };
   }, [session?.user?.id, processId]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !processId || !data) return;
+    let mounted = true;
+    const refreshKey = `${processId}:${data.updated_at || 'no-updated-at'}`;
+    clientPortalService.getAiCache(session.user.id, 'process', processId, 7, data.updated_at).then(cached => {
+      if (!mounted) return;
+      if (!cached) {
+        setAiText(null);
+        setAiGeneratedAt(null);
+        setAiFromCache(false);
+        setAiState('idle');
+        if (autoAiRefreshKeyRef.current !== refreshKey) {
+          autoAiRefreshKeyRef.current = refreshKey;
+          void handleExplainProcess(true);
+        }
+        return;
+      }
+      autoAiRefreshKeyRef.current = refreshKey;
+      setAiText(cached.text);
+      setAiGeneratedAt(cached.generatedAt);
+      setAiFromCache(true);
+      setAiState('done');
+    });
+    return () => { mounted = false; };
+  }, [session?.user?.id, processId, data]);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
   if (error || !data) {
@@ -156,11 +255,17 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const upcomingApts = appointments.filter(a => new Date(a.start_at) >= today);
   const action = nextAction(data, upcomingApts);
+  const timeline = buildTimeline(data, rawMovements);
 
-  const handleExplainProcess = async () => {
+  const handleExplainProcess = async (forceRefresh = false) => {
     if (aiState === 'loading') return;
-    if (aiText) { setAiState('done'); return; }
+    if (aiText && !forceRefresh) { setAiState('done'); return; }
     setAiState('loading');
+    if (forceRefresh) {
+      setAiText(null);
+      setAiGeneratedAt(null);
+      setAiFromCache(false);
+    }
 
     // Extrair notas do advogado (JSON serializado)
     let lawyerNotes: string | undefined;
@@ -174,7 +279,9 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     } catch {}
 
     const text = await clientPortalService.explainProcess({
+      statusKey: data.status,
       statusLabel: meta.label,
+      statusUpdatedAt: data.updated_at,
       processCode: data.process_code,
       court: data.court,
       distributedAt: distributedAt,
@@ -182,9 +289,18 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       area: data.practice_area,
       lawyerNotes,
       movements: rawMovements.map((m) => ({ nome: m.nome, data: m.data_hora || m.data, detalhe: extractComplemento(m) })),
-      publications: (data.publications || []).map((p) => ({ data: p.data, tipo: p.tipo, orgao: p.orgao, texto: p.texto })),
+      publications: (data.publications || []).map((p) => {
+        const pAny = p as any;
+        return {
+          data:  p.data  || pAny.movement_date || pAny.created_at,
+          tipo:  p.tipo  || pAny.title || pAny.type,
+          orgao: p.orgao || pAny.nome_orgao,
+          texto: p.texto || pAny.description,
+        };
+      }).filter((p) => !!p.data && (pAny => !pAny.source || pAny.source !== 'datajud')(p as any)),
       appointments: appointments.map((a) => ({ title: a.title, event_type: a.event_type, start_at: a.start_at, event_mode: a.event_mode })),
       deadlines: deadlines.map((d) => ({ title: d.title, due_date: d.due_date, status: d.status, priority: d.priority })),
+      timeline,
     });
     if (text) {
       const now = new Date();
@@ -196,6 +312,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'resumo', label: 'Resumo' },
     { id: 'andamentos', label: 'Andamentos', badge: movements.length },
+    { id: 'timeline', label: 'Linha do Tempo', badge: timeline.length },
     { id: 'prazos', label: 'Prazos', badge: pendingDeadlines },
     ...(appointments.length > 0 ? [{ id: 'compromissos' as Tab, label: 'Compromissos', badge: appointments.length }] : []),
   ];
@@ -296,6 +413,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       <div>
         {tab === 'resumo' && <ResumoTab data={data} movements={movements} responsibleLawyer={data.responsible_lawyer} distributedAt={distributedAt} onSeeAll={() => setTab('andamentos')} />}
         {tab === 'andamentos' && <AndamentosTab movements={movements} statusLabel={meta.label} area={data.practice_area} />}
+        {tab === 'timeline' && <TimelineTab timeline={timeline} />}
         {tab === 'prazos' && <PrazosTab deadlines={deadlines} />}
         {tab === 'compromissos' && <AppointmentsTab appointments={appointments} />}
       </div>
@@ -342,6 +460,52 @@ const Journey: React.FC<{ stage: number }> = ({ stage }) => {
         );
       })}
     </div>
+  );
+};
+
+const TL_SOURCE: Record<string, { label: string; cls: string }> = {
+  datajud:    { label: 'DataJud',   cls: 'bg-slate-100 text-slate-600' },
+  djen:       { label: 'Diário',    cls: 'bg-violet-100 text-violet-700' },
+  prazo:      { label: 'Prazo',     cls: 'bg-amber-100 text-amber-700' },
+  calendario: { label: 'Agenda',    cls: 'bg-emerald-100 text-emerald-700' },
+};
+
+const TimelineList: React.FC<{ entries: TimelineEntry[] }> = ({ entries }) => {
+  const [showRawIdx, setShowRawIdx] = useState<number | null>(null);
+  if (!entries.length) return null;
+  return (
+    <ol className="relative ml-1 border-l border-slate-200 pl-4">
+      {entries.map((e, i) => {
+        const src = TL_SOURCE[e.source] ?? TL_SOURCE.datajud;
+        const isLast = i === entries.length - 1;
+        const hasRaw = !!e.rawText;
+        const rawOpen = showRawIdx === i;
+        return (
+          <li key={i} className={`relative ${isLast ? 'pb-0' : 'pb-4'}`}>
+            <span className={`absolute -left-[21px] top-[5px] h-2.5 w-2.5 rounded-full border-2 border-white ${e.marco ? 'bg-orange-500' : 'bg-slate-300'}`} />
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${src.cls}`}>{src.label}</span>
+              <span className="text-[11px] tabular-nums text-slate-400">{formatDate(e.date)}</span>
+              {e.marco && <span className="text-[10px] font-semibold text-orange-600">★</span>}
+            </div>
+            <p className={`mt-0.5 text-[13px] font-medium leading-snug ${e.marco ? 'text-slate-900' : 'text-slate-700'}`}>{e.title}</p>
+            {e.description && <p className="mt-0.5 text-[12px] leading-snug text-slate-500">{e.description}</p>}
+            {hasRaw && (
+              <button
+                onClick={() => setShowRawIdx(rawOpen ? null : i)}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-violet-600"
+              >
+                <ChevronDown className={`h-3 w-3 transition ${rawOpen ? 'rotate-180' : ''}`} />
+                {rawOpen ? 'Ocultar publicação' : 'Ver publicação'}
+              </button>
+            )}
+            {hasRaw && rawOpen && (
+              <p className="mt-1.5 whitespace-pre-line rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">{e.rawText}</p>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 };
 
@@ -619,6 +783,15 @@ const AppointmentsTab: React.FC<{ appointments: Appointment[] }> = ({ appointmen
           </div>
         );
       })}
+    </div>
+  );
+};
+
+const TimelineTab: React.FC<{ timeline: TimelineEntry[] }> = ({ timeline }) => {
+  if (!timeline.length) return <EmptyState icon={Activity} title="Sem eventos" description="Nenhum evento registrado neste processo." />;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <TimelineList entries={timeline} />
     </div>
   );
 };

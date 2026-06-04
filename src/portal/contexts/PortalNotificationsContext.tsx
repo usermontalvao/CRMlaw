@@ -39,14 +39,15 @@ interface PortalNotificationsContextType {
 
 const Ctx = createContext<PortalNotificationsContextType | undefined>(undefined);
 
-const LAST_OPENED_KEY  = 'portal_notif_last_opened';
-const SEEN_KEY         = 'portal_seen_notif_ids';
+const LAST_OPENED_KEY = 'portal_notif_last_opened';
+const SEEN_KEY = 'portal_seen_notif_ids';
 
-// Tipos que geram push toast (eventos do escritório, não movimentações)
-const PUSH_TYPES = new Set([
-  'profile_update_approved', 'profile_update_rejected',
-  'process_status_changed',  'new_signature_request',
-  'new_agreement',           'new_document_request',
+const TOAST_TYPES = new Set([
+  'profile_update_rejected',
+  'process_status_changed',
+  'new_signature_request',
+  'new_document_request',
+  'document_upload_rejected',
 ]);
 
 export function isUnread(n: NotifItem): boolean {
@@ -54,52 +55,85 @@ export function isUnread(n: NotifItem): boolean {
   return !n.read_at;
 }
 
+function toTimestamp(value?: string | null): number {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 function getLastOpened(): number {
-  try { return Number(localStorage.getItem(LAST_OPENED_KEY) || '0'); }
-  catch { return 0; }
+  try {
+    return Number(localStorage.getItem(LAST_OPENED_KEY) || '0');
+  } catch {
+    return 0;
+  }
 }
-function saveLastOpened() {
-  try { localStorage.setItem(LAST_OPENED_KEY, String(Date.now())); }
-  catch {}
+
+function saveLastOpened(timestamp: number) {
+  try {
+    localStorage.setItem(LAST_OPENED_KEY, String(timestamp));
+  } catch {}
 }
+
 function getSeenIds(): Set<string> {
-  try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); }
-  catch { return new Set(); }
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
 }
+
 function addSeenId(id: string) {
   const seen = getSeenIds();
   seen.add(id);
   localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen).slice(-200)));
 }
 
-// Chave pública VAPID — configurada em VITE_VAPID_PUBLIC_KEY
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw     = atob(base64);
-  const arr     = new Uint8Array(raw.length);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
   return arr.buffer as ArrayBuffer;
 }
 
 export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { session } = useClientAuth();
-  const [items, setItems]       = useState<NotifItem[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [toasts, setToasts]     = useState<PushToast[]>([]);
+  const { session, updateSession } = useClientAuth();
+  const [items, setItems] = useState<NotifItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [toasts, setToasts] = useState<PushToast[]>([]);
   const [pushEnabled, setPushEnabled] = useState(false);
-  const [lastOpened, setLastOpened] = useState<number>(getLastOpened);
-  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const channelRef  = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
-  const realtimeOk  = useRef(false);
+  const [lastOpened, setLastOpened] = useState<number>(0);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
+  const realtimeOk = useRef(false);
+  const initialLoadDoneRef = useRef(false);
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const sessionStartedAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    const serverSeenAt = toTimestamp(session?.user?.notifications_last_seen_at);
+    const localSeenAt = getLastOpened();
+    setLastOpened(Math.max(serverSeenAt, localSeenAt));
+    sessionStartedAtRef.current = Math.max(toTimestamp(session?.loginAt), Date.now());
+  }, [session?.user?.id, session?.user?.notifications_last_seen_at, session?.loginAt]);
 
   const pushToast = useCallback((n: NotifItem) => {
-    if (!PUSH_TYPES.has(n.type || '')) return;
+    if (!TOAST_TYPES.has(n.type || '')) return;
+    if (!isUnread(n)) return;
+    const createdAt = toTimestamp(n.created_at);
+    if (createdAt > 0 && createdAt < sessionStartedAtRef.current) return;
     if (getSeenIds().has(n.id)) return;
     addSeenId(n.id);
-    const toast: PushToast = { id: n.id, type: n.type!, title: n.title || 'Notificação', message: n.message };
+    const toast: PushToast = {
+      id: n.id,
+      type: n.type || 'notification',
+      title: n.title || 'Notifica??o',
+      message: n.message,
+    };
     setToasts((prev) => [...prev.slice(-4), toast]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 8000);
   }, []);
@@ -109,12 +143,23 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     try {
       const data = await clientPortalService.listNotifications(session.user.id) as NotifItem[];
       setItems(data);
-      // Detectar notificações não vistas para push toast
-      data.filter((n) => !getSeenIds().has(n.id)).forEach(pushToast);
+
+      const nextIds = new Set(data.map((n) => n.id));
+
+      if (!initialLoadDoneRef.current) {
+        knownIdsRef.current = nextIds;
+        initialLoadDoneRef.current = true;
+        return;
+      }
+
+      data
+        .filter((n) => !knownIdsRef.current.has(n.id))
+        .forEach(pushToast);
+
+      knownIdsRef.current = nextIds;
     } catch {}
   }, [session?.user?.id, pushToast]);
 
-  // Realtime: escuta INSERTs em portal_client_notifications
   useEffect(() => {
     if (!session?.client?.id) return;
     const clientId = session.client.id;
@@ -131,6 +176,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
         },
         (payload: any) => {
           const n = payload.new as NotifItem;
+          knownIdsRef.current.add(n.id);
           setItems((prev) => [n, ...prev]);
           pushToast(n);
         }
@@ -147,9 +193,10 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     };
   }, [session?.client?.id, pushToast]);
 
-  // Polling como fallback (a cada 60s se realtime ok, senão 20s)
   useEffect(() => {
     if (!session?.user?.id) return;
+    initialLoadDoneRef.current = false;
+    knownIdsRef.current = new Set();
     setLoading(true);
     reload().finally(() => setLoading(false));
 
@@ -181,11 +228,10 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     await clientPortalService.markAllNotificationsRead(session.user.id);
   }, [session?.user?.id]);
 
-  // Web Push: verifica subscription existente ao iniciar
   useEffect(() => {
     if (!session?.user?.id || !VAPID_PUBLIC_KEY || !('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.ready.then(reg =>
-      reg.pushManager.getSubscription().then(sub => {
+    navigator.serviceWorker.ready.then((reg) =>
+      reg.pushManager.getSubscription().then((sub) => {
         setPushEnabled(!!sub);
       })
     ).catch(() => {});
@@ -201,7 +247,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
 
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
-        userVisibleOnly:      true,
+        userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
 
@@ -215,9 +261,21 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   }, [session?.user?.id]);
 
   const clearNew = useCallback(() => {
-    saveLastOpened();
-    setLastOpened(Date.now());
-  }, []);
+    if (!session?.user?.id) return;
+    const now = new Date();
+    const timestamp = now.getTime();
+    const iso = now.toISOString();
+    saveLastOpened(timestamp);
+    setLastOpened(timestamp);
+    updateSession((prev) => prev ? {
+      ...prev,
+      user: {
+        ...prev.user,
+        notifications_last_seen_at: iso,
+      },
+    } : prev);
+    void clientPortalService.markNotificationsSeen(session.user.id, iso);
+  }, [session?.user?.id, updateSession]);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -226,7 +284,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   const unreadCount = items.filter(isUnread).length;
   const newIds = new Set(
     items
-      .filter((n) => n.created_at && new Date(n.created_at).getTime() > lastOpened)
+      .filter((n) => n.created_at && toTimestamp(n.created_at) > lastOpened)
       .map((n) => n.id)
   );
 

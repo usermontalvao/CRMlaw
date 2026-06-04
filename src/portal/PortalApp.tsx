@@ -12,6 +12,7 @@ import React, { Suspense, lazy } from 'react';
 import { ClientAuthProvider, useClientAuth } from './contexts/ClientAuthContext';
 import { PortalConfigProvider, usePortalConfig } from './contexts/PortalConfigContext';
 import { PortalNotificationsProvider } from './contexts/PortalNotificationsContext';
+import { useIsMobile } from './hooks/useIsMobile';
 import { usePortalRouter } from './hooks/usePortalRouter';
 import { PortalLayout } from './PortalLayout';
 
@@ -19,6 +20,7 @@ import { PortalLayout } from './PortalLayout';
 const PortalLogin = lazy(() => import('./pages/PortalLogin').then((m) => ({ default: m.PortalLogin })));
 const PortalDashboard = lazy(() => import('./pages/PortalDashboard').then((m) => ({ default: m.PortalDashboard })));
 const PortalCasos = lazy(() => import('./pages/PortalCasos').then((m) => ({ default: m.PortalCasos })));
+const PortalScanner = lazy(() => import('./pages/PortalScanner').then((m) => ({ default: m.PortalScanner })));
 const PortalProcessDetails = lazy(() => import('./pages/PortalProcessDetails').then((m) => ({ default: m.PortalProcessDetails })));
 const PortalRequirementDetails = lazy(() => import('./pages/PortalRequirementDetails').then((m) => ({ default: m.PortalRequirementDetails })));
 const PortalDocuments = lazy(() => import('./pages/PortalDocumentRequests').then((m) => ({ default: m.PortalDocumentRequests })));
@@ -42,6 +44,7 @@ const PortalRouter: React.FC = () => {
   const { session, loading } = useClientAuth();
   const { route, param, navigate } = usePortalRouter();
   const { isEnabled } = usePortalConfig();
+  const isMobile = useIsMobile();
 
   if (loading) return <LoadingSpinner />;
 
@@ -69,6 +72,9 @@ const PortalRouter: React.FC = () => {
         // Alias legado → redireciona para 'casos'
         navigate('casos', param ? `proc:${param}` : undefined);
         return <PortalDashboard />;
+      case 'scanner':
+        if (!isEnabled('scanner') || !isMobile) { navigate('dashboard'); return <PortalDashboard />; }
+        return <PortalScanner />;
       case 'documentos':
         if (!isEnabled('documentos')) { navigate('dashboard'); return <PortalDashboard />; }
         return <PortalDocuments />;

@@ -7,14 +7,16 @@ import type { ProcessStatus } from '../types/process.types';
 export interface TimelineEvent {
   id: string;
   date: string;
-  type: 'intimacao' | 'citacao' | 'despacho' | 'sentenca' | 'decisao' | 'recurso' | 'outro';
+  type: 'intimacao' | 'citacao' | 'despacho' | 'sentenca' | 'decisao' | 'recurso' | 'outro' | 'prazo' | 'compromisso';
   title: string;
   description: string;
   orgao: string;
   grauRecursal?: string;
   hash?: string;
   rawData?: DjenComunicacao;
-  source?: 'djen' | 'datajud'; // origem do evento
+  source?: 'djen' | 'datajud' | 'prazo' | 'compromisso';
+  prazoStatus?: 'pendente' | 'cumprido' | 'vencido';
+  prazoData?: { priority?: string; status?: string; event_type?: string; event_mode?: string | null };
   aiAnalysis?: {
     summary: string;
     urgency: 'baixa' | 'media' | 'alta' | 'critica';
@@ -705,19 +707,46 @@ Regras:
     // Verificar tipos de eventos recentes primeiro
     const recentTypes = recentEvents.map(e => e.type);
 
-    // Arquivado - apenas se explicitamente mencionado nos eventos recentes
-    if (recentText.includes('arquivamento definitivo') || 
-        recentText.includes('autos arquivados') ||
-        recentText.includes('baixa definitiva') ||
-        (recentText.includes('arquivado') && recentText.includes('transitado'))) {
+    // ── Fase de EXECUÇÃO / CUMPRIMENTO ───────────────────────────────────────
+    // Detectada ANTES de "arquivado", porque intimações da fase de execução
+    // frequentemente citam "arquivamento" de forma CONDICIONAL (aviso), e a
+    // parte vira "Exequente". Ex.: "intime-se a Exequente para apresentar
+    // demonstrativo atualizado do débito... sob pena de arquivamento".
+    const isExecucao =
+      recentText.includes('exequente') ||
+      recentText.includes('executado') ||
+      recentText.includes('cumprimento de sentença') ||
+      recentText.includes('fase de cumprimento') ||
+      recentText.includes('liquidação de sentença') ||
+      recentText.includes('liquidacao de sentenca') ||
+      recentText.includes('interesse processual') ||
+      (recentText.includes('demonstrativo') && recentText.includes('débito')) ||
+      (recentText.includes('demonstrativo') && recentText.includes('debito')) ||
+      (recentText.includes('execução') && !recentText.includes('recurso')) ||
+      (recentText.includes('execucao') && !recentText.includes('recurso'));
+
+    // Arquivamento apenas CONDICIONAL/em aviso → NÃO é arquivamento consumado.
+    // O processo segue ativo até a parte deixar o prazo correr em silêncio.
+    const arquivamentoCondicional =
+      recentText.includes('sob pena de arquivamento') ||
+      recentText.includes('anuência ao arquivamento') ||
+      recentText.includes('anuencia ao arquivamento') ||
+      recentText.includes('interpretado como anuência') ||
+      recentText.includes('interpretado como anuencia') ||
+      recentText.includes('caso não haja manifestação') ||
+      recentText.includes('caso nao haja manifestacao');
+
+    // Arquivado — SOMENTE quando há arquivamento de fato consumado e o processo
+    // não está em execução nem se trata de mero aviso condicional.
+    if (!isExecucao && !arquivamentoCondicional &&
+        (recentText.includes('autos arquivados') ||
+         recentText.includes('baixa definitiva') ||
+         recentText.includes('arquivados definitivamente') ||
+         (recentText.includes('arquivado') && recentText.includes('transitado')))) {
       return 'arquivado';
     }
 
-    // Cumprimento de sentença / Execução
-    if (recentText.includes('cumprimento de sentença') || 
-        recentText.includes('fase de cumprimento') ||
-        recentText.includes('liquidação de sentença') ||
-        (recentText.includes('execução') && !recentText.includes('recurso'))) {
+    if (isExecucao) {
       return 'cumprimento';
     }
 

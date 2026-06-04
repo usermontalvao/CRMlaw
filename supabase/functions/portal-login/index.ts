@@ -144,7 +144,13 @@ Deno.serve(async (req: Request) => {
       success: true,
       email,
       token: linkData.properties.email_otp,
-      user: { id: portalUserId, client_id: clientId, is_active: true, auth_user_id: authUserId },
+      user: {
+        ...(payload?.user ?? {}),
+        id: portalUserId,
+        client_id: clientId,
+        is_active: true,
+        auth_user_id: authUserId,
+      },
       client: payload?.client ?? null,
     });
   } catch (error) {

@@ -434,17 +434,17 @@ export const PortalMessages: React.FC = () => {
 
   // ── JSX ──────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] sm:h-[calc(100vh-6rem)]">
+    <div className="fixed inset-x-3 top-[72px] bottom-[80px] z-[5] flex flex-col lg:relative lg:inset-auto lg:top-auto lg:bottom-auto lg:z-auto lg:h-[calc(100vh-6rem)]">
       {/* Inputs de arquivo ocultos */}
       <input ref={fileInputRef}  type="file" accept="*/*"         className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void uploadAndSend(f, 'files/');  e.target.value = ''; }} />
       <input ref={imageInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void uploadAndSend(f, 'media/'); e.target.value = ''; }} />
 
-      <header className="shrink-0 pb-3">
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Mensagens</h1>
+      <header className="hidden lg:block shrink-0 pb-3">
+        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 lg:text-[26px]">Mensagens</h1>
         <p className="mt-0.5 text-sm text-slate-500">Fale diretamente com o escritório.</p>
       </header>
 
-      <div className="flex flex-col flex-1 min-h-0 rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="flex flex-col flex-1 min-h-0 rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-[0_8px_32px_rgba(15,23,42,0.10)]">
         {/* Header da conversa — perfil do atendente */}
         {attendant ? (
           <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-white">

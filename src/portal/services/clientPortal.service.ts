@@ -213,7 +213,9 @@ class ClientPortalService {
    * um panorama acolhedor: o que já aconteceu, em que pé está e o que esperar.
    */
   async explainProcess(params: {
+    statusKey: string;
     statusLabel: string;
+    statusUpdatedAt?: string | null;
     processCode?: string | null;
     court?: string | null;
     distributedAt?: string | null;
@@ -224,6 +226,7 @@ class ClientPortalService {
     publications?: { data?: string; tipo?: string; orgao?: string; texto?: string }[];
     appointments?: { title?: string; event_type?: string; start_at?: string; event_mode?: string | null }[];
     deadlines?: { title?: string; due_date?: string; status?: string; priority?: string }[];
+    timeline?: { date: string; source: string; title: string; description?: string; marco?: boolean; rawText?: string }[];
   }): Promise<string | null> {
     const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
     const fmtDt = (d?: string) => {
@@ -317,18 +320,45 @@ class ClientPortalService {
 
     const dls = [dlsCumpridos, dlsPendentes].filter(Boolean).join('\n');
 
+    // ── Linha do Tempo Unificada (quando fornecida) ──────────────────────────
+    // Usa a mesma timeline que o cliente vê na aba "Linha do Tempo" do portal:
+    // DataJud + DJEN + Prazos + Compromissos, em ordem cronológica.
+    const SOURCE_LABEL: Record<string, string> = {
+      datajud: 'DataJud', djen: 'DJEN', prazo: 'Prazo', calendario: 'Agenda',
+    };
+    const tl = (params.timeline || []).slice().sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    // Para eventos DJEN na timeline, inclui o texto integral (clippado)
+    const tlLines = tl.map(e => {
+      const src = SOURCE_LABEL[e.source] || e.source;
+      const marco = e.marco ? ' ★' : '';
+      const base = `[${src}] ${fmt(e.date)}${marco}: ${e.title}`;
+      if (e.description && e.source !== 'djen') return `${base} — ${e.description}`;
+      if (e.rawText) return `${base}\n    ${clip(e.rawText, 1200)}`;
+      return base;
+    }).join('\n');
+
     // Monta o conteúdo final — guard simples: truncar no total a 28k chars
     const rawParts = [
       `NÚMERO DO PROCESSO: ${params.processCode || 'não informado'}`,
       params.court          ? `VARA/TRIBUNAL: ${params.court}` : '',
       params.distributedAt  ? `DISTRIBUÍDO EM: ${fmt(params.distributedAt)}` : '',
       params.area           ? `ÁREA: ${params.area}` : '',
+      `STATUS INTERNO DO ESCRITÓRIO: ${params.statusKey}`,
       `SITUAÇÃO ATUAL: ${params.statusLabel}`,
+      params.statusUpdatedAt ? `STATUS ATUALIZADO EM: ${fmtDt(params.statusUpdatedAt)}` : '',
       params.lawyerNotes    ? `\nOBSERVAÇÕES DO ADVOGADO:\n${params.lawyerNotes}` : '',
-      skeleton              ? `\nTRAMITAÇÃO PROCESSUAL (${totalMovs} andamentos no total; ★ = marco decisivo; ordem cronológica):\n${skeleton}` : '',
-      apts                  ? `\nCOMPROMISSOS VINCULADOS:\n${apts}` : '',
-      dls                   ? `\nPRAZOS DO PROCESSO (cumpridos e pendentes):\n${dls}` : '',
-      pubs                  ? `\nPUBLICAÇÕES OFICIAIS DO DJEN (texto integral):\n\n${pubs}` : '',
+      // Quando há timeline unificada, usa ela (mais completa). Senão, cai nos arrays separados.
+      tlLines
+        ? `\nLINHA DO TEMPO COMPLETA (${tl.length} eventos — DataJud ★=marcos + DJEN com texto + Prazos + Agenda; ordem cronológica antigo→recente):\n${tlLines}`
+        : [
+            skeleton ? `\nTRAMITAÇÃO PROCESSUAL (${totalMovs} andamentos; ★=marco; cronológico):\n${skeleton}` : '',
+            apts     ? `\nCOMPROMISSOS:\n${apts}` : '',
+            dls      ? `\nPRAZOS:\n${dls}` : '',
+            pubs     ? `\nPUBLICAÇÕES DJEN:\n\n${pubs}` : '',
+          ].filter(Boolean).join('\n'),
     ].filter(Boolean);
 
     let content = rawParts.join('\n');
@@ -337,30 +367,29 @@ class ClientPortalService {
 
     const systemPrompt = `Você é um assistente jurídico que explica o processo para o PRÓPRIO CLIENTE (leigo), em português claro, acolhedor e sem juridiquês. Fale na 2ª pessoa ("seu processo", "você").
 
-══ FONTES DE DADOS (entenda a diferença) ══
-1. TRAMITAÇÃO PROCESSUAL = lista oficial de andamentos do tribunal (DataJud). NÃO tem texto, só o NOME e a DATA de cada ato. As linhas com ★ são os MARCOS decisivos (sentença, procedência, trânsito em julgado, cumprimento, recurso, etc.). USE a sequência desses marcos para reconstruir a história do caso, mesmo sem texto.
-2. PUBLICAÇÕES DO DJEN = texto integral de decisões/intimações. É aqui que ficam os VALORES (R$) e os detalhes do dispositivo da sentença.
-3. OBSERVAÇÕES DO ADVOGADO = contexto interno do escritório; trate como verdade prioritária.
+══ FONTE DE DADOS ══
+LINHA DO TEMPO COMPLETA — lista cronológica unificada de todos os eventos do processo:
+• [DataJud] = andamentos oficiais do tribunal (nome + data). Linhas com ★ são marcos decisivos.
+• [DJEN] = publicações do diário oficial com texto integral. AQUI estão os VALORES (R$) e o dispositivo da sentença. LEIA com atenção — procure expressões como "condeno ao pagamento de R$", "arbitro em R$", "valor de R$".
+• [Prazo] = prazos processuais registrados pelo escritório (status: pendente/cumprido/vencido).
+• [Agenda] = audiências, perícias, reuniões agendadas.
+• STATUS INTERNO DO ESCRITÓRIO = fase atual no CRM — use quando mais recente que os eventos da timeline.
+• OBSERVAÇÕES DO ADVOGADO = verdade prioritária.
+3. STATUS INTERNO DO ESCRITÓRIO — fase cadastrada no CRM. Se atualizado DEPOIS das publicações disponíveis, trate como informação mais recente.
+4. OBSERVAÇÕES DO ADVOGADO — verdade prioritária.
 
 ══ TAREFA ══
-Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta ordem de prioridade:
-1. DESFECHO: o caso foi ganho, perdido, parcialmente ganho, ainda em andamento? Baseie-se nos marcos ★ (ex.: "Procedência" = você ganhou; "Improcedência" = perdeu; "Parcialmente procedente" = ganhou em parte) e/ou no texto das publicações.
-2. VALOR: se houver condenação/acordo, diga QUANTO em R$ (extraído do texto das publicações). Se o marco indica vitória mas o valor não está no texto disponível, diga: "o valor da condenação será confirmado pelo seu advogado".
-3. FASE ATUAL: o que está acontecendo agora.
-   - ATENÇÃO: o campo "SITUAÇÃO ATUAL" pode estar desatualizado (ex.: marcado como "arquivado/encerrado" mas com intimações recentes de execução). SEMPRE priorize o que as publicações DJEN mais recentes dizem sobre a fase. Se a intimação mais recente fala em "cumprimento", "execução", "pagar", "intimar o executado" — o processo está EM EXECUÇÃO, não encerrado.
-   - Exemplos: trânsito em julgado = decisão definitiva; intimação para pagar = fase de receber o valor; arquivado sem atividade recente = encerrado.
-4. PRÓXIMO PASSO: o que esperar, com datas quando relevante.
+Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
+1. DESFECHO — ganhou, perdeu, ganhou em parte, em andamento? Use os marcos ★ e/ou o texto das publicações.
+2. VALOR — se houver condenação/acordo, diga QUANTO em R$. Procure expressões como "condeno ao pagamento", "arbitro em R$", "valor de R$" nos textos das publicações. Se o valor estiver em alguma publicação, CITE-O. Só diga "será confirmado pelo advogado" se o valor realmente não aparecer em nenhum texto.
+3. FASE ATUAL — o que está acontecendo agora. Priorize a publicação DJEN mais recente; só use o STATUS INTERNO para complementar ou confirmar.
+   - "arquivado" no status interno + nenhuma publicação posterior = processo encerrado.
+   - "arquivado" no status interno + publicação posterior de execução/cumprimento = processo ainda ativo.
+4. PRÓXIMO PASSO — o que o cliente pode esperar, com datas quando disponíveis.
 
-══ REGRAS SOBRE VALORES ══
-- O valor da condenação fica no DISPOSITIVO da sentença ("condeno... ao pagamento de R$...").
-- Em cumprimento/execução, informe o valor cobrado (danos morais + materiais + honorários se houver).
-- NUNCA diga "há um valor a receber" sem dizer QUANTO, se o número estiver em alguma publicação.
-
-══ REGRAS GERAIS ══
-- Seja ESPECÍFICO: cite datas dos marcos importantes (ex.: "a sentença foi favorável em 27/11/2025 e tornou-se definitiva em 13/02/2026").
-- Afirme desfecho SOMENTE com base nos marcos ★ ou no texto das publicações. Se ambíguo, descreva o estado sem inventar resultado.
-- Não comece por tecnicismos. Comece pelo que mais importa para o cliente.
-- Não invente fatos nem prometa resultados futuros.
+══ REGRAS ══
+- Seja específico: cite datas (ex.: "sentença favorável em 27/11/2025, definitiva em 13/02/2026").
+- Não invente fatos. Não prometa resultados.
 - Tom honesto, tranquilizador e realista.
 - Finalize SEMPRE com: "Seu advogado acompanha cada etapa e está à disposição para esclarecer dúvidas pelo canal oficial."`;
 
@@ -398,6 +427,7 @@ Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta orde
     entityType: 'process' | 'requirement',
     entityId: string,
     ttlDays = 7,
+    invalidatedAfter?: string | Date | null,
   ): Promise<{ text: string; generatedAt: Date } | null> {
     try {
       const { data, error } = await supabase.rpc('portal_get_ai_cache', {
@@ -408,8 +438,10 @@ Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta orde
       if (error || !data) return null;
       const d = data as { generated_text: string; generated_at: string };
       const generatedAt = new Date(d.generated_at);
+      const invalidationDate = invalidatedAfter ? new Date(invalidatedAfter) : null;
       const ageDays = (Date.now() - generatedAt.getTime()) / 86_400_000;
       if (ageDays > ttlDays) return null;
+      if (invalidationDate && !Number.isNaN(invalidationDate.getTime()) && generatedAt <= invalidationDate) return null;
       return { text: d.generated_text, generatedAt };
     } catch { return null; }
   }
@@ -576,6 +608,18 @@ Escreva 4 a 7 frases, em parágrafo corrido (sem listas), respondendo nesta orde
     await supabase.rpc('portal_mark_all_notifications_read', {
       p_portal_user_id: portalUserId,
     });
+  }
+
+  async markNotificationsSeen(portalUserId: string, seenAt?: string) {
+    const { data, error } = await supabase.rpc('portal_mark_notifications_seen', {
+      p_portal_user_id: portalUserId,
+      p_seen_at: seenAt ?? new Date().toISOString(),
+    });
+    if (error) {
+      handleRpcError('markNotificationsSeen', error);
+      return null;
+    }
+    return typeof data === 'string' ? data : null;
   }
 
   /**

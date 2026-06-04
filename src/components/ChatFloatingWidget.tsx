@@ -522,6 +522,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     playSound: (() => Promise.resolve()) as () => Promise<void>,
     markRead: ((_roomId: string) => Promise.resolve()) as (roomId: string) => Promise<void>,
     scrollBottom: ((_b?: ScrollBehavior) => {}) as (behavior?: ScrollBehavior) => void,
+    getRooms: (() => [] as ChatRoom[]),
   });
 
   const membersByUserIdRef = useRef<Map<string, Profile>>(new Map());
@@ -1567,6 +1568,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             }
             return;
           }
+
+          // ── Filtro de visibilidade: tickets aceitos por outro atendente ────
+          // Portal messages têm user_id = null. Só notifica se a sala está na
+          // lista visível deste usuário (accepted_by IS NULL ou accepted_by = eu).
+          const visibleRooms = stableCallbacksRef.current.getRooms();
+          const roomVisible = visibleRooms.some((r) => r.id === msg.room_id);
+          if (!roomVisible) {
+            // Sala não é minha: não notifica; só recarrega se for mensagem de equipe
+            const isPortalClientMsg = msg.user_id === null;
+            if (!isPortalClientMsg) stableCallbacksRef.current.loadRooms();
+            return;
+          }
+
           const isMine = msg.user_id === myUserId;
           const currentRoom = selectedRoomIdRef.current;
           const isInThisRoom = msg.room_id === currentRoom;
@@ -1584,7 +1598,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               pinnedToBottomRef.current = true;
               stableCallbacksRef.current.scrollBottom('smooth');
             }
-            // Atualiza preview da sala sem notificar
             setRooms((prev) => prev
               .map((r) => r.id === msg.room_id ? { ...r, last_message_at: msg.created_at, last_message_preview: getPreview(msg.content) } : r)
               .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at))
@@ -1592,9 +1605,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             return;
           }
 
-          // ── Mensagem de outra sala ────────────────────────────────────────
+          // ── Mensagem de outra sala visível ────────────────────────────────
           if (!isMine) {
-            // Animação de nova mensagem (destaque verde)
             setNewMessageIds((prev) => {
               const next = new Set(prev);
               next.add(msg.id);
@@ -1610,8 +1622,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               return next;
             });
 
-            const profile = membersByUserIdRef.current.get(msg.user_id);
-            const senderName = profile?.name || 'Nova mensagem';
+            const profile = membersByUserIdRef.current.get(msg.user_id ?? '');
+            // Para mensagens de portal (user_id = null), usa o nome da sala (nome do cliente)
+            const isPortalMsg = msg.user_id === null;
+            const roomForMsg = isPortalMsg ? visibleRooms.find((r) => r.id === msg.room_id) : null;
+            const senderName = profile?.name || roomForMsg?.name || 'Cliente';
             const avatarUrl = profile?.avatar_url;
             const preview = getPreview(msg.content);
             const attachment = parseAttachment(msg.content);
@@ -1619,15 +1634,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
             if (isImageAttachment) setLastUnreadImageSender({ name: senderName, avatarUrl });
 
-            // Toast: auto-dismiss em 6s, cancelado se o usuário interagir antes
             setToast({ id: msg.id, roomId: msg.room_id, senderUserId: msg.user_id, senderName, avatarUrl, senderRole: profile?.role, senderOab: profile?.oab, preview });
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
             toastTimerRef.current = window.setTimeout(() => setToast(null), 7000);
 
-            if (!profile) {
+            if (msg.user_id && !profile) {
               void profileService.getProfile(msg.user_id).then((p) => {
                 if (!p) return;
-                membersByUserIdRef.current.set(msg.user_id, p);
+                membersByUserIdRef.current.set(msg.user_id!, p);
                 setToast((prev) => {
                   if (!prev || prev.id !== msg.id) return prev;
                   return { ...prev, senderName: p.name || prev.senderName, avatarUrl: p.avatar_url, senderRole: p.role, senderOab: p.oab };
@@ -1640,13 +1654,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           }
 
           // Atualiza lista de salas (preview + ordenação)
-          setRooms((prev) => {
-            const exists = prev.some((r) => r.id === msg.room_id);
-            if (!exists) { stableCallbacksRef.current.loadRooms(); return prev; }
-            return prev
-              .map((r) => r.id === msg.room_id ? { ...r, last_message_at: msg.created_at, last_message_preview: getPreview(msg.content) } : r)
-              .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at));
-          });
+          setRooms((prev) => prev
+            .map((r) => r.id === msg.room_id ? { ...r, last_message_at: msg.created_at, last_message_preview: getPreview(msg.content) } : r)
+            .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at))
+          );
         },
       });
     };
@@ -1672,6 +1683,33 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentModule]);
+
+  // Remove salas do widget quando outro atendente aceitar o ticket
+  useEffect(() => {
+    if (!user) return;
+    const unsub = chatService.subscribeToTicketRoomUpdates({
+      onUpdate: (updatedRoom) => {
+        const acceptedByOther =
+          updatedRoom.accepted_by != null &&
+          updatedRoom.accepted_by !== user.id;
+
+        if (acceptedByOther) {
+          setRooms((prev) => prev.filter((r) => r.id !== updatedRoom.id));
+          setSelectedRoomId((prev) => (prev === updatedRoom.id ? null : prev));
+          setRoomUnreadCounts((prev) => {
+            const next = new Map(prev);
+            next.delete(updatedRoom.id);
+            return next;
+          });
+        } else {
+          setRooms((prev) =>
+            prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r)),
+          );
+        }
+      },
+    });
+    return () => unsub();
+  }, [user]);
 
   useEffect(() => {
     const readEditorState = () => {
@@ -1713,6 +1751,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     playSound: playNotificationSound,
     markRead: markRoomAsRead,
     scrollBottom: scrollToBottom,
+    getRooms: () => rooms,
   };
 
   const totalUnreadFromRooms = useMemo(() => {
@@ -2681,39 +2720,38 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         <div
           className="mb-3 w-[300px] max-w-[calc(100vw-24px)] overflow-hidden"
           style={{
-            background: '#ffffff',
+            background: 'rgba(255,255,255,0.96)',
             borderRadius: '20px',
-            boxShadow: '0 8px 30px rgba(0,0,0,.13), 0 2px 6px rgba(0,0,0,.07)',
+            boxShadow: '0 8px 40px rgba(15,23,42,0.12), 0 2px 8px rgba(15,23,42,0.06)',
+            border: '1px solid rgba(226,232,240,0.8)',
+            backdropFilter: 'blur(12px)',
             animation: 'chatToastIn 420ms cubic-bezier(.34,1.56,.64,1) both, chatToastOut 550ms 6.5s ease-in both',
           }}
         >
-          {/* Header: ícone + origem + tempo + fechar */}
-          <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
-            <div className="h-5 w-5 rounded-full shrink-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
-              <MessageCircle className="w-3 h-3 text-white" />
+          {/* Cabeçalho minimalista */}
+          <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-0">
+            <div className="h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center bg-orange-500">
+              <MessageCircle className="w-2 h-2 text-white" />
             </div>
-            <span className="flex-1 text-[11.5px] font-semibold text-gray-400">Mensagens</span>
-            <span className="text-[11.5px] text-gray-400">agora</span>
+            <span className="flex-1 text-[10.5px] font-semibold text-slate-400 tracking-wide uppercase">Mensagens</span>
+            <span className="text-[10.5px] text-slate-300">agora</span>
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
                 setToast(null);
               }}
-              className="ml-1 h-6 w-6 rounded-full bg-gray-100 hover:bg-gray-200 active:scale-90 flex items-center justify-center transition-all shrink-0"
-              title="Fechar"
+              className="ml-0.5 h-4 w-4 rounded-full flex items-center justify-center text-slate-300 hover:text-slate-500 transition-colors"
             >
-              <X className="w-3.5 h-3.5 text-gray-500" />
+              <X className="w-3 h-3" />
             </button>
           </div>
 
-          {/* Divisor */}
-          <div className="h-px bg-gray-100 mx-4" />
-
-          {/* Corpo */}
+          {/* Corpo clicável */}
           <button
             type="button"
-            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            className="w-full flex items-center gap-3 px-3.5 pt-2.5 pb-3.5 text-left"
             onClick={async () => {
               if (toastTimerRef.current) { window.clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
               setToast(null);
@@ -2723,35 +2761,51 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               setSelectedRoomId(toast.roomId);
             }}
           >
-            {/* Avatar com anel gradiente estilo Instagram */}
-            <div className="shrink-0 p-[2.5px] rounded-full" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
-              <div className="p-[2px] bg-white rounded-full">
-                {toast.avatarUrl ? (
-                  <img src={toast.avatarUrl} alt={toast.senderName} className="h-10 w-10 rounded-full object-cover block" />
-                ) : (
-                  <div className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'linear-gradient(135deg,#f97316,#fbbf24)' }}>
-                    {toast.senderName.split(' ').filter(Boolean).map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </div>
-                )}
-              </div>
+            {/* Avatar limpo */}
+            <div className="shrink-0">
+              {toast.avatarUrl ? (
+                <img
+                  src={toast.avatarUrl}
+                  alt={toast.senderName}
+                  className="h-10 w-10 rounded-full object-cover ring-1 ring-slate-100"
+                />
+              ) : (
+                <div
+                  className="h-10 w-10 rounded-full flex items-center justify-center text-white text-[13px] font-semibold ring-1 ring-slate-100"
+                  style={{ background: 'linear-gradient(135deg,#fdba74,#f97316)' }}
+                >
+                  {toast.senderName
+                    .split(' ')
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((n: string) => n[0])
+                    .join('')
+                    .toUpperCase()}
+                </div>
+              )}
             </div>
 
             {/* Texto */}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-[13.5px] font-bold text-gray-900 truncate">{toast.senderName}</span>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-[13px] font-semibold text-slate-800 truncate leading-tight">
+                  {/* Converte para Title Case se estiver em caixa alta */}
+                  {/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+$/.test(toast.senderName)
+                    ? toast.senderName.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+                    : toast.senderName}
+                </span>
                 {toastVerified && <VerifiedBadge variant={toastVerified} />}
               </div>
-              <p className="text-[12.5px] text-gray-500 truncate mt-0.5">{toast.preview}</p>
+              <p className="text-[12px] text-slate-400 truncate mt-0.5 leading-snug">{toast.preview}</p>
             </div>
           </button>
 
-          {/* Barra de progresso que depleta */}
-          <div className="h-[3px] overflow-hidden" style={{ borderRadius: '0 0 20px 20px' }}>
+          {/* Barra de progresso fina */}
+          <div className="h-[2px] overflow-hidden" style={{ borderRadius: '0 0 20px 20px' }}>
             <div
               className="h-full w-full origin-left"
               style={{
-                background: 'linear-gradient(90deg,#f97316,#fbbf24)',
+                background: 'linear-gradient(90deg,#f97316,#fdba74)',
                 animation: 'chatToastProgress 7s linear both',
               }}
             />

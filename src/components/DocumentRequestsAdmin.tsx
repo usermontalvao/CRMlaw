@@ -1,6 +1,6 @@
-/**
- * DocumentRequestsAdmin — Painel admin para criar e gerenciar
- * solicitações de documentos para um cliente específico.
+﻿/**
+ * DocumentRequestsAdmin â€” Painel admin para criar e gerenciar
+ * solicitaÃ§Ãµes de documentos para um cliente especÃ­fico.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,7 +12,7 @@ import {
 import { supabase } from '../config/supabase';
 import type { Client } from '../types/client.types';
 
-// ── Tipos ──────────────────────────────────────────────────────────────────
+// â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface DocUpload {
   id: string;
@@ -59,15 +59,15 @@ const STATUS_LABEL: Record<string, string> = {
   reviewed: 'Revisado', cancelled: 'Cancelado',
 };
 
-// Sugestões rápidas de documentos
+// SugestÃµes rÃ¡pidas de documentos
 const QUICK_ITEMS = [
   'RG (frente e verso)', 'CPF', 'CNH (frente e verso)', 'Passaporte',
-  'Comprovante de residência', 'Certidão de nascimento', 'Certidão de casamento',
+  'Comprovante de residÃªncia', 'CertidÃ£o de nascimento', 'CertidÃ£o de casamento',
   'Carteira de trabalho', 'Contracheque / Holerite', 'Contrato de trabalho',
-  'Laudo médico / Exame', 'Procuração', 'Nota fiscal', 'Comprovante bancário',
+  'Laudo mÃ©dico / Exame', 'ProcuraÃ§Ã£o', 'Nota fiscal', 'Comprovante bancÃ¡rio',
 ];
 
-// ── Modal de criação ───────────────────────────────────────────────────────
+// â”€â”€ Modal de criaÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface CreateModalProps {
   client: Client;
@@ -93,12 +93,12 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
 
   const handleSave = async () => {
     const validItems = items.filter(i => i.label.trim());
-    if (!title.trim()) { setError('Informe um título para a solicitação.'); return; }
+    if (!title.trim()) { setError('Informe um tÃ­tulo para a solicitaÃ§Ã£o.'); return; }
     if (validItems.length === 0) { setError('Adicione pelo menos um documento.'); return; }
 
     setSaving(true); setError(null);
     try {
-      // Cria solicitação
+      // Cria solicitaÃ§Ã£o
       const { data: req, error: re } = await supabase
         .from('document_requests')
         .insert({
@@ -109,7 +109,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
         })
         .select('id')
         .single();
-      if (re || !req) throw new Error(re?.message || 'Erro ao criar solicitação');
+      if (re || !req) throw new Error(re?.message || 'Erro ao criar solicitaÃ§Ã£o');
 
       // Cria itens
       await supabase.from('document_request_items').insert(
@@ -122,7 +122,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
         }))
       );
 
-      // Notificação disparada automaticamente pelo trigger no banco
+      // NotificaÃ§Ã£o disparada automaticamente pelo trigger no banco
       onCreated();
     } catch (err: any) {
       setError(err.message || 'Erro ao salvar.');
@@ -139,7 +139,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
 
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Nova solicitação</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Nova solicitaÃ§Ã£o</p>
             <h2 className="text-base font-bold text-slate-900">{client.full_name}</h2>
           </div>
           <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -148,29 +148,29 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
         </div>
 
         <div className="overflow-y-auto max-h-[70vh] p-5 space-y-5">
-          {/* Título */}
+          {/* TÃ­tulo */}
           <div>
             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              Título da solicitação *
+              TÃ­tulo da solicitaÃ§Ã£o *
             </label>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="Ex: Documentos para audiência trabalhista"
+              placeholder="Ex: Documentos para audiÃªncia trabalhista"
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
             />
           </div>
 
-          {/* Descrição */}
+          {/* DescriÃ§Ã£o */}
           <div>
             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              Instruções (opcional)
+              InstruÃ§Ãµes (opcional)
             </label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Instruções gerais para o cliente..."
+              placeholder="InstruÃ§Ãµes gerais para o cliente..."
               rows={2}
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
             />
@@ -192,7 +192,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
           {/* Lista de documentos */}
           <div>
             <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              Documentos necessários *
+              Documentos necessÃ¡rios *
             </label>
 
             <div className="space-y-2 mb-3">
@@ -214,7 +214,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
                           onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, required: e.target.checked } : it))}
                           className="rounded accent-orange-500"
                         />
-                        Obrigatório
+                        ObrigatÃ³rio
                       </label>
                     </div>
                   </div>
@@ -228,9 +228,9 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
               ))}
             </div>
 
-            {/* Sugestões rápidas */}
+            {/* SugestÃµes rÃ¡pidas */}
             <div className="mb-2">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Adição rápida</p>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">AdiÃ§Ã£o rÃ¡pida</p>
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_ITEMS.filter(q => !items.some(i => i.label === q)).slice(0, 8).map(q => (
                   <button
@@ -265,7 +265,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
           <button onClick={handleSave} disabled={saving}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {saving ? 'Enviando...' : 'Criar solicitação'}
+            {saving ? 'Enviando...' : 'Criar solicitaÃ§Ã£o'}
           </button>
         </div>
       </div>
@@ -274,7 +274,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
   );
 };
 
-// ── Componente principal ───────────────────────────────────────────────────
+// â”€â”€ Componente principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Props { client: Client; }
 
@@ -332,9 +332,10 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
     await supabase.from('document_request_items').update({ status: 'approved' }).eq('id', itemId);
     // Notifica cliente
     await supabase.from('portal_client_notifications').insert({
-      client_id: client.id, type: 'profile_update_approved',
-      title: 'Documento aprovado ✓',
-      message: 'O escritório aprovou um dos documentos enviados por você.',
+      client_id: client.id, type: 'document_upload_approved',
+      title: 'Documento aprovado âœ“',
+      message: 'O escritÃ³rio aprovou um dos documentos enviados por vocÃª.',
+      metadata: { upload_id: uploadId, request_item_id: itemId },
     }).then(() => null, () => null);
     await load();
     setReviewLoading(null);
@@ -342,13 +343,14 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
 
   const handleReject = async (uploadId: string, itemId: string) => {
     setReviewLoading(uploadId);
-    await supabase.from('document_uploads').update({ review_status: 'rejected', rejection_reason: rejectReason || 'Documento não aceito.', reviewed_at: new Date().toISOString() }).eq('id', uploadId);
+    await supabase.from('document_uploads').update({ review_status: 'rejected', rejection_reason: rejectReason || 'Documento nÃ£o aceito.', reviewed_at: new Date().toISOString() }).eq('id', uploadId);
     await supabase.from('document_request_items').update({ status: 'rejected' }).eq('id', itemId);
     // Notifica cliente
     await supabase.from('portal_client_notifications').insert({
-      client_id: client.id, type: 'profile_update_rejected',
-      title: 'Documento não aprovado',
-      message: rejectReason ? `Motivo: ${rejectReason}` : 'O escritório solicitou o reenvio do documento.',
+      client_id: client.id, type: 'document_upload_rejected',
+      title: 'Documento nÃ£o aprovado',
+      message: rejectReason ? `Motivo: ${rejectReason}` : 'O escritÃ³rio solicitou o reenvio do documento.',
+      metadata: { upload_id: uploadId, request_item_id: itemId },
     }).then(() => null, () => null);
     await load();
     setReviewLoading(null); setRejectInput(null); setRejectReason('');
@@ -364,13 +366,13 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          Solicitações de documentos ({requests.length})
+          SolicitaÃ§Ãµes de documentos ({requests.length})
         </p>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-600 transition"
         >
-          <Plus className="h-3.5 w-3.5" /> Nova solicitação
+          <Plus className="h-3.5 w-3.5" /> Nova solicitaÃ§Ã£o
         </button>
       </div>
 
@@ -381,10 +383,10 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
       ) : requests.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-slate-200 py-8 text-center">
           <FolderOpen className="mx-auto h-8 w-8 text-slate-300" />
-          <p className="mt-2 text-xs text-slate-400">Nenhuma solicitação ainda</p>
+          <p className="mt-2 text-xs text-slate-400">Nenhuma solicitaÃ§Ã£o ainda</p>
           <button onClick={() => setShowCreate(true)}
             className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:underline">
-            <Plus className="h-3.5 w-3.5" /> Criar primeira solicitação
+            <Plus className="h-3.5 w-3.5" /> Criar primeira solicitaÃ§Ã£o
           </button>
         </div>
       ) : (
@@ -408,8 +410,8 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      {doneCount}/{req.items.length} docs · {new Date(req.created_at).toLocaleDateString('pt-BR')}
-                      {req.due_date && ` · prazo ${new Date(req.due_date).toLocaleDateString('pt-BR')}`}
+                      {doneCount}/{req.items.length} docs Â· {new Date(req.created_at).toLocaleDateString('pt-BR')}
+                      {req.due_date && ` Â· prazo ${new Date(req.due_date).toLocaleDateString('pt-BR')}`}
                     </p>
                   </div>
                   <ChevronDown className={`h-4 w-4 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -449,7 +451,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                             )}
                           </div>
 
-                          {/* Ações de revisão */}
+                          {/* AÃ§Ãµes de revisÃ£o */}
                           {item.upload && item.upload.processing_status === 'ready' && item.upload.review_status === 'pending' && (
                             <div className="flex gap-1.5 shrink-0">
                               {item.upload.processed_path && (
@@ -465,7 +467,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                                     placeholder="Motivo"
                                     className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-xs focus:outline-none" />
                                   <button onClick={() => { setRejectInput(null); setRejectReason(''); }}
-                                    className="rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50">✕</button>
+                                    className="rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50">âœ•</button>
                                   <button disabled={!!reviewLoading}
                                     onClick={() => handleReject(item.upload!.id, item.id)}
                                     className="rounded-lg bg-rose-500 px-2 py-1 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-60">
@@ -517,3 +519,4 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
 };
 
 export default DocumentRequestsAdmin;
+
