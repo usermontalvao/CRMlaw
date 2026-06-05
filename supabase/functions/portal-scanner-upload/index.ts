@@ -82,5 +82,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: uploadError.message }, 500);
   }
 
-  return jsonResponse({ path, bucket: BUCKET });
+  // Generate a long-lived signed URL (1 year) using service role so the portal
+  // client can view/download the file from the messages page without needing its
+  // own storage permissions on client-documents.
+  const { data: signData } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .createSignedUrl(path, 60 * 60 * 24 * 365);
+
+  return jsonResponse({ path, bucket: BUCKET, signedUrl: signData?.signedUrl ?? null });
 });

@@ -871,6 +871,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.206',
+    date: '05/06/2026',
+    summary: 'Portal: navegação inferior redesenhada, anexos do chat com URL pronta e upload do scanner retornando link assinado.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Bottom bar mobile do portal foi redesenhada', description: 'A navegação inferior ganhou visual flutuante, cantos mais arredondados e estado ativo com maior destaque, melhorando leitura e toque no celular.' },
+        { type: 'improvement' as const, title: 'Mensagens do portal abrem anexos do scanner com menos latência', description: 'O chat do portal agora reutiliza a URL já assinada enviada pelo upload do scanner quando disponível, evitando nova assinatura no cliente antes de abrir o arquivo.' },
+      ]},
+      { moduleId: 'Serviços do Portal', changes: [
+        { type: 'feature' as const, title: 'Upload do scanner retorna URL assinada pronta para uso', description: 'A edge function `portal-scanner-upload` passou a devolver um link assinado de longa duração junto com o caminho do arquivo, simplificando a abertura posterior no módulo de mensagens.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.205',
     date: '05/06/2026',
     summary: 'Portal: scanner com captura alinhada ao frame visível, crop mais estável em mobile e ajustes finos no recorte.',

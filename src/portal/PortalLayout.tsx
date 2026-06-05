@@ -333,24 +333,30 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
         <PortalNotificationBell />
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/90 bg-white/95 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto flex max-w-7xl items-stretch px-1 pt-1.5" style={{ height: 'calc(58px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
-            const active = route === id;
-            return (
-              <button
-                key={id}
-                onClick={() => navigate(id)}
-                className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl transition ${
-                  active ? 'bg-orange-50 text-orange-700' : 'text-slate-400'
-                }`}
-              >
-                {active && <span className="absolute inset-x-3 top-1 h-[3px] rounded-full bg-orange-500" />}
-                <Icon className="h-5 w-5 shrink-0" />
-                <span className="truncate text-[10px] font-semibold">{label}</span>
-              </button>
-            );
-          })}
+      <nav className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
+        <div
+          className="mx-4 overflow-hidden rounded-[28px] border border-slate-200/60 bg-white/97 shadow-[0_12px_40px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+          style={{ marginBottom: 'calc(10px + env(safe-area-inset-bottom))' }}
+        >
+          <div className="flex items-stretch px-1.5 py-1.5">
+            {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
+              const active = route === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => navigate(id)}
+                  className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-[20px] py-2.5 transition-all duration-200 ${
+                    active
+                      ? 'bg-orange-500 text-white shadow-[0_4px_14px_rgba(249,115,22,0.38)]'
+                      : 'text-slate-400 active:bg-slate-100'
+                  }`}
+                >
+                  <Icon className="h-[19px] w-[19px] shrink-0" strokeWidth={active ? 2.5 : 1.75} />
+                  <span className="truncate text-[9.5px] font-bold leading-none tracking-tight">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </nav>
 

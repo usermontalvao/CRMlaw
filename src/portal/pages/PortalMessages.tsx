@@ -22,6 +22,8 @@ interface AttachPayload {
   mimeType: string;
   size: number;
   bucket: string;
+  url?: string;       // pre-signed URL included by scanner upload (avoids client-side signing)
+  displayPath?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -396,12 +398,13 @@ export const PortalMessages: React.FC = () => {
 
   // ── Renderização de anexo ────────────────────────────────────────────────────
   const AttachBubble: React.FC<{ attach: AttachPayload; isClient: boolean }> = ({ attach, isClient }) => {
-    const [url, setUrl] = useState<string | null>(null);
-    const [loadingUrl, setLoadingUrl] = useState(true);
+    const [url, setUrl] = useState<string | null>(attach.url ?? null);
+    const [loadingUrl, setLoadingUrl] = useState(!attach.url);
 
     useEffect(() => {
+      if (attach.url) { setUrl(attach.url); setLoadingUrl(false); return; }
       getSignedUrl(attach.bucket, attach.filePath).then(u => { setUrl(u); setLoadingUrl(false); });
-    }, [attach.bucket, attach.filePath]);
+    }, [attach.bucket, attach.filePath, attach.url]);
 
     if (loadingUrl) return <div className="flex items-center gap-2 py-1"><Loader2 className="w-4 h-4 animate-spin opacity-50" /><span className="text-xs opacity-60">Carregando…</span></div>;
     if (!url)       return <div className="text-xs opacity-50">Arquivo indisponível</div>;
