@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.208': { name: 'Café Scanner Natural', emoji: '📸' },
   '1.10.192': { name: 'Café Portal Redesign', emoji: '🎨' },
   '1.10.191': { name: 'Café Intimação Viva', emoji: '⚖️' },
   '1.10.172': { name: 'Café Link Público', emoji: '🔗' },
@@ -870,6 +871,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.208',
+    date: '05/06/2026',
+    summary: 'Portal: scanner com preview mais natural, estado vazio mobile mais direto e menos ruído quando a IA de OCR está indisponível.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Scanner deixou de aplicar filtro agressivo automaticamente', description: 'O processamento inicial de imagens do portal passou a manter a variante em cor por padrão, removendo a ativação automática do modo de documento que estava posterizando fotos e previews indevidamente.' },
+        { type: 'improvement' as const, title: 'Estado vazio do scanner mobile ficou mais direto', description: 'A tela inicial do scanner no celular ganhou cabeçalho compacto, atalhos visuais de anexo e câmera no topo do card e uma copy mais curta para orientar o envio sem excesso de texto.' },
+      ]},
+      { moduleId: 'Serviços do Portal', changes: [
+        { type: 'improvement' as const, title: 'Scanner reduz ruído quando IA e OCR falham no backend', description: 'As chamadas automáticas para nomeação e OCR agora entram em cooldown temporário após erro da edge function, evitando repetidas tentativas seguidas e diminuindo poluição no console.' },
+        { type: 'improvement' as const, title: 'Leitura de pixels do scanner foi otimizada para canvas', description: 'Os contextos 2D usados em detecção, contraste e OCR visual passaram a solicitar `willReadFrequently`, reduzindo os warnings de performance do navegador durante o processamento.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.207',
     date: '05/06/2026',

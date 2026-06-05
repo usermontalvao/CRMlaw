@@ -79,12 +79,19 @@ export interface ScannerCropSuggestion {
 }
 
 const DETECTION_MAX_SIDE = 240;
-const EXPORT_MAX_SIDE = 1800;
+const EXPORT_MAX_SIDE = 4096;
 const MIN_CROP_SIZE = 0.15;
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
+const AI_RETRY_COOLDOWN_MS = 60_000;
+
+let aiUnavailableUntil = 0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getReadable2dContext(canvas: HTMLCanvasElement) {
+  return canvas.getContext('2d', { willReadFrequently: true });
 }
 
 function makeId() {
@@ -197,7 +204,7 @@ function imageToCanvas(image: CanvasImageSource, width: number, height: number) 
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadable2dContext(canvas);
   if (!ctx) throw new Error('Canvas indisponível.');
   ctx.drawImage(image, 0, 0, width, height);
   return { canvas, ctx };
@@ -316,7 +323,7 @@ function detectDocumentBounds(canvas: HTMLCanvasElement) {
 }
 
 function stretchContrast(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadable2dContext(canvas);
   if (!ctx) return;
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data } = imageData;
@@ -364,7 +371,7 @@ function stretchContrast(canvas: HTMLCanvasElement) {
 }
 
 function applyGray(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadable2dContext(canvas);
   if (!ctx) return;
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data } = imageData;
@@ -382,7 +389,7 @@ function applyGray(canvas: HTMLCanvasElement) {
 function applyDocumentEnhancement(canvas: HTMLCanvasElement) {
   applyGray(canvas);
   stretchContrast(canvas);
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadable2dContext(canvas);
   if (!ctx) return;
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data } = imageData;
@@ -503,6 +510,7 @@ function parseAiJson(content: string): AiScanAnalysis | null {
 
 async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: ScannerMetrics): Promise<AiScanAnalysis | null> {
   return queuedAiCall(async () => {
+    if (Date.now() < aiUnavailableUntil) return null;
     try {
       const thumb = await thumbnailForAi(dataUrl);
       const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
@@ -537,11 +545,15 @@ async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: Sca
         },
       });
 
-      if (error) return null;
+      if (error) {
+        aiUnavailableUntil = Date.now() + AI_RETRY_COOLDOWN_MS;
+        return null;
+      }
       const content = (data as any)?.choices?.[0]?.message?.content;
       if (typeof content !== 'string') return null;
       return parseAiJson(content);
     } catch {
+      aiUnavailableUntil = Date.now() + AI_RETRY_COOLDOWN_MS;
       return null;
     }
   });
@@ -549,6 +561,7 @@ async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: Sca
 
 export async function extractScannerOcr(dataUrl: string): Promise<string | null> {
   return queuedAiCall(async () => {
+    if (Date.now() < aiUnavailableUntil) return null;
     try {
       const thumb = await thumbnailForAi(dataUrl);
       const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
@@ -571,10 +584,14 @@ export async function extractScannerOcr(dataUrl: string): Promise<string | null>
         },
       });
 
-      if (error) return null;
+      if (error) {
+        aiUnavailableUntil = Date.now() + AI_RETRY_COOLDOWN_MS;
+        return null;
+      }
       const content = (data as any)?.choices?.[0]?.message?.content;
       return typeof content === 'string' ? content.trim() : null;
     } catch {
+      aiUnavailableUntil = Date.now() + AI_RETRY_COOLDOWN_MS;
       return null;
     }
   });
@@ -716,12 +733,11 @@ export async function detectScannerCropSuggestion(sourceDataUrl: string): Promis
   });
   const quad = cropToQuad(crop);
   const cropRatio = crop.width * crop.height;
-  const isLikelyPaperDoc = cropRatio < 0.88 && bounds.cropRatio < 0.88;
   return {
     crop,
     quad,
     cropRatio,
-    enhancement: isLikelyPaperDoc ? 'document' : 'color',
+    enhancement: 'color',
   };
 }
 
@@ -760,7 +776,7 @@ export async function processScanFile({ file, index }: ProcessScanParams): Promi
     dataUrl: initialVariant.dataUrl,
     originalDataUrl: resizedSourceDataUrl,
     rotation: initialVariant.rotation,
-    enhancement: initialVariant.enhancement,  // may be 'document' if auto-detected
+    enhancement: initialVariant.enhancement,
     crop: initialVariant.crop,
     quad: initialVariant.quad,
     metrics: { ...initialVariant.metrics, cropRatio: croppedArea },
