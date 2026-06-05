@@ -7,6 +7,8 @@ import {
   EyeOff,
   FileText,
   Loader2,
+  RotateCcw,
+  RotateCw,
   ScanLine,
   Send,
   Sparkles,
@@ -137,22 +139,22 @@ function constrainHandleMove(baseQuad: ScannerQuad, handle: Exclude<CropHandle, 
     case 'tl':
       return {
         x: clamp(next.x, 0, Math.min(baseQuad.tr.x, baseQuad.bl.x) - margin),
-        y: clamp(next.y, 0, Math.min(baseQuad.tr.y, baseQuad.bl.y) - margin),
+        y: clamp(next.y, 0, baseQuad.bl.y - margin),
       };
     case 'tr':
       return {
-        x: clamp(next.x, Math.max(baseQuad.tl.x, baseQuad.br.x - 0.6) + margin, 1),
-        y: clamp(next.y, 0, Math.min(baseQuad.tl.y + 0.6, baseQuad.br.y) - margin),
+        x: clamp(next.x, baseQuad.tl.x + margin, 1),
+        y: clamp(next.y, 0, baseQuad.br.y - margin),
       };
     case 'br':
       return {
-        x: clamp(next.x, Math.max(baseQuad.bl.x, baseQuad.tr.x - 0.6) + margin, 1),
-        y: clamp(next.y, Math.max(baseQuad.tr.y, baseQuad.bl.y) + margin, 1),
+        x: clamp(next.x, baseQuad.bl.x + margin, 1),
+        y: clamp(next.y, baseQuad.tr.y + margin, 1),
       };
     case 'bl':
       return {
-        x: clamp(next.x, 0, Math.min(baseQuad.br.x, baseQuad.tl.x + 0.6) - margin),
-        y: clamp(next.y, Math.max(baseQuad.tl.y, baseQuad.br.y - 0.6) + margin, 1),
+        x: clamp(next.x, 0, baseQuad.br.x - margin),
+        y: clamp(next.y, baseQuad.tl.y + margin, 1),
       };
   }
 }
@@ -186,6 +188,26 @@ function quadCenter(quad: ScannerQuad) {
   };
 }
 
+function rotateDataUrl(dataUrl: string, degrees: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const swap = degrees === 90 || degrees === 270;
+      const canvas = document.createElement('canvas');
+      canvas.width = swap ? img.height : img.width;
+      canvas.height = swap ? img.width : img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL('image/jpeg', 0.94));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export const PortalScanner: React.FC = () => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
@@ -196,6 +218,8 @@ export const PortalScanner: React.FC = () => {
   const latestNamesRef = useRef<Map<string, string>>(new Map());
   // When set to an item id, auto-open crop editor once that item finishes processing
   const autoCropIdRef = useRef<string | null>(null);
+  // When set, the next camera capture replaces this item instead of adding a new one
+  const retakeForIdRef = useRef<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ current: number; total: number } | null>(null);
@@ -295,10 +319,9 @@ export const PortalScanner: React.FC = () => {
       if (handle === 'move') {
         next = moveQuad(quad, dx, dy);
       } else {
-        next = sanitizeQuad({
-          ...quad,
-          [handle]: constrainHandleMove(quad, handle, { x: quad[handle].x + dx, y: quad[handle].y + dy }),
-        }, quad);
+        // Free drag — no real-time constraints so handles always respond to touch.
+        // Quad is validated/corrected only on pointer release.
+        next = { ...quad, [handle]: normalizePoint({ x: quad[handle].x + dx, y: quad[handle].y + dy }) };
       }
 
       // Update DOM directly — no React re-render, no lag
@@ -309,9 +332,11 @@ export const PortalScanner: React.FC = () => {
     const finishDrag = (event?: PointerEvent) => {
       if (!cropDragRef.current) return;
       if (event && event.pointerId !== cropDragRef.current.pointerId) return;
-      // Commit final position to React state only once on release
+      // Validate and commit on release — if quad is invalid, sanitizeQuad fits
+      // the closest valid bounding-box rectangle around the dragged handles.
       if (liveDragQuad.current) {
-        setDraftQuad(liveDragQuad.current);
+        const startQuad = cropDragRef.current.quad;
+        setDraftQuad(sanitizeQuad(liveDragQuad.current, startQuad));
         liveDragQuad.current = null;
       }
       const activeDrag = cropDragRef.current;
@@ -421,7 +446,7 @@ export const PortalScanner: React.FC = () => {
     ]);
   };
 
-  const addFiles = async (files: File[], autoCropFirst = false) => {
+  const addFiles = async (files: File[], autoCropFirst = false, replaceItemId?: string) => {
     if (files.length === 0) return;
     setProcessing(true);
     const startIndex = processedItems.length;
@@ -440,7 +465,14 @@ export const PortalScanner: React.FC = () => {
       // For the first camera capture, mark this placeholder so replacePlaceholder
       // auto-opens the crop editor once processing finishes
       if (autoCropFirst && fileIndex === 0) autoCropIdRef.current = placeholderId;
-      setItems((current) => [{ id: placeholderId, originalName: file.name, processing: true }, ...current]);
+      if (replaceItemId && fileIndex === 0) {
+        // Replace existing item in-place (retake photo flow)
+        setItems((current) => current.map((item) =>
+          item.id === replaceItemId ? { id: placeholderId, originalName: file.name, processing: true as const } : item,
+        ));
+      } else {
+        setItems((current) => [...current, { id: placeholderId, originalName: file.name, processing: true }]);
+      }
 
       try {
         const scanned = kind === 'pdf' ? await processPdfFile({ file, index: itemIndex }) : await processScanFile({ file, index: itemIndex });
@@ -595,8 +627,10 @@ export const PortalScanner: React.FC = () => {
 
       const file = new File([blob], `captura_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`, { type: 'image/jpeg' });
       setCapturing(false);
+      const replaceId = retakeForIdRef.current ?? undefined;
+      retakeForIdRef.current = null;
       requestAnimationFrame(() => {
-        void addFiles([file], true);  // true = auto-open crop editor after processing
+        void addFiles([file], true, replaceId);
       });
       return;
     }
@@ -664,6 +698,38 @@ export const PortalScanner: React.FC = () => {
     if (!cropEditorItem || !draftQuad) return;
     await applyItemEdit(cropEditorItem, { crop: quadToCrop(draftQuad), quad: draftQuad });
     closeCropEditor();
+  };
+
+  const rotateCropEditor = async (direction: 1 | -1) => {
+    if (!cropEditorItem) return;
+    setItemEditing(cropEditorItem.id, true);
+    try {
+      const degrees = direction === 1 ? 90 : 270;
+      const source = cropEditorItem.originalDataUrl || cropEditorItem.dataUrl;
+      const rotatedSource = await rotateDataUrl(source, degrees);
+      const fullQuad = cropToQuad({ x: 0, y: 0, width: 1, height: 1 });
+      // Bake rotation into originalDataUrl so the crop editor shows the rotated image
+      const next = await updateScannerImage(
+        { ...cropEditorItem, originalDataUrl: rotatedSource },
+        { rotation: 0, quad: fullQuad },
+      );
+      const nextItem = { ...next, originalDataUrl: rotatedSource, ocrText: undefined };
+      setItems((current) => current.map((entry) =>
+        isProcessed(entry) && entry.id === cropEditorItem.id ? nextItem : entry,
+      ));
+      liveDragQuad.current = fullQuad;
+      setDraftQuad(fullQuad);
+      requestAnimationFrame(() => applyQuadToDOM(fullQuad));
+    } finally {
+      setItemEditing(cropEditorItem.id, false);
+    }
+  };
+
+  const retakePhoto = () => {
+    if (!cropEditorItem) return;
+    retakeForIdRef.current = cropEditorItem.id;
+    closeCropEditor();
+    void openCamera();
   };
 
   const resetCropEditor = () => {
@@ -1116,7 +1182,10 @@ export const PortalScanner: React.FC = () => {
                 key={item.id}
                 className={`relative overflow-hidden rounded-[20px] shadow-[0_8px_24px_rgba(15,23,42,0.10)] ring-2 ${item.quality === 'ok' ? 'ring-emerald-400' : 'ring-amber-400'}`}
               >
-                <div className="aspect-[3/4] w-full bg-slate-900">
+                <div
+                  className={`aspect-[3/4] w-full bg-slate-900${item.fileKind === 'image' ? ' cursor-pointer' : ''}`}
+                  onClick={() => item.fileKind === 'image' && openCropEditor(item)}
+                >
                   {item.fileKind === 'pdf' ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 text-white/50">
                       <FileText className="h-10 w-10" />
@@ -1250,12 +1319,12 @@ export const PortalScanner: React.FC = () => {
             )}
 
             {processedItems.length > 0 && (
-              <div className="mb-4 flex items-center justify-center gap-2">
-                {processedItems.slice(-5).map((item, i) => (
+              <div className="-mx-5 mb-4 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {processedItems.map((item) => (
                   <div
                     key={item.id}
-                    className={`flex h-[80px] w-[60px] shrink-0 overflow-hidden rounded-xl border-2 shadow-lg ${item.quality === 'ok' ? 'border-emerald-400' : 'border-rose-400'}`}
-                    style={{ opacity: 0.6 + i * 0.1 }}
+                    onClick={() => item.fileKind === 'image' && openCropEditor(item)}
+                    className={`flex h-[80px] w-[60px] shrink-0 overflow-hidden rounded-xl border-2 shadow-lg ${item.fileKind === 'image' ? 'cursor-pointer active:scale-95' : ''} ${item.quality === 'ok' ? 'border-emerald-400' : 'border-rose-400'}`}
                   >
                     {item.fileKind === 'pdf' ? (
                       <div className="flex h-full w-full items-center justify-center bg-slate-800">
@@ -1329,7 +1398,7 @@ export const PortalScanner: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex shrink-0 gap-2 px-4 pb-3">
+            <div className="grid shrink-0 grid-cols-3 gap-2 px-4 pb-3">
               <button
                 type="button"
                 onClick={resetCropEditor}
@@ -1347,10 +1416,19 @@ export const PortalScanner: React.FC = () => {
                 <Sparkles className="h-3.5 w-3.5" />
                 Redetectar
               </button>
+              <button
+                type="button"
+                onClick={retakePhoto}
+                disabled={editingIds.includes(cropEditorItem.id)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50 active:bg-slate-50"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                Repetir
+              </button>
             </div>
 
             {/* Image — flex-1 so it fills available space between header and buttons */}
-            <div className="mx-4 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[20px] bg-slate-950">
+            <div className="mx-4 flex min-h-0 flex-1 items-center justify-center rounded-[20px] bg-slate-950">
               <div ref={cropStageRef} className="relative inline-block max-w-full touch-none select-none">
                 <img
                   ref={cropImageRef}
@@ -1358,19 +1436,19 @@ export const PortalScanner: React.FC = () => {
                   alt={cropEditorItem.suggestedName}
                   draggable={false}
                   onDragStart={(event) => event.preventDefault()}
-                  className="block max-h-[calc(100dvh-220px)] max-w-full select-none"
+                  className="block max-h-[calc(100dvh-220px)] max-w-full select-none rounded-[16px]"
                 />
                 {/* Dark overlay outside selection */}
-                <div className="pointer-events-none absolute inset-0 bg-slate-950/40" />
+                <div className="pointer-events-none absolute inset-0 rounded-[16px] bg-slate-950/40" />
                 {/* Highlighted selection area — updated by applyQuadToDOM */}
                 <div
                   ref={clipHlRef}
-                  className="pointer-events-none absolute inset-0 border border-white/20 bg-white/10"
+                  className="pointer-events-none absolute inset-0 rounded-[16px] border border-white/20 bg-white/10"
                   style={{ clipPath: `polygon(${draftQuadPolygon})` }}
                 />
                 {/* SVG border lines */}
                 <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+                  className="pointer-events-none absolute inset-0 h-full w-full overflow-visible rounded-[16px]"
                   viewBox="0 0 1 1"
                   preserveAspectRatio="none"
                 >
@@ -1396,34 +1474,51 @@ export const PortalScanner: React.FC = () => {
                     Mover
                   </button>
                   {/* Corner handles */}
-                  {(['tl', 'tr', 'br', 'bl'] as const).map((handle) => (
-                    <button
-                      key={handle}
-                      ref={el => { handleElMap.current[handle] = el ?? undefined; }}
-                      type="button"
-                      onPointerDown={(event) => startCropDrag(handle, event)}
-                      className="absolute flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full active:scale-110"
-                      style={{ left: `${draftQuad[handle].x * 100}%`, top: `${draftQuad[handle].y * 100}%` }}
-                    >
-                      <span className="h-8 w-8 rounded-full border-[3px] border-white bg-orange-500 shadow-[0_4px_16px_rgba(249,115,22,0.55)]" />
-                    </button>
-                  ))}
+                  {(['tl', 'tr', 'br', 'bl'] as const).map((handle) => {
+                    const isActive = activeCropHandle === handle;
+                    return (
+                      <button
+                        key={handle}
+                        ref={el => { handleElMap.current[handle] = el ?? undefined; }}
+                        type="button"
+                        onPointerDown={(event) => startCropDrag(handle, event)}
+                        className={`absolute flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full transition-transform duration-100${isActive ? ' scale-125' : ''}`}
+                        style={{ left: `${draftQuad[handle].x * 100}%`, top: `${draftQuad[handle].y * 100}%` }}
+                      >
+                        <span className={`rounded-full border-[3px] border-white bg-orange-500 transition-all duration-100${isActive ? ' h-10 w-10 shadow-[0_0_0_4px_rgba(249,115,22,0.35),0_4px_16px_rgba(249,115,22,0.7)]' : ' h-8 w-8 shadow-[0_4px_16px_rgba(249,115,22,0.55)]'}`} />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
             {/* Buttons — always visible, never scrolled away */}
-            <div className="grid shrink-0 grid-cols-2 gap-2 px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+            <div className="flex shrink-0 gap-2 px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
               <button
                 onClick={closeCropEditor}
-                className="flex items-center justify-center rounded-2xl border border-slate-200 py-3.5 text-sm font-semibold text-slate-700 active:bg-slate-50"
+                className="flex flex-1 items-center justify-center rounded-2xl border border-slate-200 py-3.5 text-sm font-semibold text-slate-700 active:bg-slate-50"
               >
                 Cancelar
               </button>
               <button
+                onClick={() => void rotateCropEditor(-1)}
+                disabled={editingIds.includes(cropEditorItem.id)}
+                className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 disabled:opacity-40 active:bg-slate-50"
+              >
+                <RotateCcw className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => void rotateCropEditor(1)}
+                disabled={editingIds.includes(cropEditorItem.id)}
+                className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 disabled:opacity-40 active:bg-slate-50"
+              >
+                <RotateCw className="h-5 w-5" />
+              </button>
+              <button
                 onClick={() => void saveCropEditor()}
                 disabled={editingIds.includes(cropEditorItem.id)}
-                className="flex items-center justify-center rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(249,115,22,0.32)] disabled:opacity-50 active:opacity-90"
+                className="flex flex-1 items-center justify-center rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(249,115,22,0.32)] disabled:opacity-50 active:opacity-90"
               >
                 {editingIds.includes(cropEditorItem.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Aplicar'}
               </button>

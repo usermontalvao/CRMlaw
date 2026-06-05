@@ -871,6 +871,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.207',
+    date: '05/06/2026',
+    summary: 'Portal: scanner com edição mais livre no crop, rotação rápida, repetição da foto e navegação de miniaturas melhorada.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Crop do scanner ficou mais livre ao arrastar os cantos', description: 'O ajuste manual do recorte passou a responder sem travas durante o drag, validando e corrigindo o quadrilátero apenas ao soltar o toque para manter a interação mais fluida no celular.' },
+        { type: 'feature' as const, title: 'Editor do scanner ganhou rotação rápida e repetição da captura', description: 'O modal de recorte agora permite girar a imagem para ambos os lados e repetir a foto atual, substituindo o item no lote sem criar uma nova entrada duplicada.' },
+        { type: 'improvement' as const, title: 'Miniaturas e cards do scanner ficaram mais acionáveis', description: 'As miniaturas recentes da câmera agora exibem toda a sequência em scroll horizontal e os cards/imagens do lote podem abrir o editor de recorte diretamente por toque.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.206',
     date: '05/06/2026',
     summary: 'Portal: navegação inferior redesenhada, anexos do chat com URL pronta e upload do scanner retornando link assinado.',
