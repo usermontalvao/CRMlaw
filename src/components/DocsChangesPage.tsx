@@ -871,6 +871,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.200',
+    date: '04/06/2026',
+    summary: 'Chat do portal e widget do CRM: correções visuais, auto-scroll, persistência de tickets em fila e notificação contextual.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Widget de chat do cliente com layout e rolagem corrigidos', description: 'O modal do chat no portal teve correção de estilos globais que quebravam cores e aparência, além de ajuste no auto-scroll para manter a conversa no fim ao receber novas mensagens.' },
+        { type: 'improvement' as const, title: 'Notificação do portal respeita contexto da conversa aberta', description: 'Respostas do escritório agora deixam de gerar alerta visual quando o cliente já está com o modal de chat aberto ou navegando no módulo de mensagens.' },
+      ]},
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'fix' as const, title: 'Tickets não aceitos permanecem sinalizados na fila', description: 'Conversas de portal ainda não aceitas passam a manter badge persistente no widget e na aba de tickets até que o atendimento seja efetivamente assumido.' },
+        { type: 'feature' as const, title: 'Resposta do escritório gera notificação própria no portal', description: 'Nova migration cria evento de notificação `chat_reply` para respostas do atendimento no chat do portal, integrado à central de notificações do cliente.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.199',
     date: '04/06/2026',
     summary: 'Portal do cliente: scanner mobile, notificações mais estáveis, chat com atribuição e ajustes de processos/publicações.',

@@ -1057,46 +1057,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   color: rgba(245, 245, 247, 0.45) !important;
 }
 
-/* ===== EXCEÇÃO: Dropdown de busca de clientes (z-[60]) ===== */
-div[class*="z-[60]"] {
-  background: #ffffff !important;
-  border: 1px solid #e5e7eb !important;
-}
-
-div[class*="z-[60]"] button {
-  background: #ffffff !important;
-  color: #18181b !important;
-  border-color: #e5e7eb !important;
-  padding: 10px 12px !important;
-  font-size: 14px !important;
-  border-radius: 0 !important;
-}
-
-div[class*="z-[60]"] button:hover {
-  background: #f4f4f5 !important;
-}
-
-div[class*="z-[60]"] div {
-  background: transparent !important;
-}
-
-div[class*="z-[60]"] p {
-  color: #18181b !important;
-}
-
-div[class*="z-[60]"] p[class*="text-xs"],
-div[class*="z-[60]"] p[class*="text-zinc-500"],
-div[class*="z-[60]"] span[class*="text-xs"] {
-  color: #71717a !important;
-}
-
-div[class*="z-[60]"] button[class*="text-sky"],
-div[class*="z-[60]"] span[class*="text-sky"] {
-  color: #0ea5e9 !important;
-  background: #ffffff !important;
-}
-
-/* Forçar fundo branco no dropdown da busca de clientes (classe direta) */
+/* ===== EXCEÇÃO: Dropdown de busca de clientes ===== */
 .client-search-dropdown {
   background: #ffffff !important;
   border: 1px solid #e5e7eb !important;

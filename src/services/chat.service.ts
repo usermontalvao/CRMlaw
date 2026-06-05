@@ -4,6 +4,14 @@ import { userNotificationService } from './userNotification.service';
 
 const ATTACHMENT_PREFIX = '__anexo__:';
 
+const toTitleCase = (value: string) =>
+  value.toLowerCase().replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+
+export function buildPortalFarewellMessage(clientName?: string | null): string {
+  const firstName = toTitleCase(clientName || 'Cliente').split(' ')[0];
+  return `Sr.(a) ${firstName}, agradecemos seu contato. Este atendimento foi encerrado. Caso precise de mais informações, utilize o botão "Iniciar nova conversa". Estamos à disposição.`;
+}
+
 class ChatService {
   private roomsTable = 'chat_rooms';
   private membersTable = 'chat_room_members';

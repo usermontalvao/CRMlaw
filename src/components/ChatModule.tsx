@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Download, FileText, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, X, Users, Reply, Pencil, Trash2, SmilePlus, Play, Pause, Phone, Video, Info, UserCheck, PhoneOff, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
-import { chatService } from '../services/chat.service';
+import { buildPortalFarewellMessage, chatService } from '../services/chat.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
@@ -1724,9 +1724,7 @@ const ChatModule: React.FC = () => {
                         if (selectedRoom.created_by) {
                           await supabase.rpc('portal_reopen_chat_room', { p_room_id: selectedRoomId });
                         } else {
-                          const toTC = (s: string) => s.toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
-                          const firstName = toTC(selectedRoom.name || 'Cliente').split(' ')[0];
-                          const farewell = `Sr. ${firstName}, agradecemos seu contato. Este atendimento foi encerrado. Caso precise de mais informações, utilize o botão "Iniciar nova conversa". Estamos à disposição.`;
+                          const farewell = buildPortalFarewellMessage(selectedRoom.name);
                           await chatService.sendMessage({ roomId: selectedRoomId!, userId: user.id, content: farewell });
                           await supabase.rpc('portal_close_chat_room', { p_room_id: selectedRoomId, p_closed_by: user.id });
                         }

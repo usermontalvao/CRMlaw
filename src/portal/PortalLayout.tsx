@@ -9,10 +9,12 @@ import {
   LayoutDashboard,
   PenTool,
   PiggyBank,
+  ScanLine,
   UserCheck,
   UserX,
   X,
 } from 'lucide-react';
+import { PortalChatWidget } from './components/PortalChatWidget';
 import { PortalHeader } from './components/PortalHeader';
 import { PortalNotificationBell } from './components/PortalNotificationBell';
 import { PortalSidebar } from './components/PortalSidebar';
@@ -81,6 +83,7 @@ const PushToastOverlay: React.FC<{
 const BOTTOM_NAV = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Início' },
   { id: 'casos', icon: Briefcase, label: 'Casos' },
+  { id: 'scanner', icon: ScanLine, label: 'Scanner' },
   { id: 'assinar', icon: PenTool, label: 'Assinar' },
   { id: 'financeiro', icon: PiggyBank, label: 'Financeiro' },
   { id: 'agenda', icon: Calendar, label: 'Agenda' },
@@ -125,7 +128,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
           <PortalHeader onMenuClick={() => setSidebarOpen(true)} />
 
           <main className="flex-1 overflow-x-hidden">
-            <div className="mx-auto w-full max-w-7xl px-3 py-4 pb-24 sm:px-5 sm:py-6 sm:pb-6 lg:px-6 lg:py-5">
+            <div className="mx-auto w-full max-w-7xl px-3 py-4 pb-[calc(env(safe-area-inset-bottom)+6rem)] sm:px-5 sm:py-6 sm:pb-6 lg:px-6 lg:py-5">
               {children}
             </div>
           </main>
@@ -136,21 +139,21 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
         <PortalNotificationBell />
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)] lg:hidden">
-        <div className="flex h-16 items-stretch">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/90 bg-white/95 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto flex h-[74px] max-w-7xl items-stretch px-1 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5">
           {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
             const active = route === id;
             return (
               <button
                 key={id}
                 onClick={() => navigate(id)}
-                className={`relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-[22px] transition ${
-                  active ? 'text-orange-700' : 'text-slate-400'
+                className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl transition ${
+                  active ? 'bg-orange-50 text-orange-700' : 'text-slate-400'
                 }`}
               >
-                {active && <span className="absolute inset-x-3 top-2 h-[3px] rounded-full bg-orange-500" />}
-                <Icon className="h-5 w-5" />
-                <span className="text-[10px] font-semibold">{label}</span>
+                {active && <span className="absolute inset-x-3 top-1 h-[3px] rounded-full bg-orange-500" />}
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="truncate text-[10px] font-semibold">{label}</span>
               </button>
             );
           })}
@@ -158,6 +161,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       </nav>
 
       <PushToastOverlay toasts={toasts} onDismiss={dismissToast} />
+      <PortalChatWidget />
     </div>
   );
 };

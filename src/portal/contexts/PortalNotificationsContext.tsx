@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { clientPortalService } from '../services/clientPortal.service';
 import { useClientAuth } from './ClientAuthContext';
 import { supabasePortal } from '../lib/supabasePortal';
+import { usePortalRouter } from '../hooks/usePortalRouter';
 
 export interface NotifItem {
   id: string;
@@ -41,6 +42,8 @@ const Ctx = createContext<PortalNotificationsContextType | undefined>(undefined)
 
 const LAST_OPENED_KEY = 'portal_notif_last_opened';
 const SEEN_KEY = 'portal_seen_notif_ids';
+const PORTAL_CHAT_VISIBLE_KEY = 'portal-chat-visible';
+const PORTAL_CHAT_VISIBLE_EVENT = 'crm:portal_chat_visible';
 
 const TOAST_TYPES = new Set([
   'profile_update_rejected',
@@ -48,6 +51,7 @@ const TOAST_TYPES = new Set([
   'new_signature_request',
   'new_document_request',
   'document_upload_rejected',
+  'chat_reply',
 ]);
 
 export function isUnread(n: NotifItem): boolean {
@@ -102,11 +106,13 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 
 export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { session, updateSession } = useClientAuth();
+  const { route } = usePortalRouter();
   const [items, setItems] = useState<NotifItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [toasts, setToasts] = useState<PushToast[]>([]);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [lastOpened, setLastOpened] = useState<number>(0);
+  const [chatVisible, setChatVisible] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
   const realtimeOk = useRef(false);
@@ -121,7 +127,30 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     sessionStartedAtRef.current = Math.max(toTimestamp(session?.loginAt), Date.now());
   }, [session?.user?.id, session?.user?.notifications_last_seen_at, session?.loginAt]);
 
+  useEffect(() => {
+    const sync = () => {
+      let visible = route === 'mensagens';
+      try {
+        visible = visible || localStorage.getItem(PORTAL_CHAT_VISIBLE_KEY) === '1';
+      } catch {}
+      setChatVisible(visible);
+    };
+    sync();
+    const handler = () => sync();
+    window.addEventListener(PORTAL_CHAT_VISIBLE_EVENT, handler as EventListener);
+    window.addEventListener('hashchange', handler);
+    return () => {
+      window.removeEventListener(PORTAL_CHAT_VISIBLE_EVENT, handler as EventListener);
+      window.removeEventListener('hashchange', handler);
+    };
+  }, [route]);
+
+  const shouldSuppressChatReply = useCallback((notification?: NotifItem | null) => {
+    return (notification?.type || '') === 'chat_reply' && chatVisible;
+  }, [chatVisible]);
+
   const pushToast = useCallback((n: NotifItem) => {
+    if (shouldSuppressChatReply(n)) return;
     if (!TOAST_TYPES.has(n.type || '')) return;
     if (!isUnread(n)) return;
     const createdAt = toTimestamp(n.created_at);
@@ -136,7 +165,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     };
     setToasts((prev) => [...prev.slice(-4), toast]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 8000);
-  }, []);
+  }, [shouldSuppressChatReply]);
 
   const reload = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -177,6 +206,12 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
         (payload: any) => {
           const n = payload.new as NotifItem;
           knownIdsRef.current.add(n.id);
+          if (shouldSuppressChatReply(n) && session?.user?.id) {
+            const readAt = new Date().toISOString();
+            setItems((prev) => [{ ...n, is_read: true, read_at: readAt }, ...prev]);
+            void clientPortalService.markNotificationRead(session.user.id, n.id).catch(() => {});
+            return;
+          }
           setItems((prev) => [n, ...prev]);
           pushToast(n);
         }
@@ -191,7 +226,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
         channelRef.current = null;
       }
     };
-  }, [session?.client?.id, pushToast]);
+  }, [session?.client?.id, session?.user?.id, pushToast, shouldSuppressChatReply]);
 
   useEffect(() => {
     if (!session?.user?.id) return;

@@ -462,8 +462,10 @@ export const PortalScanner: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const buildMergedPdfBlob = async () => {
-    const exportItems = processedItems.filter((item) => item.quality === 'ok');
+  const buildMergedPdfBlob = async (forceAll = false) => {
+    const exportItems = forceAll
+      ? processedItems.filter((item) => item.dataUrl || item.fileBlob)
+      : processedItems.filter((item) => item.quality === 'ok');
     if (exportItems.length === 0) return null;
     const { PDFDocument } = await import('pdf-lib');
     const mergedPdf = await PDFDocument.create();
@@ -509,12 +511,12 @@ export const PortalScanner: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const sendBatch = async () => {
+  const sendBatch = async (forceAll = false) => {
     if (!session?.user?.id || sending) return;
     setSendMessage(null);
     setSending(true);
     try {
-      const blob = await buildMergedPdfBlob();
+      const blob = await buildMergedPdfBlob(forceAll);
       if (!blob) {
         setSendMessage('Nada válido para enviar.');
         return;
@@ -583,8 +585,8 @@ export const PortalScanner: React.FC = () => {
             <ScanLine className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Scanner</h1>
-            <p className="text-xs text-slate-500">Capture, ajuste e envie</p>
+            <h1 className="text-lg font-semibold text-slate-900">Envio de arquivos</h1>
+            <p className="text-xs text-slate-500">Documentos, prints, fotos e provas</p>
           </div>
         </div>
 
@@ -634,22 +636,22 @@ export const PortalScanner: React.FC = () => {
             <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#fff7ed,#fed7aa)] text-orange-500 shadow-[0_12px_28px_rgba(249,115,22,0.18)]">
               <ScanLine className="h-8 w-8" />
             </div>
-            <h2 className="mt-5 text-xl font-bold tracking-tight text-slate-900">Scanner inteligente</h2>
+            <h2 className="mt-5 text-xl font-bold tracking-tight text-slate-900">Captura de arquivos</h2>
             <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-              Capture documentos com a câmera ou importe arquivos. A IA avalia, nomeia e exporta tudo em PDF.
+              Envie documentos, prints de conversa, fotos de produtos ou qualquer evidência. A IA organiza e nomeia tudo.
             </p>
             <div className="mt-6 flex w-full flex-col gap-2">
               <div className="flex items-center gap-3 rounded-2xl bg-orange-50 px-4 py-3 text-left text-sm text-slate-700">
                 <Sparkles className="h-4 w-4 shrink-0 text-orange-500" />
-                <span>IA nomeia e avalia a qualidade automaticamente</span>
+                <span>IA identifica o conteúdo e nomeia automaticamente</span>
               </div>
               <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left text-sm text-slate-700">
                 <Crop className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>Recorte e corrija a perspectiva de qualquer ângulo</span>
+                <span>Documentos, prints, fotos — tudo aceito como prova</span>
               </div>
               <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left text-sm text-slate-700">
                 <FileText className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>Exporte múltiplas páginas em um único PDF</span>
+                <span>Agrupa tudo em PDF e envia direto ao escritório</span>
               </div>
             </div>
           </div>
@@ -703,7 +705,7 @@ export const PortalScanner: React.FC = () => {
             isProcessed(item) ? (
               <article
                 key={item.id}
-                className={`relative overflow-hidden rounded-[20px] shadow-[0_8px_24px_rgba(15,23,42,0.10)] ring-2 ${item.quality === 'ok' ? 'ring-emerald-400' : 'ring-rose-400'}`}
+                className={`relative overflow-hidden rounded-[20px] shadow-[0_8px_24px_rgba(15,23,42,0.10)] ring-2 ${item.quality === 'ok' ? 'ring-emerald-400' : 'ring-amber-400'}`}
               >
                 <div className="aspect-[3/4] w-full bg-slate-900">
                   {item.fileKind === 'pdf' ? (
@@ -729,8 +731,8 @@ export const PortalScanner: React.FC = () => {
                           <span className="text-[11px] font-semibold text-orange-300">Analisando…</span>
                         </div>
                       ) : (
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${item.quality === 'ok' ? 'bg-emerald-500/90 text-white' : 'bg-rose-500/90 text-white'}`}>
-                          {item.quality === 'ok' ? '✓ Apto' : '✗ Ilegível'}
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${item.quality === 'ok' ? 'bg-emerald-500/90 text-white' : 'bg-amber-500/90 text-white'}`}>
+                          {item.quality === 'ok' ? '✓ Apto' : '⚠ Revisar'}
                         </span>
                       )}
                       {item.quality === 'ruim' && item.reason && !aiIds.includes(item.id) && (
@@ -1002,19 +1004,36 @@ export const PortalScanner: React.FC = () => {
                   <Camera className="h-4 w-4" />
                   Capturar mais
                 </button>
-                <button
-                  onClick={() => void sendBatch()}
-                  disabled={okItems.length === 0 || sending}
-                  className="inline-flex h-11 flex-[1.3] items-center justify-center gap-2 rounded-[14px] bg-orange-500 text-sm font-bold text-white shadow-[0_6px_18px_rgba(249,115,22,0.28)] disabled:opacity-50"
-                >
-                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Enviar
-                </button>
+                {okItems.length > 0 ? (
+                  <button
+                    onClick={() => void sendBatch()}
+                    disabled={sending}
+                    className="inline-flex h-11 flex-[1.3] items-center justify-center gap-2 rounded-[14px] bg-orange-500 text-sm font-bold text-white shadow-[0_6px_18px_rgba(249,115,22,0.28)] disabled:opacity-50"
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Enviar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void sendBatch(true)}
+                    disabled={sending || processedItems.length === 0}
+                    className="inline-flex h-11 flex-[1.3] items-center justify-center gap-1.5 rounded-[14px] bg-amber-500 text-xs font-bold text-white shadow-[0_6px_18px_rgba(245,158,11,0.28)] disabled:opacity-50"
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    Enviar assim
+                  </button>
+                )}
               </div>
               <div className="mt-2 flex gap-2">
                 <button
-                  onClick={downloadPdf}
-                  disabled={okItems.length === 0}
+                  onClick={() => void (okItems.length > 0 ? downloadPdf() : buildMergedPdfBlob(true).then(blob => {
+                    if (!blob) return;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `scanner_${new Date().toISOString().slice(0,10)}.pdf`; a.click();
+                    URL.revokeObjectURL(url);
+                  }))}
+                  disabled={processedItems.length === 0}
                   className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[14px] border border-slate-200 text-sm font-medium text-slate-500 disabled:opacity-40"
                 >
                   <Download className="h-3.5 w-3.5" />

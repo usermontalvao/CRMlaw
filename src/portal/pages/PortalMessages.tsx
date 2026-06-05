@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import {
   Send, Loader2, MessageCircle, Lock, Plus,
   Mic, MicOff, Paperclip, Image as ImageIcon,
@@ -153,7 +153,15 @@ export const PortalMessages: React.FC = () => {
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior, block: 'end' }), 50);
+    const run = () => {
+      const container = messagesContainerRef.current;
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior });
+        return;
+      }
+      bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    };
+    window.requestAnimationFrame(() => window.requestAnimationFrame(run));
   }, []);
 
   // Auto-scroll quando chegam novas mensagens
@@ -166,6 +174,10 @@ export const PortalMessages: React.FC = () => {
       scrollToBottom('smooth');
     }
   }, [messages.length, scrollToBottom]);
+
+  useLayoutEffect(() => {
+    if (!loading) scrollToBottom('auto');
+  }, [loading, messages.length, attendantTyping, isClosed, scrollToBottom]);
 
   // ── Signed URL ──────────────────────────────────────────────────────────────
   const getSignedUrl = useCallback(async (bucket: string, path: string): Promise<string | null> => {
@@ -212,13 +224,13 @@ export const PortalMessages: React.FC = () => {
       setAttendant((data as any).attendant ?? null);
 
       // Ao trocar de sala, sempre rola para o fim
-      if (roomChanged) setTimeout(() => scrollToBottom('instant'), 100);
+      if (roomChanged) setTimeout(() => scrollToBottom('auto'), 100);
     } finally {
       if (showLoader) setLoading(false);
     }
   }, [session?.user?.id, scrollToBottom]);
 
-  useEffect(() => { loadMessages(true).then(() => scrollToBottom('instant')); }, [loadMessages, scrollToBottom]);
+  useEffect(() => { loadMessages(true).then(() => scrollToBottom('auto')); }, [loadMessages, scrollToBottom]);
   useEffect(() => {
     if (!session?.user?.id) return;
     const id = setInterval(() => loadMessages(false), 4000);

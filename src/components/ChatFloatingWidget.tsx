@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
-import { chatService } from '../services/chat.service';
+import { buildPortalFarewellMessage, chatService } from '../services/chat.service';
 import { profileService, type Profile } from '../services/profile.service';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
 import { supabase } from '../config/supabase';
@@ -1022,7 +1022,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         const next = new Map<string, number>();
         Object.entries(obj || {}).forEach(([roomId, count]) => {
           const n = Number(count);
-          if (!Number.isNaN(n) && n > 0) {
+          if (!Number.isNaN(n) && n >= 0) {
             next.set(String(roomId), n);
           }
         });
@@ -1066,7 +1066,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       const obj: Record<string, number> = {};
       roomUnreadCounts.forEach((count, roomId) => {
         const n = Number(count);
-        if (!Number.isNaN(n) && n > 0) {
+        if (!Number.isNaN(n) && n >= 0) {
           obj[String(roomId)] = n;
         }
       });
@@ -1754,13 +1754,22 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     getRooms: () => rooms,
   };
 
+  const getEffectiveRoomUnread = useCallback((room: ChatRoom) => {
+    const isQueuedPortalTicket = !!room.portal_client_id && !room.accepted_by && !room.created_by;
+    const localCount = Number(roomUnreadCounts.get(room.id) ?? 0);
+    if (isQueuedPortalTicket) {
+      return Math.max(1, localCount);
+    }
+    return localCount;
+  }, [roomUnreadCounts]);
+
   const totalUnreadFromRooms = useMemo(() => {
     let total = 0;
-    roomUnreadCounts.forEach((v) => {
-      total += Number(v || 0);
+    rooms.forEach((room) => {
+      total += getEffectiveRoomUnread(room);
     });
     return total;
-  }, [roomUnreadCounts]);
+  }, [rooms, getEffectiveRoomUnread]);
 
   const toastVerified = useMemo(() => {
     if (!toast) return null;
@@ -1769,14 +1778,14 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   // Sala não lida mais recente — usada para mostrar a foto persistente no launcher
   const topUnreadRoom = useMemo(() => {
-    const unreadRooms = rooms.filter((r) => (roomUnreadCounts.get(r.id) ?? 0) > 0);
+    const unreadRooms = rooms.filter((r) => getEffectiveRoomUnread(r) > 0);
     unreadRooms.sort((a, b) => {
       const at = a.last_message_at ?? a.created_at;
       const bt = b.last_message_at ?? b.created_at;
       return bt.localeCompare(at);
     });
     return unreadRooms[0] ?? null;
-  }, [rooms, roomUnreadCounts]);
+  }, [rooms, getEffectiveRoomUnread]);
 
   const visible = !!user && currentModule !== 'chat';
   if (!visible) return null;
@@ -1981,9 +1990,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       if (selectedRoom.created_by) {
                         await supabase.rpc('portal_reopen_chat_room', { p_room_id: selectedRoomId });
                       } else {
-                        const toTC = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-                        const firstName = toTC(selectedRoom.name || 'Cliente').split(' ')[0];
-                        const farewell = `Sr. ${firstName}, agradecemos seu contato. Este atendimento foi encerrado. Caso precise de mais informações, utilize o botão "Iniciar nova conversa". Estamos à disposição.`;
+                        const farewell = buildPortalFarewellMessage(selectedRoom.name);
                         await chatService.sendMessage({ roomId: selectedRoomId, userId: user.id, content: farewell });
                         await supabase.rpc('portal_close_chat_room', { p_room_id: selectedRoomId, p_closed_by: user.id });
                       }
@@ -2100,7 +2107,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               {/* ── Tabs EQUIPE | TICKET ── */}
               {(() => {
                 const ticketRooms = rooms.filter(r => r.portal_client_id);
-                const ticketUnread = ticketRooms.reduce((s, r) => s + (roomUnreadCounts.get(r.id) ?? 0), 0);
+                const ticketUnread = ticketRooms.reduce((s, r) => s + getEffectiveRoomUnread(r), 0);
                 return (
                   <div className="flex shrink-0 border-b border-white/[0.06] mx-3 mb-1">
                     {(['equipe', 'ticket'] as const).map(tab => (
@@ -2147,8 +2154,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     : !r.portal_client_id                     // equipe: sem portal
                   )
                   .sort((a, b) => {
-                    const ua = roomUnreadCounts.get(a.id) ?? 0;
-                    const ub = roomUnreadCounts.get(b.id) ?? 0;
+                    const ua = getEffectiveRoomUnread(a);
+                    const ub = getEffectiveRoomUnread(b);
                     if ((ua > 0) !== (ub > 0)) return ua > 0 ? -1 : 1;
                     const at = a.last_message_at ?? a.created_at;
                     const bt = b.last_message_at ?? b.created_at;
@@ -2160,7 +2167,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   const avatarUrl = isTicketRoom ? null : otherUser?.avatar_url;
                   const online = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
                   const verified = isTicketRoom ? null : getVerifiedVariant(otherUser);
-                  const roomUnread = roomUnreadCounts.get(room.id) ?? 0;
+                  const roomUnread = getEffectiveRoomUnread(room);
                   const subtitle = room.is_public
                     ? `${room.type === 'team' ? 'Grupo' : 'Sala'} · ${(roomMembers.get(room.id) ?? []).length || ''} membros`
                     : online

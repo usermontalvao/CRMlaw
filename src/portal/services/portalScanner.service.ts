@@ -395,11 +395,14 @@ function computeMetrics(canvas: HTMLCanvasElement, cropRatio: number): ScannerMe
 }
 
 function qualityFromMetrics(metrics: ScannerMetrics) {
-  if (metrics.brightness < 42) return { quality: 'ruim' as const, reason: 'Imagem escura demais.' };
-  if (metrics.brightness > 240) return { quality: 'ruim' as const, reason: 'Imagem estourada e sem leitura.' };
-  if (metrics.contrast < 22) return { quality: 'ruim' as const, reason: 'Contraste muito baixo.' };
-  if (metrics.sharpness < 14) return { quality: 'ruim' as const, reason: 'Foto desfocada ou tremida.' };
-  return { quality: 'ok' as const, reason: 'Documento legível.' };
+  // Thresholds intencionalmente permissivos: o módulo aceita documentos,
+  // prints, fotos de produtos, capturas de tela e qualquer prova visual.
+  // Só rejeita casos extremos que tornam a imagem literalmente inutilizável.
+  if (metrics.brightness < 20) return { quality: 'ruim' as const, reason: 'Imagem muito escura.' };
+  if (metrics.brightness > 252) return { quality: 'ruim' as const, reason: 'Imagem completamente estourada.' };
+  if (metrics.contrast < 6)    return { quality: 'ruim' as const, reason: 'Imagem sem contraste (tela apagada?).' };
+  if (metrics.sharpness < 3)   return { quality: 'ruim' as const, reason: 'Foto extremamente desfocada.' };
+  return { quality: 'ok' as const, reason: 'Imagem utilizável.' };
 }
 
 function parseAiJson(content: string): AiScanAnalysis | null {
@@ -426,7 +429,7 @@ async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: Sca
         messages: [
           {
             role: 'system',
-            content: 'Você analisa documentos escaneados para um portal de clientes. Responda SOMENTE em JSON com as chaves: name, quality, reason. quality deve ser "ok" ou "ruim". name deve ser curto, em português, minúsculo e descritivo para nome de arquivo.',
+            content: 'Você avalia imagens enviadas por clientes para um portal jurídico. As imagens podem ser: documentos, prints de conversa, fotos de produtos, comprovantes, evidências, capturas de tela, etc. Responda SOMENTE em JSON com as chaves: name, quality, reason. quality deve ser "ok" ou "ruim". name deve ser curto, em português, minúsculo, descritivo, sem espaços (use underscore). Só marque "ruim" se a imagem for REALMENTE inutilizável (completamente preta, branca, tremida ao ponto de ser ilegível). Fotos de produtos, prints e evidências visuais são válidas.',
           },
           {
             role: 'user',
@@ -434,11 +437,12 @@ async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: Sca
               {
                 type: 'text',
                 text:
-                  `Avalie se esta imagem está legível como documento. ` +
-                  `Métricas locais: brilho=${metrics.brightness.toFixed(1)}, contraste=${metrics.contrast.toFixed(1)}, nitidez=${metrics.sharpness.toFixed(1)}. ` +
-                  `Se estiver ruim, retorne quality="ruim" e um motivo curto. ` +
-                  `Se estiver boa, sugira um nome curto de arquivo em português. ` +
-                  `Fallback de nome: ${fallbackName}. Exemplo de resposta: {"name":"rg_frente","quality":"ok","reason":"Documento legível."}`,
+                  `Avalie se esta imagem tem conteúdo visível e utilizável. ` +
+                  `Métricas: brilho=${metrics.brightness.toFixed(1)}, contraste=${metrics.contrast.toFixed(1)}, nitidez=${metrics.sharpness.toFixed(1)}. ` +
+                  `Pode ser documento, print, foto de produto, evidência ou qualquer imagem com conteúdo relevante. ` +
+                  `Só retorne quality="ruim" se for COMPLETAMENTE ilegível. ` +
+                  `Sugira um nome descritivo curto em português. ` +
+                  `Fallback: ${fallbackName}. Exemplo: {"name":"print_conversa","quality":"ok","reason":"Imagem com conteúdo visível."}`,
               },
               {
                 type: 'image_url',
@@ -468,12 +472,12 @@ export async function extractScannerOcr(dataUrl: string): Promise<string | null>
         messages: [
           {
             role: 'system',
-            content: 'Extraia o texto visível do documento. Responda somente com o texto corrido extraído, sem comentários.',
+            content: 'Extraia o texto visível da imagem. Pode ser documento, print de conversa, foto de produto, comprovante ou qualquer imagem com texto. Responda somente com o texto extraído, sem comentários adicionais.',
           },
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Leia este documento e extraia o texto visível.' },
+              { type: 'text', text: 'Extraia todo o texto visível desta imagem.' },
               { type: 'image_url', image_url: { url: dataUrl } },
             ],
           },

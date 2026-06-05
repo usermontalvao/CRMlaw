@@ -58,6 +58,7 @@ function styleFor(type?: string, category?: string) {
   if (t === 'new_signature_request')   return { Icon: FileSignature };
   if (t === 'new_agreement')           return { Icon: DollarSign };
   if (t === 'new_document_request')    return { Icon: FolderOpen };
+  if (t === 'chat_reply')              return { Icon: Bell };
   if (t.includes('process') || t.includes('movi') || t.includes('andamento')) return { Icon: Briefcase };
   if (t.includes('public') || t.includes('intim'))  return { Icon: FileText };
   if (t.includes('financ') || t.includes('parcela')) return { Icon: DollarSign };
@@ -89,6 +90,8 @@ function routeFor(n: NotificationItem): { route: string; param?: string } | null
   // Nova solicitação de documentos
   if (t === 'new_document_request')
     return { route: 'documentos' };
+  if (t === 'chat_reply')
+    return { route: 'mensagens' };
   // Processo genérico
   if (n.process_id)
     return { route: 'processos', param: n.process_id };
