@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.209': { name: 'Café Texto Limpo', emoji: '✍️' },
   '1.10.208': { name: 'Café Scanner Natural', emoji: '📸' },
   '1.10.192': { name: 'Café Portal Redesign', emoji: '🎨' },
   '1.10.191': { name: 'Café Intimação Viva', emoji: '⚖️' },
@@ -871,6 +872,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.209',
+    date: '05/06/2026',
+    summary: 'Portal: scanner com textos corrigidos, topo mobile removido e área de envio mais próxima do layout de app.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Textos corrompidos do scanner foram normalizados', description: 'As mensagens do fluxo de upload, câmera, recorte e envio voltaram a exibir acentuação e símbolos corretos, eliminando ocorrências de mojibake no módulo.' },
+        { type: 'improvement' as const, title: 'Topo redundante do scanner mobile foi removido', description: 'A área de envio no celular deixou de repetir o nome do módulo acima do conteúdo, reduzindo ruído visual e liberando espaço para a revisão do lote.' },
+        { type: 'improvement' as const, title: 'Barra de envio mobile ficou mais direta', description: 'O CTA principal de envio ganhou maior destaque e as ações secundárias ficaram organizadas abaixo, deixando a composição mais próxima de um app nativo.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.208',
     date: '05/06/2026',

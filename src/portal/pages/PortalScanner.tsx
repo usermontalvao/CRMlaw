@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Camera,
@@ -1076,24 +1076,6 @@ export const PortalScanner: React.FC = () => {
         }}
       />
 
-      {!cameraOpen && !sent && (
-        <div className="flex items-center justify-between px-1 sm:hidden">
-          <div className="min-w-0">
-            <h1 className="text-[17px] font-semibold text-slate-900">Scanner</h1>
-            <p className="text-[12px] text-slate-400">
-              {items.length > 0
-                ? `${items.length} arquivo${items.length > 1 ? 's' : ''} no lote`
-                : 'Documentos, fotos e comprovantes'}
-            </p>
-          </div>
-          {processedItems.length > 0 && (
-            <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-              {processedItems.length}
-            </div>
-          )}
-        </div>
-      )}
-
       {!cameraOpen && items.length === 0 && !sent && (
         <section className="rounded-[24px] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px] sm:p-6">
           <div className="mb-1 overflow-hidden rounded-[20px] border border-orange-100 bg-[radial-gradient(circle_at_top,#fff7ed,transparent_55%),linear-gradient(180deg,#fff,#f8fafc)] p-3 sm:hidden">
@@ -1194,25 +1176,27 @@ export const PortalScanner: React.FC = () => {
       )}
 
       {processedItems.length > 0 && !cameraOpen && (
-        <section className="flex items-center justify-between gap-3 rounded-[20px] bg-white px-4 py-3 shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
-              <FileText className="h-4 w-4" />
+        <section className="rounded-[24px] bg-white px-4 py-3.5 shadow-[0_10px_28px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-base font-semibold text-slate-900">
+                  {processedItems.length} arquivo{processedItems.length > 1 ? 's' : ''} no lote
+                </p>
+                <p className="text-sm text-slate-400">
+                  {okItems.length} valido{okItems.length !== 1 ? 's' : ''} · pronto{okItems.length !== 1 ? 's' : ''} para enviar
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {processedItems.length} arquivo{processedItems.length > 1 ? 's' : ''} no lote
-              </p>
-              <p className="text-xs text-slate-400">
-                {okItems.length} valido{okItems.length !== 1 ? 's' : ''} · pronto{okItems.length !== 1 ? 's' : ''} para enviar
-              </p>
-            </div>
+            {badItems.length > 0 && (
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600">
+                {badItems.length} com problema
+              </span>
+            )}
           </div>
-          {badItems.length > 0 && (
-            <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600">
-              {badItems.length} com problema
-            </span>
-          )}
         </section>
       )}
 
@@ -1572,50 +1556,50 @@ export const PortalScanner: React.FC = () => {
 
       {!cameraOpen && processedItems.length > 0 && (
         <div className="fixed inset-x-3 z-20 sm:hidden" style={{ bottom: 'calc(58px + env(safe-area-inset-bottom) + 6px)' }}>
-          <div className="rounded-[22px] bg-white p-2 shadow-[0_8px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80">
-            <div className="flex gap-2">
-              <button
-                onClick={triggerUpload}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-slate-200 text-slate-500"
-              >
-                <Upload className="h-4 w-4" />
-              </button>
+          <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+            <div className="flex gap-2.5">
+              {okItems.length > 0 ? (
+                <div className="relative flex-1">
+                  {!sending && <span className="absolute inset-0 rounded-[16px] animate-ping bg-orange-400/35 [animation-duration:1.4s]" />}
+                  <button
+                    onClick={() => void sendBatch()}
+                    disabled={sending}
+                    className="relative inline-flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-orange-500 text-sm font-bold text-white shadow-[0_8px_20px_rgba(249,115,22,0.35)] disabled:opacity-50"
+                  >
+                    {sending
+                      ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Send className="h-4 w-4" />}
+                    {sending ? 'Enviando...' : 'Enviar'}
+                  </button>
+                </div>
+              ) : (
+                <div className="relative flex-1">
+                  {!sending && <span className="absolute inset-0 rounded-[16px] animate-ping bg-amber-400/35 [animation-duration:1.4s]" />}
+                  <button
+                    onClick={() => void sendBatch(true)}
+                    disabled={sending || processedItems.length === 0}
+                    className="relative inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-[16px] bg-amber-500 text-sm font-bold text-white shadow-[0_8px_20px_rgba(245,158,11,0.35)] disabled:opacity-50"
+                  >
+                    {sending
+                      ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Send className="h-3.5 w-3.5" />}
+                    {sending ? 'Enviando...' : 'Enviar assim'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="mt-2.5 flex gap-2.5">
               <button
                 onClick={openCamera}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[14px] border border-slate-200 text-sm font-semibold text-slate-600"
+                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[16px] border border-slate-200 text-sm font-medium text-slate-600"
               >
                 <Camera className="h-4 w-4" />
                 Capturar mais
               </button>
-              {okItems.length > 0 ? (
-                <button
-                  onClick={() => void sendBatch()}
-                  disabled={sending}
-                  className="inline-flex h-11 flex-[1.3] items-center justify-center gap-2 rounded-[14px] bg-orange-500 text-sm font-bold text-white shadow-[0_6px_18px_rgba(249,115,22,0.28)] disabled:opacity-50"
-                >
-                  {sending
-                    ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
-                    : <Send className="h-4 w-4" />}
-                  {sending ? 'Enviando...' : 'Enviar'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => void sendBatch(true)}
-                  disabled={sending || processedItems.length === 0}
-                  className="inline-flex h-11 flex-[1.3] items-center justify-center gap-1.5 rounded-[14px] bg-amber-500 text-xs font-bold text-white shadow-[0_6px_18px_rgba(245,158,11,0.28)] disabled:opacity-50"
-                >
-                  {sending
-                    ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
-                    : <Send className="h-3.5 w-3.5" />}
-                  {sending ? 'Enviando...' : 'Enviar assim'}
-                </button>
-              )}
-            </div>
-            <div className="mt-2 flex gap-2">
               <button
                 onClick={() => setItems([])}
                 disabled={processing}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[14px] border border-slate-200 text-sm font-medium text-slate-500 disabled:opacity-40"
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-[16px] border border-slate-200 text-sm font-medium text-slate-500 disabled:opacity-40"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Limpar tudo
