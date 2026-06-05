@@ -46,6 +46,7 @@ export interface CloudFile {
   client_id?: string | null;
   original_name: string;
   storage_path: string;
+  storage_bucket?: string | null;
   mime_type?: string | null;
   file_size: number;
   extension?: string | null;

@@ -871,6 +871,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.203',
+    date: '05/06/2026',
+    summary: 'Scanner do portal com upload via edge function, ajustes mobile no portal e suporte a bucket dinâmico para anexos e Cloud.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Scanner do portal envia PDF por edge function dedicada', description: 'Novo endpoint `portal-scanner-upload` recebe o PDF do cliente autenticado, valida o JWT do portal e grava no bucket `client-documents`, contornando problemas de RLS/schema out of sync no Storage.' },
+        { type: 'improvement' as const, title: 'Fluxo do scanner mobile refinado para iPhone', description: 'A câmera passou a aguardar a montagem do vídeo no Safari, o som do obturador foi melhorado, a tela de sucesso ficou dedicada e o CTA final foi simplificado para concluir ou abrir mensagens.' },
+        { type: 'fix' as const, title: 'Bottom bar e sidebar respeitam melhor safe area', description: 'O layout do portal ajustou a navegação inferior e áreas seguras para reduzir cortes visuais no iPhone e outros dispositivos com inset inferior/superior.' },
+        { type: 'fix' as const, title: 'Assinaturas e notificações com textos corrigidos', description: 'Resumo da tela de assinaturas, rótulos de status e fallback do título de notificações voltaram a exibir acentuação correta.' },
+      ]},
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'improvement' as const, title: 'Anexos de chat passam a respeitar bucket informado', description: 'Chat flutuante e módulo de chat agora usam o bucket vindo no payload do anexo, permitindo abrir corretamente arquivos enviados fora do bucket padrão.' },
+      ]},
+      { moduleId: 'Cloud', changes: [
+        { type: 'improvement' as const, title: 'Cloud assina arquivos conforme bucket de origem', description: 'Serviço do Cloud passou a aceitar `storage_bucket` por arquivo e também detecta automaticamente itens do scanner do portal ao gerar links temporários.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.202',
     date: '04/06/2026',
     summary: 'Portal mobile: página do aplicativo com ilustrações novas, ajustes de scanner, assinaturas e polimento de navegação/notificações.',

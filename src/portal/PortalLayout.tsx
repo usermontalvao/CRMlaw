@@ -334,7 +334,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/90 bg-white/95 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto flex h-[74px] max-w-7xl items-stretch px-1 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5">
+        <div className="mx-auto flex max-w-7xl items-stretch px-1 pt-1.5" style={{ height: 'calc(58px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
             const active = route === id;
             return (

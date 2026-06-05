@@ -482,7 +482,7 @@ class CloudService {
     if (fetchError || !original) throw new Error(fetchError?.message ?? 'Arquivo não encontrado.');
 
     const file = original as CloudFile;
-    const signedUrl = await this.getFileSignedUrl(file.storage_path);
+    const signedUrl = await this.getFileSignedUrl(file.storage_path, 60 * 60, file.storage_bucket);
     const response = await fetch(signedUrl);
     if (!response.ok) throw new Error('Não foi possível baixar o arquivo original.');
     const blob = await response.blob();
@@ -539,7 +539,7 @@ class CloudService {
     if (fetchError || !original) throw new Error(fetchError?.message ?? 'Arquivo não encontrado.');
 
     const file = original as CloudFile;
-    const signedUrl = await this.getFileSignedUrl(file.storage_path);
+    const signedUrl = await this.getFileSignedUrl(file.storage_path, 60 * 60, file.storage_bucket);
     const response = await fetch(signedUrl);
     if (!response.ok) throw new Error('Não foi possível baixar o arquivo original.');
     const blob = await response.blob();
@@ -624,9 +624,11 @@ class CloudService {
     return rootCopy;
   }
 
-  async getFileSignedUrl(storagePath: string, expiresIn = 60 * 60): Promise<string> {
+  async getFileSignedUrl(storagePath: string, expiresIn = 60 * 60, bucket?: string | null): Promise<string> {
+    // Auto-detect bucket: portal scanner files (path contains /scanner_) live in client-documents
+    const effectiveBucket = bucket ?? (/\/scanner_/.test(storagePath) ? 'client-documents' : CLOUD_BUCKET);
     const { data, error } = await supabase.storage
-      .from(CLOUD_BUCKET)
+      .from(effectiveBucket)
       .createSignedUrl(storagePath, expiresIn);
 
     if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Não foi possível gerar link temporário.');

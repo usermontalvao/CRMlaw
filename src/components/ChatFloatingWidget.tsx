@@ -23,6 +23,7 @@ type ChatAttachmentPayload = {
   fileName: string;
   mimeType: string;
   size: number;
+  bucket?: string;
 };
 
 const AttachmentSignedLink: React.FC<{ attachment: ChatAttachmentPayload; onResolved?: () => void }> = ({
@@ -36,7 +37,7 @@ const AttachmentSignedLink: React.FC<{ attachment: ChatAttachmentPayload; onReso
     setSignedUrl(null);
 
     supabase.storage
-      .from(ATTACHMENT_BUCKET)
+      .from(attachment.bucket ?? ATTACHMENT_BUCKET)
       .createSignedUrl(attachment.filePath, 60 * 5)
       .then(({ data, error }) => {
         if (!active) return;

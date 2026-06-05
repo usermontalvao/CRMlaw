@@ -21,6 +21,7 @@ type ChatAttachmentPayload = {
   fileName: string;
   mimeType: string;
   size: number;
+  bucket?: string;
 };
 
 const isAttachmentMessage = (content: string) => content.startsWith(ATTACHMENT_PREFIX);
@@ -274,7 +275,7 @@ const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind:
     setSignedUrl(null);
 
     supabase.storage
-      .from(ATTACHMENT_BUCKET)
+      .from(attachment.bucket ?? ATTACHMENT_BUCKET)
       .createSignedUrl(attachment.filePath, 60 * 5)
       .then(({ data, error }) => {
         if (!active) return;
@@ -514,7 +515,7 @@ const ChatModule: React.FC = () => {
 
   const handleDownloadAttachment = async (attachment: ChatAttachmentPayload) => {
     const { data, error } = await supabase.storage
-      .from(ATTACHMENT_BUCKET)
+      .from(attachment.bucket ?? ATTACHMENT_BUCKET)
       .createSignedUrl(attachment.filePath, 60 * 5);
 
     if (error || !data?.signedUrl) {

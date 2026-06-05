@@ -128,6 +128,7 @@ export const PortalScanner: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendMessage, setSendMessage] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -341,12 +342,19 @@ export const PortalScanner: React.FC = () => {
       });
       streamRef.current = stream;
       setCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play();
-        }
-      });
+      // iOS Safari requires waiting for the DOM to mount the <video> element
+      // before assigning srcObject. Use setTimeout to ensure the portal renders first.
+      setTimeout(() => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        const tryPlay = () => video.play().catch(() => {});
+        video.addEventListener('loadedmetadata', tryPlay, { once: true });
+        // Fallback: also try immediately in case loadedmetadata already fired
+        if (video.readyState >= 1) tryPlay();
+      }, 50);
     } catch (error) {
       setCameraError(error instanceof Error ? error.message : 'Não foi possível abrir a câmera.');
       stopCamera();
@@ -370,15 +378,30 @@ export const PortalScanner: React.FC = () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (blob) {
-      // Shutter click via Web Audio API — works on iOS without needing an audio file
+      // Camera shutter sound via Web Audio API
       try {
         const ac = new AudioContext();
-        const buf = ac.createBuffer(1, ac.sampleRate * 0.06, ac.sampleRate);
+        const sr = ac.sampleRate;
+        const dur = Math.floor(sr * 0.12);
+        const buf = ac.createBuffer(1, dur, sr);
         const ch = buf.getChannelData(0);
-        for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.015));
+        for (let i = 0; i < dur; i++) {
+          // Mechanical click: sharp noise burst that decays quickly
+          const t = i / sr;
+          const env = t < 0.003
+            ? t / 0.003                              // fast attack
+            : Math.exp(-(t - 0.003) / 0.018);        // exponential decay
+          const noise = (Math.random() * 2 - 1);
+          // Low-frequency component (shutter body resonance ~800 Hz)
+          const tone = Math.sin(2 * Math.PI * 800 * t) * 0.4;
+          ch[i] = (noise * 0.6 + tone) * env;
+        }
+        const gain = ac.createGain();
+        gain.gain.value = 2.0;
+        gain.connect(ac.destination);
         const src = ac.createBufferSource();
         src.buffer = buf;
-        src.connect(ac.destination);
+        src.connect(gain);
         src.start();
       } catch { /* ignore if audio not available */ }
 
@@ -534,24 +557,33 @@ export const PortalScanner: React.FC = () => {
         return;
       }
 
-      const clientId = session.client.id;
       const dateStr = new Date().toISOString().slice(0, 10);
-      const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-      // Always use clientId/scanner_date/unique.pdf — avoids the .list() 400 and keeps files organized
-      const path = `${clientId}/scanner_${dateStr}/${uniqueSuffix}.pdf`;
-      const displayName = `scanner_${dateStr}/${uniqueSuffix.slice(0, 8)}.pdf`;
       const fileName = `scanner_${dateStr}.pdf`;
       const file = new File([blob], fileName, { type: 'application/pdf' });
 
-      const { error: uploadError } = await supabasePortal.storage
-        .from(DOCS_BUCKET)
-        .upload(path, file, { contentType: 'application/pdf', upsert: false });
+      // Upload via edge function — bypasses Supabase Storage RLS schema sync issue
+      const { data: sessionData } = await supabasePortal.auth.getSession();
+      const jwt = sessionData?.session?.access_token;
+      if (!jwt) { setSendMessage('Sessão expirada. Faça login novamente.'); return; }
 
-      if (uploadError) {
-        setSendMessage('Falha ao salvar o arquivo.');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const form = new FormData();
+      form.append('file', file);
+
+      const uploadRes = await fetch(`${supabaseUrl}/functions/v1/portal-scanner-upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
+        body: form,
+      });
+
+      if (!uploadRes.ok) {
+        const errBody = await uploadRes.json().catch(() => ({}));
+        setSendMessage(`Falha ao enviar: ${(errBody as any).error ?? uploadRes.status}`);
         return;
       }
+
+      const { path, bucket } = await uploadRes.json() as { path: string; bucket: string };
+      const displayName = path.split('/').slice(1).join('/');
 
       // Notifica o escritório via chat (com referência ao arquivo)
       const content = `${ATTACH_PREFIX}${JSON.stringify({
@@ -559,7 +591,7 @@ export const PortalScanner: React.FC = () => {
         fileName,
         mimeType: 'application/pdf',
         size: file.size,
-        bucket: DOCS_BUCKET,
+        bucket: bucket,
         displayPath: displayName,
       })}`;
 
@@ -570,7 +602,9 @@ export const PortalScanner: React.FC = () => {
         return;
       }
 
-      setSendMessage(`Salvo em ${displayName} e enviado ao escritório.`);
+      // Success — clear items and show success screen
+      setItems([]);
+      setSent(true);
     } finally {
       setSending(false);
     }
@@ -663,19 +697,38 @@ export const PortalScanner: React.FC = () => {
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{cameraError}</div>
       )}
 
-      {!cameraOpen && sendMessage && (
-        <div className={`rounded-2xl px-4 py-3 text-sm ${sendMessage.includes('Falha') || sendMessage.includes('Nada') ? 'border border-rose-200 bg-rose-50 text-rose-700' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-          <div className="flex items-center justify-between gap-3">
-            <span>{sendMessage}</span>
-            {sendMessage.includes('enviado') && (
-              <button
-                onClick={() => navigate('mensagens')}
-                className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-emerald-200"
-              >
-                Abrir mensagens
-              </button>
-            )}
+      {/* Success screen */}
+      {!cameraOpen && sent && (
+        <div className="rounded-[24px] bg-white p-8 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100 flex flex-col items-center text-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-emerald-50 text-emerald-500">
+            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
           </div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">Enviado com sucesso!</p>
+            <p className="mt-1 text-sm text-slate-400">O escritório foi notificado e o arquivo está na pasta <strong className="text-slate-600">Documentos do Portal</strong>.</p>
+          </div>
+          <div className="flex w-full flex-col gap-2 pt-1">
+            <button
+              onClick={() => { setSent(false); setSendMessage(null); }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(249,115,22,0.28)] hover:opacity-90 active:scale-95 transition-transform"
+            >
+              <Camera className="h-4 w-4" /> Enviar mais arquivos
+            </button>
+            <button
+              onClick={() => navigate('mensagens')}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 active:scale-95 transition-transform"
+            >
+              Ver mensagens
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!cameraOpen && sendMessage && !sent && (
+        <div className={`rounded-2xl px-4 py-3 text-sm ${sendMessage.includes('Falha') || sendMessage.includes('Nada') || sendMessage.includes('expirada') ? 'border border-rose-200 bg-rose-50 text-rose-700' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+          <span>{sendMessage}</span>
         </div>
       )}
 
@@ -733,7 +786,7 @@ export const PortalScanner: React.FC = () => {
                         </div>
                       ) : (
                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${item.quality === 'ok' ? 'bg-emerald-500/90 text-white' : 'bg-amber-500/90 text-white'}`}>
-                          {item.quality === 'ok' ? '✓ Apto' : '⚠ Revisar'}
+                          {item.quality === 'ok' ? '✓ Apto' : '⚠ Verificar'}
                         </span>
                       )}
                       {item.quality === 'ruim' && item.reason && !aiIds.includes(item.id) && (
@@ -868,7 +921,7 @@ export const PortalScanner: React.FC = () => {
                 onClick={stopCamera}
                 className="flex h-12 items-center justify-center rounded-2xl bg-white px-5 text-sm font-bold text-slate-900"
               >
-                Revisar
+                Concluir
               </button>
             </div>
           </div>
