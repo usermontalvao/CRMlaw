@@ -871,6 +871,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.202',
+    date: '04/06/2026',
+    summary: 'Portal mobile: página do aplicativo com ilustrações novas, ajustes de scanner, assinaturas e polimento de navegação/notificações.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Página Aplicativo com ilustrações redesenhadas', description: 'A tela de instalação do app ganhou novas ilustrações em SVG, com visual mais rico para iPhone, Android e push notifications, além de cópia revisada com acentuação correta.' },
+        { type: 'fix' as const, title: 'Assinaturas com textos e abertura mais consistentes no iPhone', description: 'A tela de assinaturas corrigiu textos quebrados, ajustou o resumo de pendentes/assinados e passou a abrir documentos pelo mesmo fluxo de navegação para evitar bloqueio do Safari em URLs com hash.' },
+        { type: 'improvement' as const, title: 'Scanner com captura e organização refinadas', description: 'O scanner do portal agora toca um som de obturador via Web Audio, salva arquivos sempre em subpasta por data e ampliou as miniaturas recentes para facilitar a revisão no celular.' },
+        { type: 'fix' as const, title: 'Sidebar e notificações com acabamento mobile melhor', description: 'A sidebar passou a respeitar safe areas no iPhone e o fallback de título das notificações do portal voltou a exibir acentuação correta.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.201',
     date: '04/06/2026',
     summary: 'Portal do cliente: bootstrap isolado do Supabase, correção do crash no chat, fluxo de instalação PWA e textos de assinaturas revisados.',

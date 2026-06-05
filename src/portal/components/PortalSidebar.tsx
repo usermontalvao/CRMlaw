@@ -56,6 +56,7 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
         className={`fixed inset-y-0 left-0 z-40 flex h-full w-[286px] flex-col border-r border-slate-200 bg-white text-slate-900 shadow-[0_18px_42px_rgba(15,23,42,0.08)] transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 px-6">
           <button onClick={() => navigate('dashboard')} className="flex items-center gap-3" aria-label="Início">

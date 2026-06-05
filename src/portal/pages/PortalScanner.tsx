@@ -370,6 +370,18 @@ export const PortalScanner: React.FC = () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (blob) {
+      // Shutter click via Web Audio API — works on iOS without needing an audio file
+      try {
+        const ac = new AudioContext();
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.06, ac.sampleRate);
+        const ch = buf.getChannelData(0);
+        for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.015));
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        src.connect(ac.destination);
+        src.start();
+      } catch { /* ignore if audio not available */ }
+
       const file = new File([blob], `captura_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`, { type: 'image/jpeg' });
       setCapturing(false);
       requestAnimationFrame(() => {
@@ -523,25 +535,12 @@ export const PortalScanner: React.FC = () => {
       }
 
       const clientId = session.client.id;
-      const dateStr = new Date().toISOString().slice(0, 10); // '2026-06-04'
+      const dateStr = new Date().toISOString().slice(0, 10);
       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-      // Verifica se o cliente já tem arquivos na pasta raiz
-      const { data: existingFiles } = await supabasePortal.storage
-        .from(DOCS_BUCKET)
-        .list(clientId, { limit: 1 });
-
-      const hasFolder = Array.isArray(existingFiles) && existingFiles.length > 0;
-
-      // Se já tem pasta → subfolder com data. Se não → raiz do cliente.
-      const path = hasFolder
-        ? `${clientId}/scanner_${dateStr}/${uniqueSuffix}.pdf`
-        : `${clientId}/scanner_${dateStr}_${uniqueSuffix}.pdf`;
-
-      const displayName = hasFolder
-        ? `scanner_${dateStr}/${uniqueSuffix.slice(0, 8)}.pdf`
-        : `scanner_${dateStr}.pdf`;
-
+      // Always use clientId/scanner_date/unique.pdf — avoids the .list() 400 and keeps files organized
+      const path = `${clientId}/scanner_${dateStr}/${uniqueSuffix}.pdf`;
+      const displayName = `scanner_${dateStr}/${uniqueSuffix.slice(0, 8)}.pdf`;
       const fileName = `scanner_${dateStr}.pdf`;
       const file = new File([blob], fileName, { type: 'application/pdf' });
 
@@ -826,8 +825,8 @@ export const PortalScanner: React.FC = () => {
                 {processedItems.slice(-5).map((item, i) => (
                   <div
                     key={item.id}
-                    className={`flex h-[46px] w-[33px] shrink-0 overflow-hidden rounded-lg border-2 ${item.quality === 'ok' ? 'border-emerald-400' : 'border-rose-400'}`}
-                    style={{ opacity: 0.5 + i * 0.13 }}
+                    className={`flex h-[80px] w-[60px] shrink-0 overflow-hidden rounded-xl border-2 shadow-lg ${item.quality === 'ok' ? 'border-emerald-400' : 'border-rose-400'}`}
+                    style={{ opacity: 0.6 + i * 0.1 }}
                   >
                     {item.fileKind === 'pdf' ? (
                       <div className="flex h-full w-full items-center justify-center bg-slate-800">

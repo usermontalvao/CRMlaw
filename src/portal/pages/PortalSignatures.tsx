@@ -81,7 +81,7 @@ function getStatus(
   const allSigned = all.length > 0 && all.every((sg) => sg.status === 'signed');
 
   if (s.status === 'signed' || s.status === 'completed') {
-    return { isPending: false, isExpired: false, label: 'Conclu?do', badge: 'signed', iAmSigner: !!me };
+    return { isPending: false, isExpired: false, label: 'Concluído', badge: 'signed', iAmSigner: !!me };
   }
 
   const expired = !!s.expires_at && new Date(s.expires_at) < new Date();
@@ -90,7 +90,7 @@ function getStatus(
   }
 
   if (me?.status === 'signed') {
-    return { isPending: false, isExpired: false, label: 'Voc? assinou', badge: 'signed', iAmSigner: true };
+    return { isPending: false, isExpired: false, label: 'Você assinou', badge: 'signed', iAmSigner: true };
   }
 
   if (me && me.status !== 'signed') {
@@ -98,7 +98,7 @@ function getStatus(
   }
 
   if (allSigned) {
-    return { isPending: false, isExpired: false, label: 'Conclu?do', badge: 'signed', iAmSigner: false };
+    return { isPending: false, isExpired: false, label: 'Concluído', badge: 'signed', iAmSigner: false };
   }
 
   return { isPending: false, isExpired: false, label: 'Em andamento', badge: 'in_progress', iAmSigner: false };
@@ -169,7 +169,7 @@ export const PortalSignatures: React.FC = () => {
         <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Assinaturas</h1>
         <p className="mt-1 text-sm text-slate-500">
           {items.length
-            ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} ? ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
+            ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} · ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
             : 'Documentos que precisam da sua assinatura digital.'}
         </p>
       </header>
@@ -252,11 +252,8 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
 
   const handleCardClick = () => {
     if (!actionUrl) return;
-    if (!st.isPending && docUrl && actionUrl === docUrl) {
-      window.open(docUrl, '_blank', 'noopener');
-    } else {
-      window.location.href = actionUrl;
-    }
+    // iOS Safari blocks window.open for hash-based URLs — use location.href for same-origin docs
+    window.location.href = actionUrl;
   };
 
   return (

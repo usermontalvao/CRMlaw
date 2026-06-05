@@ -161,7 +161,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     const toast: PushToast = {
       id: n.id,
       type: n.type || 'notification',
-      title: n.title || 'Notifica??o',
+      title: n.title || 'Notificação',
       message: n.message,
     };
     setToasts((prev) => [...prev.slice(-4), toast]);
