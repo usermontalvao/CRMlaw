@@ -185,6 +185,7 @@ export const PortalMessages: React.FC = () => {
   const getSignedUrl = useCallback(async (bucket: string, path: string): Promise<string | null> => {
     const key = `${bucket}:${path}`;
     if (signedUrls.has(key)) return signedUrls.get(key)!;
+    if (bucket === 'client-documents') return null;
     try {
       const { data, error } = await supabasePortal.storage.from(bucket).createSignedUrl(path, 3600);
       if (error || !data?.signedUrl) return null;
@@ -398,13 +399,15 @@ export const PortalMessages: React.FC = () => {
 
   // ── Renderização de anexo ────────────────────────────────────────────────────
   const AttachBubble: React.FC<{ attach: AttachPayload; isClient: boolean }> = ({ attach, isClient }) => {
+    const isScannerAttachment = attach.bucket === 'client-documents';
     const [url, setUrl] = useState<string | null>(attach.url ?? null);
-    const [loadingUrl, setLoadingUrl] = useState(!attach.url);
+    const [loadingUrl, setLoadingUrl] = useState(!attach.url && !isScannerAttachment);
 
     useEffect(() => {
       if (attach.url) { setUrl(attach.url); setLoadingUrl(false); return; }
+      if (isScannerAttachment) { setUrl(null); setLoadingUrl(false); return; }
       getSignedUrl(attach.bucket, attach.filePath).then(u => { setUrl(u); setLoadingUrl(false); });
-    }, [attach.bucket, attach.filePath, attach.url]);
+    }, [attach.bucket, attach.filePath, attach.url, isScannerAttachment]);
 
     if (loadingUrl) return <div className="flex items-center gap-2 py-1"><Loader2 className="w-4 h-4 animate-spin opacity-50" /><span className="text-xs opacity-60">Carregando…</span></div>;
     if (!url)       return <div className="text-xs opacity-50">Arquivo indisponível</div>;

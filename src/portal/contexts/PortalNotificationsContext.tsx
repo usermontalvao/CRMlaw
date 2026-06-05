@@ -27,6 +27,7 @@ export interface PushToast {
 interface PortalNotificationsContextType {
   items: NotifItem[];
   unreadCount: number;
+  chatUnreadCount: number;
   newIds: Set<string>;
   toasts: PushToast[];
   loading: boolean;
@@ -34,6 +35,7 @@ interface PortalNotificationsContextType {
   reload: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  markChatRepliesRead: () => Promise<void>;
   clearNew: () => void;
   dismissToast: (id: string) => void;
   requestPushPermission: () => Promise<boolean>;
@@ -54,6 +56,10 @@ const TOAST_TYPES = new Set([
   'document_upload_rejected',
   'chat_reply',
 ]);
+
+function shouldNotifyInBrowser(notification: NotifItem) {
+  return TOAST_TYPES.has(notification.type || '') && isUnread(notification);
+}
 
 export function isUnread(n: NotifItem): boolean {
   if (typeof n.is_read === 'boolean') return !n.is_read;
@@ -166,6 +172,16 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     };
     setToasts((prev) => [...prev.slice(-4), toast]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 8000);
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && shouldNotifyInBrowser(n)) {
+      try {
+        new Notification(toast.title, {
+          body: toast.message || '',
+          icon: '/favicon.ico',
+          tag: `portal:${n.type || 'notification'}:${n.id}`,
+        });
+      } catch {}
+    }
   }, [shouldSuppressChatReply]);
 
   const reload = useCallback(async () => {
@@ -264,6 +280,17 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     await clientPortalService.markAllNotificationsRead(session.user.id);
   }, [session?.user?.id]);
 
+  const markChatRepliesRead = useCallback(async () => {
+    if (!session?.user?.id) return;
+    const readAt = new Date().toISOString();
+    const targets = items.filter((n) => isUnread(n) && (n.type || '') === 'chat_reply').map((n) => n.id);
+    if (targets.length === 0) return;
+    setItems((prev) => prev.map((n) => (
+      targets.includes(n.id) ? { ...n, is_read: true, read_at: readAt } : n
+    )));
+    await Promise.allSettled(targets.map((id) => clientPortalService.markNotificationRead(session.user.id, id)));
+  }, [items, session?.user?.id]);
+
   useEffect(() => {
     if (!session?.user?.id || !VAPID_PUBLIC_KEY || !canUsePushNotifications()) {
       setPushEnabled(false);
@@ -321,6 +348,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   }, []);
 
   const unreadCount = items.filter(isUnread).length;
+  const chatUnreadCount = items.filter((n) => isUnread(n) && (n.type || '') === 'chat_reply').length;
   const newIds = new Set(
     items
       .filter((n) => n.created_at && toTimestamp(n.created_at) > lastOpened)
@@ -328,7 +356,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   );
 
   return (
-    <Ctx.Provider value={{ items, unreadCount, newIds, toasts, loading, pushEnabled, reload, markRead, markAllRead, clearNew, dismissToast, requestPushPermission }}>
+    <Ctx.Provider value={{ items, unreadCount, chatUnreadCount, newIds, toasts, loading, pushEnabled, reload, markRead, markAllRead, markChatRepliesRead, clearNew, dismissToast, requestPushPermission }}>
       {children}
     </Ctx.Provider>
   );

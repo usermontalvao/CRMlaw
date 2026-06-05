@@ -16,9 +16,9 @@ import {
 } from 'lucide-react';
 import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
-import { formatRelative } from './PortalUI';
-import type { PortalRoute } from '../types/portal.types';
 import { canUsePushNotifications, isIosDevice, isStandaloneDisplay } from '../lib/pwa';
+import type { PortalRoute } from '../types/portal.types';
+import { formatRelative } from './PortalUI';
 
 interface NotifItem {
   id: string;
@@ -35,8 +35,8 @@ interface NotifItem {
   [key: string]: any;
 }
 
-function isUnread(n: NotifItem) {
-  return !(n.read ?? n.is_read ?? !!n.read_at);
+function isUnread(notification: NotifItem) {
+  return !(notification.read ?? notification.is_read ?? !!notification.read_at);
 }
 
 function iconFor(type?: string) {
@@ -93,11 +93,11 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
 
   useEffect(() => {
     if (!open) return;
-    const handler = (event: MouseEvent) => {
+    const handleMouseDown = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [open]);
 
   const handleToggle = () => {
@@ -110,17 +110,16 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
   const handleClick = (notification: NotifItem) => {
     if (isUnread(notification)) markRead(notification.id);
     const destination = routeFor(notification);
-    if (destination) {
-      navigate(destination.route, destination.param);
-      setOpen(false);
-    }
+    if (!destination) return;
+    navigate(destination.route, destination.param);
+    setOpen(false);
   };
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
         onClick={handleToggle}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl border transition ${
+        className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition ${
           open
             ? 'border-orange-200 bg-orange-50 text-orange-600'
             : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600'
@@ -136,7 +135,7 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="absolute right-0 top-13 z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white shadow-xl">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <span className="text-sm font-semibold text-slate-900">Notificações</span>
             <div className="flex items-center gap-1">
@@ -183,10 +182,12 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
                       isNew ? 'bg-orange-50' : unread ? 'bg-orange-50/40' : ''
                     } ${!destination ? 'cursor-default' : ''}`}
                   >
-                    {isNew && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r bg-orange-500" />}
-                    <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                      unread ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
-                    }`}>
+                    {isNew && <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r bg-orange-500" />}
+                    <div
+                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        unread ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
                       <Icon className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">

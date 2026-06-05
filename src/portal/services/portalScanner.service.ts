@@ -83,6 +83,7 @@ const EXPORT_MAX_SIDE = 4096;
 const MIN_CROP_SIZE = 0.15;
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
 const AI_RETRY_COOLDOWN_MS = 60_000;
+const SCANNER_AI_ENABLED = String(import.meta.env.VITE_PORTAL_SCANNER_AI ?? '').toLowerCase() === 'true';
 
 let aiUnavailableUntil = 0;
 
@@ -510,6 +511,7 @@ function parseAiJson(content: string): AiScanAnalysis | null {
 
 async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: ScannerMetrics): Promise<AiScanAnalysis | null> {
   return queuedAiCall(async () => {
+    if (!SCANNER_AI_ENABLED) return null;
     if (Date.now() < aiUnavailableUntil) return null;
     try {
       const thumb = await thumbnailForAi(dataUrl);
@@ -561,6 +563,7 @@ async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: Sca
 
 export async function extractScannerOcr(dataUrl: string): Promise<string | null> {
   return queuedAiCall(async () => {
+    if (!SCANNER_AI_ENABLED) return null;
     if (Date.now() < aiUnavailableUntil) return null;
     try {
       const thumb = await thumbnailForAi(dataUrl);

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Bell, Menu } from 'lucide-react';
-import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
+import { Menu } from 'lucide-react';
 import { usePortalRouter } from '../hooks/usePortalRouter';
+import { PortalNotificationBell } from './PortalNotificationBell';
 
 const ROUTE_TITLES: Record<string, string> = {
   app: 'Aplicativo',
@@ -14,42 +14,32 @@ const ROUTE_TITLES: Record<string, string> = {
   mensagens: 'Mensagens',
   notificacoes: 'Notificações',
   perfil: 'Meu perfil',
+  scanner: 'Scanner',
+  casos: 'Casos',
 };
 
 export const PortalHeader: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
   const { route, navigate } = usePortalRouter();
-  const { unreadCount } = usePortalNotifications();
 
   return (
-    <header className="sticky top-0 z-20 px-3 pt-3 lg:hidden">
-      <div className="flex h-14 shrink-0 items-center justify-between rounded-[20px] border border-slate-200 bg-white px-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/80 bg-white/96 backdrop-blur-xl lg:hidden">
+      <div className="flex h-16 items-center justify-between px-4" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <button
           onClick={onMenuClick}
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl text-slate-500 transition active:bg-slate-100"
           aria-label="Abrir menu"
         >
           <Menu className="h-5 w-5" />
         </button>
 
-        <button onClick={() => navigate('dashboard')} className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500 text-[13px] font-extrabold text-white shadow-[0_8px_18px_rgba(249,115,22,0.2)]">
+        <button onClick={() => navigate('dashboard')} className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-500 text-[15px] font-extrabold text-white shadow-[0_10px_24px_rgba(249,115,22,0.22)]">
             J
           </span>
-          <span className="text-sm font-bold tracking-tight text-slate-900">{ROUTE_TITLES[route] || 'Portal'}</span>
+          <span className="truncate text-base font-bold tracking-tight text-slate-900">{ROUTE_TITLES[route] || 'Portal'}</span>
         </button>
 
-        <button
-          onClick={() => navigate('notificacoes')}
-          className="relative flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
-          aria-label="Notificações"
-        >
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-        </button>
+        <PortalNotificationBell className="shrink-0" />
       </div>
     </header>
   );

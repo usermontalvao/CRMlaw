@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.210': { name: 'Caf? Portal Alerta', emoji: '??' },
   '1.10.209': { name: 'Café Texto Limpo', emoji: '✍️' },
   '1.10.208': { name: 'Café Scanner Natural', emoji: '📸' },
   '1.10.192': { name: 'Café Portal Redesign', emoji: '🎨' },
@@ -872,6 +873,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.210',
+    date: '05/06/2026',
+    summary: 'Portal: notifica??es de chat mais previs?veis, badge integrado ao widget e push do portal corrigido no backend.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Widget do chat agora limpa alerta ao abrir', description: 'As notifica??es `chat_reply` passaram a ser marcadas como lidas quando o cliente abre o widget ou entra na tela de mensagens, fazendo o badge sumir no mesmo momento.' },
+        { type: 'feature' as const, title: 'Portal ganhou aviso flutuante in-app para nova mensagem', description: 'Quando o escrit?rio responde com o widget fechado, o portal agora exibe um aviso flutuante acima do bot?o do chat, al?m de tocar som e refletir a contagem correta de n?o lidas.' },
+        { type: 'improvement' as const, title: 'Cabe?alho e navega??o mobile do portal foram refinados', description: 'O topo mobile passou a ocupar largura total com sino integrado, enquanto a navega??o inferior foi simplificada para um visual menos flutuante e mais consistente com app.' },
+      ]},
+      { moduleId: 'Mensagens do Portal', changes: [
+        { type: 'fix' as const, title: 'Anexos do scanner deixaram de depender de assinatura local inv?lida', description: 'O chat do portal passou a reutilizar a URL j? assinada entregue pelo upload do scanner, evitando falhas 400 ao tentar gerar `createSignedUrl` no cliente.' },
+      ]},
+      { moduleId: 'Infra do Portal', changes: [
+        { type: 'fix' as const, title: 'Edge de push do portal passou a enviar Web Push v?lido', description: 'A fun??o `portal-push` foi reescrita com `web-push`, corrigindo o envio com VAPID e a limpeza de subscriptions expiradas, enquanto o clique de `chat_reply` foi direcionado para a rota de mensagens.' },
+        { type: 'improvement' as const, title: 'Scanner deixou a IA autom?tica desativada por padr?o', description: 'O servi?o do scanner agora s? dispara OCR e nomea??o por IA quando a flag `VITE_PORTAL_SCANNER_AI=true` estiver ativa, reduzindo ru?do e erros 500 em ambientes sem backend pronto.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.209',
     date: '05/06/2026',

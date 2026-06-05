@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { PortalChatWidget } from './components/PortalChatWidget';
 import { PortalHeader } from './components/PortalHeader';
-import { PortalNotificationBell } from './components/PortalNotificationBell';
 import { PortalSidebar } from './components/PortalSidebar';
 import { useClientAuth } from './contexts/ClientAuthContext';
 import { usePortalConfig } from './contexts/PortalConfigContext';
@@ -70,7 +69,7 @@ const PushToastOverlay: React.FC<{
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto flex items-start gap-3 rounded-[22px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur-xl animate-in slide-in-from-right-4 duration-200"
+          className="pointer-events-auto flex animate-in items-start gap-3 rounded-[22px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)] slide-in-from-right-4 duration-200 backdrop-blur-xl"
         >
           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${bgFor(toast.type)}`}>
             {iconFor(toast.type)}
@@ -139,7 +138,7 @@ const PortalInstallAppPrompt: React.FC<{
             <p className="font-semibold text-slate-900">Como instalar no iPhone</p>
             <ol className="mt-2 space-y-1.5 leading-relaxed">
               <li>1. Abra este portal no <span className="font-semibold">Safari</span>.</li>
-              <li>2. Toque em <span className="font-semibold">Compartilhar</span> (ícone ⬆).</li>
+              <li>2. Toque em <span className="font-semibold">Compartilhar</span>.</li>
               <li>3. Escolha <span className="font-semibold">Adicionar à Tela de Início</span>.</li>
               <li>4. Abra o app instalado para ativar notificações.</li>
             </ol>
@@ -155,11 +154,11 @@ const PortalInstallAppPrompt: React.FC<{
           <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Como instalar no seu dispositivo</p>
             <ol className="mt-2 space-y-1.5 leading-relaxed">
-              <li>1. Abra o <span className="font-semibold">menu do navegador</span> (ícone ⋮ ou ···).</li>
-              <li>2. Toque em <span className="font-semibold">"Instalar app"</span> ou <span className="font-semibold">"Adicionar à tela inicial"</span>.</li>
+              <li>1. Abra o <span className="font-semibold">menu do navegador</span>.</li>
+              <li>2. Toque em <span className="font-semibold">Instalar app</span> ou <span className="font-semibold">Adicionar à tela inicial</span>.</li>
               <li>3. Confirme a instalação.</li>
             </ol>
-            <p className="mt-2 text-xs text-slate-400">No Chrome e Brave, pode aparecer o ícone ⬇ na barra de endereços para instalar diretamente.</p>
+            <p className="mt-2 text-xs text-slate-400">No Chrome e Brave, a opção de instalar pode aparecer direto na barra do navegador.</p>
           </div>
         )}
 
@@ -286,11 +285,11 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       <div className="relative flex h-full min-h-0">
         <PortalSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        <div className="flex min-w-0 min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <PortalHeader onMenuClick={() => setSidebarOpen(true)} />
 
           {!!session && showInstallSuggestion && route !== 'app' && !installBannerDismissed && (
-            <div className="px-3 pt-2 lg:hidden">
+            <div className="px-3 pt-[calc(env(safe-area-inset-top)+4.5rem)] lg:hidden">
               <div className="flex items-start gap-3 rounded-[22px] border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-[0_10px_20px_rgba(249,115,22,0.25)]">
                   <Smartphone className="h-5 w-5" />
@@ -322,32 +321,28 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
           )}
 
           <main ref={mainRef} className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain">
-            <div className="mx-auto w-full max-w-7xl px-3 py-4 pb-[calc(env(safe-area-inset-bottom)+6rem)] sm:px-5 sm:py-6 sm:pb-6 lg:px-6 lg:py-5">
+            <div className="mx-auto w-full max-w-7xl px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-[calc(env(safe-area-inset-top)+4.75rem)] sm:px-5 sm:pb-6 sm:pt-6 lg:px-6 lg:py-5">
               {children}
             </div>
           </main>
         </div>
       </div>
 
-      <div className="fixed right-3 top-3 z-40 lg:right-5 lg:top-5">
-        <PortalNotificationBell />
-      </div>
-
       <nav className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
         <div
-          className="mx-4 overflow-hidden rounded-[28px] border border-slate-200/60 bg-white/97 shadow-[0_12px_40px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
-          style={{ marginBottom: 'calc(10px + env(safe-area-inset-bottom))' }}
+          className="overflow-hidden border-t border-slate-200/80 bg-white/97 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-2xl"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          <div className="flex items-stretch px-1.5 py-1.5">
+          <div className="flex items-stretch gap-1 px-2 py-2">
             {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
               const active = route === id;
               return (
                 <button
                   key={id}
                   onClick={() => navigate(id)}
-                  className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-[20px] py-2.5 transition-all duration-200 ${
+                  className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[18px] py-2.5 transition-all duration-200 ${
                     active
-                      ? 'bg-orange-500 text-white shadow-[0_4px_14px_rgba(249,115,22,0.38)]'
+                      ? 'bg-orange-500 text-white shadow-[0_4px_14px_rgba(249,115,22,0.32)]'
                       : 'text-slate-400 active:bg-slate-100'
                   }`}
                 >

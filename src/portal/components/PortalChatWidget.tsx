@@ -9,6 +9,7 @@ import {
   PiggyBank, Plus, Send, X,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
+import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
@@ -142,6 +143,7 @@ const Bubble: React.FC<{ msg: PortalChatMessage }> = ({ msg }) => {
 
 export const PortalChatWidget: React.FC = () => {
   const { session }  = useClientAuth();
+  const { chatUnreadCount, markChatRepliesRead } = usePortalNotifications();
   const { route }    = usePortalRouter();
   const isMobile     = useIsMobile();
 
@@ -155,10 +157,10 @@ export const PortalChatWidget: React.FC = () => {
   const [starting, setStarting]     = useState(false);
   const [attendant, setAttendant]   = useState<AttendantInfo | null>(null);
   const [attTyping, setAttTyping]   = useState(false);
-  const [unread, setUnread]         = useState(0);
   const [loaded, setLoaded]         = useState(false);
   const [shortcuts, setShortcuts]   = useState<Shortcut[]>([]);
   const [loadingSC, setLoadingSC]   = useState(false);
+  const [floatingNotice, setFloatingNotice] = useState<{ id: string; title: string; body: string } | null>(null);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -301,10 +303,17 @@ export const PortalChatWidget: React.FC = () => {
     if (!open || !session) return;
     if (!loaded) void loadMessages(true);
     void loadShortcuts();
-    setUnread(0);
+    void markChatRepliesRead();
+    setFloatingNotice(null);
     setTimeout(() => scrollBottom('auto'), 120);
     setTimeout(() => inputRef.current?.focus(), 250);
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, session, loaded, markChatRepliesRead]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (route !== 'mensagens') return;
+    void markChatRepliesRead();
+    setFloatingNotice(null);
+  }, [route, markChatRepliesRead]);
 
   // polling 4s
   useEffect(() => {
@@ -345,15 +354,15 @@ export const PortalChatWidget: React.FC = () => {
           return [...prev, msg];
         });
         if (!openRef.current && !msg.from_client && !msg.is_system) {
-          setUnread(n=>n+1);
           playNotificationSound();
-          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            const sender = msg.sender_name || 'Escritório';
-            const body = msg.content.startsWith('__anexo__:')
-              ? `${sender} enviou um arquivo`
-              : msg.content.length > 100 ? msg.content.slice(0, 97) + '…' : msg.content;
-            try { new Notification(sender, { body, icon: '/favicon.ico', tag: 'portal-chat' }); } catch {}
-          }
+          const sender = msg.sender_name || 'Escritório';
+          const body = msg.content.startsWith('__anexo__:')
+            ? `${sender} enviou um arquivo`
+            : msg.content.length > 100 ? `${msg.content.slice(0, 97)}…` : msg.content;
+          setFloatingNotice({ id: msg.id, title: sender, body });
+          setTimeout(() => {
+            setFloatingNotice((current) => (current?.id === msg.id ? null : current));
+          }, 6000);
         }
         if (openRef.current) scrollBottom();
       }).subscribe();
@@ -457,11 +466,30 @@ export const PortalChatWidget: React.FC = () => {
   const hasContent = msgs.filter(m => !m.is_system && m.content?.trim()).length > 0;
   const isOnline = attendant?.presence_status === 'online';
   const clientName = (session?.client?.nome ?? '').split(' ')[0] || 'você';
+  const unread = open || route === 'mensagens' ? 0 : chatUnreadCount;
 
   if (route === 'mensagens' || !session) return null;
 
   return createPortal(
     <>
+      {floatingNotice && !open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed right-4 z-[61] w-[min(320px,calc(100vw-24px))] rounded-[18px] border border-slate-200 bg-white p-3 text-left shadow-[0_16px_40px_rgba(15,23,42,0.18)] transition hover:border-orange-200"
+          style={{ bottom: `calc(${btnBottom} + 68px)` }}
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
+              <MessageCircle className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-slate-900">{floatingNotice.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-slate-500">{floatingNotice.body}</p>
+            </div>
+            <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500" />
+          </div>
+        </button>
+      )}
       {/* ── Popup ─────────────────────────────────────────────────── */}
       {open && (
         <div

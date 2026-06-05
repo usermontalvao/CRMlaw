@@ -50,10 +50,10 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
 
   return (
     <>
-      {isOpen && <div className="fixed inset-0 z-30 bg-slate-950/30 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden />}
+      {isOpen && <div className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden />}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-full w-[286px] flex-col border-r border-slate-200 bg-white text-slate-900 shadow-[0_18px_42px_rgba(15,23,42,0.08)] transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-full w-[286px] flex-col border-r border-slate-200 bg-white text-slate-900 shadow-[0_18px_42px_rgba(15,23,42,0.08)] transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
