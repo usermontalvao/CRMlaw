@@ -73,6 +73,30 @@ function parseAttach(c: string) {
   catch { return null; }
 }
 
+// ─── notificação sonora ────────────────────────────────────────────────────────
+
+function playNotificationSound() {
+  try {
+    const ac = new AudioContext();
+    const play = (freq: number, startAt: number, dur: number, vol: number) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0, ac.currentTime + startAt);
+      g.gain.linearRampToValueAtTime(vol, ac.currentTime + startAt + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + startAt + dur);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(ac.currentTime + startAt);
+      osc.stop(ac.currentTime + startAt + dur);
+    };
+    play(1319, 0,    0.22, 0.18); // E6
+    play(1976, 0.13, 0.28, 0.14); // B6
+    setTimeout(() => ac.close().catch(() => {}), 800);
+  } catch {}
+}
+
 // ─── TypingDots ───────────────────────────────────────────────────────────────
 
 const Dots = () => (
@@ -149,9 +173,19 @@ export const PortalChatWidget: React.FC = () => {
   // Tracks temp UUIDs of optimistic messages still in-flight (RPC not returned yet).
   // Used by the realtime handler to replace the optimistic entry instead of adding a duplicate.
   const inflightTids = useRef<Set<string>>(new Set());
+  const notifPermAsked = useRef(false);
 
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { openRef.current = open; }, [open]);
+
+  // Solicita permissão de notificação uma única vez quando o usuário está logado
+  useEffect(() => {
+    if (!session || notifPermAsked.current) return;
+    notifPermAsked.current = true;
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [session]);
 
   useEffect(() => {
     const visible = !!session && (open || route === 'mensagens');
@@ -310,7 +344,17 @@ export const PortalChatWidget: React.FC = () => {
           }
           return [...prev, msg];
         });
-        if (!openRef.current && !msg.from_client && !msg.is_system) setUnread(n=>n+1);
+        if (!openRef.current && !msg.from_client && !msg.is_system) {
+          setUnread(n=>n+1);
+          playNotificationSound();
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const sender = msg.sender_name || 'Escritório';
+            const body = msg.content.startsWith('__anexo__:')
+              ? `${sender} enviou um arquivo`
+              : msg.content.length > 100 ? msg.content.slice(0, 97) + '…' : msg.content;
+            try { new Notification(sender, { body, icon: '/favicon.ico', tag: 'portal-chat' }); } catch {}
+          }
+        }
         if (openRef.current) scrollBottom();
       }).subscribe();
     return () => { if (chatCh.current) { supabasePortal.removeChannel(chatCh.current); chatCh.current = null; } };

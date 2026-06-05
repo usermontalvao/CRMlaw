@@ -871,6 +871,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.204',
+    date: '05/06/2026',
+    summary: 'Portal: scanner com envio individual nomeado por IA, notificações sonoras no chat e refinamentos no serviço de processamento.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'feature' as const, title: 'Scanner envia PDFs individuais com nome sugerido pela IA', description: 'O scanner do portal passou a esperar as análises pendentes, montar um PDF por item, usar o nome mais recente sugerido pela IA e mostrar progresso de envio por arquivo.' },
+        { type: 'improvement' as const, title: 'Fluxo mobile do scanner refinado', description: 'Som do obturador foi melhorado, a tela de sucesso ficou mais clara e o botão final do modo câmera foi ajustado para encerrar a captura com menos ambiguidade.' },
+        { type: 'feature' as const, title: 'Chat do portal com som e notificação nativa', description: 'Mensagens novas do escritório agora podem tocar som local e disparar notificação nativa do navegador quando o chat está fechado e a permissão já foi concedida.' },
+      ]},
+      { moduleId: 'Serviços do Portal', changes: [
+        { type: 'improvement' as const, title: 'Serviço do scanner sincroniza melhor estados pendentes', description: 'O serviço auxiliar do scanner foi ajustado para acompanhar melhor chamadas pendentes de IA e sustentar o novo fluxo de envio nomeado por item.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.203',
     date: '05/06/2026',
     summary: 'Scanner do portal com upload via edge function, ajustes mobile no portal e suporte a bucket dinâmico para anexos e Cloud.',

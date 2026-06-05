@@ -405,6 +405,41 @@ function qualityFromMetrics(metrics: ScannerMetrics) {
   return { quality: 'ok' as const, reason: 'Imagem utilizável.' };
 }
 
+// AI call queue — one at a time to avoid OpenAI rate limits
+let aiQueue: Promise<unknown> = Promise.resolve();
+function queuedAiCall<T>(fn: () => Promise<T>): Promise<T> {
+  const next = aiQueue.then(() => fn());
+  aiQueue = next.catch(() => {});
+  return next;
+}
+
+/** Await this before sending to ensure all pending AI renames have resolved. */
+export function waitForPendingAiCalls(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    aiQueue = aiQueue.then(() => resolve(), () => resolve());
+  });
+}
+
+// Resize data URL to max 512px for AI calls — reduces payload from ~3 MB to ~50 KB
+async function thumbnailForAi(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 512;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 function parseAiJson(content: string): AiScanAnalysis | null {
   const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
   try {
@@ -421,76 +456,82 @@ function parseAiJson(content: string): AiScanAnalysis | null {
 }
 
 async function analyzeWithAi(dataUrl: string, fallbackName: string, metrics: ScannerMetrics): Promise<AiScanAnalysis | null> {
-  try {
-    const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
-      body: {
-        model: 'gpt-4o-mini',
-        max_tokens: 180,
-        messages: [
-          {
-            role: 'system',
-            content: 'Você avalia imagens enviadas por clientes para um portal jurídico. As imagens podem ser: documentos, prints de conversa, fotos de produtos, comprovantes, evidências, capturas de tela, etc. Responda SOMENTE em JSON com as chaves: name, quality, reason. quality deve ser "ok" ou "ruim". name deve ser curto, em português, minúsculo, descritivo, sem espaços (use underscore). Só marque "ruim" se a imagem for REALMENTE inutilizável (completamente preta, branca, tremida ao ponto de ser ilegível). Fotos de produtos, prints e evidências visuais são válidas.',
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text:
-                  `Avalie se esta imagem tem conteúdo visível e utilizável. ` +
-                  `Métricas: brilho=${metrics.brightness.toFixed(1)}, contraste=${metrics.contrast.toFixed(1)}, nitidez=${metrics.sharpness.toFixed(1)}. ` +
-                  `Pode ser documento, print, foto de produto, evidência ou qualquer imagem com conteúdo relevante. ` +
-                  `Só retorne quality="ruim" se for COMPLETAMENTE ilegível. ` +
-                  `Sugira um nome descritivo curto em português. ` +
-                  `Fallback: ${fallbackName}. Exemplo: {"name":"print_conversa","quality":"ok","reason":"Imagem com conteúdo visível."}`,
-              },
-              {
-                type: 'image_url',
-                image_url: { url: dataUrl },
-              },
-            ],
-          },
-        ],
-      },
-    });
+  return queuedAiCall(async () => {
+    try {
+      const thumb = await thumbnailForAi(dataUrl);
+      const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
+        body: {
+          model: 'gpt-4o-mini',
+          max_tokens: 180,
+          messages: [
+            {
+              role: 'system',
+              content: 'Você avalia imagens enviadas por clientes para um portal jurídico. As imagens podem ser: documentos, prints de conversa, fotos de produtos, comprovantes, evidências, capturas de tela, etc. Responda SOMENTE em JSON com as chaves: name, quality, reason. quality deve ser "ok" ou "ruim". name deve ser curto, em português, minúsculo, descritivo, sem espaços (use underscore). Só marque "ruim" se a imagem for REALMENTE inutilizável (completamente preta, branca, tremida ao ponto de ser ilegível). Fotos de produtos, prints e evidências visuais são válidas.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    `Avalie se esta imagem tem conteúdo visível e utilizável. ` +
+                    `Métricas: brilho=${metrics.brightness.toFixed(1)}, contraste=${metrics.contrast.toFixed(1)}, nitidez=${metrics.sharpness.toFixed(1)}. ` +
+                    `Pode ser documento, print, foto de produto, evidência ou qualquer imagem com conteúdo relevante. ` +
+                    `Só retorne quality="ruim" se for COMPLETAMENTE ilegível. ` +
+                    `Sugira um nome descritivo curto em português. ` +
+                    `Fallback: ${fallbackName}. Exemplo: {"name":"print_conversa","quality":"ok","reason":"Imagem com conteúdo visível."}`,
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: thumb },
+                },
+              ],
+            },
+          ],
+        },
+      });
 
-    if (error) return null;
-    const content = (data as any)?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') return null;
-    return parseAiJson(content);
-  } catch {
-    return null;
-  }
+      if (error) return null;
+      const content = (data as any)?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') return null;
+      return parseAiJson(content);
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function extractScannerOcr(dataUrl: string): Promise<string | null> {
-  try {
-    const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
-      body: {
-        model: 'gpt-4o-mini',
-        max_tokens: 900,
-        messages: [
-          {
-            role: 'system',
-            content: 'Extraia o texto visível da imagem. Pode ser documento, print de conversa, foto de produto, comprovante ou qualquer imagem com texto. Responda somente com o texto extraído, sem comentários adicionais.',
-          },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Extraia todo o texto visível desta imagem.' },
-              { type: 'image_url', image_url: { url: dataUrl } },
-            ],
-          },
-        ],
-      },
-    });
+  return queuedAiCall(async () => {
+    try {
+      const thumb = await thumbnailForAi(dataUrl);
+      const { data, error } = await supabasePortal.functions.invoke('openai-proxy', {
+        body: {
+          model: 'gpt-4o-mini',
+          max_tokens: 900,
+          messages: [
+            {
+              role: 'system',
+              content: 'Extraia o texto visível da imagem. Pode ser documento, print de conversa, foto de produto, comprovante ou qualquer imagem com texto. Responda somente com o texto extraído, sem comentários adicionais.',
+            },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Extraia todo o texto visível desta imagem.' },
+                { type: 'image_url', image_url: { url: thumb } },
+              ],
+            },
+          ],
+        },
+      });
 
-    if (error) return null;
-    const content = (data as any)?.choices?.[0]?.message?.content;
-    return typeof content === 'string' ? content.trim() : null;
-  } catch {
-    return null;
-  }
+      if (error) return null;
+      const content = (data as any)?.choices?.[0]?.message?.content;
+      return typeof content === 'string' ? content.trim() : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 function sampleBilinear(data: Uint8ClampedArray, width: number, height: number, x: number, y: number) {

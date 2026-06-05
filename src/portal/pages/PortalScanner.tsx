@@ -26,6 +26,7 @@ import {
   processPdfFile,
   processScanFile,
   updateScannerImage,
+  waitForPendingAiCalls,
   type ScannerCrop,
   type ScannerEnhancement,
   type ScannerItem,
@@ -125,8 +126,13 @@ export const PortalScanner: React.FC = () => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
   const [items, setItems] = useState<ScanStateItem[]>([]);
+  const itemsRef = useRef<ScanStateItem[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+  // Updated synchronously inside queueAiEnrich .then() — bypasses React render timing
+  const latestNamesRef = useRef<Map<string, string>>(new Map());
   const [processing, setProcessing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState<{ current: number; total: number } | null>(null);
   const [sendMessage, setSendMessage] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -217,6 +223,7 @@ export const PortalScanner: React.FC = () => {
     void enrichScanItemWithAi(item)
       .then((updates) => {
         if (Object.keys(updates).length === 0) return;
+        if (updates.suggestedName) latestNamesRef.current.set(item.id, updates.suggestedName);
         setItems((current) =>
           current.map((entry) =>
             isProcessed(entry) && entry.id === item.id ? { ...entry, ...updates } : entry,
@@ -378,31 +385,44 @@ export const PortalScanner: React.FC = () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (blob) {
-      // Camera shutter sound via Web Audio API
+      // Camera shutter sound — two-curtain metallic click
       try {
         const ac = new AudioContext();
         const sr = ac.sampleRate;
-        const dur = Math.floor(sr * 0.12);
+        const dur = Math.floor(sr * 0.20);
         const buf = ac.createBuffer(1, dur, sr);
         const ch = buf.getChannelData(0);
         for (let i = 0; i < dur; i++) {
-          // Mechanical click: sharp noise burst that decays quickly
           const t = i / sr;
-          const env = t < 0.003
-            ? t / 0.003                              // fast attack
-            : Math.exp(-(t - 0.003) / 0.018);        // exponential decay
-          const noise = (Math.random() * 2 - 1);
-          // Low-frequency component (shutter body resonance ~800 Hz)
-          const tone = Math.sin(2 * Math.PI * 800 * t) * 0.4;
-          ch[i] = (noise * 0.6 + tone) * env;
+          // First curtain: instant attack, fast metallic decay
+          const e1 = t < 0.0004 ? t / 0.0004 : Math.exp(-(t - 0.0004) / 0.007);
+          // Second curtain: 62ms later, slightly softer
+          const t2 = t - 0.062;
+          const e2 = t2 < 0 ? 0 : t2 < 0.0004 ? (t2 / 0.0004) * 0.72 : Math.exp(-(t2 - 0.0004) / 0.006) * 0.72;
+          const noise = Math.random() * 2 - 1;
+          const tone = Math.sin(2 * Math.PI * 4400 * t) * 0.28 + Math.sin(2 * Math.PI * 7000 * t) * 0.12;
+          ch[i] = (noise * 0.60 + tone) * (e1 + e2);
         }
+        // Highpass to strip low rumble, slight peak at 4 kHz for metallic bite
+        const hpf = ac.createBiquadFilter();
+        hpf.type = 'highpass';
+        hpf.frequency.value = 1400;
+        hpf.Q.value = 0.7;
+        const peak = ac.createBiquadFilter();
+        peak.type = 'peaking';
+        peak.frequency.value = 4000;
+        peak.gain.value = 7;
+        peak.Q.value = 1.4;
         const gain = ac.createGain();
-        gain.gain.value = 2.0;
-        gain.connect(ac.destination);
+        gain.gain.value = 2.2;
         const src = ac.createBufferSource();
         src.buffer = buf;
-        src.connect(gain);
+        src.connect(hpf);
+        hpf.connect(peak);
+        peak.connect(gain);
+        gain.connect(ac.destination);
         src.start();
+        setTimeout(() => ac.close().catch(() => {}), 600);
       } catch { /* ignore if audio not available */ }
 
       const file = new File([blob], `captura_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`, { type: 'image/jpeg' });
@@ -497,6 +517,32 @@ export const PortalScanner: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const buildItemPdfBlob = async (item: ScannerItem) => {
+    const { PDFDocument } = await import('pdf-lib');
+    const pdf = await PDFDocument.create();
+
+    if (item.fileKind === 'pdf' && item.fileBlob) {
+      const source = await PDFDocument.load(await item.fileBlob.arrayBuffer());
+      const pages = await pdf.copyPages(source, source.getPageIndices());
+      pages.forEach((p) => pdf.addPage(p));
+    } else if (item.fileKind === 'image' && item.dataUrl) {
+      const bytes = new Uint8Array(await dataUrlToBlob(item.dataUrl).arrayBuffer());
+      const embedded = await pdf.embedJpg(bytes);
+      const page = pdf.addPage();
+      const { width: W, height: H } = page.getSize();
+      const margin = 24;
+      const scale = Math.min((W - margin * 2) / embedded.width, (H - margin * 2) / embedded.height);
+      const dw = embedded.width * scale;
+      const dh = embedded.height * scale;
+      page.drawImage(embedded, { x: (W - dw) / 2, y: (H - dh) / 2, width: dw, height: dh });
+    } else {
+      return null;
+    }
+
+    const bytes = await pdf.save();
+    return new Blob([new Uint8Array(Array.from(bytes))], { type: 'application/pdf' });
+  };
+
   const buildMergedPdfBlob = async (forceAll = false) => {
     const exportItems = forceAll
       ? processedItems.filter((item) => item.dataUrl || item.fileBlob)
@@ -546,72 +592,163 @@ export const PortalScanner: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const buildSafeFileName = (item: ScannerItem, index: number) => {
+    const fallback = `Scanner_${new Date().toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }).replace(/[/:, ]/g, '_')}`;
+    const raw = item.suggestedName || '';
+    const isGeneric = /^(scanner|arquivo)_\d+$/.test(raw);
+    const base = isGeneric || !raw ? `${fallback}_${String(index).padStart(2, '0')}` : raw;
+    return `${base}.pdf`;
+  };
+
   const sendBatch = async (forceAll = false) => {
     if (!session?.user?.id || sending) return;
     setSendMessage(null);
+    setSendProgress(null);
     setSending(true);
     try {
-      const blob = await buildMergedPdfBlob(forceAll);
-      if (!blob) {
+      // Wait for any in-flight AI rename/OCR calls to finish, then read the
+      // freshest items from the ref so suggestedName is always up-to-date.
+      await waitForPendingAiCalls();
+      const latestProcessed = itemsRef.current.filter(isProcessed);
+      const exportItems = forceAll
+        ? latestProcessed.filter((item) => item.dataUrl || item.fileBlob)
+        : latestProcessed.filter((item) => item.quality === 'ok');
+
+      if (exportItems.length === 0) {
         setSendMessage('Nada válido para enviar.');
         return;
       }
 
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const fileName = `scanner_${dateStr}.pdf`;
-      const file = new File([blob], fileName, { type: 'application/pdf' });
-
-      // Upload via edge function — bypasses Supabase Storage RLS schema sync issue
       const { data: sessionData } = await supabasePortal.auth.getSession();
       const jwt = sessionData?.session?.access_token;
       if (!jwt) { setSendMessage('Sessão expirada. Faça login novamente.'); return; }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const form = new FormData();
-      form.append('file', file);
+      let successCount = 0;
+      setSendProgress({ current: 0, total: exportItems.length });
 
-      const uploadRes = await fetch(`${supabaseUrl}/functions/v1/portal-scanner-upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${jwt}` },
-        body: form,
-      });
+      for (let i = 0; i < exportItems.length; i++) {
+        setSendProgress({ current: i + 1, total: exportItems.length });
+        const item = exportItems[i];
+        const blob = await buildItemPdfBlob(item);
+        if (!blob) continue;
 
-      if (!uploadRes.ok) {
-        const errBody = await uploadRes.json().catch(() => ({}));
-        setSendMessage(`Falha ao enviar: ${(errBody as any).error ?? uploadRes.status}`);
+        const aiName = latestNamesRef.current.get(item.id);
+        const effectiveItem = aiName ? { ...item, suggestedName: aiName } : item;
+        const fileName = buildSafeFileName(effectiveItem, i + 1);
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+
+        const form = new FormData();
+        form.append('file', file);
+
+        const uploadRes = await fetch(`${supabaseUrl}/functions/v1/portal-scanner-upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${jwt}` },
+          body: form,
+        });
+
+        if (!uploadRes.ok) {
+          const errBody = await uploadRes.json().catch(() => ({}));
+          setSendMessage(`Falha ao enviar "${fileName}": ${(errBody as any).error ?? uploadRes.status}`);
+          return;
+        }
+
+        const { path, bucket } = await uploadRes.json() as { path: string; bucket: string };
+        const displayPath = path.split('/').slice(1).join('/');
+
+        const content = `${ATTACH_PREFIX}${JSON.stringify({
+          filePath: path,
+          fileName,
+          mimeType: 'application/pdf',
+          size: file.size,
+          bucket,
+          displayPath,
+        })}`;
+
+        const notified = await clientPortalService.sendChatMessage(session.user.id, content);
+        if (!notified) {
+          setSendMessage(`Salvo em ${displayPath}. Falha ao notificar o escritório.`);
+          return;
+        }
+
+        successCount++;
+      }
+
+      if (successCount === 0) {
+        setSendMessage('Falha ao enviar os arquivos.');
         return;
       }
 
-      const { path, bucket } = await uploadRes.json() as { path: string; bucket: string };
-      const displayName = path.split('/').slice(1).join('/');
-
-      // Notifica o escritório via chat (com referência ao arquivo)
-      const content = `${ATTACH_PREFIX}${JSON.stringify({
-        filePath: path,
-        fileName,
-        mimeType: 'application/pdf',
-        size: file.size,
-        bucket: bucket,
-        displayPath: displayName,
-      })}`;
-
-      const result = await clientPortalService.sendChatMessage(session.user.id, content);
-      if (!result) {
-        // Upload foi bem — só falhou a notificação
-        setSendMessage(`Salvo em ${displayName}. Falha ao notificar o escritório.`);
-        return;
-      }
-
-      // Success — clear items and show success screen
+      latestNamesRef.current.clear();
       setItems([]);
       setSent(true);
     } finally {
       setSending(false);
+      setSendProgress(null);
     }
   };
 
   return (
     <div className="flex flex-col gap-3 pb-60 sm:gap-4 sm:pb-6">
+      {sending && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+          style={{ background: 'rgba(2,6,23,0.88)' }}
+        >
+          <div className="flex flex-col items-center gap-7 px-10 text-center">
+
+            {/* Spinner SVG */}
+            <div className="relative flex h-28 w-28 items-center justify-center">
+              <svg
+                className="absolute inset-0 h-full w-full"
+                viewBox="0 0 112 112"
+                fill="none"
+                style={{ animation: 'spin 1.1s linear infinite' }}
+              >
+                <circle cx="56" cy="56" r="48" stroke="rgba(249,115,22,0.18)" strokeWidth="6" />
+                <path
+                  d="M56 8 A48 48 0 0 1 104 56"
+                  stroke="#f97316"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-500" style={{ boxShadow: '0 0 48px rgba(249,115,22,0.5)' }}>
+                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+              </span>
+            </div>
+
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-2xl font-bold text-white tracking-tight">Aguarde…</p>
+              <p className="text-base font-semibold text-orange-300">
+                Enviando{' '}
+                {sendProgress
+                  ? <>{sendProgress.current}/{sendProgress.total}</>
+                  : '…'
+                }
+              </p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-64 h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.10)' }}>
+              <div
+                className="h-full rounded-full bg-orange-400 transition-all duration-500"
+                style={{ width: sendProgress ? `${(sendProgress.current / sendProgress.total) * 100}%` : '0%' }}
+              />
+            </div>
+
+          </div>
+
+          {/* keyframes via style tag */}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>,
+        document.body,
+      )}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#fff7ed,#fed7aa)] text-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.15)] ring-1 ring-orange-200">
@@ -699,26 +836,28 @@ export const PortalScanner: React.FC = () => {
 
       {/* Success screen */}
       {!cameraOpen && sent && (
-        <div className="rounded-[24px] bg-white p-8 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100 flex flex-col items-center text-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-emerald-50 text-emerald-500">
-            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="flex flex-col items-center text-center gap-5 px-2 pt-8 pb-4">
+          <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-emerald-50 shadow-[0_8px_24px_rgba(16,185,129,0.18)] text-emerald-500">
+            <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-900">Enviado com sucesso!</p>
-            <p className="mt-1 text-sm text-slate-400">O escritório foi notificado e o arquivo está na pasta <strong className="text-slate-600">Documentos do Portal</strong>.</p>
+            <p className="text-xl font-bold text-slate-900">Enviado!</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">
+              O escritório foi notificado.<br />Os arquivos estão em <strong className="text-slate-700">Documentos do Portal</strong>.
+            </p>
           </div>
-          <div className="flex w-full flex-col gap-2 pt-1">
+          <div className="fixed inset-x-3 z-20 flex flex-col gap-2 sm:static sm:inset-auto sm:w-full" style={{ bottom: 'calc(58px + env(safe-area-inset-bottom) + 6px)' }}>
             <button
               onClick={() => { setSent(false); setSendMessage(null); }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(249,115,22,0.28)] hover:opacity-90 active:scale-95 transition-transform"
+              className="flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 py-4 text-sm font-bold text-white shadow-[0_6px_20px_rgba(249,115,22,0.30)] hover:opacity-90 active:scale-[0.98] transition-transform"
             >
               <Camera className="h-4 w-4" /> Enviar mais arquivos
             </button>
             <button
               onClick={() => navigate('mensagens')}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 active:scale-95 transition-transform"
+              className="flex w-full items-center justify-center gap-2 rounded-[18px] bg-white py-4 text-sm font-semibold text-slate-700 shadow-[0_4px_16px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 hover:bg-slate-50 active:scale-[0.98] transition-transform"
             >
               Ver mensagens
             </button>
@@ -740,9 +879,9 @@ export const PortalScanner: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900">
-                {processedItems.length} página{processedItems.length > 1 ? 's' : ''} no lote
+                {processedItems.length} arquivo{processedItems.length > 1 ? 's' : ''} no lote
               </p>
-              <p className="text-xs text-slate-400">{okItems.length} válida{okItems.length !== 1 ? 's' : ''} · pronta{okItems.length !== 1 ? 's' : ''} para enviar</p>
+              <p className="text-xs text-slate-400">{okItems.length} válido{okItems.length !== 1 ? 's' : ''} · pronto{okItems.length !== 1 ? 's' : ''} para enviar</p>
             </div>
           </div>
           {badItems.length > 0 && (
@@ -776,21 +915,26 @@ export const PortalScanner: React.FC = () => {
                   )}
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2.5 pb-2.5 pt-10">
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-2.5 pb-2.5 pt-12">
                   <div className="flex items-end justify-between gap-1.5">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       {aiIds.includes(item.id) ? (
                         <div className="flex items-center gap-1.5">
                           <Loader2 className="h-3 w-3 animate-spin text-orange-300" />
-                          <span className="text-[11px] font-semibold text-orange-300">Analisando…</span>
+                          <span className="text-[11px] font-semibold text-orange-300">Identificando…</span>
                         </div>
                       ) : (
                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${item.quality === 'ok' ? 'bg-emerald-500/90 text-white' : 'bg-amber-500/90 text-white'}`}>
                           {item.quality === 'ok' ? '✓ Apto' : '⚠ Verificar'}
                         </span>
                       )}
+                      {!aiIds.includes(item.id) && item.suggestedName && !/^(scanner|arquivo)_\d+$/.test(item.suggestedName) && (
+                        <p className="mt-1 truncate text-[10px] font-semibold leading-tight text-white/80">
+                          {item.suggestedName}
+                        </p>
+                      )}
                       {item.quality === 'ruim' && item.reason && !aiIds.includes(item.id) && (
-                        <p className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-white/60">{item.reason}</p>
+                        <p className="mt-0.5 line-clamp-1 text-[10px] leading-tight text-white/55">{item.reason}</p>
                       )}
                     </div>
                     <button
@@ -1024,7 +1168,7 @@ export const PortalScanner: React.FC = () => {
       )}
 
       {!cameraOpen && processedItems.length > 0 && (
-        <div className="fixed inset-x-3 bottom-[78px] z-20 sm:hidden">
+        <div className="fixed inset-x-3 z-20 sm:hidden" style={{ bottom: 'calc(58px + env(safe-area-inset-bottom) + 6px)' }}>
           {(
             <div className="rounded-[22px] bg-white p-2 shadow-[0_8px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80">
               <div className="flex gap-2">
@@ -1047,8 +1191,10 @@ export const PortalScanner: React.FC = () => {
                     disabled={sending}
                     className="inline-flex h-11 flex-[1.3] items-center justify-center gap-2 rounded-[14px] bg-orange-500 text-sm font-bold text-white shadow-[0_6px_18px_rgba(249,115,22,0.28)] disabled:opacity-50"
                   >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Enviar
+                    {sending
+                      ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Send className="h-4 w-4" />}
+                    {sending ? 'Enviando…' : 'Enviar'}
                   </button>
                 ) : (
                   <button
@@ -1056,8 +1202,10 @@ export const PortalScanner: React.FC = () => {
                     disabled={sending || processedItems.length === 0}
                     className="inline-flex h-11 flex-[1.3] items-center justify-center gap-1.5 rounded-[14px] bg-amber-500 text-xs font-bold text-white shadow-[0_6px_18px_rgba(245,158,11,0.28)] disabled:opacity-50"
                   >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                    Enviar assim
+                    {sending
+                      ? sendProgress ? <span className="text-[11px] font-bold">{sendProgress.current}/{sendProgress.total}</span> : <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Send className="h-3.5 w-3.5" />}
+                    {sending ? 'Enviando…' : 'Enviar assim'}
                   </button>
                 )}
               </div>
