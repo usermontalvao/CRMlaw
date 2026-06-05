@@ -71,6 +71,13 @@ interface ImageVariantOptions {
   enhancement?: ScannerEnhancement;
 }
 
+export interface ScannerCropSuggestion {
+  crop: ScannerCrop;
+  quad: ScannerQuad;
+  cropRatio: number;
+  enhancement: ScannerEnhancement;
+}
+
 const DETECTION_MAX_SIDE = 240;
 const EXPORT_MAX_SIDE = 1800;
 const MIN_CROP_SIZE = 0.15;
@@ -223,7 +230,8 @@ function detectDocumentBounds(canvas: HTMLCanvasElement) {
   let variance = 0;
   for (let i = 0; i < gray.length; i += 1) variance += (gray[i] - avg) ** 2;
   const stdDev = Math.sqrt(variance / gray.length);
-  const threshold = Math.max(18, stdDev * 0.8);
+  // Slightly more aggressive threshold: 0.65 instead of 0.8
+  const threshold = Math.max(16, stdDev * 0.65);
 
   let minX = width;
   let minY = height;
@@ -242,19 +250,57 @@ function detectDocumentBounds(canvas: HTMLCanvasElement) {
     }
   }
 
-  if (maxX < 0 || maxY < 0) {
+  let cropRatio = maxX >= 0 ? ((maxX - minX + 1) * (maxY - minY + 1)) / (width * height) : 0;
+
+  // ── Fallback: Sobel edge-projection (works when doc/bg have similar brightness) ──
+  // Triggered when brightness-based detection found nothing useful (< 8% or > 93% of image)
+  if (cropRatio < 0.08 || cropRatio > 0.93) {
+    const edgeRow = new Float32Array(height);
+    const edgeCol = new Float32Array(width);
+    let totalEdge = 0;
+    for (let y = 1; y < height - 1; y += 1) {
+      for (let x = 1; x < width - 1; x += 1) {
+        const i = y * width + x;
+        const gx = -gray[i - width - 1] + gray[i - width + 1] - 2 * gray[i - 1] + 2 * gray[i + 1] - gray[i + width - 1] + gray[i + width + 1];
+        const gy = -gray[i - width - 1] - 2 * gray[i - width] - gray[i - width + 1] + gray[i + width - 1] + 2 * gray[i + width] + gray[i + width + 1];
+        const mag = gx * gx + gy * gy;
+        edgeRow[y] += mag;
+        edgeCol[x] += mag;
+        totalEdge += mag;
+      }
+    }
+    const meanEdge = totalEdge / (width * height);
+    if (meanEdge > 0) {
+      const edgeThresh = meanEdge * 1.5;
+      // Scan inward from each side to find the first strong-edge band
+      let eMinY = Math.round(height * 0.05), eMaxY = Math.round(height * 0.95);
+      let eMinX = Math.round(width  * 0.05), eMaxX = Math.round(width  * 0.95);
+      for (let y = 2; y < height / 2; y += 1) { if (edgeRow[y] > edgeThresh) { eMinY = Math.max(0, y - 1); break; } }
+      for (let y = height - 3; y > height / 2; y -= 1) { if (edgeRow[y] > edgeThresh) { eMaxY = Math.min(height - 1, y + 1); break; } }
+      for (let x = 2; x < width  / 2; x += 1) { if (edgeCol[x] > edgeThresh) { eMinX = Math.max(0, x - 1); break; } }
+      for (let x = width - 3; x > width / 2; x -= 1) { if (edgeCol[x] > edgeThresh) { eMaxX = Math.min(width - 1, x + 1); break; } }
+      const eCropRatio = ((eMaxX - eMinX) * (eMaxY - eMinY)) / (width * height);
+      if (eCropRatio > 0.08 && eCropRatio < 0.94) {
+        minX = eMinX; minY = eMinY; maxX = eMaxX; maxY = eMaxY;
+        cropRatio = eCropRatio;
+      }
+    }
+  }
+
+  if (maxX < 0 || maxY < 0 || cropRatio < 0.08) {
     return { x: 0, y: 0, width: canvas.width, height: canvas.height, cropRatio: 1 };
   }
 
-  const paddingX = Math.round((maxX - minX) * 0.06);
-  const paddingY = Math.round((maxY - minY) * 0.06);
+  // Tighter padding (2% instead of 6%) to avoid including background
+  const paddingX = Math.round((maxX - minX) * 0.02);
+  const paddingY = Math.round((maxY - minY) * 0.02);
   minX = clamp(minX - paddingX, 0, width - 1);
   minY = clamp(minY - paddingY, 0, height - 1);
   maxX = clamp(maxX + paddingX, 0, width - 1);
   maxY = clamp(maxY + paddingY, 0, height - 1);
 
-  const cropRatio = ((maxX - minX + 1) * (maxY - minY + 1)) / (width * height);
-  if (cropRatio < 0.2) {
+  cropRatio = ((maxX - minX + 1) * (maxY - minY + 1)) / (width * height);
+  if (cropRatio < 0.08) {
     return { x: 0, y: 0, width: canvas.width, height: canvas.height, cropRatio: 1 };
   }
 
@@ -657,14 +703,10 @@ async function buildImageVariant({ sourceDataUrl, crop, quad, rotation = 0, enha
   };
 }
 
-export async function processScanFile({ file, index }: ProcessScanParams): Promise<ScannerItem> {
-  if (detectScannerFileKind(file) !== 'image') throw new Error('Envie imagem JPG, PNG, WEBP ou HEIC.');
-
-  const originalDataUrl = await readFileAsDataUrl(file);
-  const image = await loadImage(originalDataUrl);
+export async function detectScannerCropSuggestion(sourceDataUrl: string): Promise<ScannerCropSuggestion> {
+  const image = await loadImage(sourceDataUrl);
   const resized = resizeDimensions(image.width, image.height, EXPORT_MAX_SIDE);
   const { canvas: baseCanvas } = imageToCanvas(image, resized.width, resized.height);
-  const resizedSourceDataUrl = canvasToDataUrl(baseCanvas, 0.94);
   const bounds = detectDocumentBounds(baseCanvas);
   const crop: ScannerCrop = normalizeCrop({
     x: bounds.x / baseCanvas.width,
@@ -673,13 +715,33 @@ export async function processScanFile({ file, index }: ProcessScanParams): Promi
     height: bounds.height / baseCanvas.height,
   });
   const quad = cropToQuad(crop);
+  const cropRatio = crop.width * crop.height;
+  const isLikelyPaperDoc = cropRatio < 0.88 && bounds.cropRatio < 0.88;
+  return {
+    crop,
+    quad,
+    cropRatio,
+    enhancement: isLikelyPaperDoc ? 'document' : 'color',
+  };
+}
+
+export async function processScanFile({ file, index }: ProcessScanParams): Promise<ScannerItem> {
+  if (detectScannerFileKind(file) !== 'image') throw new Error('Envie imagem JPG, PNG, WEBP ou HEIC.');
+
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(originalDataUrl);
+  const resized = resizeDimensions(image.width, image.height, EXPORT_MAX_SIDE);
+  const { canvas: baseCanvas } = imageToCanvas(image, resized.width, resized.height);
+  const resizedSourceDataUrl = canvasToDataUrl(baseCanvas, 0.94);
+  const suggestion = await detectScannerCropSuggestion(resizedSourceDataUrl);
+  const { crop, quad, cropRatio: croppedArea, enhancement: autoEnhancement } = suggestion;
 
   const initialVariant = await buildImageVariant({
     sourceDataUrl: resizedSourceDataUrl,
     crop,
     quad,
     rotation: 0,
-    enhancement: 'color',
+    enhancement: autoEnhancement,
   });
 
   const fallbackBaseName = `scanner_${String(index).padStart(3, '0')}`;
@@ -698,10 +760,10 @@ export async function processScanFile({ file, index }: ProcessScanParams): Promi
     dataUrl: initialVariant.dataUrl,
     originalDataUrl: resizedSourceDataUrl,
     rotation: initialVariant.rotation,
-    enhancement: initialVariant.enhancement,
+    enhancement: initialVariant.enhancement,  // may be 'document' if auto-detected
     crop: initialVariant.crop,
     quad: initialVariant.quad,
-    metrics: initialVariant.metrics,
+    metrics: { ...initialVariant.metrics, cropRatio: croppedArea },
   };
 }
 

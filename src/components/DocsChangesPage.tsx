@@ -871,6 +871,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.205',
+    date: '05/06/2026',
+    summary: 'Portal: scanner com captura alinhada ao frame visível, crop mais estável em mobile e ajustes finos no recorte.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'Captura da câmera agora respeita o frame exibido', description: 'O scanner do portal deixou de salvar o frame bruto inteiro do vídeo e passou a recortar a foto usando exatamente a área visível do guia A4, considerando o `object-cover` do preview.' },
+        { type: 'improvement' as const, title: 'Editor de recorte ficou mais estável no mobile', description: 'O ajuste de recorte passou a usar a caixa real da imagem renderizada, ganhou melhor controle de pointer/touch e ficou mais previsível ao mover a área ou arrastar os cantos.' },
+        { type: 'improvement' as const, title: 'Recorte manual ganhou ações de reset e redetecção', description: 'O modal do crop agora permite redefinir o enquadramento completo ou reaplicar a detecção automática do documento sem fechar o editor.' },
+      ]},
+      { moduleId: 'Serviços do Portal', changes: [
+        { type: 'improvement' as const, title: 'Detector de crop foi extraído para reutilização', description: 'A sugestão automática de recorte do scanner foi isolada no serviço para ser reutilizada no processamento inicial e no fluxo de redetecção manual.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.204',
     date: '05/06/2026',
     summary: 'Portal: scanner com envio individual nomeado por IA, notificações sonoras no chat e refinamentos no serviço de processamento.',
