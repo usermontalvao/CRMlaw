@@ -18,6 +18,7 @@ import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { formatRelative } from './PortalUI';
 import type { PortalRoute } from '../types/portal.types';
+import { canUsePushNotifications, isIosDevice, isStandaloneDisplay } from '../lib/pwa';
 
 interface NotifItem {
   id: string;
@@ -87,6 +88,8 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
   const { navigate } = usePortalRouter();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const installRequiredForPush = isIosDevice() && !isStandaloneDisplay();
+  const canRequestPush = canUsePushNotifications();
 
   useEffect(() => {
     if (!open) return;
@@ -210,7 +213,18 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
           </div>
 
           <div className="flex flex-col gap-1 border-t border-slate-100 px-4 py-2.5">
-            {!pushEnabled && 'Notification' in window && Notification.permission !== 'denied' && (
+            {!pushEnabled && installRequiredForPush && (
+              <button
+                onClick={() => {
+                  navigate('app');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-[11.5px] font-medium text-slate-500 transition hover:bg-slate-50"
+              >
+                <Bell className="h-3 w-3" /> Instale o app para ativar notificações
+              </button>
+            )}
+            {!pushEnabled && !installRequiredForPush && canRequestPush && 'Notification' in window && Notification.permission !== 'denied' && (
               <button
                 onClick={async () => {
                   await requestPushPermission();

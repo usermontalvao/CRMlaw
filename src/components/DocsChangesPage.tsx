@@ -871,6 +871,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.201',
+    date: '04/06/2026',
+    summary: 'Portal do cliente: bootstrap isolado do Supabase, correção do crash no chat, fluxo de instalação PWA e textos de assinaturas revisados.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'fix' as const, title: 'PortalChatWidget sem quebra por ordem de hooks', description: 'O widget de chat do portal deixou de retornar antes de finalizar os hooks, eliminando o erro de runtime “Rendered fewer hooks than expected” ao alternar sessão e rota.' },
+        { type: 'improvement' as const, title: 'Bootstrap separa CRM e portal no carregamento inicial', description: 'O `main.tsx` agora importa dinamicamente `App` e `PortalApp`, evitando subir dois clientes GoTrue/Supabase no mesmo contexto do navegador.' },
+        { type: 'feature' as const, title: 'Instalação do aplicativo orientada por dispositivo', description: 'Portal ganhou banner mobile, página de instalação, regras específicas para iPhone/Android e supressão de alertas de push quando o chat já está visível.' },
+        { type: 'fix' as const, title: 'Textos de assinaturas com acentuação corrigida', description: 'Mensagens de estado vazio e rótulos da tela de assinaturas voltaram a exibir acentos corretamente, incluindo documentos já assinados e concluídos.' },
+      ]},
+      { moduleId: 'Chat CRM', changes: [
+        { type: 'fix' as const, title: 'Fila de tickets mantém badge até aceite', description: 'Tickets de portal não aceitos continuam sinalizados no widget e na aba de tickets, preservando a visibilidade do atendimento pendente.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.200',
     date: '04/06/2026',
     summary: 'Chat do portal e widget do CRM: correções visuais, auto-scroll, persistência de tickets em fila e notificação contextual.',

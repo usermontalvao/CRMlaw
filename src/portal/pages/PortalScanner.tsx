@@ -633,27 +633,29 @@ export const PortalScanner: React.FC = () => {
       {!cameraOpen && items.length === 0 && (
         <section className="rounded-[28px] bg-white p-6 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#fff7ed,#fed7aa)] text-orange-500 shadow-[0_12px_28px_rgba(249,115,22,0.18)]">
-              <ScanLine className="h-8 w-8" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-[16px] bg-orange-50 text-orange-500">
+              <ScanLine className="h-6 w-6" />
             </div>
-            <h2 className="mt-5 text-xl font-bold tracking-tight text-slate-900">Captura de arquivos</h2>
-            <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-              Envie documentos, prints de conversa, fotos de produtos ou qualquer evidência. A IA organiza e nomeia tudo.
+            <h2 className="mt-3 text-base font-semibold text-slate-900">Envie seus arquivos</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Documentos, fotos ou prints — a IA nomeia e organiza tudo.
             </p>
-            <div className="mt-6 flex w-full flex-col gap-2">
-              <div className="flex items-center gap-3 rounded-2xl bg-orange-50 px-4 py-3 text-left text-sm text-slate-700">
-                <Sparkles className="h-4 w-4 shrink-0 text-orange-500" />
-                <span>IA identifica o conteúdo e nomeia automaticamente</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left text-sm text-slate-700">
-                <Crop className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>Documentos, prints, fotos — tudo aceito como prova</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left text-sm text-slate-700">
-                <FileText className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>Agrupa tudo em PDF e envia direto ao escritório</span>
-              </div>
-            </div>
+          </div>
+          <div className="mt-5 flex gap-2">
+            <button
+              onClick={triggerUpload}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 active:scale-95 transition-transform"
+            >
+              <Upload className="h-4 w-4" />
+              Arquivo
+            </button>
+            <button
+              onClick={openCamera}
+              className="inline-flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl bg-orange-500 text-sm font-bold text-white shadow-[0_4px_14px_rgba(249,115,22,0.30)] hover:opacity-90 active:scale-95 transition-transform"
+            >
+              <Camera className="h-4 w-4" />
+              Usar câmera
+            </button>
           </div>
         </section>
       )}
@@ -969,26 +971,9 @@ export const PortalScanner: React.FC = () => {
         document.body,
       )}
 
-      {!cameraOpen && (
+      {!cameraOpen && processedItems.length > 0 && (
         <div className="fixed inset-x-3 bottom-[78px] z-20 sm:hidden">
-          {processedItems.length === 0 ? (
-            <div className="flex gap-2 rounded-[22px] bg-white p-2 shadow-[0_8px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80">
-              <button
-                onClick={triggerUpload}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-[16px] border border-slate-200 text-sm font-semibold text-slate-600"
-              >
-                <Upload className="h-4 w-4" />
-                Arquivo
-              </button>
-              <button
-                onClick={openCamera}
-                className="inline-flex h-12 flex-[2] items-center justify-center gap-2 rounded-[16px] bg-orange-500 text-sm font-bold text-white shadow-[0_6px_18px_rgba(249,115,22,0.32)]"
-              >
-                <Camera className="h-4 w-4" />
-                Usar câmera
-              </button>
-            </div>
-          ) : (
+          {(
             <div className="rounded-[22px] bg-white p-2 shadow-[0_8px_32px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80">
               <div className="flex gap-2">
                 <button

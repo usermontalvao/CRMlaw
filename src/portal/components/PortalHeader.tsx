@@ -4,6 +4,7 @@ import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 
 const ROUTE_TITLES: Record<string, string> = {
+  app: 'Aplicativo',
   dashboard: 'Início',
   processos: 'Processos',
   documentos: 'Documentos',

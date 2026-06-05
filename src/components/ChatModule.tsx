@@ -973,12 +973,10 @@ const ChatModule: React.FC = () => {
         const roomVisible = visibleRooms.some((r) => r.id === msg.room_id);
 
         if (!roomVisible) {
-          // Sala desconhecida: recarrega APENAS se for mensagem de equipe/DM
-          // (portal messages têm user_id = null e já foram filtradas pelo accepted_by)
-          const isPortalClientMsg = msg.user_id === null;
-          if (!isPortalClientMsg) {
-            stableModuleRef.current.loadRooms();
-          }
+          // Sala desconhecida — sempre recarrega: pode ser ticket novo (portal) ou
+          // sala de equipe recém-criada. O reload deixa a sala aparecer na lista
+          // para que mensagens futuras sejam notificadas corretamente.
+          stableModuleRef.current.loadRooms();
           return; // ← nunca notifica salas invisíveis
         }
 

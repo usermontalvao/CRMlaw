@@ -30,6 +30,7 @@ const PortalCalendar = lazy(() => import('./pages/PortalCalendar').then((m) => (
 const PortalMessages = lazy(() => import('./pages/PortalMessages').then((m) => ({ default: m.PortalMessages })));
 const PortalNotifications = lazy(() => import('./pages/PortalNotifications').then((m) => ({ default: m.PortalNotifications })));
 const PortalProfile = lazy(() => import('./pages/PortalProfile').then((m) => ({ default: m.PortalProfile })));
+const PortalAppInstall = lazy(() => import('./pages/PortalAppInstall').then((m) => ({ default: m.PortalAppInstall })));
 
 const LoadingSpinner: React.FC = () => (
   <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -62,6 +63,8 @@ const PortalRouter: React.FC = () => {
     switch (route) {
       case 'dashboard':
         return <PortalDashboard />;
+      case 'app':
+        return <PortalAppInstall />;
       case 'casos':
         if (!isEnabled('processos')) { navigate('dashboard'); return <PortalDashboard />; }
         if (!param) return <PortalCasos />;

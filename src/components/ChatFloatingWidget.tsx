@@ -10,11 +10,7 @@ import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 
-const WIDGET_OPEN_KEY = 'chat-floating-widget-open';
-
-const WIDGET_NOTIFY_COUNT_KEY = 'chat-floating-widget-notify-count';
-const WIDGET_ROOM_UNREAD_KEY = 'chat-floating-widget-room-unread';
-const WIDGET_LAST_IMAGE_SENDER_KEY = 'chat-floating-widget-last-image-sender';
+// No localStorage cache for chat data — all state comes from DB/realtime only.
 
 const PETITION_EDITOR_WIDGET_STATE_KEY = 'petition-editor-widget-state';
 const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
@@ -998,95 +994,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   }, [user, triggerShake]);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(WIDGET_OPEN_KEY);
-      setOpen(saved === '1');
-    } catch {
-      setOpen(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      // Nota: notifyCount NÃO é restaurado do localStorage. Ele representa
-      // notificações da sessão atual e o banco já é consultado logo em seguida,
-      // tornando o valor persistido obsoleto e fonte de badge fantasma.
-
-      const rawRoom = localStorage.getItem(WIDGET_ROOM_UNREAD_KEY);
-      const rawLastImage = localStorage.getItem(WIDGET_LAST_IMAGE_SENDER_KEY);
-
-      if (rawRoom) {
-        // Pré-carrega do localStorage só como placeholder visual enquanto o banco
-        // não responde. loadRoomUnreadCounts() sobrescreverá com os valores reais.
-        const obj = JSON.parse(rawRoom) as Record<string, number>;
-        const next = new Map<string, number>();
-        Object.entries(obj || {}).forEach(([roomId, count]) => {
-          const n = Number(count);
-          if (!Number.isNaN(n) && n >= 0) {
-            next.set(String(roomId), n);
-          }
-        });
-        if (next.size > 0) {
-          setRoomUnreadCounts(next);
-        }
-      }
-
-      if (rawLastImage) {
-        const parsed = JSON.parse(rawLastImage) as { name?: string; avatarUrl?: string | null };
-        if (parsed?.name) {
-          setLastUnreadImageSender({ name: String(parsed.name), avatarUrl: parsed.avatarUrl ?? null });
-        }
-      }
-    } catch {
-      // ignore
-    }
   }, []);
 
   useEffect(() => {
     openRef.current = open;
-    try {
-      localStorage.setItem(WIDGET_OPEN_KEY, open ? '1' : '0');
-    } catch {
-      // ignore
-    }
   }, [open]);
-
-  // notifyCount é exclusivo da sessão atual (incrementado por eventos realtime).
-  // Não persiste no localStorage para evitar badge fantasma após recarregar.
-  useEffect(() => {
-    try {
-      localStorage.removeItem(WIDGET_NOTIFY_COUNT_KEY);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      const obj: Record<string, number> = {};
-      roomUnreadCounts.forEach((count, roomId) => {
-        const n = Number(count);
-        if (!Number.isNaN(n) && n >= 0) {
-          obj[String(roomId)] = n;
-        }
-      });
-      localStorage.setItem(WIDGET_ROOM_UNREAD_KEY, JSON.stringify(obj));
-    } catch {
-      // ignore
-    }
-  }, [roomUnreadCounts]);
-
-  useEffect(() => {
-    try {
-      if (!lastUnreadImageSender) {
-        localStorage.removeItem(WIDGET_LAST_IMAGE_SENDER_KEY);
-      } else {
-        localStorage.setItem(WIDGET_LAST_IMAGE_SENDER_KEY, JSON.stringify(lastUnreadImageSender));
-      }
-    } catch {
-      // ignore
-    }
-  }, [lastUnreadImageSender]);
 
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -1169,22 +1081,13 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       const list = await chatService.listRooms(user.id);
       setRooms(list);
 
-      // 🔥 Limpar cache se não houver salas
       if (list.length === 0) {
-        try {
-          localStorage.removeItem(WIDGET_NOTIFY_COUNT_KEY);
-          localStorage.removeItem(WIDGET_ROOM_UNREAD_KEY);
-          localStorage.removeItem(WIDGET_LAST_IMAGE_SENDER_KEY);
-          setNotifyCount(0);
-          setRoomUnreadCounts(new Map());
-          setLastUnreadImageSender(null);
-          console.log('🧹 Cache do chat limpo automaticamente (sem salas)');
-        } catch (e) {
-          console.error('Erro ao limpar cache:', e);
-        }
+        setNotifyCount(0);
+        setRoomUnreadCounts(new Map());
+        setLastUnreadImageSender(null);
       }
 
-      // 🔥 Buscar última mensagem de salas sem preview
+      // Buscar última mensagem de salas sem preview
       const roomsNeedingPreview = list.filter(
         (r) => !!r.last_message_at && !(r.last_message_preview && r.last_message_preview.trim())
       );
@@ -1217,6 +1120,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         });
       }
 
+      // Initialize unread=1 for portal ticket rooms appearing for the first time this session.
+      // These rooms don't have entries in chat_room_members (team-chat table), so loadRoomUnreadCounts
+      // always returns 0 for them. Rooms the staff has already read (count=0 tracked) are kept at 0.
+      setRoomUnreadCounts((prev) => {
+        const next = new Map(prev);
+        for (const room of list) {
+          if (room.portal_client_id && !room.created_by && room.last_message_at && !prev.has(room.id)) {
+            next.set(room.id, 1);
+          }
+        }
+        return next;
+      });
+
       const membersMap = new Map<string, string[]>();
       for (const room of list) {
         if (!room.is_public) {
@@ -1245,9 +1161,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
     if (error) return;
 
-    // O banco é a fonte de verdade — substituir completamente o mapa local.
-    // Nunca usar Math.max: se o banco diz 0 (mensagem lida), o valor local
-    // stale (vindo do localStorage) não deve sobrescrever.
+    // O banco é a fonte de verdade — substitui completamente o mapa local.
     const dbMap = new Map<string, number>();
     (data ?? []).forEach((row: any) => {
       dbMap.set(String(row.room_id), Number(row.unread_count ?? 0));
@@ -1575,9 +1489,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           const visibleRooms = stableCallbacksRef.current.getRooms();
           const roomVisible = visibleRooms.some((r) => r.id === msg.room_id);
           if (!roomVisible) {
-            // Sala não é minha: não notifica; só recarrega se for mensagem de equipe
-            const isPortalClientMsg = msg.user_id === null;
-            if (!isPortalClientMsg) stableCallbacksRef.current.loadRooms();
+            // Sala desconhecida — recarrega sempre: pode ser ticket novo (portal)
+            // ou sala de equipe criada enquanto o widget estava ativo.
+            stableCallbacksRef.current.loadRooms();
             return;
           }
 
@@ -1701,6 +1615,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             next.delete(updatedRoom.id);
             return next;
           });
+          // Decrement notifyCount by what this room contributed so the badge clears.
+          // We use a functional update reading the removed room's count before deletion.
+          setNotifyCount((prev) => Math.max(0, prev - 1));
         } else {
           setRooms((prev) =>
             prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r)),
@@ -1755,12 +1672,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   };
 
   const getEffectiveRoomUnread = useCallback((room: ChatRoom) => {
-    const isQueuedPortalTicket = !!room.portal_client_id && !room.accepted_by && !room.created_by;
-    const localCount = Number(roomUnreadCounts.get(room.id) ?? 0);
-    if (isQueuedPortalTicket) {
-      return Math.max(1, localCount);
-    }
-    return localCount;
+    return Number(roomUnreadCounts.get(room.id) ?? 0);
   }, [roomUnreadCounts]);
 
   const totalUnreadFromRooms = useMemo(() => {
@@ -1799,7 +1711,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     !!selectedRoom.last_message_at &&
     (Date.now() - new Date(selectedRoom.last_message_at).getTime()) < 10 * 60 * 1000;
   const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : portalRecentlyActive;
-  const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
+  // totalUnreadFromRooms is updated optimistically by realtime handlers, so it's
+  // always accurate. notifyCount is a session-only increment that can become stale
+  // (e.g. after acceptedByOther removes the room), so we don't use Math.max here.
+  const badgeCount = totalUnreadFromRooms;
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
 
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
@@ -1954,7 +1869,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       )}
                     </div>
                     <span className="text-[11px] text-white/40 font-medium">
-                      {rooms.filter(r => !r.portal_client_id).length + rooms.filter(r => r.portal_client_id).length} {rooms.length === 1 ? 'conversa' : 'conversas'}
+                      {(() => {
+                        const equipe = rooms.filter(r => !r.portal_client_id).length;
+                        // Only count open tickets (same filter as the TICKET tab render)
+                        const ticket = rooms.filter(r => !!r.portal_client_id && !r.created_by).length;
+                        const parts: string[] = [];
+                        if (equipe > 0) parts.push(`${equipe} equipe`);
+                        if (ticket > 0) parts.push(`${ticket} ticket${ticket !== 1 ? 's' : ''}`);
+                        return parts.length > 0 ? parts.join(' · ') : '0 conversas';
+                      })()}
                     </span>
                   </div>
                 </>

@@ -146,6 +146,9 @@ export const PortalChatWidget: React.FC = () => {
   const attTypCh    = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
   const typTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attTypTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks temp UUIDs of optimistic messages still in-flight (RPC not returned yet).
+  // Used by the realtime handler to replace the optimistic entry instead of adding a duplicate.
+  const inflightTids = useRef<Set<string>>(new Set());
 
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { openRef.current = open; }, [open]);
@@ -161,7 +164,6 @@ export const PortalChatWidget: React.FC = () => {
   }, [open, route, session]);
 
   // Ocultar na página de mensagens
-  if (route === 'mensagens' || !session) return null;
 
   // ── posição dinâmica ──────────────────────────────────────────────────────
   // Mobile: acima da nav bar (≈84px + safe-area)
@@ -293,7 +295,21 @@ export const PortalChatWidget: React.FC = () => {
         }
         if (!m.portal_client_id && !m.is_system) { setAttTyping(false); if (attTypTimer.current) clearTimeout(attTypTimer.current); }
         const msg: PortalChatMessage = { id:m.id, content:m.content, created_at:m.created_at, from_client:!!m.portal_client_id, is_system:!!m.is_system, sender_name:m.portal_client_id?null:(m.sender_name??'Escritório') };
-        setMsgs(prev => prev.some(x=>x.id===msg.id) ? prev : [...prev, msg]);
+        setMsgs(prev => {
+          if (prev.some(x => x.id === msg.id)) return prev;
+          // If this is a client message arriving while we have in-flight optimistics,
+          // replace the matching optimistic entry by content instead of adding a duplicate.
+          if (msg.from_client && inflightTids.current.size > 0) {
+            const idx = [...prev].reverse().findIndex(x => inflightTids.current.has(x.id) && x.content === msg.content);
+            if (idx >= 0) {
+              const realIdx = prev.length - 1 - idx;
+              const tempId = prev[realIdx].id;
+              inflightTids.current.delete(tempId);
+              return prev.map((x, i) => i === realIdx ? { ...x, id: msg.id, created_at: msg.created_at } : x);
+            }
+          }
+          return [...prev, msg];
+        });
         if (!openRef.current && !msg.from_client && !msg.is_system) setUnread(n=>n+1);
         if (openRef.current) scrollBottom();
       }).subscribe();
@@ -331,19 +347,44 @@ export const PortalChatWidget: React.FC = () => {
   // ── envio ──────────────────────────────────────────────────────────────────
   const doSend = async (content: string) => {
     if (!content.trim() || sending || !session?.user?.id) return;
+
     setSending(true);
     setText('');
-    typingCh.current?.send({ type:'broadcast', event:'typing', payload:{ text:'' } });
-    const tid = crypto.randomUUID();
-    setMsgs(prev => [...prev, { id:tid, content, created_at:new Date().toISOString(), from_client:true, sender_name:null }]);
+    typingCh.current?.send({ type: 'broadcast', event: 'typing', payload: { text: '' } });
+
+    const tempId = crypto.randomUUID();
+    inflightTids.current.add(tempId);
+    setMsgs((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content,
+        created_at: new Date().toISOString(),
+        from_client: true,
+        sender_name: null,
+      },
+    ]);
     scrollBottom();
+
     try {
-      const r = await clientPortalService.sendChatMessage(session.user.id, content) as any;
-      if (r) {
-        setMsgs(prev => prev.map(m => m.id===tid ? {...m, id:r.id??tid} : m));
-        if (r.room_id && r.room_id !== roomIdRef.current) await loadMessages(false);
+      const response = await clientPortalService.sendChatMessage(session.user.id, content) as any;
+      if (response) {
+        inflightTids.current.delete(tempId);
+        setMsgs((prev) => prev.map((message) => (
+          message.id === tempId ? { ...message, id: response.id ?? tempId } : message
+        )));
+        if (response.room_id && response.room_id !== roomIdRef.current) {
+          await loadMessages(false);
+        }
       }
-    } finally { setSending(false); setTimeout(() => inputRef.current?.focus(), 80); }
+    } catch (error) {
+      inflightTids.current.delete(tempId);
+      setMsgs((prev) => prev.filter((message) => message.id !== tempId));
+      throw error;
+    } finally {
+      setSending(false);
+      setTimeout(() => inputRef.current?.focus(), 80);
+    }
   };
 
   const onTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -371,7 +412,9 @@ export const PortalChatWidget: React.FC = () => {
   const groups = groupByDay(msgs.filter(m => m.content?.trim()));
   const hasContent = msgs.filter(m => !m.is_system && m.content?.trim()).length > 0;
   const isOnline = attendant?.presence_status === 'online';
-  const clientName = (session.client?.nome ?? '').split(' ')[0] || 'você';
+  const clientName = (session?.client?.nome ?? '').split(' ')[0] || 'você';
+
+  if (route === 'mensagens' || !session) return null;
 
   return createPortal(
     <>

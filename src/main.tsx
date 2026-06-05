@@ -1,7 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
-import PortalApp from './portal/PortalApp';
 
 // ── Stale-chunk auto-reload ────────────────────────────────────────────────
 window.addEventListener('unhandledrejection', (event) => {
@@ -21,11 +19,6 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
-import { NavigationProvider } from './contexts/NavigationContext';
-import { AuthProvider } from './contexts/AuthContext';
-import { ToastProvider } from './contexts/ToastContext';
-import { ThemeProvider } from './contexts/ThemeContext';
-import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
 import { registerLicense } from '@syncfusion/ej2-base';
 import './index.css';
 
@@ -33,6 +26,27 @@ const syncfusionLicenseKey = import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '';
 if (syncfusionLicenseKey) registerLicense(syncfusionLicenseKey);
 
 const isDev = import.meta.env.DEV;
+
+function isPublicSignatureRoute(hash: string, path: string): boolean {
+  return (
+    hash.includes('/assinar/') ||
+    path.includes('/assinar/') ||
+    hash.includes('/verificar') ||
+    path.includes('/verificar') ||
+    hash.startsWith('#/documento/') ||
+    path.includes('/documento/')
+  );
+}
+
+function disablePwaForPublicSignatureRoute() {
+  document.querySelector('link[rel="manifest"]')?.remove();
+  document.querySelector('link[rel="apple-touch-icon"]')?.remove();
+  document
+    .querySelectorAll(
+      'meta[name="mobile-web-app-capable"], meta[name="apple-mobile-web-app-capable"], meta[name="apple-mobile-web-app-status-bar-style"], meta[name="apple-mobile-web-app-title"]',
+    )
+    .forEach((element) => element.remove());
+}
 
 // ── Detecta sessão Supabase no localStorage (síncrono) ─────────────────────
 // Supabase JS v2 persiste a sessão em chaves "sb-*-auth-token"
@@ -60,6 +74,11 @@ function hasSupabaseSession(): boolean {
 //   • Qualquer outra situação        → Portal do Cliente (PortalApp)
 const currentHash = window.location.hash;
 const currentPath = window.location.pathname;
+const isPublicSignature = isPublicSignatureRoute(currentHash, currentPath);
+
+if (isPublicSignature) {
+  disablePwaForPublicSignatureRoute();
+}
 
 // Normaliza qualquer path estranho para "/"
 if (currentPath !== '/') {
@@ -83,38 +102,65 @@ const isPublicCrmRoute =
 
 const isStaff = hasSupabaseSession() || isDocRoute || isCronRoute || isPublicCrmRoute;
 
-const rootElement = isStaff
-  ? (
-    <NavigationProvider initialModule="dashboard">
-      <AuthProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <DeleteConfirmProvider>
-              <App />
-            </DeleteConfirmProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </AuthProvider>
-    </NavigationProvider>
-  )
-  : <PortalApp />;
+async function renderRoot() {
+  let rootElement: React.ReactNode;
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{rootElement}</React.StrictMode>,
-);
+  if (isStaff) {
+    const [
+      { default: App },
+      { NavigationProvider },
+      { AuthProvider },
+      { ThemeProvider },
+      { ToastProvider },
+      { DeleteConfirmProvider },
+    ] = await Promise.all([
+      import('./App'),
+      import('./contexts/NavigationContext'),
+      import('./contexts/AuthContext'),
+      import('./contexts/ThemeContext'),
+      import('./contexts/ToastContext'),
+      import('./contexts/DeleteConfirmContext'),
+    ]);
+
+    rootElement = (
+      <NavigationProvider initialModule="dashboard">
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <DeleteConfirmProvider>
+                <App />
+              </DeleteConfirmProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </NavigationProvider>
+    );
+  } else {
+    const { default: PortalApp } = await import('./portal/PortalApp');
+    rootElement = <PortalApp />;
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>{rootElement}</React.StrictMode>,
+  );
+}
+
+void renderRoot();
 
 if (!isDev && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((reg) => console.log('SW registrado:', reg.scope))
-      .catch((err) => {
-        console.error('Falha ao registrar SW:', err);
-        if (err.message?.includes('network error')) {
-          caches.keys().then((names) =>
-            Promise.all(names.filter((n) => n.startsWith('crm-cache-')).map((n) => caches.delete(n)))
-          );
-        }
-      });
-  });
+  if (!isPublicSignature) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => console.log('SW registrado:', reg.scope))
+        .catch((err) => {
+          console.error('Falha ao registrar SW:', err);
+          if (err.message?.includes('network error')) {
+            caches.keys().then((names) =>
+              Promise.all(names.filter((n) => n.startsWith('crm-cache-')).map((n) => caches.delete(n)))
+            );
+          }
+        });
+    });
+  }
 }

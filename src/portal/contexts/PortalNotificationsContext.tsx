@@ -3,6 +3,7 @@ import { clientPortalService } from '../services/clientPortal.service';
 import { useClientAuth } from './ClientAuthContext';
 import { supabasePortal } from '../lib/supabasePortal';
 import { usePortalRouter } from '../hooks/usePortalRouter';
+import { canUsePushNotifications } from '../lib/pwa';
 
 export interface NotifItem {
   id: string;
@@ -264,7 +265,10 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (!session?.user?.id || !VAPID_PUBLIC_KEY || !('serviceWorker' in navigator)) return;
+    if (!session?.user?.id || !VAPID_PUBLIC_KEY || !canUsePushNotifications()) {
+      setPushEnabled(false);
+      return;
+    }
     navigator.serviceWorker.ready.then((reg) =>
       reg.pushManager.getSubscription().then((sub) => {
         setPushEnabled(!!sub);
@@ -274,7 +278,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
 
   const requestPushPermission = useCallback(async (): Promise<boolean> => {
     if (!session?.user?.id || !VAPID_PUBLIC_KEY) return false;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    if (!canUsePushNotifications()) return false;
 
     try {
       const permission = await Notification.requestPermission();

@@ -7,6 +7,7 @@ import type { PortalRoute } from '../types/portal.types';
 
 const VALID_ROUTES: PortalRoute[] = [
   'dashboard',
+  'app',
   'casos',
   'processos',   // alias legado — PortalApp redireciona para 'casos'
   'scanner',

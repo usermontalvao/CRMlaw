@@ -207,12 +207,12 @@ export const PortalSignatures: React.FC = () => {
             <EmptyState
               icon={CheckCircle2}
               title="Nenhuma assinatura pendente"
-              description="No momento, n?o h? nada aguardando sua assinatura. Os documentos j? assinados aparecem logo abaixo."
+              description="No momento, não há nada aguardando sua assinatura. Os documentos já assinados aparecem logo abaixo."
             />
             <section className="flex flex-col gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">Arquivos j? assinados</h2>
-                <p className="mt-1 text-xs text-slate-500">Abra aqui os documentos j? conclu?dos, sem precisar trocar de aba.</p>
+                <h2 className="text-sm font-semibold text-slate-900">Arquivos já assinados</h2>
+                <p className="mt-1 text-xs text-slate-500">Abra aqui os documentos já concluídos, sem precisar trocar de aba.</p>
               </div>
               {signedItems.map((item) => (
                 <SignatureCard key={item.id} item={item} clientEmail={clientEmail} />
@@ -223,7 +223,7 @@ export const PortalSignatures: React.FC = () => {
           <EmptyState
             icon={tab === 'pending' ? CheckCircle2 : FileSignature}
             title={tab === 'pending' ? 'Nenhuma assinatura pendente' : tab === 'signed' ? 'Nenhum documento assinado' : 'Sem documentos'}
-            description={tab === 'pending' ? 'Quando houver um documento aguardando voc?, ele aparecer? aqui.' : 'Os documentos que voc? j? assinou aparecer?o nesta lista.'}
+            description={tab === 'pending' ? 'Quando houver um documento aguardando você, ele aparecerá aqui.' : 'Os documentos que você já assinou aparecerão nesta lista.'}
           />
         )
       ) : (
@@ -284,7 +284,7 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
               ? `Solicitado ${formatRelative(s.created_at)}`
               : mySigner?.signed_at
               ? `Assinado em ${formatDate(mySigner.signed_at)}`
-              : 'Documento conclu?do'}
+              : 'Documento concluído'}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
