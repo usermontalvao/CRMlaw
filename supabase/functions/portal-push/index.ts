@@ -43,6 +43,8 @@ Deno.serve(async (req: Request) => {
       title: string;
       body: string;
       url?: string;
+      portalRoute?: string;
+      portalParam?: string;
     };
 
     const supabase = createClient(
@@ -70,7 +72,13 @@ Deno.serve(async (req: Request) => {
       body: body.body,
       icon: '/icon-192.png',
       badge: '/favicon.ico',
-      data: { url: body.url ?? '/#/portal/notificacoes' },
+      // data.portalRoute/portalParam → o PortalLayout navega ao focar a janela;
+      // data.url → fallback usado pelo service worker no cold-open (openWindow).
+      data: {
+        url: body.url ?? '/#/portal/notificacoes',
+        portalRoute: body.portalRoute,
+        portalParam: body.portalParam,
+      },
     });
 
     const results = await Promise.allSettled(

@@ -7,7 +7,7 @@ import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, formatDate, formatDateLong, formatRelative } from '../components/PortalUI';
-import { statusMeta, TONE_CLASSES, JOURNEY } from '../lib/domain';
+import { statusMeta, TONE_CLASSES, JOURNEY, inferStatusFromMovements } from '../lib/domain';
 
 interface Movement { id?: string; nome?: string; data_hora?: string; data?: string; tribunal?: string; grau?: string; complemento?: string; complementos?: any; }
 interface Deadline { id: string; title: string; due_date: string; status: string; priority?: string; }
@@ -224,9 +224,17 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     return <div><BackBtn onClick={() => navigate('casos')} /><EmptyState icon={Scale} title="Não foi possível carregar" description={error || 'Processo não encontrado.'} /></div>;
   }
 
-  const meta = statusMeta(data.status);
-  const tone = TONE_CLASSES[meta.tone];
+  // Infere o status real a partir dos nomes dos movimentos.
+  // O DataJud pode registrar "remessa ao arquivo" durante uma execução ativa,
+  // fazendo o sync sobrescrever cumprimento por arquivado incorretamente.
   const rawMovements = data.movements || [];
+  const inferredStatus = inferStatusFromMovements(
+    rawMovements.map((m) => m.nome || ''),
+    data.status,
+  );
+  const effectiveStatus = inferredStatus ?? data.status;
+  const meta = statusMeta(effectiveStatus);
+  const tone = TONE_CLASSES[meta.tone];
 
   // Fallback para data de distribuição quando o campo está vazio no banco.
   // Usa o movimento mais antigo do DataJud como aproximação.
@@ -279,7 +287,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     } catch {}
 
     const text = await clientPortalService.explainProcess({
-      statusKey: data.status,
+      statusKey: effectiveStatus,
       statusLabel: meta.label,
       statusUpdatedAt: data.updated_at,
       processCode: data.process_code,

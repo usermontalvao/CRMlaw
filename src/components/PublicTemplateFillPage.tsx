@@ -3,6 +3,7 @@ import PizZip from 'pizzip';
 import { Loader2 } from 'lucide-react';
 import { templateFillService } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
+import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 
 interface PublicTemplateFillPageProps {
   token: string;
@@ -1238,7 +1239,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
           </form>
         </div>
 
-        <p className="mt-4 text-xs text-slate-400 text-center">Jurius · v{__APP_VERSION__}</p>
+        <p className="mt-4 text-xs text-slate-400 text-center">Jurius · {DISPLAY_APP_VERSION_LABEL}</p>
       </div>
     </div>
   );

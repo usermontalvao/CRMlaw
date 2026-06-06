@@ -22,6 +22,7 @@ import { PortalSidebar } from './components/PortalSidebar';
 import { useClientAuth } from './contexts/ClientAuthContext';
 import { usePortalConfig } from './contexts/PortalConfigContext';
 import { usePortalNotifications } from './contexts/PortalNotificationsContext';
+import { clientPortalService } from './services/clientPortal.service';
 import { usePortalRouter } from './hooks/usePortalRouter';
 import {
   BeforeInstallPromptEvent,
@@ -33,6 +34,7 @@ import {
   shouldSuggestInstall,
 } from './lib/pwa';
 import type { PortalRoute } from './types/portal.types';
+import { registerVersionedServiceWorker } from '../utils/serviceWorker';
 
 interface PortalLayoutProps {
   children: React.ReactNode;
@@ -197,6 +199,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   const [installPromptOpen, setInstallPromptOpen] = useState(false);
   const [installPromptBusy, setInstallPromptBusy] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [signaturesPending, setSignaturesPending] = useState(0);
   const { route, navigate } = usePortalRouter();
   const { session } = useClientAuth();
   const { isEnabled } = usePortalConfig();
@@ -211,7 +214,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   }, [route]);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) registerVersionedServiceWorker().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -276,6 +279,25 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
     return () => navigator.serviceWorker.removeEventListener('message', handler);
   }, [navigate]);
 
+  // Busca contagem de assinaturas pendentes para mostrar/ocultar "Assinar" na nav
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    let cancelled = false;
+    clientPortalService.listSignaturesPending(session.user.id)
+      .then((sigs) => {
+        if (cancelled) return;
+        const count = Array.isArray(sigs)
+          ? sigs.filter((s) => {
+              const rec = s as Record<string, unknown>;
+              return rec.status === 'pending' || rec.status === 'in_progress';
+            }).length
+          : 0;
+        setSignaturesPending(count);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [session?.user?.id, route]); // atualiza a cada navegação
+
   return (
     <div
       className="portal-shell h-[100dvh] min-h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none bg-slate-50"
@@ -333,30 +355,44 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="flex items-stretch px-1 pt-2 pb-1">
-            {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
-              const active = route === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => navigate(id)}
-                  className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-2 transition-all duration-150 ${
-                    active ? 'text-orange-500' : 'text-slate-400 active:text-slate-600'
-                  }`}
-                >
-                  <Icon
-                    className="h-[22px] w-[22px] shrink-0 transition-transform duration-150"
-                    strokeWidth={active ? 2.5 : 1.75}
-                    style={active ? { transform: 'scale(1.08)' } : undefined}
-                  />
-                  <span className={`truncate text-[10px] font-bold leading-none tracking-tight transition-colors ${active ? 'text-orange-500' : 'text-slate-400'}`}>
-                    {label}
-                  </span>
-                  {active && (
-                    <span className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-t-full bg-orange-500" />
-                  )}
-                </button>
-              );
-            })}
+            {BOTTOM_NAV
+              .filter(({ id }) => {
+                if (id === 'dashboard') return true;
+                if (id === 'assinar') return signaturesPending > 0 || route === 'assinar';
+                return isEnabled(id as never);
+              })
+              .map(({ id, icon: Icon, label }) => {
+                const active = route === id;
+                const badge = id === 'assinar' && signaturesPending > 0 ? signaturesPending : 0;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => navigate(id)}
+                    className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-2 transition-all duration-150 ${
+                      active ? 'text-orange-500' : 'text-slate-400 active:text-slate-600'
+                    }`}
+                  >
+                    <span className="relative">
+                      <Icon
+                        className="h-[22px] w-[22px] shrink-0 transition-transform duration-150"
+                        strokeWidth={active ? 2.5 : 1.75}
+                        style={active ? { transform: 'scale(1.08)' } : undefined}
+                      />
+                      {badge > 0 && (
+                        <span className="absolute -right-1.5 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-0.5 text-[9px] font-bold text-white ring-2 ring-white">
+                          {badge}
+                        </span>
+                      )}
+                    </span>
+                    <span className={`truncate text-[10px] font-bold leading-none tracking-tight transition-colors ${active ? 'text-orange-500' : 'text-slate-400'}`}>
+                      {label}
+                    </span>
+                    {active && (
+                      <span className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-t-full bg-orange-500" />
+                    )}
+                  </button>
+                );
+              })}
           </div>
         </div>
       </nav>

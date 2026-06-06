@@ -32,6 +32,20 @@ function getTextFromGit(ref, path) {
   return run(`git show ${spec}`);
 }
 
+function parseSemver(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a, b) {
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] > b[i]) return 1;
+    if (a[i] < b[i]) return -1;
+  }
+  return 0;
+}
+
 function main() {
   const inRepo = safeRun('git rev-parse --is-inside-work-tree');
   if (!inRepo) process.exit(0);
@@ -39,7 +53,6 @@ function main() {
   const stagedFiles = getStagedFiles();
   if (stagedFiles.length === 0) process.exit(0);
 
-  // Commits que s√≥ tocam arquivos de documenta√ß√£o interna (.qoder/, docs/, *.md) n√£o precisam de bump.
   const EXEMPT_PREFIXES = ['.qoder/', 'docs/'];
   const EXEMPT_EXTENSIONS = ['.md'];
   const isExempt = stagedFiles.every((f) =>
@@ -54,10 +67,10 @@ function main() {
   if (!onlyRequired) {
     const missing = requiredFiles.filter((f) => !stagedFiles.includes(f));
     if (missing.length > 0) {
-      console.error('\n[pre-commit] Commit bloqueado: toda altera√ß√£o deve atualizar vers√£o e changelog.');
-      console.error('[pre-commit] Arquivos obrigat√≥rios n√£o staged:');
+      console.error('\n[pre-commit] Commit bloqueado: toda alteraÁ„o deve atualizar vers„o e changelog.');
+      console.error('[pre-commit] Arquivos obrigatÛrios n„o staged:');
       missing.forEach((m) => console.error(`- ${m}`));
-      console.error('\n[pre-commit] A√ß√£o necess√°ria:');
+      console.error('\n[pre-commit] AÁ„o necess·ria:');
       console.error('- Atualize o "version" no package.json');
       console.error('- Atualize o changelog em src/components/DocsChangesPage.tsx');
       console.error('- Adicione ambos ao stage e tente novamente.\n');
@@ -65,7 +78,6 @@ function main() {
     }
   }
 
-  // Validar bump de vers√£o
   let headPkg;
   try {
     headPkg = getJsonFromGit('HEAD', 'package.json');
@@ -82,19 +94,39 @@ function main() {
     process.exit(1);
   }
 
+  const stagedSemver = parseSemver(stagedVersion);
+  if (!stagedSemver) {
+    console.error(`\n[pre-commit] Commit bloqueado: vers„o inv·lida "${stagedVersion}".`);
+    console.error('[pre-commit] Use o padr„o SemVer: MAJOR.MINOR.PATCH (ex.: 1.0.0, 1.4.27).\n');
+    process.exit(1);
+  }
+
   if (headVersion && headVersion === stagedVersion) {
-    console.error(`\n[pre-commit] Commit bloqueado: vers√£o n√£o foi incrementada (continua ${stagedVersion}).`);
+    console.error(`\n[pre-commit] Commit bloqueado: vers„o n„o foi incrementada (continua ${stagedVersion}).`);
     console.error('[pre-commit] Atualize o campo "version" no package.json e tente novamente.\n');
     process.exit(1);
   }
 
-  // Validar changelog menciona a vers√£o
+  if (headVersion) {
+    const headSemver = parseSemver(headVersion);
+    if (!headSemver) {
+      console.error(`\n[pre-commit] Commit bloqueado: vers„o atual inv·lida em HEAD ("${headVersion}").`);
+      console.error('[pre-commit] Corrija o versionamento histÛrico antes de prosseguir.\n');
+      process.exit(1);
+    }
+    if (compareSemver(stagedSemver, headSemver) <= 0) {
+      console.error(`\n[pre-commit] Commit bloqueado: vers„o ${stagedVersion} n„o È maior que ${headVersion}.`);
+      console.error('[pre-commit] Incremente a vers„o seguindo SemVer: patch, minor ou major.\n');
+      process.exit(1);
+    }
+  }
+
   const stagedChangelog = getTextFromGit(':', 'src/components/DocsChangesPage.tsx');
   const versionRegex = new RegExp(`version\\s*:\\s*['\"]${stagedVersion.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}['\"]`);
 
   if (!versionRegex.test(stagedChangelog)) {
-    console.error(`\n[pre-commit] Commit bloqueado: changelog n√£o cont√©m entrada para vers√£o ${stagedVersion}.`);
-    console.error('[pre-commit] Adicione um item em releases com a nova vers√£o e tente novamente.\n');
+    console.error(`\n[pre-commit] Commit bloqueado: changelog n„o contÈm entrada para vers„o ${stagedVersion}.`);
+    console.error('[pre-commit] Adicione um item em releases com a nova vers„o e tente novamente.\n');
     process.exit(1);
   }
 }

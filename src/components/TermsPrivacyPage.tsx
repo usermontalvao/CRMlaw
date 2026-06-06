@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, Printer, FileText, Bookmark, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 
 type PageType = 'terms' | 'privacy';
 
@@ -183,7 +184,7 @@ const DocumentCard: React.FC<{
       <div className="grid gap-4 text-[11px] text-slate-500 sm:grid-cols-3">
         <div className="space-y-1">
           <p className="uppercase tracking-[0.3em] text-slate-400 text-[10px]">Versão</p>
-          <p className="text-slate-700 font-semibold">v{__APP_VERSION__} · {currentYear}</p>
+          <p className="text-slate-700 font-semibold">{DISPLAY_APP_VERSION_LABEL} · {currentYear}</p>
         </div>
         <div className="space-y-1">
           <p className="uppercase tracking-[0.3em] text-slate-400 text-[10px]">Revisão</p>

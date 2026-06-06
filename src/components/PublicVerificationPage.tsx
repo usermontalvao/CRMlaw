@@ -4,6 +4,7 @@ import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { Signer, SignatureRequest } from '../types/signature.types';
+import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 
 interface VerificationResult {
   valid: boolean;
@@ -371,7 +372,7 @@ const PublicVerificationPage: React.FC = () => {
             A verificação garante a autenticidade e integridade do documento assinado digitalmente.
           </p>
           <p>
-            Jurius · v{__APP_VERSION__}
+            Jurius · {DISPLAY_APP_VERSION_LABEL}
           </p>
         </div>
       </main>

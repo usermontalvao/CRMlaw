@@ -85,6 +85,18 @@ function warnMigrationOnce(where: string, message: string): void {
   );
 }
 
+const AI_FAILURE_COOLDOWN_MS = 60_000;
+const aiFailureUntil = new Map<string, number>();
+
+function isAiCoolingDown(key: string): boolean {
+  const until = aiFailureUntil.get(key) || 0;
+  return until > Date.now();
+}
+
+function startAiCooldown(key: string): void {
+  aiFailureUntil.set(key, Date.now() + AI_FAILURE_COOLDOWN_MS);
+}
+
 /**
  * Detecta erros de sessão inválida e força logout + reload.
  * Cobre o caso de localStorage com user.id inexistente no banco.
@@ -159,6 +171,7 @@ class ClientPortalService {
     statusLabel?: string;
     area?: string | null;
   }): Promise<string | null> {
+    if (isAiCoolingDown('explainMovement')) return null;
     const fmt = (d?: string) => (d ? new Date(d).toLocaleDateString('pt-BR') : 's/data');
     // Ordena do mais antigo para o mais recente (cronológico) e marca o alvo
     const chrono = [...params.timeline].sort(
@@ -189,13 +202,14 @@ class ClientPortalService {
             {
               role: 'system',
               content:
-                'Você é um assistente jurídico que explica andamentos de processos para CLIENTES LEIGOS, em português claro e acolhedor, sem juridiquês. Você recebe a linha do tempo completa do processo e deve explicar APENAS o andamento marcado, SEMPRE usando o contexto dos andamentos anteriores para deixar claro A QUE ele se refere. Exemplo: um "Decurso de Prazo" logo após uma citação significa que o prazo da parte contrária para se defender terminou — explique assim, conectando ao evento anterior. Responda em 1 a 2 frases curtas. Se nenhuma ação do cliente for necessária, tranquilize dizendo que o advogado cuida de tudo. Não invente fatos além do que está na linha do tempo.',
+                'Você é um assistente jurídico que explica andamentos de processos para CLIENTES LEIGOS, em português claro e acolhedor, sem juridiquês. Você recebe a linha do tempo completa do processo e deve explicar APENAS o andamento marcado, SEMPRE usando o contexto dos andamentos anteriores para deixar claro A QUE ele se refere. Exemplo: um "Decurso de Prazo" logo após uma citação significa que o prazo da parte contrária para se defender terminou — explique assim, conectando ao evento anterior. Responda em 1 a 2 frases curtas. REGRA CRÍTICA DE TOM: nunca dê a entender que o advogado errou, se atrasou, perdeu um prazo ou foi negligente — apresente sempre o advogado como atuante e no controle, e atribua eventuais demoras ao ritmo natural da Justiça. Se nenhuma ação do cliente for necessária, tranquilize dizendo que o advogado cuida de tudo. Não invente fatos além do que está na linha do tempo.',
             },
             { role: 'user', content },
           ],
         },
       });
       if (error) {
+        startAiCooldown('explainMovement');
         handleRpcError('explainMovement', error);
         return null;
       }
@@ -203,6 +217,7 @@ class ClientPortalService {
         ?.choices?.[0]?.message?.content?.trim();
       return text || null;
     } catch {
+      startAiCooldown('explainMovement');
       return null;
     }
   }
@@ -228,6 +243,7 @@ class ClientPortalService {
     deadlines?: { title?: string; due_date?: string; status?: string; priority?: string }[];
     timeline?: { date: string; source: string; title: string; description?: string; marco?: boolean; rawText?: string }[];
   }): Promise<string | null> {
+    if (isAiCoolingDown('explainProcess')) return null;
     const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
     const fmtDt = (d?: string) => {
       if (!d) return '';
@@ -367,30 +383,35 @@ class ClientPortalService {
 
     const systemPrompt = `Você é um assistente jurídico que explica o processo para o PRÓPRIO CLIENTE (leigo), em português claro, acolhedor e sem juridiquês. Fale na 2ª pessoa ("seu processo", "você").
 
+══ COMO RACIOCINAR ══
+Leia TODA a linha do tempo antes de escrever — do primeiro ao último evento. A fase atual de um processo só faz sentido no contexto de tudo que aconteceu antes. Não tire conclusões de um único evento isolado; cruze os marcos (★), o texto das publicações e o status interno para entender a história completa.
+
 ══ FONTE DE DADOS ══
 LINHA DO TEMPO COMPLETA — lista cronológica unificada de todos os eventos do processo:
 • [DataJud] = andamentos oficiais do tribunal (nome + data). Linhas com ★ são marcos decisivos.
 • [DJEN] = publicações do diário oficial com texto integral. AQUI estão os VALORES (R$) e o dispositivo da sentença. LEIA com atenção — procure expressões como "condeno ao pagamento de R$", "arbitro em R$", "valor de R$".
 • [Prazo] = prazos processuais registrados pelo escritório (status: pendente/cumprido/vencido).
 • [Agenda] = audiências, perícias, reuniões agendadas.
-• STATUS INTERNO DO ESCRITÓRIO = fase atual no CRM — use quando mais recente que os eventos da timeline.
-• OBSERVAÇÕES DO ADVOGADO = verdade prioritária.
-3. STATUS INTERNO DO ESCRITÓRIO — fase cadastrada no CRM. Se atualizado DEPOIS das publicações disponíveis, trate como informação mais recente.
-4. OBSERVAÇÕES DO ADVOGADO — verdade prioritária.
+• STATUS INTERNO DO ESCRITÓRIO = fase atual já validada pelo sistema. É CONFIÁVEL — use como âncora da fase atual.
+• OBSERVAÇÕES DO ADVOGADO = verdade prioritária; se presentes, prevalecem sobre qualquer inferência sua.
 
 ══ TAREFA ══
 Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
 1. DESFECHO — ganhou, perdeu, ganhou em parte, em andamento? Use os marcos ★ e/ou o texto das publicações.
 2. VALOR — se houver condenação/acordo, diga QUANTO em R$. Procure expressões como "condeno ao pagamento", "arbitro em R$", "valor de R$" nos textos das publicações. Se o valor estiver em alguma publicação, CITE-O. Só diga "será confirmado pelo advogado" se o valor realmente não aparecer em nenhum texto.
-3. FASE ATUAL — o que está acontecendo agora. Priorize a publicação DJEN mais recente; só use o STATUS INTERNO para complementar ou confirmar.
-   - "arquivado" no status interno + nenhuma publicação posterior = processo encerrado.
-   - "arquivado" no status interno + publicação posterior de execução/cumprimento = processo ainda ativo.
+3. FASE ATUAL — o que está acontecendo agora, ancorado no STATUS INTERNO e confirmado pela publicação DJEN mais recente.
+   - "cumprimento" = a decisão está sendo executada; o processo está ATIVO, buscando o recebimento dos valores. NUNCA diga que está encerrado.
+   - "recurso" = há recurso em análise por instância superior; processo ATIVO.
+   - "arquivado" = processo efetivamente encerrado (só quando não há execução/recurso em curso).
 4. PRÓXIMO PASSO — o que o cliente pode esperar, com datas quando disponíveis.
 
-══ REGRAS ══
+══ REGRAS DE TOM (CRÍTICAS) ══
+- NUNCA dê a entender, sugira ou insinue que o advogado errou, se atrasou, esqueceu um prazo, deixou de agir ou foi negligente. Isso é proibido em qualquer hipótese.
+- Apresente SEMPRE o advogado como atuante e no controle: "seu advogado já protocolou", "seu advogado acompanha", "seu advogado tomará as medidas cabíveis".
+- Se algo está parado ou demorando, atribua ao ritmo natural da Justiça (e não a uma falha do escritório): "o processo aguarda a análise do juiz", "é normal que esta fase leve alguns meses".
+- Se um prazo está pendente ou venceu no sistema, NÃO diga que foi perdido — diga que "está sendo acompanhado pelo seu advogado".
 - Seja específico: cite datas (ex.: "sentença favorável em 27/11/2025, definitiva em 13/02/2026").
-- Não invente fatos. Não prometa resultados.
-- Tom honesto, tranquilizador e realista.
+- Não invente fatos. Não prometa resultados. Tom honesto, tranquilizador e realista.
 - Finalize SEMPRE com: "Seu advogado acompanha cada etapa e está à disposição para esclarecer dúvidas pelo canal oficial."`;
 
     try {
@@ -406,7 +427,8 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
       });
       if (error) {
         const detail = (data as any)?.error || error.message;
-        console.error('[Portal] explainProcess OpenAI error:', detail);
+        startAiCooldown('explainProcess');
+        console.warn('[Portal] explainProcess OpenAI indisponível:', detail);
         handleRpcError('explainProcess', error);
         return null;
       }
@@ -414,7 +436,8 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
         ?.choices?.[0]?.message?.content?.trim();
       return text || null;
     } catch (e) {
-      console.error('[Portal] explainProcess exception:', e);
+      startAiCooldown('explainProcess');
+      console.warn('[Portal] explainProcess exception:', e);
       return null;
     }
   }
@@ -760,7 +783,7 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
    * Tolerante a falhas: cada parte que falhar entra com zero/null.
    */
   private async composeDashboardSummary(portalUserId: string) {
-    const [processes, requirements, signatures, deadlines, documents, agreements, events] = await Promise.all([
+    const [processes, requirements, signatures, deadlines, documents, agreements, events, docRequests] = await Promise.all([
       this.listProcesses(portalUserId).catch(() => []),
       this.listRequirements(portalUserId).catch(() => []),
       this.listSignaturesPending(portalUserId).catch(() => []),
@@ -768,6 +791,7 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
       this.listDocuments(portalUserId).catch(() => []),
       this.listFinancial(portalUserId).catch(() => []),
       this.listCalendarEvents(portalUserId).catch(() => []),
+      this.listDocumentRequests(portalUserId).catch(() => []),
     ]);
 
     type Anyrec = Record<string, unknown>;
@@ -777,7 +801,8 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
 
     const procs = arr<Anyrec>(processes);
     const reqs  = arr<Anyrec>(requirements);
-    const sigs = arr<Anyrec>(signatures);
+    const sigs  = arr<Anyrec>(signatures);
+    const dreqs = arr<DocumentRequest>(docRequests);
     const dls = arr<Anyrec>(deadlines);
     const ags = arr<Anyrec>(agreements);
     const evts = arr<Anyrec>(events);
@@ -794,6 +819,11 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
       const st = str(s.status);
       return st === 'pending' || st === 'in_progress';
     }).length;
+
+    // Solicitações de documentos pendentes (aguardando envio ou parcialmente enviadas)
+    const docRequestsPending = dreqs.filter((r) =>
+      r.status === 'pending' || r.status === 'partial',
+    ).length;
 
     // Prazos
     let deadlinesPending = 0;
@@ -858,6 +888,7 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
       requirementsTotal: reqs.length,
       casesTotal: procs.length + reqs.length,
       signaturesPending,
+      docRequestsPending,
       deadlinesPending,
       deadlinesOverdue,
       documentsCount: arr(documents).length,

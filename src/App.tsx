@@ -103,6 +103,7 @@ import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
+import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -2426,7 +2427,7 @@ useEffect(() => {
               <div className="flex items-center gap-2">
                 <span>© {new Date().getFullYear()} jurius.com.br</span>
               </div>
-              <span>v{__APP_VERSION__}</span>
+              <span>{DISPLAY_APP_VERSION_LABEL}</span>
               <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
                 Alterações
               </a>

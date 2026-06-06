@@ -121,6 +121,67 @@ export function statusMeta(status?: string | null): StatusMeta {
 }
 
 /**
+ * Infere o status real de um processo a partir dos nomes dos seus movimentos.
+ *
+ * Problema: o DataJud pode registrar movimentos procedurais de "remessa ao arquivo"
+ * durante uma execução ativa, fazendo o sync sobrescrever `cumprimento` por `arquivado`.
+ * Esta função detecta o status correto independente do que está gravado no banco.
+ *
+ * Retorna o status inferido ou `null` se não conseguir inferir (manter o do banco).
+ */
+export function inferStatusFromMovements(
+  movementNames: string[],
+  dbStatus?: string | null,
+): ProcessStatus | null {
+  if (!movementNames.length) return null;
+
+  const CUMPRIMENTO_KEYWORDS = [
+    'cumprimento', 'execução', 'execucao', 'liquidação', 'liquidacao',
+    'penhora', 'alvará', 'alvara', 'precatório', 'precatorio', 'rpv',
+    'pagamento do débito', 'pagamento de debito', 'expedição de ofício',
+    'bloqueio de valores', 'bacenjud', 'sisbajud', 'renajud',
+  ];
+  const SENTENCA_KEYWORDS = [
+    'sentença', 'sentenca', 'trânsito', 'transito',
+    'procedência', 'procedencia', 'improcedência', 'improcedencia',
+  ];
+  const RECURSO_KEYWORDS = [
+    'apelação', 'apelacao', 'agravo', 'embargos', 'acórdão', 'acordao',
+    'tribunal', 'câmara', 'camara',
+  ];
+
+  const allNames = movementNames.map((n) => n.toLowerCase()).join('\n');
+
+  // 1. Sinal explícito de execução/cumprimento → cumprimento
+  if (CUMPRIMENTO_KEYWORDS.some((k) => allNames.includes(k))) {
+    return 'cumprimento';
+  }
+
+  // 2. "Evolução da Classe Processual" (sinal CNJ de transição de fase) +
+  //    sentença confirmada → processo passou para cumprimento de sentença.
+  //    Esse é o padrão do DataJud para processos pós-sentença no TJMT e outros tribunais.
+  const hasClassEvolution = allNames.includes('evolução da classe') || allNames.includes('evolucao da classe');
+  const hasSentenca = SENTENCA_KEYWORDS.some((k) => allNames.includes(k));
+  if (hasClassEvolution && hasSentenca) {
+    return 'cumprimento';
+  }
+
+  // 3. Recurso (só sobrescreve se status for estágio inferior)
+  if (RECURSO_KEYWORDS.some((k) => allNames.includes(k))) {
+    if (!dbStatus || ['sentenca', 'instrucao', 'andamento', 'citacao', 'distribuido'].includes(dbStatus)) {
+      return 'recurso';
+    }
+  }
+
+  // 4. Banco diz arquivado mas há sentença → no mínimo "sentenca" (aguardando cumprimento)
+  if (dbStatus === 'arquivado' && hasSentenca) {
+    return 'sentenca';
+  }
+
+  return null;
+}
+
+/**
  * Tons de status — paleta SÓBRIA (banco digital). Laranja é o acento da marca;
  * os demais tons são neutros/semânticos de baixa saturação. Nada de pastel
  * gritante nem azul. Use `dot` para o ponto de status, `text` para rótulo,

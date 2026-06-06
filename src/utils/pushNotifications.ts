@@ -1,3 +1,4 @@
+import { registerVersionedServiceWorker } from './serviceWorker';
 // Gerenciamento de Push Notifications
 
 export interface PushNotificationPayload {

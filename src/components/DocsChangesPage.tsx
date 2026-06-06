@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.212': { name: 'Cafe SemVer', emoji: '??' },
   '1.10.211': { name: 'Cafe Portal Vivo', emoji: '??' },
   '1.10.210': { name: 'Caf? Portal Alerta', emoji: '??' },
   '1.10.209': { name: 'Café Texto Limpo', emoji: '✍️' },
@@ -874,6 +875,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.212',
+    date: '05/06/2026',
+    summary: 'Portal: vers?o curta na interface, atualiza??o de service worker por build, fallback de IA sem spam e refinamentos nas telas principais.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Vers?o exibida ficou curta e consistente na interface', description: 'O aplicativo passou a exibir a vers?o em formato resumido nas telas p?blicas e no rodap? principal, mantendo a vers?o completa apenas para build e governan?a interna.' },
+        { type: 'fix' as const, title: 'Atualiza??o do app passou a reagir melhor a builds novas', description: 'O service worker agora ? registrado com URL versionada por build e sinaliza as abas abertas para recarregar quando uma nova revis?o ativa, reduzindo o risco de continuar preso em bundle antigo.' },
+        { type: 'improvement' as const, title: 'Tela de processo e dashboard do portal receberam refinamentos', description: 'Fluxos principais do portal, incluindo detalhes do processo, dashboard, scanner e instala??o do app, foram ajustados para melhorar leitura, status e previsibilidade no uso di?rio.' },
+      ]},
+      { moduleId: 'IA do Portal', changes: [
+        { type: 'fix' as const, title: 'Explica??es por IA deixaram de insistir quando a edge est? fora', description: 'As rotinas de explica??o do processo e dos movimentos agora entram em cooldown tempor?rio ap?s falha do openai-proxy, evitando spam de tentativas e polui??o do console quando o backend retorna 500.' },
+      ]},
+      { moduleId: 'Dev', changes: [
+        { type: 'feature' as const, title: 'Projeto ganhou scripts de bump SemVer', description: 'Foram adicionados comandos para incremento patch, minor e major diretamente pelo package.json, usando o padr?o MAJOR.MINOR.PATCH sem rollover artificial em 9.' },
+        { type: 'improvement' as const, title: 'Pre-commit passou a validar SemVer de forma expl?cita', description: 'O hook agora rejeita vers?es fora do formato padr?o e tamb?m bloqueia commits cuja nova vers?o n?o seja semanticamente maior do que a vers?o em HEAD.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.211',
     date: '05/06/2026',

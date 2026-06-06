@@ -2,14 +2,10 @@
  * datajud-sync — Edge Function
  *
  * Sincroniza andamentos processuais da API pública DataJud (CNJ) para a tabela
- * datajud_movimentos e atualiza automaticamente o estágio de cada processo.
- *
- * Fluxo:
- *   1. Busca todos os processos ativos com process_code válido
- *   2. Para cada processo, consulta a API DataJud diretamente (sem CORS, server-side)
- *   3. Faz upsert dos movimentos em datajud_movimentos
- *   4. Determina o estágio pelo movimento mais recente relevante
- *   5. Atualiza processes.status se mudou
+ * datajud_movimentos. O STATUS do processo é recalculado AUTOMATICAMENTE pelo
+ * trigger trg_recompute_process_status no banco (fonte única de verdade:
+ * função _portal_stage_from_names). Esta function apenas faz upsert dos
+ * movimentos e atualiza os flags de sincronização.
  *
  * Roda: a cada 2 dias às 06:00 via pg_cron (job #16)
  */
@@ -24,8 +20,6 @@ const corsHeaders = {
 
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
 const DATAJUD_DEFAULT_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
-
-// ── Mapeamento processo → alias do tribunal (porta de datajud.service.ts) ──────
 
 const STATE_ALIASES: Record<number, string> = {
   1:'tjac', 2:'tjal', 3:'tjap', 4:'tjam', 5:'tjba', 6:'tjce', 7:'tjdft',
@@ -64,8 +58,6 @@ function getTribunalAlias(processCode: string): string | null {
   }
 }
 
-// ── Categorização de movimentos (porta de datajud.service.ts) ─────────────────
-
 type MovimentoCategoria = 'sentenca' | 'decisao' | 'audiencia' | 'citacao' | 'recurso' | 'arquivamento' | 'despacho' | 'outro'
 
 function categorizarMovimento(codigo: number, nome: string): MovimentoCategoria {
@@ -80,28 +72,32 @@ function categorizarMovimento(codigo: number, nome: string): MovimentoCategoria 
   return 'outro'
 }
 
-// ── Mapeamento categoria + nome → ProcessStatus ───────────────────────────────
-
+// Estágio por movimento (popula a coluna process_stage como metadado).
+// A DECISÃO final do status do processo é do trigger no banco — não daqui.
 function detectarEstagioMovimento(categoria: MovimentoCategoria, nome: string): string | null {
   const n = nome.toLowerCase()
+  if (
+    n.includes('cumprimento') || n.includes('execução') || n.includes('execucao') ||
+    n.includes('liquidação') || n.includes('liquidacao') ||
+    n.includes('penhora') || n.includes('alvará') || n.includes('alvara') ||
+    n.includes('precatório') || n.includes('precatorio') ||
+    n.includes('rpv') || n.includes('pagamento do débito') || n.includes('pagamento de debito')
+  ) return 'cumprimento'
+  if (n.includes('evolução da classe') || n.includes('evolucao da classe')) return 'cumprimento'
   switch (categoria) {
-    case 'sentenca':    return 'sentenca'
-    case 'recurso':     return 'recurso'
+    case 'sentenca':     return 'sentenca'
+    case 'recurso':      return 'recurso'
     case 'arquivamento': return 'arquivado'
-    case 'citacao':     return 'citacao'
+    case 'citacao':      return 'citacao'
     case 'audiencia':
       if (n.includes('conciliação') || n.includes('conciliacao') || n.includes('mediação')) return 'conciliacao'
       if (n.includes('instrução') || n.includes('instrucao') || n.includes('julgamento')) return 'instrucao'
       return 'andamento'
-    case 'decisao':
-      if (n.includes('cumprimento') || n.includes('execução') || n.includes('liquidação')) return 'cumprimento'
-      return 'andamento'
-    case 'despacho':    return 'andamento'
-    default:            return null
+    case 'decisao':  return 'andamento'
+    case 'despacho': return 'andamento'
+    default:         return null
   }
 }
-
-// ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -115,31 +111,20 @@ serve(async (req) => {
 
   const executionId = crypto.randomUUID().substring(0, 8)
   const startedAt = new Date().toISOString()
+  console.log(`🚀 [${executionId}] DATAJUD SYNC — ${startedAt}`)
 
-  console.log(`\n${'='.repeat(60)}`)
-  console.log(`🚀 [${executionId}] DATAJUD SYNC — INICIANDO`)
-  console.log(`📅 ${startedAt}`)
-  console.log(`${'='.repeat(60)}\n`)
-
-  // Ler chave da API DataJud do banco (configurável pelo admin)
   let datajudApiKey = DATAJUD_DEFAULT_KEY
   try {
     const { data: settings } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'datajud_api_key')
-      .maybeSingle()
+      .from('system_settings').select('value').eq('key', 'datajud_api_key').maybeSingle()
     if (settings?.value && typeof settings.value === 'string' && settings.value.trim()) {
       datajudApiKey = settings.value.trim()
     }
   } catch (_) { /* usa chave padrão */ }
 
-  // Buscar TODOS os processos com código válido (incluindo arquivados)
   const { data: processes, error: procErr } = await supabase
-    .from('processes')
-    .select('id, process_code, status')
-    .not('process_code', 'is', null)
-    .neq('process_code', '')
+    .from('processes').select('id, process_code, status')
+    .not('process_code', 'is', null).neq('process_code', '')
 
   if (procErr) {
     console.error('❌ Erro ao buscar processos:', procErr.message)
@@ -148,35 +133,26 @@ serve(async (req) => {
     })
   }
 
-  const activeProcesses = (processes ?? []).filter((p: any) => {
-    const digits = (p.process_code ?? '').replace(/\D/g, '')
-    return digits.length === 20
-  })
+  const activeProcesses = (processes ?? []).filter((p: any) =>
+    (p.process_code ?? '').replace(/\D/g, '').length === 20)
 
-  console.log(`📊 [${executionId}] Processos válidos (todos os status): ${activeProcesses.length}`)
+  console.log(`📊 [${executionId}] Processos válidos: ${activeProcesses.length}`)
 
   let totalMovimentos = 0
   let totalNovos = 0
-  let totalStatusUpdated = 0
   let errors = 0
 
   for (const proc of activeProcesses) {
     try {
       const alias = getTribunalAlias(proc.process_code)
-      if (!alias) {
-        console.log(`   ⚠️ Alias não encontrado para ${proc.process_code}`)
-        continue
-      }
+      if (!alias) continue
 
       const digits = proc.process_code.replace(/\D/g, '')
       const url = `${DATAJUD_BASE_URL}/${alias}/_search`
 
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Authorization': `APIKey ${datajudApiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `APIKey ${datajudApiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           size: 1,
           query: { match: { numeroProcesso: digits } },
@@ -186,21 +162,14 @@ serve(async (req) => {
       })
 
       if (!response.ok) {
-        if (response.status === 404) {
-          console.log(`   ℹ️ ${proc.process_code}: não encontrado no DataJud`)
-        } else {
-          console.log(`   ⚠️ ${proc.process_code}: HTTP ${response.status}`)
-          errors++
-        }
+        if (response.status !== 404) { errors++; console.log(`   ⚠️ ${proc.process_code}: HTTP ${response.status}`) }
         await new Promise(r => setTimeout(r, 800))
         continue
       }
 
       const data = await response.json()
       const hit = data?.hits?.hits?.[0]
-
       if (!hit?._source?.movimentos?.length) {
-        console.log(`   ℹ️ ${proc.process_code}: sem movimentos`)
         await new Promise(r => setTimeout(r, 500))
         continue
       }
@@ -209,12 +178,7 @@ serve(async (req) => {
       const tribunal = alias.replace('api_publica_', '').toUpperCase()
       const grau = src.grau ?? null
       const movimentos: any[] = src.movimentos ?? []
-
       totalMovimentos += movimentos.length
-
-      // Upsert de cada movimento
-      let melhorEstagio: string | null = null
-      let melhorDataHora = ''
 
       for (const mov of movimentos) {
         const codigo = mov.codigo ?? null
@@ -227,85 +191,38 @@ serve(async (req) => {
         const orgaoJulgador = mov.orgaoJulgador?.nomeOrgao ?? null
         const complementos = mov.complementosTabelados?.length ? mov.complementosTabelados : null
 
+        // Upsert do movimento. O trigger no banco recalcula processes.status.
         const { error: upsertErr } = await supabase
           .from('datajud_movimentos')
           .upsert({
-            process_id: proc.id,
-            process_code: proc.process_code,
-            tribunal,
-            grau,
-            codigo,
-            nome,
-            data_hora: dataHora,
-            orgao_julgador: orgaoJulgador,
-            complementos,
-            categoria,
-            process_stage: estagio,
-          }, {
-            onConflict: 'process_code,codigo,data_hora',
-            ignoreDuplicates: false,
-          })
+            process_id: proc.id, process_code: proc.process_code, tribunal, grau,
+            codigo, nome, data_hora: dataHora, orgao_julgador: orgaoJulgador,
+            complementos, categoria, process_stage: estagio,
+          }, { onConflict: 'process_code,codigo,data_hora', ignoreDuplicates: false })
 
-        if (!upsertErr) {
-          totalNovos++
-          // Rastrear o movimento mais recente com estágio identificado
-          if (estagio && (!melhorDataHora || dataHora > melhorDataHora)) {
-            melhorEstagio = estagio
-            melhorDataHora = dataHora
-          }
-        }
+        if (!upsertErr) totalNovos++
       }
 
-      // Atualizar status do processo pelo movimento mais recente relevante
-      if (melhorEstagio && melhorEstagio !== proc.status) {
-        const { error: statusErr } = await supabase
-          .from('processes')
-          .update({
-            status: melhorEstagio,
-            djen_synced: true,
-            djen_last_sync: new Date().toISOString(),
-            djen_has_data: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', proc.id)
+      // Atualiza apenas os flags de sincronização (status é do trigger).
+      await supabase.from('processes').update({
+        djen_synced: true,
+        djen_last_sync: new Date().toISOString(),
+        djen_has_data: true,
+      }).eq('id', proc.id)
 
-        if (!statusErr) {
-          console.log(`   📊 ${proc.process_code}: ${proc.status} → ${melhorEstagio}`)
-          totalStatusUpdated++
-        } else {
-          console.error(`   ❌ Erro ao atualizar status ${proc.process_code}: ${statusErr.message}`)
-        }
-      }
-
-      // Delay entre requisições para não sobrecarregar a API
       await new Promise(r => setTimeout(r, 1000))
 
     } catch (err: any) {
       errors++
-      console.error(`   ❌ Erro ao processar ${proc.process_code}:`, err.message)
+      console.error(`   ❌ ${proc.process_code}:`, err.message)
       await new Promise(r => setTimeout(r, 500))
     }
   }
 
-  console.log(`\n📈 [${executionId}] RESULTADO:`)
-  console.log(`   📁 Processos verificados: ${activeProcesses.length}`)
-  console.log(`   📝 Movimentos processados: ${totalMovimentos}`)
-  console.log(`   ✅ Upserts realizados: ${totalNovos}`)
-  console.log(`   📊 Status atualizados: ${totalStatusUpdated}`)
-  console.log(`   ❌ Erros: ${errors}`)
-  console.log(`${'='.repeat(60)}\n`)
+  console.log(`📈 [${executionId}] Processos: ${activeProcesses.length} | Movimentos: ${totalMovimentos} | Upserts: ${totalNovos} | Erros: ${errors}`)
 
   return new Response(
-    JSON.stringify({
-      success: true,
-      stats: {
-        processes: activeProcesses.length,
-        movimentos: totalMovimentos,
-        upserts: totalNovos,
-        statusUpdated: totalStatusUpdated,
-        errors,
-      },
-    }),
+    JSON.stringify({ success: true, stats: { processes: activeProcesses.length, movimentos: totalMovimentos, upserts: totalNovos, errors } }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
   )
 })

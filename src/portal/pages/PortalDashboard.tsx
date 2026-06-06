@@ -8,6 +8,7 @@ import {
   Clock,
   FileText,
   FolderOpen,
+  Inbox,
   MessageCircle,
   PenTool,
   PiggyBank,
@@ -31,8 +32,9 @@ interface FinancialSummary {
 
 interface DashboardData {
   processesTotal: number; processesActive: number; requirementsTotal: number;
-  casesTotal: number; signaturesPending: number; deadlinesPending: number;
-  deadlinesOverdue: number; documentsCount: number; financial: FinancialSummary;
+  casesTotal: number; signaturesPending: number; docRequestsPending: number;
+  deadlinesPending: number; deadlinesOverdue: number; documentsCount: number;
+  financial: FinancialSummary;
   nextEvent: Record<string, unknown> | null; nextDeadline: Record<string, unknown> | null;
   nextInstallment: Record<string, unknown> | null; recentMovements: Array<Record<string, unknown>>;
 }
@@ -58,8 +60,9 @@ export const PortalDashboard: React.FC = () => {
   const hour           = new Date().getHours();
   const greeting       = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
   const hasPendingSig  = !loading && (data?.signaturesPending ?? 0) > 0;
+  const hasPendingDocs = !loading && (data?.docRequestsPending ?? 0) > 0;
   const hasOverdueFin  = !loading && (data?.financial?.overdue ?? 0) > 0;
-  const pendingTotal   = (data?.signaturesPending ?? 0) + (data?.deadlinesOverdue ?? 0);
+  const pendingTotal   = (data?.signaturesPending ?? 0) + (data?.deadlinesOverdue ?? 0) + (data?.docRequestsPending ?? 0);
   const showFinancial  = !loading && !!data?.financial && ((data.financial.total > 0) || ((data.financial.net ?? 0) > 0));
 
   const shortcuts = [
@@ -181,7 +184,7 @@ export const PortalDashboard: React.FC = () => {
         <SecurityBanner compact />
 
         {/* Alertas */}
-        {(hasPendingSig || hasOverdueFin) && (
+        {(hasPendingSig || hasPendingDocs || hasOverdueFin) && (
           <div className="flex flex-col gap-2">
             {hasPendingSig && (
               <button onClick={() => navigate('assinar')}
@@ -193,9 +196,24 @@ export const PortalDashboard: React.FC = () => {
                   <p className="text-sm font-semibold text-slate-900">
                     <span className="tabular-nums">{data!.signaturesPending}</span> doc{data!.signaturesPending !== 1 ? 's' : ''} aguardando assinatura
                   </p>
-                  <p className="text-xs text-slate-400">Toque para assinar</p>
+                  <p className="text-xs text-slate-400">Toque para assinar agora</p>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-200 transition group-hover:text-orange-400" />
+              </button>
+            )}
+            {hasPendingDocs && (
+              <button onClick={() => navigate('documentos')}
+                className="group flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-500">
+                  <Inbox className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">
+                    <span className="tabular-nums">{data!.docRequestsPending}</span> solicitaç{data!.docRequestsPending !== 1 ? 'ões' : 'ão'} de documento{data!.docRequestsPending !== 1 ? 's' : ''} pendente{data!.docRequestsPending !== 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs text-slate-400">O escritório precisa de documentos seus</p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-200 transition group-hover:text-violet-400" />
               </button>
             )}
             {hasOverdueFin && (

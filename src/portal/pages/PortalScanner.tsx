@@ -2,10 +2,14 @@
 import { createPortal } from 'react-dom';
 import {
   Camera,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Crop,
   Download,
   EyeOff,
   FileText,
+  History,
   Paperclip,
   Loader2,
   RotateCcw,
@@ -36,6 +40,59 @@ import {
   type ScannerItem,
   type ScannerQuad,
 } from '../services/portalScanner.service';
+
+// ── Histórico de envios (localStorage) ─────────────────────────────────────
+interface ScanHistoryEntry {
+  id: string;
+  sentAt: string; // ISO
+  count: number;
+  files: string[]; // nomes dos arquivos (max 5)
+}
+
+const HISTORY_KEY = (userId: string) => `portalScanner:history:${userId}`;
+const MAX_HISTORY = 20;
+
+function loadHistory(userId: string): ScanHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY(userId));
+    return raw ? (JSON.parse(raw) as ScanHistoryEntry[]) : [];
+  } catch { return []; }
+}
+
+function saveHistory(userId: string, entries: ScanHistoryEntry[]): void {
+  try {
+    localStorage.setItem(HISTORY_KEY(userId), JSON.stringify(entries.slice(0, MAX_HISTORY)));
+  } catch { /* sem espaço */ }
+}
+
+function addToHistory(userId: string, fileNames: string[]): ScanHistoryEntry[] {
+  const prev = loadHistory(userId);
+  const entry: ScanHistoryEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    sentAt: new Date().toISOString(),
+    count: fileNames.length,
+    files: fileNames.slice(0, 5),
+  };
+  const next = [entry, ...prev];
+  saveHistory(userId, next);
+  return next;
+}
+
+function formatHistoryDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'agora mesmo';
+  if (mins < 60) return `há ${mins} min`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `há ${hrs}h`;
+  const days = Math.round(hrs / 24);
+  if (days === 1) return 'ontem';
+  if (days < 7) return `há ${days} dias`;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+// ── Fim histórico ─────────────────────────────────────────────────────────────
 
 type ProcessingItem = {
   id: string;
@@ -213,8 +270,16 @@ export const PortalScanner: React.FC = () => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
   const [items, setItems] = useState<ScanStateItem[]>([]);
+  const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const itemsRef = useRef<ScanStateItem[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
+
+  // Carrega histórico de envios do localStorage
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    setHistory(loadHistory(session.user.id));
+  }, [session?.user?.id]);
   // Updated synchronously inside queueAiEnrich .then() — bypasses React render timing
   const latestNamesRef = useRef<Map<string, string>>(new Map());
   // When set to an item id, auto-open crop editor once that item finishes processing
@@ -963,6 +1028,17 @@ export const PortalScanner: React.FC = () => {
         return;
       }
 
+      // Salva no histórico antes de limpar
+      const sentFileNames = exportItems.map((item, i) => {
+        const aiName = latestNamesRef.current.get(item.id);
+        const effectiveItem = aiName ? { ...item, suggestedName: aiName } : item;
+        return buildSafeFileName(effectiveItem, i + 1);
+      });
+      if (session?.user?.id) {
+        const updated = addToHistory(session.user.id, sentFileNames);
+        setHistory(updated);
+      }
+
       latestNamesRef.current.clear();
       setItems([]);
       setSent(true);
@@ -1075,6 +1151,60 @@ export const PortalScanner: React.FC = () => {
           }
         }}
       />
+
+      {/* Histórico de envios */}
+      {!cameraOpen && history.length > 0 && items.length === 0 && !sent && (
+        <section className="rounded-[24px] bg-white shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 px-4 py-3.5"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                <History className="h-4 w-4" />
+              </span>
+              <div className="text-left">
+                <p className="text-[13px] font-semibold text-slate-800">Histórico de envios</p>
+                <p className="text-[11px] text-slate-400">{history.length} lote{history.length !== 1 ? 's' : ''} enviado{history.length !== 1 ? 's' : ''} neste dispositivo</p>
+              </div>
+            </div>
+            {historyOpen ? <ChevronUp className="h-4 w-4 text-slate-300" /> : <ChevronDown className="h-4 w-4 text-slate-300" />}
+          </button>
+
+          {historyOpen && (
+            <div className="border-t border-slate-100 px-4 pb-4 pt-2">
+              <div className="flex flex-col gap-2.5">
+                {history.slice(0, 10).map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-slate-800">
+                        {entry.count} arquivo{entry.count !== 1 ? 's' : ''} enviado{entry.count !== 1 ? 's' : ''}
+                        <span className="ml-2 font-normal text-slate-400">·</span>
+                        <span className="ml-1.5 font-normal text-slate-400">{formatHistoryDate(entry.sentAt)}</span>
+                      </p>
+                      {entry.files.length > 0 && (
+                        <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                          {entry.files.slice(0, 3).join(' · ')}
+                          {entry.files.length > 3 ? ` +${entry.files.length - 3}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {history.length > 10 && (
+                <p className="mt-3 text-center text-[11px] text-slate-400">
+                  Mostrando os 10 mais recentes de {history.length} no total
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {!cameraOpen && items.length === 0 && !sent && (
         <section className="rounded-[24px] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px] sm:p-6">

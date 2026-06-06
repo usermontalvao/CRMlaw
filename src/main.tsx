@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { registerVersionedServiceWorker } from './utils/serviceWorker';
 
-// ── Stale-chunk auto-reload ────────────────────────────────────────────────
+// -- Stale-chunk auto-reload ------------------------------------------------
 window.addEventListener('unhandledrejection', (event) => {
   const msg = String((event.reason as any)?.message || event.reason || '');
   if (
@@ -10,12 +11,21 @@ window.addEventListener('unhandledrejection', (event) => {
     msg.includes('dynamically imported module') ||
     msg.includes('Unable to preload CSS')
   ) {
-    console.warn('[App] Chunk desatualizado — recarregando...');
+    console.warn('[App] Chunk desatualizado � recarregando...');
     const lastReload = Number(sessionStorage.getItem('_chunk_reload_at') || 0);
     if (Date.now() - lastReload > 60_000) {
       sessionStorage.setItem('_chunk_reload_at', String(Date.now()));
       window.location.reload();
     }
+  }
+});
+
+window.addEventListener('message', (event) => {
+  if (event.data?.type !== 'app-update-available') return;
+  const lastReload = Number(sessionStorage.getItem('_sw_reload_at') || 0);
+  if (Date.now() - lastReload > 10_000) {
+    sessionStorage.setItem('_sw_reload_at', String(Date.now()));
+    window.location.reload();
   }
 });
 
@@ -48,8 +58,8 @@ function disablePwaForPublicSignatureRoute() {
     .forEach((element) => element.remove());
 }
 
-// ── Detecta sessão Supabase no localStorage (síncrono) ─────────────────────
-// Supabase JS v2 persiste a sessão em chaves "sb-*-auth-token"
+// -- Detecta sess�o Supabase no localStorage (s�ncrono) ---------------------
+// Supabase JS v2 persiste a sess�o em chaves "sb-*-auth-token"
 function hasSupabaseSession(): boolean {
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -58,7 +68,7 @@ function hasSupabaseSession(): boolean {
         const raw = localStorage.getItem(key);
         if (!raw) continue;
         const parsed = JSON.parse(raw);
-        // Verifica se o token ainda não expirou
+        // Verifica se o token ainda n�o expirou
         if (parsed?.access_token) return true;
       }
     }
@@ -66,12 +76,12 @@ function hasSupabaseSession(): boolean {
   return false;
 }
 
-// ── Roteamento de entrada ──────────────────────────────────────────────────
-// Estratégia: tudo roda em "/" — sem rotas de servidor adicionais.
-//   • Sessão Supabase ativa          → CRM (App)
-//   • Hash #/documento/TOKEN         → CRM (viewer público)
-//   • Hash #/cron/djen               → CRM (endpoint cron)
-//   • Qualquer outra situação        → Portal do Cliente (PortalApp)
+// -- Roteamento de entrada --------------------------------------------------
+// Estrat�gia: tudo roda em "/" � sem rotas de servidor adicionais.
+//   � Sess�o Supabase ativa          ? CRM (App)
+//   � Hash #/documento/TOKEN         ? CRM (viewer p�blico)
+//   � Hash #/cron/djen               ? CRM (endpoint cron)
+//   � Qualquer outra situa��o        ? Portal do Cliente (PortalApp)
 const currentHash = window.location.hash;
 const currentPath = window.location.pathname;
 const isPublicSignature = isPublicSignatureRoute(currentHash, currentPath);
@@ -88,7 +98,7 @@ if (currentPath !== '/') {
 const isDocRoute  = currentHash.startsWith('#/documento/');
 const isCronRoute = currentHash.includes('/cron/djen');
 
-// Rotas públicas que são renderizadas pelo App (não pelo PortalApp)
+// Rotas p�blicas que s�o renderizadas pelo App (n�o pelo PortalApp)
 const isPublicCrmRoute =
   currentHash.includes('/assinar/') ||
   currentHash.includes('/p/') ||
@@ -150,9 +160,8 @@ void renderRoot();
 if (!isDev && 'serviceWorker' in navigator) {
   if (!isPublicSignature) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((reg) => console.log('SW registrado:', reg.scope))
+      registerVersionedServiceWorker()
+        .then((reg) => { if (reg) console.log('SW registrado:', reg.scope); })
         .catch((err) => {
           console.error('Falha ao registrar SW:', err);
           if (err.message?.includes('network error')) {

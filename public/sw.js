@@ -3,11 +3,11 @@
 // ⚠️ IMPORTANTE: index.html e sw.js NÃO são cacheados pelo SW.
 // O _headers do Netlify já instrui o browser a nunca cachear index.html,
 // garantindo que após novo deploy os chunks corretos sejam carregados.
-const CACHE_NAME = 'crm-cache-v7'; // Incrementar aqui a cada mudança na estratégia de cache
+const CACHE_NAME = 'crm-cache-v8'; // Incrementar aqui a cada mudança na estratégia de cache
 
 // Install event — não pré-cacheia index.html para evitar stale chunks
 self.addEventListener('install', (event) => {
-  console.log('Service Worker instalado - v7');
+  console.log('Service Worker instalado - v8');
 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -27,7 +27,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker ativado - v7');
+  console.log('Service Worker ativado - v8');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -38,9 +38,15 @@ self.addEventListener('activate', (event) => {
             return caches.delete(name);
           })
       );
-    }).then(() => {
+    }).then(async () => {
       console.log('Todos os caches antigos foram limpos');
-      return clients.claim();
+      await clients.claim();
+      const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      clientList.forEach((client) => {
+        try {
+          client.postMessage({ type: 'app-update-available' });
+        } catch {}
+      });
     })
   );
 });
