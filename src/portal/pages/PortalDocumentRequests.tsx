@@ -198,59 +198,75 @@ const ItemCard: React.FC<{
   const canUpload = item.status !== 'approved';
 
   // Borda lateral esquerda por status — mesmo padrão do Processo/Assinaturas
-  const leftBorder = item.status === 'approved' ? 'border-l-[3px] border-l-emerald-500'
-    : item.status === 'rejected'  ? 'border-l-[3px] border-l-rose-500'
-    : item.status === 'uploaded'  ? 'border-l-[3px] border-l-amber-400'
-    : '';
+  const accentBar = item.status === 'approved' ? 'bg-emerald-500'
+    : item.status === 'rejected' ? 'bg-rose-500'
+    : item.status === 'uploaded' ? 'bg-amber-400'
+    : 'bg-slate-200';
+
+  const badgeStyle = item.status === 'approved' ? 'bg-emerald-50 text-emerald-600'
+    : item.status === 'rejected' ? 'bg-rose-50 text-rose-600'
+    : item.status === 'uploaded' ? 'bg-amber-50 text-amber-700'
+    : 'bg-slate-100 text-slate-500';
+
+  const badgeLabel = item.status === 'approved' ? 'Aprovado'
+    : item.status === 'rejected' ? 'Rejeitado'
+    : item.status === 'uploaded' ? 'Em revisão'
+    : 'Pendente';
 
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white p-4 transition ${leftBorder}`}>
-      <div className="flex items-start gap-3">
-        {/* Ícone de status neutro */}
-        <div className={`mt-0.5 shrink-0 ${statusInfo.color}`}>
-          {statusInfo.icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[13px] font-semibold text-slate-900">{item.label}</p>
-            {!item.required && (
-              <span className="shrink-0 text-[11px] font-medium text-slate-400">Opcional</span>
-            )}
+    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+      <div className="flex">
+        <div className={`w-1 shrink-0 ${accentBar}`} />
+        <div className="flex-1 px-4 py-3.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${statusInfo.color} bg-slate-100`}>
+                {statusInfo.icon}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[14px] font-bold text-slate-900">{item.label}</p>
+                {item.description && (
+                  <p className="mt-0.5 text-[12px] text-slate-400">{item.description}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${badgeStyle}`}>{badgeLabel}</span>
+              {!item.required && (
+                <span className="text-[10px] font-medium text-slate-400">Opcional</span>
+              )}
+            </div>
           </div>
-
-          {item.description && (
-            <p className="mt-0.5 text-xs text-slate-500">{item.description}</p>
-          )}
 
           {/* Info do upload */}
           {upload && (
-            <div className="mt-2 flex flex-col gap-1.5">
+            <div className="mt-2.5 flex flex-col gap-1.5">
               {upload.processing_status === 'pending' && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 text-[12px] text-slate-500">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Aguardando processamento…
                 </div>
               )}
               {upload.processing_status === 'processing' && (
-                <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                <div className="flex items-center gap-1.5 text-[12px] text-amber-700">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Convertendo para PDF e identificando…
                 </div>
               )}
               {(upload.processing_status === 'ready' || upload.processing_status === 'error') && (
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-600">
                   <FileText className="h-3 w-3 shrink-0 text-slate-400" />
                   <span className="max-w-[160px] truncate font-medium">{upload.final_name || 'documento.pdf'}</span>
                   {upload.ai_document_type && (
-                    <span className="text-[11px] text-slate-400">· {upload.ai_document_type}</span>
+                    <span className="text-slate-400">· {upload.ai_document_type}</span>
                   )}
                   {item.status === 'approved' && (
-                    <span className="text-[11px] font-semibold text-emerald-700">· Aprovado</span>
+                    <span className="font-semibold text-emerald-700">· Aprovado</span>
                   )}
                 </div>
               )}
               {item.status === 'rejected' && upload.rejection_reason && (
-                <div className="flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-700">
+                <div className="flex items-start gap-1.5 rounded-2xl bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
                   <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>{upload.rejection_reason}</span>
                 </div>
@@ -260,17 +276,17 @@ const ItemCard: React.FC<{
         </div>
       </div>
 
-      {/* CTA — mesmo padrão de botão do portal (slate-900 para primário) */}
+      {/* CTA */}
       {canUpload && !open && (
         <button
           onClick={() => setOpen(true)}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 active:scale-[0.99]"
+          className="flex w-full items-center justify-center gap-2 border-t border-slate-100 py-3 text-[13px] font-semibold text-orange-500 transition active:bg-orange-50"
         >
           {item.status === 'rejected'
-            ? <><RotateCcw className="h-3.5 w-3.5" /> Reenviar documento</>
+            ? <><RotateCcw className="h-3.5 w-3.5" strokeWidth={2} /> Reenviar documento</>
             : item.status === 'uploaded'
-            ? <><Plus className="h-3.5 w-3.5" /> Enviar outro arquivo</>
-            : <><Camera className="h-3.5 w-3.5" /> Enviar documento</>}
+            ? <><Plus className="h-3.5 w-3.5" strokeWidth={2} /> Enviar outro arquivo</>
+            : <><Camera className="h-3.5 w-3.5" strokeWidth={1.75} /> Enviar documento</>}
         </button>
       )}
 
@@ -323,15 +339,21 @@ export const PortalDocumentRequests: React.FC = () => {
   const pendingCount = requests.filter(r => r.status === 'pending' || r.status === 'partial').length;
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Documentos</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {pendingCount > 0
-            ? `${pendingCount} solicitação${pendingCount > 1 ? 'ões' : ''} aguardando envio`
-            : 'Documentos solicitados pelo escritório'}
-        </p>
-      </header>
+    <div className="flex flex-col gap-4">
+      {/* Header app-style */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+          <FolderOpen className="h-5 w-5" strokeWidth={1.75} />
+        </div>
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight text-slate-900">Documentos</h1>
+          <p className="text-[12px] text-slate-400">
+            {pendingCount > 0
+              ? `${pendingCount} solicitação${pendingCount > 1 ? 'ões' : ''} aguardando envio`
+              : 'Documentos solicitados pelo escritório'}
+          </p>
+        </div>
+      </div>
 
       {loading ? (
         <div className="flex flex-col gap-3">
@@ -346,72 +368,76 @@ export const PortalDocumentRequests: React.FC = () => {
           description="O escritório ainda não solicitou nenhum documento."
         />
       ) : (
-        <ul className="flex flex-col gap-2.5">
+        <ul className="flex flex-col gap-3">
           {requests.map((req) => {
             const isExpanded = expanded.has(req.id);
             const s = REQUEST_STATUS[req.status] || REQUEST_STATUS.pending;
             const doneCount = req.items.filter(i => i.status === 'approved' || i.status === 'uploaded').length;
             const totalCount = req.items.length;
             const isComplete = req.status === 'complete' || req.status === 'reviewed' || doneCount === totalCount;
+            const isPending = req.status === 'pending' || req.status === 'partial';
 
             return (
-              <li key={req.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {/* Cabeçalho da solicitação */}
-                <button
-                  onClick={() => toggleExpand(req.id)}
-                  className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-slate-50"
-                >
-                  {/* Ícone neutro — igual ao padrão do portal */}
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                    <FolderOpen className="h-4 w-4" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    {/* Título + status como dot+texto */}
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">{req.title}</p>
-                      <span className="flex shrink-0 items-center gap-1">
-                        <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-                        <span className={`text-[11px] font-medium ${s.text}`}>{s.label}</span>
-                      </span>
-                    </div>
-
-                    {req.description && (
-                      <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{req.description}</p>
-                    )}
-
-                    {/* Progresso */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className={`h-full rounded-full transition-all ${isComplete ? 'bg-emerald-500' : 'bg-orange-500'}`}
-                          style={{ width: totalCount ? `${(doneCount / totalCount) * 100}%` : '0%' }}
-                        />
+              <li key={req.id} className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+                <div className="flex">
+                  {/* Left accent bar */}
+                  <div className={`w-1 shrink-0 ${s.dot}`} />
+                  <div className="flex-1">
+                    {/* Cabeçalho da solicitação */}
+                    <button
+                      onClick={() => toggleExpand(req.id)}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition active:bg-slate-50"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                        <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
                       </div>
-                      <span className="tabular-nums text-[11px] text-slate-400">{doneCount}/{totalCount}</span>
-                      {req.due_date && (
-                        <span className="tabular-nums text-[11px] text-slate-400">· Prazo: {formatDate(req.due_date)}</span>
-                      )}
-                    </div>
-                  </div>
 
-                  <ChevronRight className={`h-4 w-4 shrink-0 text-slate-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-[15px] font-bold text-slate-900">{req.title}</p>
+                          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                            isPending ? 'bg-orange-50 text-orange-600' : isComplete ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                          }`}>{s.label}</span>
+                        </div>
 
-                {/* Lista de itens expandida */}
-                {isExpanded && (
-                  <div className="flex flex-col gap-3 border-t border-slate-100 p-4">
-                    {req.items.map((item) => (
-                      <ItemCard
-                        key={item.id}
-                        item={item}
-                        clientId={session.client.id}
-                        portalUserId={session.user.id}
-                        onRefresh={load}
-                      />
-                    ))}
+                        {req.description && (
+                          <p className="mt-0.5 line-clamp-1 text-[12px] text-slate-400">{req.description}</p>
+                        )}
+
+                        {/* Progresso */}
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full transition-all ${isComplete ? 'bg-emerald-500' : 'bg-orange-500'}`}
+                              style={{ width: totalCount ? `${(doneCount / totalCount) * 100}%` : '0%' }}
+                            />
+                          </div>
+                          <span className="tabular-nums text-[11px] font-semibold text-slate-400">{doneCount}/{totalCount}</span>
+                          {req.due_date && (
+                            <span className="tabular-nums text-[11px] text-slate-400">· {formatDate(req.due_date)}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight className={`h-4 w-4 shrink-0 text-slate-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </button>
+
+                    {/* Lista de itens expandida */}
+                    {isExpanded && (
+                      <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4">
+                        {req.items.map((item) => (
+                          <ItemCard
+                            key={item.id}
+                            item={item}
+                            clientId={session.client.id}
+                            portalUserId={session.user.id}
+                            onRefresh={load}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </li>
             );
           })}

@@ -164,36 +164,47 @@ export const PortalSignatures: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Assinaturas</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {items.length
-            ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} · ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
-            : 'Documentos que precisam da sua assinatura digital.'}
-        </p>
-      </header>
+    <div className="flex flex-col gap-4">
+      {/* Header app-style */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+          <PenTool className="h-5 w-5" strokeWidth={1.75} />
+        </div>
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight text-slate-900">Assinaturas</h1>
+          <p className="text-[12px] text-slate-400">
+            {items.length
+              ? `${counts.pending} pendente${counts.pending !== 1 ? 's' : ''} · ${counts.signed} assinado${counts.signed !== 1 ? 's' : ''}`
+              : 'Documentos que precisam da sua assinatura'}
+          </p>
+        </div>
+      </div>
 
       {!loading && counts.pending > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-l-[3px] border-orange-200 border-l-orange-500 bg-white px-4 py-3">
-          <PenTool className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-          <p className="text-sm text-slate-700">
-            <strong className="font-semibold">{counts.pending} documento{counts.pending !== 1 ? 's' : ''}</strong> aguardando sua assinatura.
+        <div className="flex items-center gap-3 rounded-2xl bg-orange-500 px-4 py-3 text-white shadow-[0_4px_14px_rgba(249,115,22,0.25)]">
+          <PenTool className="h-4 w-4 shrink-0" />
+          <p className="text-sm font-semibold">
+            {counts.pending} documento{counts.pending !== 1 ? 's' : ''} aguardando sua assinatura
           </p>
         </div>
       )}
 
-      <div className="flex gap-4 border-b border-slate-200">
+      {/* Tabs pill-style */}
+      <div className="flex gap-2">
         {tabs.map((tabItem) => {
           const active = tab === tabItem.key;
           return (
             <button
               key={tabItem.key}
               onClick={() => setTab(tabItem.key)}
-              className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${active ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
+                active ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
+              }`}
             >
               {tabItem.label}
-              <span className={`tabular-nums text-[11px] font-semibold ${active ? 'text-orange-700' : 'text-slate-400'}`}>{tabItem.count}</span>
+              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${active ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+                {tabItem.count}
+              </span>
             </button>
           );
         })}
@@ -256,25 +267,46 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
     window.location.href = actionUrl;
   };
 
+  const accentColor = st.isPending ? 'bg-orange-500' : st.isExpired ? 'bg-slate-300' : 'bg-emerald-500';
+  const badgeColor = st.isPending
+    ? 'bg-orange-50 text-orange-600'
+    : st.isExpired
+    ? 'bg-slate-100 text-slate-400'
+    : 'bg-emerald-50 text-emerald-600';
+
   return (
     <div
       role={actionUrl ? 'button' : undefined}
       tabIndex={actionUrl ? 0 : undefined}
       onClick={handleCardClick}
       onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}
-      className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 transition sm:p-5 ${
-        actionUrl ? 'cursor-pointer hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]' : ''
-      }${st.isPending ? ' border-l-[3px] border-l-orange-500' : ''}`}
+      className={`overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition ${
+        actionUrl ? 'cursor-pointer active:scale-[0.99]' : ''
+      }`}
     >
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-          <FileSignature className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900">
-            {s.title || s.document_name || 'Documento para assinar'}
-          </p>
-          <p className="mt-0.5 tabular-nums text-[11px] text-slate-400">
+      <div className="flex">
+        {/* Left accent bar */}
+        <div className={`w-1 shrink-0 ${accentColor}`} />
+
+        <div className="flex-1 px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                <FileSignature className="h-4 w-4 text-slate-500" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Documento</p>
+                <p className="mt-0.5 truncate text-[15px] font-bold text-slate-900">
+                  {s.title || s.document_name || 'Documento para assinar'}
+                </p>
+              </div>
+            </div>
+            <span className={`mt-0.5 shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${badgeColor}`}>
+              {st.label}
+            </span>
+          </div>
+
+          <p className="mt-2.5 tabular-nums text-[12px] text-slate-400">
             {st.isExpired
               ? `Expirou em ${formatDate(s.expires_at)}`
               : st.isPending
@@ -283,48 +315,49 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
               ? `Assinado em ${formatDate(mySigner.signed_at)}`
               : 'Documento concluído'}
           </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${st.isPending ? 'bg-orange-500' : st.isExpired ? 'bg-slate-300' : 'bg-emerald-500'}`} />
-          <span className={`text-xs font-medium ${st.isPending ? 'text-orange-700' : st.isExpired ? 'text-slate-400' : 'text-emerald-700'}`}>{st.label}</span>
+
+          {multi && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="mb-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1">
+                  <Users className="h-3 w-3" />
+                  {signedCount} de {totalSigners} assinaram
+                </span>
+                <span className="tabular-nums font-semibold">{progress}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className={`h-full rounded-full ${st.isPending ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
+          {st.iAmSigner && st.isPending && signUrl && (
+            <div className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-3 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(249,115,22,0.3)] transition active:bg-orange-600">
+              <PenTool className="h-4 w-4" strokeWidth={1.75} /> Assinar agora
+              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+            </div>
+          )}
+
+          {!st.isPending && !st.isExpired && actionUrl && (
+            <a
+              href={docUrl || actionUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-2.5 text-[13px] font-semibold text-slate-600 transition active:bg-slate-200"
+            >
+              <Eye className="h-4 w-4" strokeWidth={1.75} /> Ver documento
+              <ExternalLink className="h-3.5 w-3.5 opacity-50" />
+            </a>
+          )}
+
+          {st.iAmSigner && st.isPending && !signUrl && (
+            <p className="mt-2.5 text-[12px] text-slate-400">
+              Entre em contato com o escritório para obter o link de assinatura.
+            </p>
+          )}
         </div>
       </div>
-
-      {multi && (
-        <div className="border-t border-slate-100 pt-3">
-          <div className="mb-1.5 flex items-center justify-between text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{signedCount} de {totalSigners} assinaram</span>
-            <span className="tabular-nums font-medium">{progress}%</span>
-          </div>
-          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
-            <div className={`h-full rounded-full ${st.isPending ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-      )}
-
-      {st.iAmSigner && st.isPending && signUrl && (
-        <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
-          <PenTool className="h-4 w-4" /> Assinar documento <ExternalLink className="h-3.5 w-3.5 opacity-60" />
-        </div>
-      )}
-
-      {!st.isPending && !st.isExpired && actionUrl && (
-        <a
-          href={docUrl || actionUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
-        >
-          <Eye className="h-4 w-4" /> Ver documento <ExternalLink className="h-3.5 w-3.5 opacity-40" />
-        </a>
-      )}
-
-      {st.iAmSigner && st.isPending && !signUrl && (
-        <p className="border-t border-slate-100 pt-3 text-[13px] text-slate-500">
-          Entre em contato com o escrit?rio para obter o link de assinatura.
-        </p>
-      )}
     </div>
   );
 };

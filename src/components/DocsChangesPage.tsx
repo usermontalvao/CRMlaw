@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.211': { name: 'Cafe Portal Vivo', emoji: '??' },
   '1.10.210': { name: 'Caf? Portal Alerta', emoji: '??' },
   '1.10.209': { name: 'Café Texto Limpo', emoji: '✍️' },
   '1.10.208': { name: 'Café Scanner Natural', emoji: '📸' },
@@ -873,6 +874,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.211',
+    date: '05/06/2026',
+    summary: 'Portal: navega??o mobile refinada, p?ginas principais mais limpas e chat do cliente com entrega mais confi?vel de alertas.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Template mobile do portal ficou mais integrado ao app', description: 'Cabe?alho, navega??o inferior e p?ginas principais do portal foram refinados para um visual mais cont?nuo, com foco em leitura e uso no celular.' },
+        { type: 'improvement' as const, title: 'Tela de casos ficou mais direta', description: 'A p?gina de casos do portal teve a faixa superior de contadores removida, reduzindo ru?do visual e deixando busca, abas e lista como foco principal.' },
+      ]},
+      { moduleId: 'Chat do Portal', changes: [
+        { type: 'fix' as const, title: 'Alertas do widget passaram a depender de polling confi?vel al?m do realtime', description: 'O widget de chat agora detecta mensagens novas observando a pr?pria lista carregada, dispara som, badge e aviso flutuante mesmo quando o realtime n?o entrega eventos ao role do portal, e solicita permiss?o de notifica??o apenas ap?s gesto do usu?rio.' },
+        { type: 'improvement' as const, title: 'Canais de digita??o e navega??o foram alinhados ao backend do CRM', description: 'Os nomes de canais usados pelo widget foram ajustados para coincidir com os broadcasts do CRM, melhorando consist?ncia do status de digita??o e do fluxo de atendimento.' },
+      ]},
+      { moduleId: 'Infra do Portal', changes: [
+        { type: 'feature' as const, title: 'Migrations novas preparam realtime e consultas do portal', description: 'Foram adicionadas migrations de suporte para regras de acesso do chat em tempo real e corre??es de consultas N+1 no portal, consolidando a base para os ajustes de performance e entrega.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.210',
     date: '05/06/2026',

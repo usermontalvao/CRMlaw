@@ -48,13 +48,14 @@ const SEEN_KEY = 'portal_seen_notif_ids';
 const PORTAL_CHAT_VISIBLE_KEY = 'portal-chat-visible';
 const PORTAL_CHAT_VISIBLE_EVENT = 'crm:portal_chat_visible';
 
+// chat_reply NÃO está aqui: o widget PortalChatWidget tem seu próprio
+// floating notice + badge. Incluir aqui causa notificação duplicada no topo.
 const TOAST_TYPES = new Set([
   'profile_update_rejected',
   'process_status_changed',
   'new_signature_request',
   'new_document_request',
   'document_upload_rejected',
-  'chat_reply',
 ]);
 
 function shouldNotifyInBrowser(notification: NotifItem) {
@@ -126,6 +127,10 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
   const initialLoadDoneRef = useRef(false);
   const knownIdsRef = useRef<Set<string>>(new Set());
   const sessionStartedAtRef = useRef<number>(0);
+  // Refs para evitar recriar o canal a cada mudança de chatVisible / pushToast
+  const chatVisibleRef = useRef(false);
+  const pushToastRef = useRef<(n: NotifItem) => void>(() => {});
+  const sessionUserIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const serverSeenAt = toTimestamp(session?.user?.notifications_last_seen_at);
@@ -184,10 +189,16 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     }
   }, [shouldSuppressChatReply]);
 
+  // Manter refs atualizadas para uso no handler do canal (sem recriar o canal)
+  useEffect(() => { chatVisibleRef.current = chatVisible; }, [chatVisible]);
+  useEffect(() => { pushToastRef.current = pushToast; }, [pushToast]);
+  useEffect(() => { sessionUserIdRef.current = session?.user?.id; }, [session?.user?.id]);
+
   const reload = useCallback(async () => {
-    if (!session?.user?.id) return;
+    const userId = sessionUserIdRef.current;
+    if (!userId) return;
     try {
-      const data = await clientPortalService.listNotifications(session.user.id) as NotifItem[];
+      const data = await clientPortalService.listNotifications(userId) as NotifItem[];
       setItems(data);
 
       const nextIds = new Set(data.map((n) => n.id));
@@ -200,12 +211,18 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
 
       data
         .filter((n) => !knownIdsRef.current.has(n.id))
-        .forEach(pushToast);
+        .forEach((n) => {
+          // chat_reply não dispara toast no cabeçalho
+          if ((n.type || '') !== 'chat_reply') pushToastRef.current(n);
+        });
 
       knownIdsRef.current = nextIds;
     } catch {}
-  }, [session?.user?.id, pushToast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Canal estável: só recria ao trocar de sessão/cliente.
+  // Usa refs para chatVisible e pushToast para não recriar a cada abertura/fechamento do chat.
   useEffect(() => {
     if (!session?.client?.id) return;
     const clientId = session.client.id;
@@ -223,14 +240,23 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
         (payload: any) => {
           const n = payload.new as NotifItem;
           knownIdsRef.current.add(n.id);
-          if (shouldSuppressChatReply(n) && session?.user?.id) {
-            const readAt = new Date().toISOString();
-            setItems((prev) => [{ ...n, is_read: true, read_at: readAt }, ...prev]);
-            void clientPortalService.markNotificationRead(session.user.id, n.id).catch(() => {});
+          const isChatReply = (n.type || '') === 'chat_reply';
+          // Se chat estiver visível E for chat_reply: marca como lida silenciosamente
+          if (isChatReply && chatVisibleRef.current) {
+            const userId = sessionUserIdRef.current;
+            if (userId) {
+              const readAt = new Date().toISOString();
+              setItems((prev) => [{ ...n, is_read: true, read_at: readAt }, ...prev]);
+              void clientPortalService.markNotificationRead(userId, n.id).catch(() => {});
+            }
             return;
           }
+          // Adiciona aos items (incrementa badge do chat ou outros)
           setItems((prev) => [n, ...prev]);
-          pushToast(n);
+          // chat_reply NÃO dispara toast no cabeçalho — o widget tem seu próprio floating notice
+          if (!isChatReply) {
+            pushToastRef.current(n);
+          }
         }
       )
       .subscribe((status: string) => {
@@ -243,7 +269,8 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
         channelRef.current = null;
       }
     };
-  }, [session?.client?.id, session?.user?.id, pushToast, shouldSuppressChatReply]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.client?.id, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -347,7 +374,8 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const unreadCount = items.filter(isUnread).length;
+  // chat_reply NÃO entra no sino do cabeçalho — o chat tem badge próprio
+  const unreadCount = items.filter((n) => isUnread(n) && (n.type || '') !== 'chat_reply').length;
   const chatUnreadCount = items.filter((n) => isUnread(n) && (n.type || '') === 'chat_reply').length;
   const newIds = new Set(
     items

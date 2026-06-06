@@ -3,11 +3,11 @@ import { createPortal } from 'react-dom';
 import {
   Bell,
   Briefcase,
-  Calendar,
   CheckCircle2,
   ExternalLink,
   FolderOpen,
   LayoutDashboard,
+  MessageCircle,
   PenTool,
   PiggyBank,
   ScanLine,
@@ -92,12 +92,11 @@ const PushToastOverlay: React.FC<{
 };
 
 const BOTTOM_NAV = [
-  { id: 'dashboard', icon: LayoutDashboard, label: 'Início' },
-  { id: 'casos', icon: Briefcase, label: 'Casos' },
-  { id: 'scanner', icon: ScanLine, label: 'Scanner' },
-  { id: 'assinar', icon: PenTool, label: 'Assinar' },
-  { id: 'financeiro', icon: PiggyBank, label: 'Financeiro' },
-  { id: 'agenda', icon: Calendar, label: 'Agenda' },
+  { id: 'dashboard',  icon: LayoutDashboard, label: 'Início'    },
+  { id: 'casos',      icon: Briefcase,       label: 'Casos'     },
+  { id: 'scanner',    icon: ScanLine,        label: 'Scanner'   },
+  { id: 'mensagens',  icon: MessageCircle,   label: 'Mensagens' },
+  { id: 'assinar',    icon: PenTool,         label: 'Assinar'   },
 ] as const;
 
 const PortalInstallAppPrompt: React.FC<{
@@ -279,7 +278,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
   return (
     <div
-      className="portal-shell h-[100dvh] min-h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none"
+      className="portal-shell h-[100dvh] min-h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none bg-slate-50"
       style={{ fontFamily: "'Plus Jakarta Sans', Inter, system-ui, sans-serif" }}
     >
       <div className="relative flex h-full min-h-0">
@@ -320,7 +319,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
             </div>
           )}
 
-          <main ref={mainRef} className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain">
+          <main ref={mainRef} className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain bg-slate-50">
             <div className="mx-auto w-full max-w-7xl px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-[calc(env(safe-area-inset-top)+4.75rem)] sm:px-5 sm:pb-6 sm:pt-6 lg:px-6 lg:py-5">
               {children}
             </div>
@@ -330,24 +329,31 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
       <nav className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
         <div
-          className="overflow-hidden border-t border-slate-200/80 bg-white/97 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-2xl"
+          className="overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08),0_-16px_40px_rgba(15,23,42,0.07)] backdrop-blur-2xl"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          <div className="flex items-stretch gap-1 px-2 py-2">
+          <div className="flex items-stretch px-1 pt-2 pb-1">
             {BOTTOM_NAV.filter(({ id }) => id === 'dashboard' || isEnabled(id as never)).map(({ id, icon: Icon, label }) => {
               const active = route === id;
               return (
                 <button
                   key={id}
                   onClick={() => navigate(id)}
-                  className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[18px] py-2.5 transition-all duration-200 ${
-                    active
-                      ? 'bg-orange-500 text-white shadow-[0_4px_14px_rgba(249,115,22,0.32)]'
-                      : 'text-slate-400 active:bg-slate-100'
+                  className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-2 transition-all duration-150 ${
+                    active ? 'text-orange-500' : 'text-slate-400 active:text-slate-600'
                   }`}
                 >
-                  <Icon className="h-[19px] w-[19px] shrink-0" strokeWidth={active ? 2.5 : 1.75} />
-                  <span className="truncate text-[9.5px] font-bold leading-none tracking-tight">{label}</span>
+                  <Icon
+                    className="h-[22px] w-[22px] shrink-0 transition-transform duration-150"
+                    strokeWidth={active ? 2.5 : 1.75}
+                    style={active ? { transform: 'scale(1.08)' } : undefined}
+                  />
+                  <span className={`truncate text-[10px] font-bold leading-none tracking-tight transition-colors ${active ? 'text-orange-500' : 'text-slate-400'}`}>
+                    {label}
+                  </span>
+                  {active && (
+                    <span className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-t-full bg-orange-500" />
+                  )}
                 </button>
               );
             })}

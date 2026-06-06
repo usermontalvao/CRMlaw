@@ -79,6 +79,8 @@ function parseAttach(c: string) {
 function playNotificationSound() {
   try {
     const ac = new AudioContext();
+    // Alguns navegadores iniciam o contexto suspenso até um gesto; resume é barato.
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
     const play = (freq: number, startAt: number, dur: number, vol: number) => {
       const osc = ac.createOscillator();
       const g = ac.createGain();
@@ -161,6 +163,9 @@ export const PortalChatWidget: React.FC = () => {
   const [shortcuts, setShortcuts]   = useState<Shortcut[]>([]);
   const [loadingSC, setLoadingSC]   = useState(false);
   const [floatingNotice, setFloatingNotice] = useState<{ id: string; title: string; body: string } | null>(null);
+  // Badge de não-lidas controlado pelo próprio widget (independente do realtime,
+  // que é filtrado pelo RLS do role portal_client e não entrega eventos de forma confiável).
+  const [localUnread, setLocalUnread] = useState(0);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -176,18 +181,15 @@ export const PortalChatWidget: React.FC = () => {
   // Used by the realtime handler to replace the optimistic entry instead of adding a duplicate.
   const inflightTids = useRef<Set<string>>(new Set());
   const notifPermAsked = useRef(false);
+  // Detecção de mensagens novas para notificação (funciona com realtime E polling)
+  const notifiedIds   = useRef<Set<string>>(new Set());
+  const seededNotif   = useRef(false);
 
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { openRef.current = open; }, [open]);
 
-  // Solicita permissão de notificação uma única vez quando o usuário está logado
-  useEffect(() => {
-    if (!session || notifPermAsked.current) return;
-    notifPermAsked.current = true;
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
-  }, [session]);
+  // Permissão de notificação solicitada na primeira abertura do chat (exige gesto do usuário)
+  // Browsers modernos bloqueiam requestPermission() sem gesto — nunca chamar no mount.
 
   useEffect(() => {
     const visible = !!session && (open || route === 'mensagens');
@@ -231,7 +233,7 @@ export const PortalChatWidget: React.FC = () => {
     const prev = roomIdRef.current;
     try {
       const data = await clientPortalService.getChatMessages(session.user.id);
-      if (!data) return;
+      if (!data) { setLoaded(true); return; } // ainda sem sala: libera o seed/polling
       const newRoom   = data.room?.id ?? null;
       const newClosed = !!(data.room as any)?.is_closed;
       const changed   = !prev || prev !== newRoom;
@@ -304,6 +306,7 @@ export const PortalChatWidget: React.FC = () => {
     if (!loaded) void loadMessages(true);
     void loadShortcuts();
     void markChatRepliesRead();
+    setLocalUnread(0);
     setFloatingNotice(null);
     setTimeout(() => scrollBottom('auto'), 120);
     setTimeout(() => inputRef.current?.focus(), 250);
@@ -315,18 +318,33 @@ export const PortalChatWidget: React.FC = () => {
     setFloatingNotice(null);
   }, [route, markChatRepliesRead]);
 
-  // polling 4s
+  // Polling robusto — NÃO depende de `loaded` (que poderia nunca virar true se o
+  // primeiro fetch falhasse, deixando o widget mudo até um refresh). Roda enquanto
+  // houver sessão: poll imediato no mount, a cada 3s, e na hora que a aba ganha foco.
+  // É o caminho confiável de entrega, já que o realtime postgres_changes é filtrado
+  // pelo RLS do role portal_client.
   useEffect(() => {
-    if (!session?.user?.id || !loaded) return;
-    const id = setInterval(() => loadMessages(false), 4000);
-    return () => clearInterval(id);
-  }, [session?.user?.id, loaded, loadMessages]);
+    if (!session?.user?.id) return;
+    let alive = true;
+    const poll = () => { if (alive) void loadMessages(false); };
+    poll(); // imediato
+    const id = setInterval(poll, 3000);
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', poll);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', poll);
+    };
+  }, [session?.user?.id, loadMessages]);
 
   // ── realtime mensagens ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId) return;
     chatCh.current = supabasePortal
-      .channel(`wchat:${roomId}`)
+      .channel(`portal-chat:${roomId}`)
       .on('postgres_changes' as any, { event:'INSERT', schema:'public', table:'chat_messages', filter:`room_id=eq.${roomId}` }, (payload: any) => {
         const m = payload.new;
         if (!m?.id || !m.content?.trim()) return; // ← ignora bolhas vazias
@@ -353,32 +371,66 @@ export const PortalChatWidget: React.FC = () => {
           }
           return [...prev, msg];
         });
-        if (!openRef.current && !msg.from_client && !msg.is_system) {
-          playNotificationSound();
-          const sender = msg.sender_name || 'Escritório';
-          const body = msg.content.startsWith('__anexo__:')
-            ? `${sender} enviou um arquivo`
-            : msg.content.length > 100 ? `${msg.content.slice(0, 97)}…` : msg.content;
-          setFloatingNotice({ id: msg.id, title: sender, body });
-          setTimeout(() => {
-            setFloatingNotice((current) => (current?.id === msg.id ? null : current));
-          }, 6000);
-        }
+        // A notificação (som/aviso/badge) é disparada pelo effect que observa `msgs`,
+        // garantindo que funcione tanto via realtime quanto via polling (4s).
         if (openRef.current) scrollBottom();
       }).subscribe();
     return () => { if (chatCh.current) { supabasePortal.removeChannel(chatCh.current); chatCh.current = null; } };
   }, [roomId, scrollBottom, loadMessages]);
 
+  // ── notificação de mensagens novas (realtime OU polling) ────────────────────
+  // Dispara som + aviso flutuante + notificação nativa + incrementa badge sempre
+  // que chega mensagem do escritório com o chat fechado. Como observa `msgs`, é
+  // imune à falha do realtime postgres_changes para o role portal_client.
+  const fireNotification = useCallback((m: PortalChatMessage) => {
+    playNotificationSound();
+    const sender = m.sender_name || 'Escritório';
+    const body = m.content.startsWith('__anexo__:')
+      ? `${sender} enviou um arquivo`
+      : m.content.length > 100 ? `${m.content.slice(0, 97)}…` : m.content;
+    setFloatingNotice({ id: m.id, title: sender, body });
+    setTimeout(() => {
+      setFloatingNotice((current) => (current?.id === m.id ? null : current));
+    }, 6000);
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+      try {
+        new Notification(sender, { body, icon: '/favicon.ico', tag: `portal-chat:${m.id}` });
+      } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    // Primeira passada após carregar: marca histórico como já visto, sem notificar.
+    if (!seededNotif.current) {
+      msgs.forEach((m) => notifiedIds.current.add(m.id));
+      seededNotif.current = true;
+      return;
+    }
+    const fresh = msgs.filter((m) => m.id && !notifiedIds.current.has(m.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((m) => notifiedIds.current.add(m.id));
+
+    const fromOffice = fresh.filter((m) => !m.from_client && !m.is_system && m.content?.trim());
+    if (fromOffice.length === 0) return;
+
+    if (openRef.current) return; // chat aberto = já está vendo, sem badge/som
+    setLocalUnread((u) => u + fromOffice.length);
+    fireNotification(fromOffice[fromOffice.length - 1]);
+  }, [msgs, loaded, fireNotification]);
+
   // ── typing ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId) return;
-    typingCh.current = supabasePortal.channel(`wtyping:${roomId}`).subscribe();
+    // canal deve coincidir com o que o CRM escuta: portal-typing:<roomId>
+    typingCh.current = supabasePortal.channel(`portal-typing:${roomId}`).subscribe();
     return () => { if (typingCh.current) { supabasePortal.removeChannel(typingCh.current); typingCh.current = null; } };
   }, [roomId]);
 
   useEffect(() => {
     if (!roomId) return;
-    attTypCh.current = supabasePortal.channel(`watttyping:${roomId}`)
+    // canal deve coincidir com o que o CRM emite: portal-attendant-typing:<roomId>
+    attTypCh.current = supabasePortal.channel(`portal-attendant-typing:${roomId}`)
       .on('broadcast', { event:'typing' }, (p: any) => {
         const typing = !!(p?.payload?.typing);
         setAttTyping(typing);
@@ -466,7 +518,9 @@ export const PortalChatWidget: React.FC = () => {
   const hasContent = msgs.filter(m => !m.is_system && m.content?.trim()).length > 0;
   const isOnline = attendant?.presence_status === 'online';
   const clientName = (session?.client?.nome ?? '').split(' ')[0] || 'você';
-  const unread = open || route === 'mensagens' ? 0 : chatUnreadCount;
+  // badge ao vivo (localUnread) combinado com a baseline de sessões anteriores
+  // (chatUnreadCount da tabela). max evita duplicar a mesma mensagem.
+  const unread = open || route === 'mensagens' ? 0 : Math.max(localUnread, chatUnreadCount);
 
   if (route === 'mensagens' || !session) return null;
 
@@ -608,7 +662,15 @@ export const PortalChatWidget: React.FC = () => {
 
       {/* ── Launcher ──────────────────────────────────────────────── */}
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          // Solicita permissão de notificação na primeira abertura (exige gesto do usuário)
+          if (next && !notifPermAsked.current && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            notifPermAsked.current = true;
+            Notification.requestPermission().catch(() => {});
+          }
+        }}
         className="fixed right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-orange-500 text-white shadow-[0_8px_28px_rgba(249,115,22,0.40)] transition-all active:scale-95"
         style={{ bottom: btnBottom }}
         aria-label="Chat com o escritório"

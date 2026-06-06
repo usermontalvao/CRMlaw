@@ -94,11 +94,17 @@ export const PortalFinancial: React.FC = () => {
   }, [agreements]);
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Financeiro</h1>
-        <p className="mt-1 text-sm text-slate-500">Acordos e recibos</p>
-      </header>
+    <div className="flex flex-col gap-4">
+      {/* Header app-style */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+          <Wallet className="h-5 w-5" strokeWidth={1.75} />
+        </div>
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight text-slate-900">Financeiro</h1>
+          <p className="text-[12px] text-slate-400">Acordos e recibos</p>
+        </div>
+      </div>
 
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /></div>
@@ -108,43 +114,53 @@ export const PortalFinancial: React.FC = () => {
         <>
           {/* RECEBER (acordos) */}
           {summary.hasReceivable && (
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Você recebe</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-emerald-700">{formatBRL(summary.net)}</p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${summary.recvPct}%` }} />
+            <section className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+              <div className="flex">
+                <div className="w-1 shrink-0 bg-emerald-500" />
+                <div className="flex-1 px-5 py-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Você recebe</p>
+                  <p className="mt-1 text-3xl font-extrabold tabular-nums tracking-tight text-emerald-600">{formatBRL(summary.net)}</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${summary.recvPct}%` }} />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-[12px] text-slate-500">
+                    <span className="tabular-nums">{formatBRL(summary.received)} já recebido</span>
+                    <span className="tabular-nums">{formatBRL(summary.toReceive)} a receber</span>
+                  </div>
+                  {!summary.hasPayable && (
+                    <p className="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-400">
+                      A taxa do escritório já está descontada do valor acima — você não paga nada além disso.
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="mt-1.5 flex justify-between text-xs text-slate-500">
-                <span className="tabular-nums">{formatBRL(summary.received)} já recebido</span>
-                <span className="tabular-nums">{formatBRL(summary.toReceive)} a receber</span>
-              </div>
-              {!summary.hasPayable && (
-                <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  A taxa do escritório já está descontada do valor acima — você não paga nada além disso.
-                </p>
-              )}
             </section>
           )}
 
           {/* PAGAR (honorários contratados pelo cliente) */}
           {summary.hasPayable && (
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Valor contratado</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{formatBRL(summary.payFee)}</p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${summary.payPct}%` }} />
-              </div>
-              <div className="mt-1.5 flex justify-between text-xs">
-                <span className="tabular-nums text-emerald-700">{formatBRL(summary.payPaid)} quitado</span>
-                <span className={`tabular-nums ${summary.payOverdue > 0 ? 'font-semibold text-rose-600' : 'text-slate-500'}`}>
-                  {formatBRL(summary.payOpen)} {summary.payOverdue > 0 ? 'em atraso' : 'a pagar'}
-                </span>
+            <section className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+              <div className="flex">
+                <div className={`w-1 shrink-0 ${summary.payOverdue > 0 ? 'bg-rose-500' : 'bg-orange-500'}`} />
+                <div className="flex-1 px-5 py-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Valor contratado</p>
+                  <p className="mt-1 text-3xl font-extrabold tabular-nums tracking-tight text-slate-900">{formatBRL(summary.payFee)}</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full transition-all ${summary.payOverdue > 0 ? 'bg-rose-500' : 'bg-orange-500'}`} style={{ width: `${summary.payPct}%` }} />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-[12px]">
+                    <span className="tabular-nums text-emerald-600">{formatBRL(summary.payPaid)} quitado</span>
+                    <span className={`tabular-nums ${summary.payOverdue > 0 ? 'font-bold text-rose-600' : 'text-slate-500'}`}>
+                      {formatBRL(summary.payOpen)} {summary.payOverdue > 0 ? 'em atraso' : 'a pagar'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </section>
           )}
 
-          {/* Tabs */}
-          <div className="flex gap-4 border-b border-slate-200">
+          {/* Tabs pill-style */}
+          <div className="flex gap-2">
             {([
               { id: 'contratos' as Tab, label: 'Contratos', count: agreements.length },
               { id: 'recibos'   as Tab, label: 'Recibos',   count: paidInstallments.length },
@@ -152,9 +168,13 @@ export const PortalFinancial: React.FC = () => {
               const on = tab === t.id;
               return (
                 <button key={t.id} onClick={() => setTab(t.id)}
-                  className={`relative -mb-px flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition ${on ? 'border-orange-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                  className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
+                    on ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
+                  }`}>
                   {t.label}
-                  <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-orange-700' : 'text-slate-400'}`}>{t.count}</span>
+                  <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+                    {t.count}
+                  </span>
                 </button>
               );
             })}
@@ -190,90 +210,99 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
   const installments = (a.installments || []).slice().sort((x, y) => (x.installment_number || 0) - (y.installment_number || 0));
   const next = a.next_installment;
 
-  return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <button onClick={onToggle} className="flex w-full items-start gap-3 p-4 text-left transition hover:bg-slate-50 sm:p-5">
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${v.isAcordo ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
-          {v.isAcordo ? <HandCoins className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="line-clamp-1 text-sm font-semibold text-slate-900">{a.title || 'Contrato'}</h2>
-              <p className="text-xs text-slate-500">{v.isAcordo ? 'Acordo judicial' : 'Contrato de serviços'}</p>
-            </div>
-            {a.status && <StatusBadge status={a.status} />}
-          </div>
+  const accentColor = v.isAcordo ? 'bg-emerald-500' : 'bg-orange-500';
 
-          {v.isAcordo ? (
-            <div className="mt-3">
-              {v.net > 0 && (
-                <div className="mb-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Você recebe</p>
-                  <p className="text-lg font-semibold tabular-nums text-emerald-700">{formatBRL(v.net)}</p>
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+      <div className="flex">
+        <div className={`w-1 shrink-0 ${accentColor}`} />
+        <div className="flex-1">
+          <button onClick={onToggle} className="flex w-full items-start gap-3 px-4 py-3.5 text-left transition active:bg-slate-50">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${v.isAcordo ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+              {v.isAcordo ? <HandCoins className="h-4.5 w-4.5" strokeWidth={1.75} /> : <Wallet className="h-4.5 w-4.5" strokeWidth={1.75} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {v.isAcordo ? 'Acordo judicial' : 'Contrato de serviços'}
+                  </p>
+                  <h2 className="mt-0.5 line-clamp-1 text-[15px] font-bold text-slate-900">{a.title || 'Contrato'}</h2>
+                </div>
+                {a.status && <StatusBadge status={a.status} />}
+              </div>
+
+              {v.isAcordo ? (
+                <div className="mt-3">
+                  {v.net > 0 && (
+                    <div className="mb-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Você recebe</p>
+                      <p className="text-[22px] font-extrabold tabular-nums text-emerald-600">{formatBRL(v.net)}</p>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-500">
+                    <span>Acordo: <span className="font-semibold tabular-nums text-slate-700">{formatBRL(v.total)}</span></span>
+                    <span>Taxa ({v.percentage}%): <span className="font-semibold tabular-nums text-slate-700">{formatBRL(v.fee)}</span></span>
+                  </div>
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.clientProgress}%` }} />
+                  </div>
+                  <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                    <span>Você já recebeu</span><span className="tabular-nums font-semibold text-emerald-600">{v.clientProgress}%</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <p className="text-[12px] text-slate-500">Valor: <span className="font-semibold tabular-nums text-slate-700">{formatBRL(v.fee)}</span></p>
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${v.feeProgress}%` }} />
+                  </div>
+                  <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                    <span>Quitado</span><span className="tabular-nums font-semibold text-slate-700">{v.feeProgress}%</span>
+                  </div>
                 </div>
               )}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                <span>Valor do acordo: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.total)}</span></span>
-                <span>Taxa do escritório ({v.percentage}%): <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></span>
-              </div>
-              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${v.clientProgress}%` }} />
-              </div>
-              <div className="mt-1 flex justify-between text-[11px] text-slate-500">
-                <span>Você já recebeu</span><span className="tabular-nums font-medium text-emerald-700">{v.clientProgress}%</span>
-              </div>
             </div>
-          ) : (
-            <div className="mt-3">
-              <p className="text-xs text-slate-500">Valor contratado: <span className="font-medium tabular-nums text-slate-700">{formatBRL(v.fee)}</span></p>
-              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${v.feeProgress}%` }} />
-              </div>
-              <div className="mt-1 flex justify-between text-[11px] text-slate-500">
-                <span>Quitado</span><span className="tabular-nums font-medium text-slate-700">{v.feeProgress}%</span>
+            <span className="mt-0.5 shrink-0 text-slate-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
+          </button>
+
+          {!open && next && (
+            <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-700">
+              <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+              <span className="font-semibold">Próxima parcela:</span>
+              <span className="tabular-nums">{formatBRL(next.value)} · venc. {formatDate(next.due_date)}</span>
+            </div>
+          )}
+
+          {open && installments.length > 0 && (
+            <div className="border-t border-slate-100">
+              <p className="px-4 pb-1 pt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {v.isAcordo ? 'Parcelas do acordo' : 'Parcelas do contrato'}
+              </p>
+              <div className="divide-y divide-slate-100">
+                {installments.map((inst) => {
+                  const st = instStatus(inst);
+                  const dotColor = st.key === 'pago' ? 'bg-emerald-500' : st.key === 'vencido' ? 'bg-rose-500' : st.key === 'cancelado' ? 'bg-slate-300' : 'bg-amber-500';
+                  return (
+                    <div key={inst.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
+                      <span className="w-5 text-center text-[11px] font-bold tabular-nums text-slate-400">#{inst.installment_number || '?'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-bold tabular-nums text-slate-900">{formatBRL(inst.value)}</p>
+                        <p className="flex flex-wrap gap-2 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-0.5"><Calendar className="h-3 w-3" />{formatDate(inst.due_date)}</span>
+                          {v.isAcordo && <span className="tabular-nums text-orange-600">escritório: {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
+                        </p>
+                      </div>
+                      <span className={`text-[11px] font-bold ${st.key === 'pago' ? 'text-emerald-600' : st.key === 'vencido' ? 'text-rose-600' : 'text-slate-500'}`}>{st.label}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
-        <span className="shrink-0 text-slate-400 mt-0.5">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
-      </button>
-
-      {!open && next && (
-        <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-600">
-          <Clock className="h-3.5 w-3.5 text-amber-600" />
-          <span className="font-medium">Próxima parcela:</span>
-          <span className="tabular-nums">{formatBRL(next.value)} · venc. {formatDate(next.due_date)}</span>
-        </div>
-      )}
-
-      {open && installments.length > 0 && (
-        <div className="border-t border-slate-100">
-          <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            {v.isAcordo ? 'Parcelas do acordo' : 'Parcelas do contrato'}
-          </p>
-          <div className="divide-y divide-slate-100">
-            {installments.map((inst) => {
-              const st = instStatus(inst);
-              const dotColor = st.key === 'pago' ? 'bg-emerald-500' : st.key === 'vencido' ? 'bg-rose-500' : st.key === 'cancelado' ? 'bg-slate-300' : 'bg-amber-500';
-              return (
-                <div key={inst.id} className="flex items-center gap-3 px-4 py-3">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
-                  <span className="w-5 text-center text-[11px] font-semibold tabular-nums text-slate-400">#{inst.installment_number || '?'}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBRL(inst.value)}</p>
-                    <p className="flex flex-wrap gap-2 text-[11px] text-slate-500">
-                      <span className="inline-flex items-center gap-0.5"><Calendar className="h-3 w-3" />{formatDate(inst.due_date)}</span>
-                      {v.isAcordo && <span className="tabular-nums text-orange-700">escritório: {formatBRL(installmentFee(inst.value, v.feeRatio))}</span>}
-                    </p>
-                  </div>
-                  <span className={`text-[11px] font-semibold ${st.key === 'pago' ? 'text-emerald-700' : st.key === 'vencido' ? 'text-rose-600' : 'text-slate-500'}`}>{st.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -311,23 +340,31 @@ const ReceiptCard: React.FC<{ inst: Installment & { agreement: Agreement } }> = 
   };
 
   return (
-    <div className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-        <Receipt className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="line-clamp-1 text-xs text-slate-500">{inst.agreement.title || 'Contrato'}</p>
-        <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBRL(honorarios)}</p>
-        <div className="flex flex-wrap gap-x-2 text-[11px] text-slate-400">
-          {inst.payment_date && <span className="tabular-nums text-emerald-700">Pago em {formatDate(inst.payment_date)}</span>}
-          {inst.installment_number && <span>· Parcela #{inst.installment_number}</span>}
+    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+      <div className="flex">
+        <div className="w-1 shrink-0 bg-emerald-500" />
+        <div className="flex flex-1 items-center gap-3 px-4 py-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <Receipt className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {inst.agreement.title || 'Contrato'}
+              {inst.installment_number ? ` · Parcela #${inst.installment_number}` : ''}
+            </p>
+            <p className="mt-0.5 text-[16px] font-extrabold tabular-nums text-slate-900">{formatBRL(honorarios)}</p>
+            {inst.payment_date && (
+              <p className="text-[12px] font-semibold text-emerald-600">Pago em {formatDate(inst.payment_date)}</p>
+            )}
+          </div>
+          <button
+            onClick={handleReceipt}
+            className="flex shrink-0 items-center gap-1.5 rounded-2xl bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 transition active:bg-slate-200"
+          >
+            <Receipt className="h-3.5 w-3.5" strokeWidth={1.75} /> Recibo
+          </button>
         </div>
       </div>
-      <button
-        onClick={handleReceipt}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
-        <Receipt className="h-3.5 w-3.5" /> Recibo
-      </button>
     </div>
   );
 };

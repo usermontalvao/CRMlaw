@@ -1,59 +1,41 @@
-/**
- * PortalCasos — Lista unificada de Processos Judiciais + Requerimentos INSS.
- *
- * Substitui a antiga "PortalProcesses" com uma visão integrada dos dois tipos
- * de caso que um cliente pode ter com o escritório.
- */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, X, Scale, Briefcase, FileText } from 'lucide-react';
+import { Search, X, Scale, Briefcase, FileText, Calendar, ChevronRight } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, SkeletonCard, formatRelative } from '../components/PortalUI';
 import { statusMeta, TONE_CLASSES, requirementMeta, BENEFIT_TYPE_LABELS } from '../lib/domain';
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
 interface ProcessItem {
-  id: string;
-  process_code: string;
-  status: string;
-  practice_area?: string | null;
-  court?: string | null;
+  id: string; process_code: string; status: string;
+  practice_area?: string | null; court?: string | null;
   last_movement?: { nome?: string; data_hora?: string; data?: string } | null;
-  pending_deadlines?: number;
-  hearing_scheduled?: boolean;
-  hearing_date?: string | null;
+  pending_deadlines?: number; hearing_scheduled?: boolean; hearing_date?: string | null;
   next_appointment?: { start_at: string; title: string; event_type: string; event_mode?: string | null } | null;
 }
 
 interface RequirementItem {
-  id: string;
-  protocol?: string | null;
-  beneficiary: string;
-  benefit_type: string;
-  status: string;
-  entry_date?: string | null;
-  exigency_due_date?: string | null;
-  pericia_medica_at?: string | null;
-  pericia_social_at?: string | null;
-  updated_at: string;
-  archived?: boolean;
+  id: string; protocol?: string | null; beneficiary: string; benefit_type: string;
+  status: string; entry_date?: string | null; exigency_due_date?: string | null;
+  pericia_medica_at?: string | null; pericia_social_at?: string | null;
+  updated_at: string; archived?: boolean;
 }
 
-type CaseKind = 'process' | 'requirement';
+type CaseKind  = 'process' | 'requirement';
 type FilterTab = 'all' | 'processos' | 'requerimentos';
 
-// ── Componente principal ─────────────────────────────────────────────────────
+// ── Componente principal ───────────────────────────────────────────────────────
 
 export const PortalCasos: React.FC = () => {
-  const { session } = useClientAuth();
-  const { navigate } = usePortalRouter();
-  const [processes, setProcesses] = useState<ProcessItem[]>([]);
-  const [requirements, setRequirements] = useState<RequirementItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<FilterTab>('all');
+  const { session }   = useClientAuth();
+  const { navigate }  = usePortalRouter();
+  const [processes,     setProcesses]     = useState<ProcessItem[]>([]);
+  const [requirements,  setRequirements]  = useState<RequirementItem[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState('');
+  const [tab,           setTab]           = useState<FilterTab>('all');
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -76,107 +58,81 @@ export const PortalCasos: React.FC = () => {
     total:         processes.length + requirements.length,
   }), [processes, requirements]);
 
-  // Lista unificada filtrada
   const items = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    const procs: { kind: CaseKind; id: string; sortKey: string; item: ProcessItem }[] =
-      processes
-        .filter(p => {
-          if (tab === 'requerimentos') return false;
-          if (!q) return true;
-          const meta = statusMeta(p.status);
-          return (
-            p.process_code?.toLowerCase().includes(q) ||
-            p.practice_area?.toLowerCase().includes(q) ||
-            p.court?.toLowerCase().includes(q) ||
-            meta.label.toLowerCase().includes(q)
-          );
-        })
-        .map(p => ({ kind: 'process' as CaseKind, id: p.id, sortKey: p.last_movement?.data_hora || p.last_movement?.data || '', item: p }));
+    const procs = processes
+      .filter(p => {
+        if (tab === 'requerimentos') return false;
+        if (!q) return true;
+        const meta = statusMeta(p.status);
+        return p.process_code?.toLowerCase().includes(q) || p.practice_area?.toLowerCase().includes(q) || p.court?.toLowerCase().includes(q) || meta.label.toLowerCase().includes(q);
+      })
+      .map(p => ({ kind: 'process' as CaseKind, id: p.id, sortKey: p.last_movement?.data_hora || p.last_movement?.data || '', item: p }));
 
-    const reqs: { kind: CaseKind; id: string; sortKey: string; item: RequirementItem }[] =
-      requirements
-        .filter(r => {
-          if (tab === 'processos') return false;
-          if (!q) return true;
-          const label = BENEFIT_TYPE_LABELS[r.benefit_type] || r.benefit_type;
-          const meta = requirementMeta(r.status);
-          return (
-            r.protocol?.toLowerCase().includes(q) ||
-            r.beneficiary?.toLowerCase().includes(q) ||
-            label.toLowerCase().includes(q) ||
-            meta.label.toLowerCase().includes(q)
-          );
-        })
-        .map(r => ({ kind: 'requirement' as CaseKind, id: r.id, sortKey: r.updated_at, item: r }));
+    const reqs = requirements
+      .filter(r => {
+        if (tab === 'processos') return false;
+        if (!q) return true;
+        const label = BENEFIT_TYPE_LABELS[r.benefit_type] || r.benefit_type;
+        const meta  = requirementMeta(r.status);
+        return r.protocol?.toLowerCase().includes(q) || r.beneficiary?.toLowerCase().includes(q) || label.toLowerCase().includes(q) || meta.label.toLowerCase().includes(q);
+      })
+      .map(r => ({ kind: 'requirement' as CaseKind, id: r.id, sortKey: r.updated_at, item: r }));
 
-    // Reqs urgentes primeiro, depois por data
     return [
-      ...reqs.filter(r => {
-        const m = requirementMeta((r.item as RequirementItem).status);
-        return m.urgent;
-      }),
+      ...reqs.filter(r => requirementMeta((r.item as RequirementItem).status).urgent),
       ...procs,
-      ...reqs.filter(r => {
-        const m = requirementMeta((r.item as RequirementItem).status);
-        return !m.urgent;
-      }),
+      ...reqs.filter(r => !requirementMeta((r.item as RequirementItem).status).urgent),
     ];
   }, [processes, requirements, search, tab]);
 
   const TABS: { id: FilterTab; label: string; count: number }[] = [
-    { id: 'all',           label: 'Todos',             count: counts.total },
-    { id: 'processos',     label: 'Processos',          count: counts.processos },
-    { id: 'requerimentos', label: 'Requerimentos INSS', count: counts.requerimentos },
+    { id: 'all',           label: 'Todos',        count: counts.total         },
+    { id: 'processos',     label: 'Processos',    count: counts.processos     },
+    { id: 'requerimentos', label: 'INSS',         count: counts.requerimentos },
   ];
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">Meus casos</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          <span className="tabular-nums">{counts.processos}</span> processo{counts.processos !== 1 ? 's' : ''} judiciais
-          <span className="mx-1.5 text-slate-300">·</span>
-          <span className="tabular-nums">{counts.requerimentos}</span> requerimento{counts.requerimentos !== 1 ? 's' : ''} INSS
-        </p>
-      </header>
+    <div className="flex flex-col gap-4">
 
-      {/* Busca */}
+      {/* ── Search ──────────────────────────────────────────────────────── */}
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          type="text"
-          value={search}
+          type="text" value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar por número, tipo ou situação"
-          className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+          placeholder="Buscar por número, tipo ou situação…"
+          className="h-12 w-full rounded-2xl bg-slate-100 pl-11 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-orange-400/30"
         />
         {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:text-slate-700">
+          <button onClick={() => setSearch('')}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:text-slate-700">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* Filtros */}
-      <div className="flex gap-2 overflow-x-auto pb-0.5">
+      {/* ── Tabs ────────────────────────────────────────────────────────── */}
+      <div className="flex gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
         {TABS.map(t => {
           const on = tab === t.id;
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${
-                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
+                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)] hover:text-slate-800'
               }`}
             >
               {t.label}
-              <span className={`tabular-nums text-[11px] font-semibold ${on ? 'text-white/60' : 'text-slate-400'}`}>{t.count}</span>
+              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+                {t.count}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Lista */}
+      {/* ── Lista ───────────────────────────────────────────────────────── */}
       {loading ? (
         <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
       ) : items.length === 0 ? (
@@ -189,8 +145,8 @@ export const PortalCasos: React.FC = () => {
         <ul className="flex flex-col gap-2.5">
           {items.map(({ kind, id, item }) =>
             kind === 'process'
-              ? <ProcessRow key={`proc-${id}`} process={item as ProcessItem} onClick={() => navigate('casos', `proc:${id}`)} />
-              : <RequirementRow key={`req-${id}`} req={item as RequirementItem} onClick={() => navigate('casos', `req:${id}`)} />
+              ? <ProcessCard key={`proc-${id}`} process={item as ProcessItem}         onClick={() => navigate('casos', `proc:${id}`)} />
+              : <RequirementCard key={`req-${id}`} req={item as RequirementItem}       onClick={() => navigate('casos', `req:${id}`)} />
           )}
         </ul>
       )}
@@ -198,132 +154,135 @@ export const PortalCasos: React.FC = () => {
   );
 };
 
-// ── ProcessRow ────────────────────────────────────────────────────────────────
+// ── ProcessCard ────────────────────────────────────────────────────────────────
 
-const ProcessRow: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ process: p, onClick }) => {
-  const meta = statusMeta(p.status);
-  const tone = TONE_CLASSES[meta.tone];
-  const lastMov = p.last_movement?.nome;
+const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ process: p, onClick }) => {
+  const meta       = statusMeta(p.status);
+  const tone       = TONE_CLASSES[meta.tone];
+  const lastMov    = p.last_movement?.nome;
   const lastMovDate = p.last_movement?.data_hora || p.last_movement?.data;
-  const overdue = p.pending_deadlines ?? 0;
-  const subtitle = [p.practice_area, p.court].filter(Boolean).join(' · ');
+  const subtitle   = [p.practice_area, p.court].filter(Boolean).join(' · ');
+
+  const appt = p.next_appointment;
+  const apptLabel = appt
+    ? appt.event_type === 'hearing' ? 'Audiência'
+    : appt.event_type === 'pericia' ? 'Perícia'
+    : appt.event_type === 'meeting' ? 'Reunião'
+    : 'Compromisso'
+    : null;
 
   return (
     <li>
-      <button onClick={onClick}
-        className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-        {/* Tipo + código + status */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
-            <Briefcase className="h-4 w-4 text-slate-500" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Processo Judicial</span>
-            </div>
-            <p className="truncate font-mono text-[13px] font-semibold tabular-nums text-slate-900">{p.process_code}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-            <span className={`text-xs font-medium ${tone.text}`}>{meta.label}</span>
-          </div>
-        </div>
+      <button onClick={onClick} className="group w-full text-left active:scale-[0.99] transition">
+        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)]">
+          {/* Card body */}
+          <div className="flex">
+            {/* Barra de status colorida */}
+            <div className={`w-1 shrink-0 ${tone.dot}`} />
 
-        {subtitle && <p className="mt-0.5 truncate pl-11 text-xs capitalize text-slate-400">{subtitle}</p>}
-
-        {/* Última atualização */}
-        {lastMov && (
-          <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-[13px] text-slate-600">
-            <span className="min-w-0 flex-1 truncate">{lastMov}</span>
-            <span className="shrink-0 tabular-nums text-xs text-slate-400">{formatRelative(lastMovDate)}</span>
-          </div>
-        )}
-
-        {/* Alertas */}
-        {(overdue > 0 || p.next_appointment) && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 pl-11 text-xs">
-            {p.next_appointment && (() => {
-              const d = new Date(p.next_appointment.start_at);
-              const hasTime = p.next_appointment.start_at.includes('T');
-              const time = hasTime ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
-              const typeLabel = p.next_appointment.event_type === 'hearing' ? 'Audiência'
-                : p.next_appointment.event_type === 'pericia' ? 'Perícia'
-                : p.next_appointment.event_type === 'meeting' ? 'Reunião'
-                : 'Compromisso';
-              const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-              return (
-                <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  {typeLabel} {dateStr}{time ? ` · ${time}` : ''}
+            <div className="flex-1 px-4 py-3.5">
+              {/* Linha de cima: tipo + status */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                    <Briefcase className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Processo Judicial</p>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-slate-900">{p.process_code}</p>
+                  </div>
+                </div>
+                <span className={`mt-0.5 shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold ${tone.text}`}>
+                  {meta.label}
                 </span>
-              );
-            })()}
-            {overdue > 0 && (
-              <span className="inline-flex items-center gap-1.5 font-medium text-slate-600">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                <span className="tabular-nums">{overdue}</span> prazo{overdue > 1 ? 's' : ''} em aberto
-              </span>
-            )}
+              </div>
+
+              {/* Subtítulo */}
+              {subtitle && <p className="mt-1.5 pl-[52px] text-xs capitalize text-slate-400">{subtitle}</p>}
+
+              {/* Última movimentação */}
+              {lastMov && (
+                <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2.5">
+                  <p className="flex-1 truncate text-xs text-slate-600">{lastMov}</p>
+                  <p className="shrink-0 text-[10px] tabular-nums text-slate-400">{formatRelative(lastMovDate)}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center pr-3.5">
+              <ChevronRight className="h-4 w-4 text-slate-200 transition group-hover:text-slate-400" />
+            </div>
           </div>
-        )}
+
+          {/* Rodapé de compromisso */}
+          {appt && apptLabel && (
+            <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-5 py-2.5">
+              <Calendar className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <p className="text-xs font-semibold text-amber-700">
+                {apptLabel} · {new Date(appt.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+              </p>
+            </div>
+          )}
+        </div>
       </button>
     </li>
   );
 };
 
-// ── RequirementRow ────────────────────────────────────────────────────────────
+// ── RequirementCard ────────────────────────────────────────────────────────────
 
-const RequirementRow: React.FC<{ req: RequirementItem; onClick: () => void }> = ({ req: r, onClick }) => {
-  const meta = requirementMeta(r.status);
-  const tone = TONE_CLASSES[meta.tone];
+const RequirementCard: React.FC<{ req: RequirementItem; onClick: () => void }> = ({ req: r, onClick }) => {
+  const meta         = requirementMeta(r.status);
+  const tone         = TONE_CLASSES[meta.tone];
   const benefitLabel = BENEFIT_TYPE_LABELS[r.benefit_type] || r.benefit_type;
-  const nextDate = r.exigency_due_date || r.pericia_medica_at || r.pericia_social_at;
-  const isArchived = r.archived === true;
+  const nextDate     = r.exigency_due_date || r.pericia_medica_at || r.pericia_social_at;
+  const isArchived   = r.archived === true;
+
+  const nextLabel = r.exigency_due_date ? 'Prazo exigência'
+    : r.pericia_medica_at ? 'Perícia médica'
+    : r.pericia_social_at ? 'Perícia social'
+    : null;
 
   return (
     <li>
-      <button onClick={onClick}
-        className={`group w-full rounded-xl border bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5 ${
-          isArchived
-            ? 'border-slate-200 opacity-75'
-            : meta.urgent
-            ? 'border-l-[3px] border-l-amber-500 border-slate-200'
-            : 'border-slate-200'
-        }`}>
-        {/* Tipo + benefício + status */}
-        <div className="flex items-center gap-3">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isArchived ? 'bg-slate-100' : 'bg-slate-100'}`}>
-            <FileText className={`h-4 w-4 ${isArchived ? 'text-slate-400' : 'text-slate-500'}`} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Requerimento INSS</span>
-            <p className={`truncate text-[13px] font-semibold ${isArchived ? 'text-slate-500' : 'text-slate-900'}`}>{benefitLabel}</p>
-            {r.protocol && <p className="font-mono text-[11px] tabular-nums text-slate-400">{r.protocol}</p>}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {isArchived ? (
-              <span className="text-xs font-medium text-slate-400">Encerrado</span>
-            ) : (
-              <>
-                <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                <span className={`text-xs font-medium ${tone.text}`}>{meta.label}</span>
-              </>
-            )}
+      <button onClick={onClick} className="group w-full text-left active:scale-[0.99] transition">
+        <div className={`overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)] ${isArchived ? 'opacity-70' : ''}`}>
+          <div className="flex">
+            <div className={`w-1 shrink-0 ${isArchived ? 'bg-slate-300' : meta.urgent ? 'bg-amber-500' : tone.dot}`} />
+
+            <div className="flex-1 px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                    <FileText className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Requerimento INSS</p>
+                    <p className={`text-[15px] font-bold ${isArchived ? 'text-slate-500' : 'text-slate-900'}`}>{benefitLabel}</p>
+                    {r.protocol && <p className="font-mono text-[11px] tabular-nums text-slate-400">{r.protocol}</p>}
+                  </div>
+                </div>
+                <span className={`mt-0.5 shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold ${isArchived ? 'text-slate-400' : tone.text}`}>
+                  {isArchived ? 'Encerrado' : meta.label}
+                </span>
+              </div>
+
+              {!isArchived && nextDate && nextLabel && (
+                <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2.5">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
+                  <p className={`text-xs font-semibold ${tone.text}`}>{nextLabel}:</p>
+                  <p className="text-xs tabular-nums text-slate-600">
+                    {new Date(nextDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center pr-3.5">
+              <ChevronRight className="h-4 w-4 text-slate-200 transition group-hover:text-slate-400" />
+            </div>
           </div>
         </div>
-
-        {/* Data relevante — só em ativos */}
-        {!isArchived && nextDate && (
-          <div className="mt-2.5 flex items-center gap-1.5 pl-11 text-xs">
-            <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-            <span className={`font-medium ${tone.text}`}>
-              {r.exigency_due_date ? 'Prazo exigência' : r.pericia_medica_at ? 'Perícia médica' : 'Perícia social'}:
-            </span>
-            <span className="tabular-nums text-slate-600">
-              {new Date(nextDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-            </span>
-          </div>
-        )}
       </button>
     </li>
   );
