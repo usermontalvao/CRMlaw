@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wallet, ChevronRight, TrendingUp, AlertTriangle, PiggyBank } from 'lucide-react';
+import { Wallet, ChevronRight, TrendingUp, AlertTriangle, PiggyBank, Eye, EyeOff } from 'lucide-react';
 
 interface FinancialStats {
   monthly_fees_received: number;
@@ -13,6 +13,8 @@ interface FinancialStats {
 interface FinancialCardProps {
   stats: FinancialStats | null;
   onNavigate: () => void;
+  hideValues?: boolean;
+  onToggleReveal?: () => void;
 }
 
 const formatCurrency = (value: number): string =>
@@ -23,7 +25,9 @@ const formatCurrency = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value);
 
-export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate }) => {
+const MASKED = 'R$ •••••';
+
+export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate, hideValues = true, onToggleReveal }) => {
   const isPlaceholder = !stats;
   const safeStats: FinancialStats = stats || {
     monthly_fees_received: 0,
@@ -33,6 +37,8 @@ export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate 
     total_overdue: 0,
     overdue_installments: 0,
   };
+
+  const fmtMoney = (v: number) => isPlaceholder ? '—' : hideValues ? MASKED : formatCurrency(v);
 
   return (
     <div className="rounded-2xl border border-slate-200/60 bg-white overflow-hidden h-fit">
@@ -47,51 +53,53 @@ export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate 
             <p className="text-xs text-slate-500">Resumo do mês</p>
           </div>
         </div>
-        <button
-          onClick={onNavigate}
-          className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-        >
-          Ver
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {onToggleReveal && (
+            <button
+              onClick={onToggleReveal}
+              title={hideValues ? 'Ver valores (6h)' : 'Ocultar valores'}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              {hideValues ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            </button>
+          )}
+          <button
+            onClick={onNavigate}
+            className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+          >
+            Ver
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Stats - Compacto */}
+      {/* Stats */}
       <div className="p-4 space-y-3">
-        {/* Recebido */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-500" />
             <span className="text-sm text-slate-600">Recebido</span>
           </div>
-          <span className="text-sm font-semibold text-emerald-600">
-            {isPlaceholder ? '—' : formatCurrency(safeStats.monthly_fees_received)}
-          </span>
+          <span className="text-sm font-semibold text-emerald-600">{fmtMoney(safeStats.monthly_fees_received)}</span>
         </div>
 
-        {/* A Receber */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PiggyBank className="w-4 h-4 text-amber-500" />
             <span className="text-sm text-slate-600">A receber</span>
           </div>
-          <span className="text-sm font-semibold text-amber-600">
-            {isPlaceholder ? '—' : formatCurrency(safeStats.monthly_fees_pending)}
-          </span>
+          <span className="text-sm font-semibold text-amber-600">{fmtMoney(safeStats.monthly_fees_pending)}</span>
         </div>
 
-        {/* Em Atraso */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-red-500" />
             <span className="text-sm text-slate-600">Em atraso</span>
           </div>
-          <span className="text-sm font-semibold text-red-600">
-            {isPlaceholder ? '—' : formatCurrency(safeStats.total_overdue)}
-          </span>
+          <span className="text-sm font-semibold text-red-600">{fmtMoney(safeStats.total_overdue)}</span>
         </div>
 
-        {/* Contadores em linha */}
+        {/* Contadores — sempre visíveis (não são valores monetários) */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
           <span className="text-slate-500">
             <strong className="text-slate-700">{isPlaceholder ? '—' : safeStats.paid_installments}</strong> recebidas

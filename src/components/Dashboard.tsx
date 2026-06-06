@@ -30,6 +30,7 @@ import {
   Plus,
   RefreshCw,
   Eye,
+  EyeOff,
   Sparkles,
   User,
   ShieldAlert,
@@ -46,6 +47,7 @@ import { calendarService } from '../services/calendar.service';
 import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
+import { dashboardPreferencesService, isFinancialRevealed } from '../services/dashboardPreferences.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -245,6 +247,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [userProfileId, setUserProfileId] = useState<string>('');
   const [userAuthId, setUserAuthId] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('');
+  const [financialRevealedUntil, setFinancialRevealedUntil] = useState<Date | null>(null);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   // Solicitações de acesso pendentes (visível só para admin)
@@ -328,7 +331,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               setOverdueInstallments(cache.data.overdueInstallments);
               setDjenIntimacoes(cache.data.djenIntimacoes);
               setLoading(false);
-              // Sempre re-busca eventos de calendário em background (dados mais voláteis)
+              // Sempre re-busca dados voláteis em background mesmo com cache
               const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0);
               const future = new Date(cutoff.getTime() + 60 * 24 * 60 * 60 * 1000);
               calendarService.listEvents()
@@ -340,6 +343,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   }).slice(0, 100);
                   setCalendarEvents(fresh);
                 })
+                .catch(() => {});
+              // Intimações: sempre re-busca pois o usuário pode ter lido fora do dashboard
+              djenLocalService.listComunicacoes({ lida: false })
+                .then(fresh => setDjenIntimacoes(fresh))
                 .catch(() => {});
               return;
             }
@@ -468,6 +475,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         setUserProfileId(profile?.id || '');
         setUserAuthId(profile?.user_id || '');
         setUserRole(profile?.role || '');
+
+        if (profile?.user_id) {
+          const prefs = await dashboardPreferencesService.getPreferences(profile.user_id);
+          if (prefs?.financial_revealed_until && isFinancialRevealed(prefs)) {
+            setFinancialRevealedUntil(new Date(prefs.financial_revealed_until));
+          }
+        }
       } catch (error) {
         console.warn('Não foi possível carregar o nome do usuário:', error);
       }
@@ -475,12 +489,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     loadUserName();
   }, []);
 
+  // Auto-expira o reveal financeiro quando o prazo chega
+  useEffect(() => {
+    if (!financialRevealedUntil) return;
+    const ms = financialRevealedUntil.getTime() - Date.now();
+    if (ms <= 0) { setFinancialRevealedUntil(null); return; }
+    const timer = setTimeout(() => setFinancialRevealedUntil(null), ms);
+    return () => clearTimeout(timer);
+  }, [financialRevealedUntil]);
+
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
       loadDashboardData(true);
     });
     return () => unsubscribe();
   }, [loadDashboardData]);
+
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.DASHBOARD_REFRESH, () => {
+      djenLocalService.listComunicacoes({ lida: false })
+        .then(fresh => setDjenIntimacoes(fresh))
+        .catch(() => {});
+    });
+    return () => unsubscribe();
+  }, []);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
 
@@ -1258,10 +1290,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       <p className="text-[11px] text-slate-400 leading-tight">Resumo do mês</p>
                     </div>
                   </div>
-                  <button onClick={() => handleNavigate('financeiro')}
-                    className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition flex-shrink-0">
-                    Ver <ChevronRight className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        const revealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
+                        if (revealed) {
+                          setFinancialRevealedUntil(null);
+                          if (userAuthId) dashboardPreferencesService.updateFinancialRevealedUntil(userAuthId, null);
+                        } else {
+                          const until = new Date(Date.now() + 6 * 60 * 60 * 1000);
+                          setFinancialRevealedUntil(until);
+                          if (userAuthId) dashboardPreferencesService.updateFinancialRevealedUntil(userAuthId, until.toISOString());
+                        }
+                      }}
+                      title={financialRevealedUntil && financialRevealedUntil > new Date() ? 'Ocultar valores' : 'Ver valores (6h)'}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      {financialRevealedUntil && financialRevealedUntil > new Date() ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button onClick={() => handleNavigate('financeiro')}
+                      className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition">
+                      Ver <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 <div className="p-5">
                   {!financialStats ? (
@@ -1271,7 +1322,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     </div>
                   ) : (() => {
                     const s = financialStats;
-                    const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+                    const isRevealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
+                    const fmt = (v: number) => isRevealed ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : 'R$ •••••';
                     return (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -1292,7 +1344,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         </div>
                         {s.total_overdue > 0 && (
                           <div className="rounded-xl border border-red-100 overflow-hidden">
-                            {/* Header do bloco de atraso */}
                             <div className="bg-red-50/60 px-3 py-2 flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <AlertTriangle className="w-3 h-3 text-red-500" />
@@ -1300,7 +1351,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                               </div>
                               <p className="text-sm font-bold text-red-600 tabular-nums whitespace-nowrap">{fmt(s.total_overdue)}</p>
                             </div>
-                            {/* Lista dos inadimplentes */}
                             {overdueInstallments.length > 0 && (
                               <div className="divide-y divide-red-50">
                                 {overdueInstallments.map(inst => {

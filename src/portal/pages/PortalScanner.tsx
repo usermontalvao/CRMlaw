@@ -271,14 +271,19 @@ export const PortalScanner: React.FC = () => {
   const { navigate } = usePortalRouter();
   const [items, setItems] = useState<ScanStateItem[]>([]);
   const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const itemsRef = useRef<ScanStateItem[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
   // Carrega histórico de envios do localStorage
   useEffect(() => {
     if (!session?.user?.id) return;
-    setHistory(loadHistory(session.user.id));
+    const hist = loadHistory(session.user.id);
+    setHistory(hist);
+    // Auto-abre o histórico se o último envio foi há menos de 10 minutos
+    if (hist.length > 0 && Date.now() - new Date(hist[0].sentAt).getTime() < 10 * 60 * 1000) {
+      setHistoryOpen(true);
+    }
   }, [session?.user?.id]);
   // Updated synchronously inside queueAiEnrich .then() — bypasses React render timing
   const latestNamesRef = useRef<Map<string, string>>(new Map());
@@ -291,6 +296,7 @@ export const PortalScanner: React.FC = () => {
   const [sendProgress, setSendProgress] = useState<{ current: number; total: number } | null>(null);
   const [sendMessage, setSendMessage] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -1041,6 +1047,7 @@ export const PortalScanner: React.FC = () => {
 
       latestNamesRef.current.clear();
       setItems([]);
+      setSentCount(successCount);
       setSent(true);
     } finally {
       setSending(false);
@@ -1152,7 +1159,67 @@ export const PortalScanner: React.FC = () => {
         }}
       />
 
-      {/* Histórico de envios */}
+      {!cameraOpen && items.length === 0 && !sent && (
+        <section className="overflow-hidden rounded-[24px] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px]">
+          {/* Mobile */}
+          <div className="sm:hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.30)]">
+                  <ScanLine className="h-4 w-4" />
+                </div>
+                <span className="text-[13px] font-semibold text-slate-800">Scanner de documentos</span>
+              </div>
+              <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold text-orange-500">
+                rápido
+              </span>
+            </div>
+
+            <div className="p-4">
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={triggerUpload}
+                  aria-label="Adicionar arquivo"
+                  className="flex flex-1 flex-col items-center justify-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 py-6 transition active:bg-slate-100"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-[0_6px_18px_rgba(249,115,22,0.32)]">
+                    <Paperclip className="h-5 w-5" />
+                  </div>
+                  <span className="text-[12px] font-semibold text-slate-700">Anexo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openCamera}
+                  aria-label="Abrir câmera"
+                  className="flex flex-1 flex-col items-center justify-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 py-6 transition active:bg-slate-100"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-[0_6px_18px_rgba(249,115,22,0.32)]">
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <span className="text-[12px] font-semibold text-slate-700">Câmera</span>
+                </button>
+              </div>
+
+              <p className="mt-3 text-center text-[11px] text-slate-400">Toque para enviar imagens ou PDF</p>
+            </div>
+          </div>
+
+          {/* Desktop */}
+          <div className="hidden flex-col items-center p-6 text-center sm:flex">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[16px] bg-orange-50 text-orange-500">
+              <ScanLine className="h-6 w-6" />
+            </div>
+            <h2 className="mt-3 text-base font-semibold text-slate-900">Envie seus arquivos</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Documentos, fotos ou prints — a IA nomeia e organiza tudo.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* Histórico de envios — abaixo do card de upload, expandido por padrão */}
       {!cameraOpen && history.length > 0 && items.length === 0 && !sent && (
         <section className="rounded-[24px] bg-white shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
           <button
@@ -1174,6 +1241,9 @@ export const PortalScanner: React.FC = () => {
 
           {historyOpen && (
             <div className="border-t border-slate-100 px-4 pb-4 pt-2">
+              <p className="mb-3 text-[11px] text-slate-400">
+                Registro local deste dispositivo — os arquivos já estão no escritório.
+              </p>
               <div className="flex flex-col gap-2.5">
                 {history.slice(0, 10).map((entry) => (
                   <div key={entry.id} className="flex items-start gap-3">
@@ -1206,55 +1276,6 @@ export const PortalScanner: React.FC = () => {
         </section>
       )}
 
-      {!cameraOpen && items.length === 0 && !sent && (
-        <section className="rounded-[24px] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px] sm:p-6">
-          <div className="mb-1 overflow-hidden rounded-[20px] border border-orange-100 bg-[radial-gradient(circle_at_top,#fff7ed,transparent_55%),linear-gradient(180deg,#fff,#f8fafc)] p-3 sm:hidden">
-            <div className="flex items-center justify-between">
-              <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-[0_8px_18px_rgba(249,115,22,0.28)]">
-                <ScanLine className="h-3.5 w-3.5" />
-              </div>
-              <div className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-orange-500 ring-1 ring-orange-100">
-                rapido
-              </div>
-            </div>
-            <div className="mt-2 rounded-[18px] border border-slate-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center justify-center gap-5 rounded-[14px] bg-[linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-5">
-                <button
-                  type="button"
-                  onClick={triggerUpload}
-                  aria-label="Adicionar arquivo"
-                  className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white text-orange-500 shadow-[0_8px_18px_rgba(15,23,42,0.08)] ring-1 ring-orange-100 transition-transform active:scale-95"
-                >
-                  <Paperclip className="h-7 w-7" />
-                </button>
-                <button
-                  type="button"
-                  onClick={openCamera}
-                  aria-label="Abrir camera"
-                  className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-orange-50 text-orange-500 shadow-[0_8px_18px_rgba(15,23,42,0.08)] ring-1 ring-orange-100 transition-transform active:scale-95"
-                >
-                  <Camera className="h-7 w-7" />
-                </button>
-              </div>
-              <div className="mt-2 text-center">
-                <p className="text-[13px] font-semibold text-slate-900">Faça upload ou tire foto</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">Toque no anexo ou na câmera para começar.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden flex-col items-center text-center sm:flex">
-            <div className="flex h-14 w-14 items-center justify-center rounded-[16px] bg-orange-50 text-orange-500">
-              <ScanLine className="h-6 w-6" />
-            </div>
-            <h2 className="mt-3 text-base font-semibold text-slate-900">Envie seus arquivos</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Documentos, fotos ou prints — a IA nomeia e organiza tudo.
-            </p>
-          </div>
-        </section>
-      )}
-
       {!cameraOpen && cameraError && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{cameraError}</div>
       )}
@@ -1273,8 +1294,11 @@ export const PortalScanner: React.FC = () => {
           </div>
 
           <p className="mt-6 text-2xl font-bold text-slate-900 tracking-tight">Enviado!</p>
-          <p className="mt-2 text-center text-sm text-slate-500">
-            O escritório já foi notificado.
+          <p className="mt-2 text-center text-sm text-slate-700 font-semibold">
+            {sentCount} arquivo{sentCount !== 1 ? 's' : ''} enviado{sentCount !== 1 ? 's' : ''} com sucesso.
+          </p>
+          <p className="mt-1 text-center text-sm text-slate-400">
+            O escritório foi notificado e receberá os documentos em breve.
           </p>
 
           {/* buttons pinned to bottom with safe-area */}
@@ -1283,13 +1307,13 @@ export const PortalScanner: React.FC = () => {
             style={{ bottom: 'calc(58px + env(safe-area-inset-bottom) + 10px)' }}
           >
             <button
-              onClick={() => { setSent(false); setSendMessage(null); }}
+              onClick={() => { setSent(false); setSentCount(0); setSendMessage(null); }}
               className="flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 py-4 text-sm font-bold text-white shadow-[0_6px_20px_rgba(249,115,22,0.32)] active:scale-[0.98] transition-transform"
             >
               <Camera className="h-4 w-4" /> Enviar mais arquivos
             </button>
             <button
-              onClick={() => { setSent(false); setSendMessage(null); }}
+              onClick={() => { setSent(false); setSentCount(0); setSendMessage(null); }}
               className="flex w-full items-center justify-center rounded-[18px] bg-white py-4 text-sm font-semibold text-slate-500 shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-200 active:scale-[0.98] transition-transform"
             >
               Fechar
@@ -1314,20 +1338,43 @@ export const PortalScanner: React.FC = () => {
               </div>
               <div>
                 <p className="text-base font-semibold text-slate-900">
-                  {processedItems.length} arquivo{processedItems.length > 1 ? 's' : ''} no lote
+                  {processedItems.length} arquivo{processedItems.length > 1 ? 's' : ''} no lote atual
                 </p>
                 <p className="text-sm text-slate-400">
-                  {okItems.length} valido{okItems.length !== 1 ? 's' : ''} · pronto{okItems.length !== 1 ? 's' : ''} para enviar
+                  {okItems.length} válido{okItems.length !== 1 ? 's' : ''} · ainda não enviado{okItems.length !== 1 ? 's' : ''}
                 </p>
               </div>
             </div>
-            {badItems.length > 0 && (
-              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600">
-                {badItems.length} com problema
+            <div className="flex flex-col items-end gap-1.5">
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600 ring-1 ring-amber-100">
+                não enviado
               </span>
-            )}
+              {badItems.length > 0 && (
+                <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600">
+                  {badItems.length} com problema
+                </span>
+              )}
+            </div>
           </div>
         </section>
+      )}
+
+      {/* Último envio — visível enquanto há um lote ativo, para deixar clara a separação */}
+      {!cameraOpen && history.length > 0 && items.length > 0 && (
+        <div className="flex items-center gap-3 rounded-[20px] border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-semibold text-emerald-800">
+              Último envio concluído: {history[0].count} arquivo{history[0].count !== 1 ? 's' : ''}
+              <span className="ml-1.5 font-normal text-emerald-600">· {formatHistoryDate(history[0].sentAt)}</span>
+            </p>
+            {history[0].files.length > 0 && (
+              <p className="mt-0.5 truncate text-[11px] text-emerald-600/70">
+                {history[0].files.slice(0, 2).join(' · ')}{history[0].files.length > 2 ? ` +${history[0].files.length - 2}` : ''}
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {!cameraOpen && items.length > 0 && (
@@ -1457,9 +1504,10 @@ export const PortalScanner: React.FC = () => {
           <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-[max(16px,env(safe-area-inset-top))] pb-3">
             <button
               onClick={stopCamera}
-              className="inline-flex h-10 items-center gap-2 rounded-full bg-black/50 px-4 text-sm font-semibold text-white backdrop-blur-sm"
+              aria-label="Fechar câmera"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm transition active:bg-black/90"
             >
-              <X className="h-4 w-4" /> Fechar
+              <X className="h-5 w-5" />
             </button>
             {processedItems.length > 0 && (
               <div className="rounded-full bg-orange-500 px-3 py-1 text-xs font-bold text-white shadow-[0_4px_12px_rgba(249,115,22,0.4)]">

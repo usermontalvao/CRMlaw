@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Calendar, Clock, Gavel, Scale, MapPin,
   AlertCircle, Activity, CheckCircle2, Loader2, ShieldCheck, ChevronRight, ChevronDown, Sparkles,
@@ -172,7 +172,6 @@ function nextAction(p: ProcessFull, upcomingApts: Appointment[]): { tone: 'ok' |
 export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processId }) => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
-  const autoAiRefreshKeyRef = useRef<string | null>(null);
   const [data, setData] = useState<ProcessFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +195,6 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   useEffect(() => {
     if (!session?.user?.id || !processId || !data) return;
     let mounted = true;
-    const refreshKey = `${processId}:${data.updated_at || 'no-updated-at'}`;
     clientPortalService.getAiCache(session.user.id, 'process', processId, 7, data.updated_at).then(cached => {
       if (!mounted) return;
       if (!cached) {
@@ -204,13 +202,8 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
         setAiGeneratedAt(null);
         setAiFromCache(false);
         setAiState('idle');
-        if (autoAiRefreshKeyRef.current !== refreshKey) {
-          autoAiRefreshKeyRef.current = refreshKey;
-          void handleExplainProcess(true);
-        }
         return;
       }
-      autoAiRefreshKeyRef.current = refreshKey;
       setAiText(cached.text);
       setAiGeneratedAt(cached.generatedAt);
       setAiFromCache(true);
@@ -219,7 +212,15 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
     return () => { mounted = false; };
   }, [session?.user?.id, processId, data]);
 
-  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
+  if (loading) return (
+    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white">
+      <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+      <div className="text-center">
+        <p className="text-sm font-semibold text-slate-900">Aguarde</p>
+        <p className="text-sm text-slate-500">Estamos buscando os dados do processo...</p>
+      </div>
+    </div>
+  );
   if (error || !data) {
     return <div><BackBtn onClick={() => navigate('casos')} /><EmptyState icon={Scale} title="Não foi possível carregar" description={error || 'Processo não encontrado.'} /></div>;
   }

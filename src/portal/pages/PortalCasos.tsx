@@ -33,22 +33,36 @@ export const PortalCasos: React.FC = () => {
   const { navigate }  = usePortalRouter();
   const [processes,     setProcesses]     = useState<ProcessItem[]>([]);
   const [requirements,  setRequirements]  = useState<RequirementItem[]>([]);
-  const [loading,       setLoading]       = useState(true);
+  const [processesLoading, setProcessesLoading] = useState(true);
+  const [requirementsLoading, setRequirementsLoading] = useState(true);
   const [search,        setSearch]        = useState('');
   const [tab,           setTab]           = useState<FilterTab>('all');
 
   useEffect(() => {
     if (!session?.user?.id) return;
     let mounted = true;
-    setLoading(true);
-    Promise.all([
-      clientPortalService.listProcesses(session.user.id),
-      clientPortalService.listRequirements(session.user.id),
-    ]).then(([procs, reqs]) => {
-      if (!mounted) return;
-      setProcesses(procs as ProcessItem[]);
-      setRequirements(reqs as RequirementItem[]);
-    }).finally(() => mounted && setLoading(false));
+
+    setProcessesLoading(true);
+    setRequirementsLoading(true);
+
+    clientPortalService.listProcesses(session.user.id)
+      .then((procs) => {
+        if (!mounted) return;
+        setProcesses(procs as ProcessItem[]);
+      })
+      .finally(() => {
+        if (mounted) setProcessesLoading(false);
+      });
+
+    clientPortalService.listRequirements(session.user.id)
+      .then((reqs) => {
+        if (!mounted) return;
+        setRequirements(reqs as RequirementItem[]);
+      })
+      .finally(() => {
+        if (mounted) setRequirementsLoading(false);
+      });
+
     return () => { mounted = false; };
   }, [session?.user?.id]);
 
@@ -57,6 +71,11 @@ export const PortalCasos: React.FC = () => {
     requerimentos: requirements.length,
     total:         processes.length + requirements.length,
   }), [processes, requirements]);
+
+  const loading =
+    tab === 'processos' ? processesLoading :
+    tab === 'requerimentos' ? requirementsLoading :
+    processesLoading || requirementsLoading;
 
   const items = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -125,7 +144,7 @@ export const PortalCasos: React.FC = () => {
             >
               {t.label}
               <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
-                {t.count}
+                {t.id === 'all' && (processesLoading || requirementsLoading) ? '?' : t.id === 'processos' && processesLoading ? '?' : t.id === 'requerimentos' && requirementsLoading ? '?' : t.count}
               </span>
             </button>
           );
@@ -134,7 +153,19 @@ export const PortalCasos: React.FC = () => {
 
       {/* ── Lista ───────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex flex-col gap-3"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
+        <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] bg-white px-6 py-10 text-center shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+          <div className="relative mb-4 flex h-20 w-20 items-center justify-center">
+            <span className="absolute inset-0 rounded-full border-4 border-orange-100" />
+            <span className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-orange-500 border-r-orange-300" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-50 to-white shadow-[0_10px_30px_rgba(249,115,22,0.16)]">
+              <Scale className="h-6 w-6 text-orange-500" />
+            </div>
+          </div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">Aguarde</p>
+            <p className="mt-1 text-sm text-slate-500">Estamos buscando seus casos</p>
+          </div>
+        </div>
       ) : items.length === 0 ? (
         <EmptyState
           icon={Scale}

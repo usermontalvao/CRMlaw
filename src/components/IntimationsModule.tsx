@@ -53,6 +53,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 import { supabase } from '../config/supabase';
 import { useSelectionState } from '../hooks/useSelectionState';
 import type { DjenComunicacaoLocal, DjenConsultaParams, UpdateDjenComunicacaoDTO } from '../types/djen.types';
@@ -874,19 +875,20 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleMarkAsRead = async (id: string) => {
     try {
       await djenLocalService.marcarComoLida(id);
-      
+
       // Atualizar estado local sem recarregar tudo
-      setIntimations(prev => prev.map(int => 
+      setIntimations(prev => prev.map(int =>
         int.id === id ? { ...int, lida: true, lida_em: new Date().toISOString() } : int
       ));
-      
+
       // 🔔 Marcar notificação correspondente como lida
       if (user?.id) {
         try {
           await userNotificationService.markAsReadByIntimationId(id, user.id);
         } catch {}
       }
-      
+
+      events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
       toast.success('Marcado como lida');
     } catch (err: any) {
       toast.error('Erro ao marcar', err.message);
@@ -929,6 +931,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         await djenLocalService.marcarComoLida(id);
       }
       await reloadIntimations();
+      events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
       toast.success('Sucesso', `${unreadIds.length} intimações marcadas como lidas`);
     } catch (err: any) {
       toast.error('Erro', err.message);

@@ -876,6 +876,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.213',
+    date: '06/06/2026',
+    summary: 'Portal: carregamento de casos ficou mais claro e previs?vel durante a busca dos processos.',
+    modules: [
+      { moduleId: 'Portal', changes: [
+        { type: 'improvement' as const, title: 'Tela de casos passou a indicar busca em andamento com loading dedicado', description: 'A listagem de casos do portal deixou de exibir estados vazios ou skeleton deformado antes da resposta real, usando um loading centralizado com mensagem clara enquanto os processos s?o carregados.' },
+        { type: 'improvement' as const, title: 'Detalhe do processo ganhou feedback melhor de carregamento', description: 'A abertura de um processo agora apresenta mensagem de espera mais expl?cita durante a busca dos dados, reduzindo a sensa??o de travamento no portal do cliente.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.212',
     date: '05/06/2026',
     summary: 'Portal: vers?o curta na interface, atualiza??o de service worker por build, fallback de IA sem spam e refinamentos nas telas principais.',

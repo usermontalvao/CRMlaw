@@ -172,6 +172,7 @@ export const PortalChatWidget: React.FC = () => {
   const inputRef    = useRef<HTMLTextAreaElement>(null);
   const roomIdRef   = useRef<string | null>(null);
   const openRef     = useRef(false);
+  const routeRef    = useRef<string>('');
   const chatCh      = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
   const typingCh    = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
   const attTypCh    = useRef<ReturnType<typeof supabasePortal.channel> | null>(null);
@@ -187,6 +188,7 @@ export const PortalChatWidget: React.FC = () => {
 
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { openRef.current = open; }, [open]);
+  useEffect(() => { routeRef.current = route; }, [route]);
 
   // Permissão de notificação solicitada na primeira abertura do chat (exige gesto do usuário)
   // Browsers modernos bloqueiam requestPermission() sem gesto — nunca chamar no mount.
@@ -316,6 +318,7 @@ export const PortalChatWidget: React.FC = () => {
     if (route !== 'mensagens') return;
     void markChatRepliesRead();
     setFloatingNotice(null);
+    setLocalUnread(0);
   }, [route, markChatRepliesRead]);
 
   // Polling robusto — NÃO depende de `loaded` (que poderia nunca virar true se o
@@ -415,6 +418,7 @@ export const PortalChatWidget: React.FC = () => {
     if (fromOffice.length === 0) return;
 
     if (openRef.current) return; // chat aberto = já está vendo, sem badge/som
+    if (routeRef.current === 'mensagens') return; // tela de mensagens aberta: não acumula badge
     setLocalUnread((u) => u + fromOffice.length);
     fireNotification(fromOffice[fromOffice.length - 1]);
   }, [msgs, loaded, fireNotification]);
@@ -671,21 +675,39 @@ export const PortalChatWidget: React.FC = () => {
             Notification.requestPermission().catch(() => {});
           }
         }}
-        className="fixed right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-orange-500 text-white shadow-[0_8px_28px_rgba(249,115,22,0.40)] transition-all active:scale-95"
+        className={`fixed right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-orange-500 text-white shadow-[0_8px_28px_rgba(249,115,22,0.40)] transition-all active:scale-95 ${
+          !open && attendant && !closed ? 'p-[3px]' : ''
+        }`}
         style={{ bottom: btnBottom }}
         aria-label="Chat com o escritório"
       >
-        {open
-          ? <ChevronDown className="h-5 w-5" />
-          : <>
-              <MessageCircle className="h-5 w-5" />
-              {unread > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </>
-        }
+        {open ? (
+          <ChevronDown className="h-5 w-5" />
+        ) : attendant && !closed ? (
+          <>
+            {attendant.avatar_url
+              ? <img src={attendant.avatar_url} alt={attendant.name} className="h-full w-full rounded-full object-cover" />
+              : <div className="flex h-full w-full items-center justify-center rounded-full bg-white/20 text-[16px] font-bold">{initials(attendant.name)}</div>
+            }
+            {attendant.presence_status === 'online' && (
+              <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white" />
+            )}
+            {unread > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <MessageCircle className="h-5 w-5" />
+            {unread > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </>
+        )}
       </button>
 
       <style>{`@keyframes wDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}`}</style>

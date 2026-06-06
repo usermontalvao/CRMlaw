@@ -5,6 +5,7 @@ import {
   FileText, Download, Play, Pause, X, Check, CheckCheck,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
+import { usePortalNotifications } from '../contexts/PortalNotificationsContext';
 import { clientPortalService } from '../services/clientPortal.service';
 import { supabasePortal } from '../lib/supabasePortal';
 import type { PortalChatMessage } from '../../types/chat.types';
@@ -106,6 +107,7 @@ const AudioPlayer: React.FC<{ src: string }> = ({ src }) => {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export const PortalMessages: React.FC = () => {
   const { session } = useClientAuth();
+  const { markChatRepliesRead } = usePortalNotifications();
 
   interface AttendantInfo {
     name: string;
@@ -239,6 +241,11 @@ export const PortalMessages: React.FC = () => {
     const id = setInterval(() => loadMessages(false), 4000);
     return () => clearInterval(id);
   }, [session?.user?.id, loadMessages]);
+
+  // Zera unread de chat ao abrir a tela de mensagens (fonte única de verdade = contexto)
+  useEffect(() => {
+    void markChatRepliesRead();
+  }, [markChatRepliesRead]);
 
   // ── Realtime — novas mensagens ───────────────────────────────────────────────
   useEffect(() => {

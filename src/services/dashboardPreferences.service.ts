@@ -7,8 +7,16 @@ export interface DashboardPreferences {
   right_widgets: string[];
   /** Layout responsivo do react-grid-layout (lg/md/sm/xs/xxs). NULL = auto-ajustado */
   grid_layout?: Record<string, Array<{ i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number }>> | null;
+  /** Timestamp até quando os valores financeiros ficam visíveis. NULL = sempre censurado. */
+  financial_revealed_until?: string | null;
   updated_at?: string;
   created_at?: string;
+}
+
+/** Retorna true se o reveal ainda está ativo (dentro do prazo). */
+export function isFinancialRevealed(prefs: Pick<DashboardPreferences, 'financial_revealed_until'> | null): boolean {
+  if (!prefs?.financial_revealed_until) return false;
+  return new Date(prefs.financial_revealed_until) > new Date();
 }
 
 class DashboardPreferencesService {
@@ -140,6 +148,32 @@ class DashboardPreferencesService {
       return false;
     }
 
+    return true;
+  }
+
+  /**
+   * Define até quando os valores financeiros ficam visíveis.
+   * Passa null para censurar imediatamente.
+   */
+  async updateFinancialRevealedUntil(userId: string, until: string | null): Promise<boolean> {
+    const updated_at = new Date().toISOString();
+
+    const { data: updated, error: updErr } = await supabase
+      .from(this.tableName)
+      .update({ financial_revealed_until: until, updated_at })
+      .eq('user_id', userId)
+      .select('user_id');
+
+    if (!updErr && updated && updated.length > 0) return true;
+
+    const { error: insErr } = await supabase
+      .from(this.tableName)
+      .insert({ user_id: userId, financial_revealed_until: until, left_widgets: [], right_widgets: [], updated_at });
+
+    if (insErr) {
+      console.error('Erro ao salvar financial_revealed_until:', insErr);
+      return false;
+    }
     return true;
   }
 }

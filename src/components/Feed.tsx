@@ -81,7 +81,7 @@ import { djenLocalService } from '../services/djenLocal.service';
 import { requirementService } from '../services/requirement.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { financialService } from '../services/financial.service';
-import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { dashboardPreferencesService, isFinancialRevealed } from '../services/dashboardPreferences.service';
 import { feedPostsService, type FeedPost, type EntityReference, type PreviewData, type TagRecord } from '../services/feedPosts.service';
 import { feedPollsService, type FeedPoll, type FeedPollVoter } from '../services/feedPolls.service';
 import type { Client } from '../types/client.types';
@@ -935,6 +935,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     'atividade',
   ]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [financialRevealedUntil, setFinancialRevealedUntil] = useState<Date | null>(null);
   const [isXlScreen, setIsXlScreen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     return window.matchMedia('(min-width: 1280px)').matches;
@@ -1216,6 +1217,9 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       try {
         const preferences = await dashboardPreferencesService.getPreferences(user.id);
         if (preferences) {
+          if (preferences.financial_revealed_until && isFinancialRevealed(preferences)) {
+            setFinancialRevealedUntil(new Date(preferences.financial_revealed_until));
+          }
           const isAdmin = (currentProfile?.role || '')
             .toLowerCase()
             .normalize('NFD')
@@ -1267,6 +1271,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     };
     loadPreferences();
   }, [user?.id, currentProfile?.role]);
+
+  // Auto-expira o reveal financeiro quando o prazo chega
+  useEffect(() => {
+    if (!financialRevealedUntil) return;
+    const ms = financialRevealedUntil.getTime() - Date.now();
+    if (ms <= 0) { setFinancialRevealedUntil(null); return; }
+    const timer = setTimeout(() => setFinancialRevealedUntil(null), ms);
+    return () => clearTimeout(timer);
+  }, [financialRevealedUntil]);
 
   const canSeeWidget = useCallback(
     (widgetId: string) => {
@@ -3634,10 +3647,22 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       );
     }
     if (widgetId === 'financeiro') {
+      const isRevealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
       return (
         <FinancialCard
           stats={financialStats}
           onNavigate={() => handleNavigate('financeiro')}
+          hideValues={!isRevealed}
+          onToggleReveal={() => {
+            if (isRevealed) {
+              setFinancialRevealedUntil(null);
+              if (user?.id) dashboardPreferencesService.updateFinancialRevealedUntil(user.id, null);
+            } else {
+              const until = new Date(Date.now() + 6 * 60 * 60 * 1000);
+              setFinancialRevealedUntil(until);
+              if (user?.id) dashboardPreferencesService.updateFinancialRevealedUntil(user.id, until.toISOString());
+            }
+          }}
         />
       );
     }
