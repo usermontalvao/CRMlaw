@@ -5,6 +5,7 @@ import {
   Scale, ExternalLink, Search, Printer, CalendarPlus, StickyNote,
   User, Mail, Phone, Calendar as CalendarIcon, ChevronRight, Building2, MessageCircle, Sparkles, Check,
   Star, X, Image as ImageIcon, MapPin, AlarmClock, ClipboardList, UserCheck, UserX,
+  Bell, ShieldCheck, BellOff,
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -21,15 +22,14 @@ import { signatureService } from '../services/signature.service';
 import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
-import { cloudService } from '../services/cloud.service';
-import { deadlineService } from '../services/deadline.service';
+import { clientOverviewService } from '../services/clientOverview.service';
 import { financialService } from '../services/financial.service';
-import { calendarService } from '../services/calendar.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
+import type { ChatRoom } from '../types/chat.types';
 
-type Tab = 'data' | 'processes' | 'financial' | 'deadlines' | 'requirements' | 'documents' | 'assinaturas' | 'overview' | 'agenda';
+type Tab = 'data' | 'processes' | 'financial' | 'deadlines' | 'requirements' | 'documents' | 'assinaturas' | 'overview' | 'agenda' | 'atendimento' | 'portal';
 
 interface ClientDetailsProps {
   client: Client;
@@ -179,6 +179,7 @@ interface TLeaf {
 interface TRoot {
   id: string;
   type: 'process' | 'requirement' | 'general';
+  iconType?: 'portal' | 'scanner' | 'notification' | 'profile';
   date: string;
   title: string;
   subtitle?: string;
@@ -222,6 +223,114 @@ const CAL_TYPE_LABEL: Record<string, string> = {
   hearing: 'Audiência', pericia: 'Perícia', meeting: 'Reunião',
   deadline: 'Prazo', requirement: 'Requerimento', payment: 'Pagamento',
 };
+
+function buildPortalTimeline(
+  portalUser: { id: string; created_at: string; last_login_at: string | null } | null,
+  notifications: Array<{ id: string; type: string; title: string; message: string | null; is_read: boolean; created_at: string }>,
+  scannerItems: Array<{ messageId: string; fileName: string; sentAt: string }>,
+  profileReqs: Array<{ id: string; changes: Record<string, string>; status: string; requested_at: string }>,
+): TRoot[] {
+  if (!portalUser) return [];
+  const roots: TRoot[] = [];
+
+  // ── Portal setup ──────────────────────────────────────────────────────────
+  roots.push({
+    id: `portal-setup-${portalUser.id}`,
+    type: 'general', iconType: 'portal',
+    date: portalUser.created_at,
+    title: 'Portal ativado',
+    subtitle: portalUser.last_login_at
+      ? `Último acesso ${new Date(portalUser.last_login_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`
+      : 'Sem logins registrados',
+    statusLabel: 'Portal',
+    statusColor: 'bg-emerald-100 text-emerald-700',
+    leaves: [],
+  });
+
+  // ── Solicitações de atualização cadastral ─────────────────────────────────
+  if (profileReqs.length > 0) {
+    const STATUS_BADGE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
+      pending:  { bg: 'bg-amber-100',   text: 'text-amber-700',   dot: 'bg-amber-500',   label: 'Pendente'  },
+      approved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Aprovado'  },
+      rejected: { bg: 'bg-red-100',     text: 'text-red-600',     dot: 'bg-red-500',     label: 'Rejeitado' },
+    };
+    const latestReq = profileReqs.slice().sort((a, b) =>
+      new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime()
+    )[0];
+    const pendingCount = profileReqs.filter((r) => r.status === 'pending').length;
+    roots.push({
+      id: 'portal-profile-reqs',
+      type: 'general', iconType: 'profile',
+      date: latestReq.requested_at,
+      title: 'Atualizações cadastrais',
+      subtitle: `${profileReqs.length} solicitação${profileReqs.length !== 1 ? 'ões' : ''} enviada${profileReqs.length !== 1 ? 's' : ''} pelo portal`,
+      statusLabel: pendingCount > 0 ? `${pendingCount} pendente${pendingCount !== 1 ? 's' : ''}` : 'Todas processadas',
+      statusColor: pendingCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500',
+      leaves: profileReqs
+        .slice()
+        .sort((a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime())
+        .map((r) => {
+          const sc = STATUS_BADGE[r.status] ?? STATUS_BADGE.pending;
+          const fields = Object.keys(r.changes).length;
+          return {
+            id: `profile-req-${r.id}`,
+            date: r.requested_at,
+            label: sc.label,
+            title: `${fields} campo${fields !== 1 ? 's' : ''} alterado${fields !== 1 ? 's' : ''}`,
+            badgeBg: sc.bg, badgeText: sc.text, dot: sc.dot,
+          };
+        }),
+    });
+  }
+
+  // ── Notificações do portal (exclui chat_reply — spam) ───────────────────
+  const relevantNotifs = notifications.filter((n) => n.type !== 'chat_reply');
+  if (relevantNotifs.length > 0) {
+    const latestNotif = relevantNotifs[0];
+    const unread = relevantNotifs.filter((n) => !n.is_read).length;
+    roots.push({
+      id: 'portal-notifications',
+      type: 'general', iconType: 'notification',
+      date: latestNotif.created_at,
+      title: 'Notificações portal',
+      subtitle: `${relevantNotifs.length} notificação${relevantNotifs.length !== 1 ? 'ões' : ''} enviada${relevantNotifs.length !== 1 ? 's' : ''}`,
+      statusLabel: unread > 0 ? `${unread} não lida${unread !== 1 ? 's' : ''}` : 'Todas lidas',
+      statusColor: unread > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500',
+      leaves: relevantNotifs.slice(0, 10).map((n) => ({
+        id: `portal-notif-${n.id}`,
+        date: n.created_at,
+        label: n.is_read ? 'Lida' : 'Não lida',
+        title: n.title,
+        badgeBg: n.is_read ? 'bg-slate-100' : 'bg-orange-100',
+        badgeText: n.is_read ? 'text-slate-500' : 'text-orange-700',
+        dot: n.is_read ? 'bg-slate-400' : 'bg-orange-500',
+      })),
+    });
+  }
+
+  // ── Scanner uploads ───────────────────────────────────────────────────────
+  if (scannerItems.length > 0) {
+    const latest = scannerItems[0]; // já ordenado desc por sentAt
+    roots.push({
+      id: 'portal-scanner',
+      type: 'general', iconType: 'scanner',
+      date: latest.sentAt,
+      title: 'Envios pelo Scanner',
+      subtitle: `${scannerItems.length} arquivo${scannerItems.length !== 1 ? 's' : ''} enviado${scannerItems.length !== 1 ? 's' : ''} pelo portal`,
+      statusLabel: `${scannerItems.length} arquivo${scannerItems.length !== 1 ? 's' : ''}`,
+      statusColor: 'bg-indigo-100 text-indigo-700',
+      leaves: scannerItems.slice(0, 10).map((s) => ({
+        id: `scanner-${s.messageId}`,
+        date: s.sentAt,
+        label: 'Scanner',
+        title: s.fileName,
+        badgeBg: 'bg-indigo-100', badgeText: 'text-indigo-700', dot: 'bg-indigo-500',
+      })),
+    });
+  }
+
+  return roots;
+}
 
 function buildStructuredTimeline(
   processes: Process[],
@@ -613,6 +722,40 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [rejectInputId, setRejectInputId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  // ── Portal user + chat room (carregados no mount)
+  const [portalUser, setPortalUser] = useState<{
+    id: string; auth_user_id: string | null; is_active: boolean; last_login_at: string | null;
+    notifications_last_seen_at: string | null; created_at: string;
+  } | null>(null);
+  const [portalDataLoading, setPortalDataLoading] = useState(false);
+  const [clientChatRooms, setClientChatRooms] = useState<ChatRoom[]>([]);
+  const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
+  const [roomMessages, setRoomMessages] = useState<Record<string, Array<{
+    id: string; content: string; created_at: string; is_system: boolean | null; portal_client_id: string | null;
+  }>>>({});
+  const [loadingRoomIds, setLoadingRoomIds] = useState<Set<string>>(new Set());
+  const [pushActive, setPushActive] = useState(false);
+
+  // ── Portal notifications (carregadas lazy na aba Portal)
+  const [portalNotifications, setPortalNotifications] = useState<Array<{
+    id: string; type: string; title: string; message: string | null; is_read: boolean; created_at: string;
+  }>>([]);
+  const [portalNotifsLoading, setPortalNotifsLoading] = useState(false);
+  const [portalNotifsLoaded, setPortalNotifsLoaded] = useState(false);
+  const [showAllNotifs, setShowAllNotifs] = useState(false);
+
+  // ── Scanner uploads (extraídos de mensagens de chat, lazy na aba Documentos)
+  interface ScannerAttachment {
+    messageId: string; filePath: string; fileName: string; displayPath: string;
+    size?: number; signedUrl?: string | null; sentAt: string;
+  }
+  const [scannerUploads, setScannerUploads] = useState<ScannerAttachment[]>([]);
+  const [scannerUploadsLoading, setScannerUploadsLoading] = useState(false);
+  const [scannerUploadsLoaded, setScannerUploadsLoaded] = useState(false);
+
+  // ── Uploads de doc pendentes de revisão (contagem no mount)
+  const [pendingUploadsCount, setPendingUploadsCount] = useState(0);
+
   // ── Pay installment (dar baixa)
   const [payingInstallmentId, setPayingInstallmentId] = useState<string | null>(null);
   const [payForm, setPayForm] = useState<{ date: string; method: PaymentMethod; value: number }>({
@@ -626,120 +769,74 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   useEffect(() => {
     let active = true;
 
-    const loadSignatures = async () => {
-      setSignatureLoading(true);
-      try {
-        const r = await signatureService.listRequestsWithSigners({ client_id: client.id });
-        if (!active) return;
-        setSignatureRequests(r);
+    // Selfie processing: extrai fotos biométricas das assinaturas (assíncrono, não bloqueia o resto)
+    const processSelfies = async (signatures: typeof signatureRequests) => {
+      const seen = new Set<string>();
+      const entries: Array<{ path: string; label: string }> = [];
+      const signedReqs = [...signatures]
+        .filter((req) => req.status === 'signed')
+        .sort((a, b) => new Date(b.signed_at || b.updated_at).getTime() - new Date(a.signed_at || a.updated_at).getTime());
 
-        // Collect ALL unique facial image paths across signed requests + signers
-        const seen = new Set<string>();
-        const entries: Array<{ path: string; label: string }> = [];
-
-        const signedRequests = [...r]
-          .filter((req) => req.status === 'signed')
-          .sort((a, b) => new Date(b.signed_at || b.updated_at).getTime() - new Date(a.signed_at || a.updated_at).getTime());
-
-        for (const req of signedRequests) {
-          const dateLabel = req.signed_at
-            ? new Date(req.signed_at).toLocaleDateString('pt-BR')
-            : req.document_name || 'Documento';
-
-          // Signer-level photos first
-          for (const signer of req.signers ?? []) {
-            if (signer.facial_image_path && signer.status === 'signed' && !seen.has(signer.facial_image_path)) {
-              seen.add(signer.facial_image_path);
-              entries.push({ path: signer.facial_image_path, label: `${signer.name || 'Signatário'} · ${dateLabel}` });
-            }
-          }
-          // Request-level fallback
-          if (req.facial_image_path && !seen.has(req.facial_image_path)) {
-            seen.add(req.facial_image_path);
-            entries.push({ path: req.facial_image_path, label: `${req.document_name || 'Documento'} · ${dateLabel}` });
+      for (const req of signedReqs) {
+        const dateLabel = req.signed_at
+          ? new Date(req.signed_at).toLocaleDateString('pt-BR')
+          : req.document_name || 'Documento';
+        for (const signer of req.signers ?? []) {
+          if (signer.facial_image_path && signer.status === 'signed' && !seen.has(signer.facial_image_path)) {
+            seen.add(signer.facial_image_path);
+            entries.push({ path: signer.facial_image_path, label: `${signer.name || 'Signatário'} · ${dateLabel}` });
           }
         }
+        if (req.facial_image_path && !seen.has(req.facial_image_path)) {
+          seen.add(req.facial_image_path);
+          entries.push({ path: req.facial_image_path, label: `${req.document_name || 'Documento'} · ${dateLabel}` });
+        }
+      }
+      if (entries.length === 0 || !active) return;
 
-        if (entries.length === 0) return;
-
-        // Generate signed URLs for all
-        const withUrls = await Promise.all(
-          entries.map(async (e) => {
-            try {
-              const url = await signatureService.getSignedImageUrl(e.path, 3600);
-              return { ...e, url };
-            } catch { return null; }
-          })
-        );
-        const excludedSet = new Set<string>(
-          Array.isArray((client as any).excluded_photo_paths) ? (client as any).excluded_photo_paths : [],
-        );
-        const valid = (withUrls.filter(Boolean) as Array<{ path: string; url: string; label: string }>)
-          .filter((e) => !excludedSet.has(e.path));
-        if (!active || valid.length === 0) return;
-
-        setSelfies(valid);
-        // Respect already-pinned photo; if none, default to first (most recent)
-        if (!client.photo_path) setPinnedPath(null);
-      } catch { if (active) setSignatureRequests([]); }
-      finally { if (active) setSignatureLoading(false); }
+      const withUrls = await Promise.all(
+        entries.map(async (e) => {
+          try { const url = await signatureService.getSignedImageUrl(e.path, 3600); return { ...e, url }; }
+          catch { return null; }
+        })
+      );
+      const excludedSet = new Set<string>(
+        Array.isArray((client as any).excluded_photo_paths) ? (client as any).excluded_photo_paths : [],
+      );
+      const valid = (withUrls.filter(Boolean) as Array<{ path: string; url: string; label: string }>)
+        .filter((e) => !excludedSet.has(e.path));
+      if (!active || valid.length === 0) return;
+      setSelfies(valid);
+      if (!client.photo_path) setPinnedPath(null);
     };
 
-    const loadPetitions = async () => {
-      setPetitionsLoading(true);
-      try {
-        const all = await petitionEditorService.listPetitions();
-        if (active) setClientPetitions(all.filter((p) => p.client_id === client.id));
-      } catch { if (active) setClientPetitions([]); }
-      finally { if (active) setPetitionsLoading(false); }
-    };
+    // Todos os carregamentos via aggregator (paralelo, resiliente)
+    setSignatureLoading(true); setPetitionsLoading(true); setCloudFoldersLoading(true);
+    setDeadlinesLoading(true); setCalendarLoading(true); setFinancialLoading(true);
+    setProfileReqLoading(true); setPortalDataLoading(true);
 
-    const loadCloud = async () => {
-      setCloudFoldersLoading(true);
-      try {
-        const f = await cloudService.listClientRootFolders(client.id, true);
-        if (active) setClientCloudFolders(f);
-      } catch { if (active) setClientCloudFolders([]); }
-      finally { if (active) setCloudFoldersLoading(false); }
-    };
-
-    const loadDeadlines = async () => {
-      setDeadlinesLoading(true);
-      try {
-        const d = await deadlineService.listDeadlines({ client_id: client.id });
-        if (active) setDeadlines(d);
-      } catch { if (active) setDeadlines([]); }
-      finally { if (active) setDeadlinesLoading(false); }
-    };
-
-    const loadCalendar = async () => {
-      setCalendarLoading(true);
-      try {
-        const all = await calendarService.listEvents();
-        if (active) setAllCalendarEvents(all);
-      } catch { if (active) setAllCalendarEvents([]); }
-      finally { if (active) setCalendarLoading(false); }
-    };
-
-    const loadFinancial = async () => {
-      setFinancialLoading(true);
-      try {
-        const a = await financialService.listAgreements({ client_id: client.id });
-        if (active) setAgreements(a);
-      } catch { if (active) setAgreements([]); }
-      finally { if (active) setFinancialLoading(false); }
-    };
-
-    const loadProfileReqs = async () => {
-      setProfileReqLoading(true);
-      try {
-        const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_client_id: client.id, p_status: null });
-        if (active) setProfileReqs(Array.isArray(data) ? data : []);
-      } catch { /* silent */ }
-      finally { if (active) setProfileReqLoading(false); }
-    };
-
-    void Promise.all([loadSignatures(), loadPetitions(), loadCloud(), loadDeadlines(), loadFinancial(), loadCalendar(), loadProfileReqs()]);
+    clientOverviewService.load(client.id).then((overview) => {
+      if (!active) return;
+      setSignatureRequests(overview.signatures);
+      setClientPetitions(overview.petitions);
+      setClientCloudFolders(overview.cloudFolders);
+      setDeadlines(overview.deadlines);
+      setAllCalendarEvents(overview.calendarEvents);
+      setAgreements(overview.agreements);
+      setProfileReqs(overview.profileReqs);
+      setPortalUser(overview.portalUser);
+      setClientChatRooms(overview.chatRooms);
+      setPushActive(overview.pushActive);
+      setPendingUploadsCount(overview.pendingUploadsCount);
+      // Selfies: processamento assíncrono independente
+      void processSelfies(overview.signatures);
+    }).catch(() => { /* erros individuais já foram capturados no aggregator */ })
+    .finally(() => {
+      if (!active) return;
+      setSignatureLoading(false); setPetitionsLoading(false); setCloudFoldersLoading(false);
+      setDeadlinesLoading(false); setCalendarLoading(false); setFinancialLoading(false);
+      setProfileReqLoading(false); setPortalDataLoading(false);
+    });
     return () => { active = false; };
   }, [client.id]);
 
@@ -760,6 +857,71 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       .finally(() => { if (active) setInstallmentsLoading(false); });
     return () => { active = false; };
   }, [activeTab, agreements, installmentsLoaded]);
+
+  // ── Scanner uploads: extraídos de mensagens com __anexo__: do chat portal
+  useEffect(() => {
+    if (scannerUploadsLoaded || !portalUser) return;
+    let active = true;
+    const ATTACH_PREFIX = '__anexo__:';
+    const load = async () => {
+      setScannerUploadsLoading(true);
+      try {
+        const { data: msgs } = await supabase
+          .from('chat_messages')
+          .select('id, content, created_at, user_id')
+          .eq('portal_client_id', portalUser.id)
+          .like('content', `${ATTACH_PREFIX}%`)
+          .order('created_at', { ascending: false })
+          .limit(30);
+        if (!active) return;
+        const parsed: ScannerAttachment[] = [];
+        for (const msg of (msgs ?? []) as Array<{ id: string; content: string; created_at: string; user_id: string }>) {
+          try {
+            const meta = JSON.parse(msg.content.slice(ATTACH_PREFIX.length));
+            const displayPath: string = meta.displayPath ?? meta.filePath?.split('/').slice(1).join('/') ?? '';
+            if (!displayPath.startsWith('scanner_')) continue;
+            parsed.push({
+              messageId: msg.id,
+              filePath: meta.filePath ?? '',
+              fileName: meta.fileName ?? displayPath,
+              displayPath,
+              size: meta.size,
+              signedUrl: meta.url ?? null,
+              sentAt: msg.created_at,
+            });
+          } catch { /* mensagem mal-formada */ }
+        }
+        setScannerUploads(parsed);
+        setScannerUploadsLoaded(true);
+      } catch { if (active) setScannerUploads([]); }
+      finally { if (active) setScannerUploadsLoading(false); }
+    };
+    void load();
+    return () => { active = false; };
+  }, [scannerUploadsLoaded, portalUser]);
+
+  // ── Notificações do portal: carrega logo após mount
+  useEffect(() => {
+    if (portalNotifsLoaded) return;
+    let active = true;
+    const load = async () => {
+      setPortalNotifsLoading(true);
+      try {
+        const { data } = await supabase
+          .from('portal_client_notifications')
+          .select('id, type, title, message, is_read, created_at')
+          .eq('client_id', client.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (!active) return;
+        setPortalNotifications(Array.isArray(data) ? data : []);
+        setPortalNotifsLoaded(true);
+      } catch { if (active) setPortalNotifications([]); }
+      finally { if (active) setPortalNotifsLoading(false); }
+    };
+    void load();
+    return () => { active = false; };
+  }, [portalNotifsLoaded, client.id]);
 
   // ── Derived data
   const pendingDeadlines = useMemo(
@@ -899,10 +1061,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     return signatureRequests.filter((r) => !signedIds.has(r.id));
   }, [signatureRequests, signedDocuments]);
 
-  const structuredTimeline = useMemo(
-    () => buildStructuredTimeline(processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents),
-    [processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents],
-  );
+  const structuredTimeline = useMemo(() => {
+    const base = buildStructuredTimeline(processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents);
+    const portal = buildPortalTimeline(portalUser, portalNotifications, scannerUploads, profileReqs);
+    return [...base, ...portal].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [processes, requirements, agreements, signatureRequests, clientPetitions, calendarEvents,
+      portalUser, portalNotifications, scannerUploads, profileReqs]);
 
   // ── Navigate from timeline items
   const handleTimelineNavigate = (module?: string, entityId?: string) => {
@@ -1211,6 +1375,34 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const rawCpfCnpj = client.cpf_cnpj || '';
   const formattedDoc = client.client_type === 'pessoa_fisica' ? formatCpf(rawCpfCnpj) : formatCnpj(rawCpfCnpj);
 
+  const portalNotifUnread = portalNotifsLoaded
+    ? portalNotifications.filter((n) => !n.is_read && n.type !== 'chat_reply').length
+    : undefined;
+
+  const toggleRoom = (roomId: string) => {
+    setExpandedRooms((prev) => {
+      const next = new Set(prev);
+      if (next.has(roomId)) { next.delete(roomId); return next; }
+      next.add(roomId);
+      // lazy load messages if not already loaded
+      if (!roomMessages[roomId] && !loadingRoomIds.has(roomId)) {
+        setLoadingRoomIds((l) => new Set(l).add(roomId));
+        supabase
+          .from('chat_messages')
+          .select('id, content, created_at, is_system, portal_client_id')
+          .eq('room_id', roomId)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .limit(200)
+          .then(({ data }) => {
+            setRoomMessages((m) => ({ ...m, [roomId]: data ?? [] }));
+            setLoadingRoomIds((l) => { const s = new Set(l); s.delete(roomId); return s; });
+          });
+      }
+      return next;
+    });
+  };
+
   const TABS: { id: Tab; label: string; count?: number }[] = [
     { id: 'data', label: 'Dados' },
     { id: 'processes', label: 'Processos', count: processes.length },
@@ -1219,7 +1411,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     { id: 'requirements', label: 'Requerimentos', count: requirements.length },
     { id: 'agenda', label: 'Compromissos', count: calendarEvents.length },
     { id: 'assinaturas', label: 'Assinaturas', count: signatureRequests.length },
-    { id: 'documents', label: 'Documentos' },
+    { id: 'documents', label: 'Documentos', count: pendingUploadsCount > 0 ? pendingUploadsCount : undefined },
+    { id: 'atendimento', label: 'Atendimento' },
+    { id: 'portal', label: 'Portal', count: portalNotifUnread && portalNotifUnread > 0 ? portalNotifUnread : undefined },
     { id: 'overview', label: 'Histórico' },
   ];
 
@@ -1311,12 +1505,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
           {/* KPIs compactos — lado direito */}
           {(() => {
-            // Data formatada do próximo compromisso
             const hearingDateObj = nextHearing ? new Date(nextHearing.date) : null;
             const hearingDateStr = hearingDateObj && !isNaN(hearingDateObj.getTime())
               ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
               : null;
-
             return (
               <div className="flex items-stretch divide-x divide-slate-100 flex-shrink-0 border-l border-slate-100">
                 <div className="px-5 flex flex-col justify-center min-w-[72px]">
@@ -1359,6 +1551,53 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             );
           })()}
         </div>
+
+        {/* ── Portal activity strip (visível só se portal ativo) ── */}
+        {portalUser && !portalDataLoading && (
+          <div className="border-t border-slate-100 px-5 py-2 flex items-center gap-4 flex-wrap bg-slate-50/60">
+            <button
+              onClick={() => setActiveTab('portal')}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition group"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 group-hover:text-orange-500 transition" />
+              Portal ativo
+              {portalUser.last_login_at && (
+                <span className="font-normal text-slate-400">
+                  · último acesso {new Date(portalUser.last_login_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                </span>
+              )}
+            </button>
+            {clientChatRooms.length > 0 && (() => {
+              const room = clientChatRooms[0];
+              const isWaiting = !room.accepted_by && !!room.last_message_at;
+              return (
+                <button
+                  onClick={() => setActiveTab('atendimento')}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition group"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-slate-400 group-hover:text-orange-500 transition" />
+                  {isWaiting
+                    ? <span className="text-amber-600 font-bold">Atendimento aguardando</span>
+                    : room.accepted_by ? 'Em atendimento' : 'Chat portal'}
+                </button>
+              );
+            })()}
+            {pushActive && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-sky-600 font-semibold">
+                <Bell className="w-3.5 h-3.5" /> Push ativo
+              </span>
+            )}
+            {pendingUploadsCount > 0 && (
+              <button
+                onClick={() => setActiveTab('documents')}
+                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-600 hover:text-amber-800 transition"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {pendingUploadsCount} doc{pendingUploadsCount !== 1 ? 's' : ''} aguardando revisão
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -1441,16 +1680,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         };
 
         return (
-          <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/70 via-white to-white shadow-sm">
-            <div className="flex items-start gap-3 p-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+          <div className="border-b border-amber-100 bg-amber-50/60">
+            <div className="flex items-start gap-3 px-4 py-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
                 <Sparkles className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-blue-900">Dados detectados na assinatura digital</p>
-                    <p className="text-[11px] text-blue-700/70 mt-0.5">
+                    <p className="text-sm font-semibold text-amber-900">Dados detectados na assinatura digital</p>
+                    <p className="text-[11px] text-amber-700/70 mt-0.5">
                       Encontramos informações fornecidas pelo cliente ao assinar
                       {latest.signed_at && (
                         <> em <strong className="font-semibold">{formatDate(latest.signed_at)}</strong></>
@@ -1462,7 +1701,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={handleImportAll}
                       disabled={syncingSignatureData}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold shadow-sm transition disabled:opacity-60"
                     >
                       {syncingSignatureData ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1474,7 +1713,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     <button
                       type="button"
                       onClick={() => setSignatureSyncDismissed(true)}
-                      className="text-blue-500 hover:text-blue-700 hover:bg-blue-100 rounded p-1 transition text-sm"
+                      className="text-amber-500 hover:text-amber-700 hover:bg-amber-100 rounded p-1 transition text-sm"
                       title="Dispensar"
                     >
                       ×
@@ -1488,13 +1727,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('email', sigEmail)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
-                      <Mail className="w-3 h-3 text-blue-500" />
+                      <Mail className="w-3 h-3 text-amber-500" />
                       <span className="text-slate-500">Email:</span>
                       <strong className="text-slate-900 font-semibold">{sigEmail}</strong>
-                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
                     </button>
                   )}
                   {suggestPhone && (
@@ -1502,13 +1741,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('phone', sigPhone)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
-                      <Phone className="w-3 h-3 text-blue-500" />
+                      <Phone className="w-3 h-3 text-amber-500" />
                       <span className="text-slate-500">Telefone:</span>
                       <strong className="text-slate-900 font-semibold tabular-nums">{sigPhone}</strong>
-                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
                     </button>
                   )}
                   {suggestCpf && (
@@ -1516,15 +1755,15 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('cpf_cnpj', sigCpfDigits)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
-                      <User className="w-3 h-3 text-blue-500" />
+                      <User className="w-3 h-3 text-amber-500" />
                       <span className="text-slate-500">CPF:</span>
                       <strong className="text-slate-900 font-semibold tabular-nums">
                         {`${sigCpfDigits.slice(0,3)}.${sigCpfDigits.slice(3,6)}.${sigCpfDigits.slice(6,9)}-${sigCpfDigits.slice(9)}`}
                       </strong>
-                      <span className="text-blue-600 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
                     </button>
                   )}
                 </div>
@@ -1698,79 +1937,54 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         );
       })()}
 
-      {/* ══════════════════════════════════════════════════════════════════
-          QUICK ACTIONS — agrupado e harmonizado
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── Quick Actions ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
         <div className="flex flex-wrap items-center gap-1.5">
-
-          {/* Grupo: Criar item jurídico */}
-          {(onCreateProcess || onCreateRequirement || onCreateDeadline) && (
-            <>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-2 select-none">Criar</span>
-              {onCreateProcess && (
-                <button
-                  onClick={onCreateProcess}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
-                >
-                  <Plus className="w-3 h-3" /> Processo
-                </button>
-              )}
-              {onCreateRequirement && (
-                <button
-                  onClick={onCreateRequirement}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
-                >
-                  <Plus className="w-3 h-3" /> Requerimento
-                </button>
-              )}
-              {onCreateDeadline && (
-                <button
-                  onClick={onCreateDeadline}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition"
-                >
-                  <Plus className="w-3 h-3" /> Prazo
-                </button>
-              )}
-            </>
+          {onCreateProcess && (
+            <button onClick={onCreateProcess}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
+              <Plus className="w-3.5 h-3.5 text-orange-500" /> Processo
+            </button>
           )}
-
-          {/* Divisor */}
-          <span className="h-6 w-px bg-slate-200 mx-2" />
-
-          {/* Grupo: Ações destacadas (cores reservadas pra elas) */}
+          {onCreateRequirement && (
+            <button onClick={onCreateRequirement}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
+              <Plus className="w-3.5 h-3.5 text-orange-500" /> Requerimento
+            </button>
+          )}
+          {onCreateDeadline && (
+            <button onClick={onCreateDeadline}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
+              <Plus className="w-3.5 h-3.5 text-orange-500" /> Prazo
+            </button>
+          )}
+          <span className="h-6 w-px bg-slate-200 mx-1" />
           <button
             onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 hover:border-amber-300 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition"
           >
             <PenTool className="w-3 h-3" /> Petição
           </button>
           <button
             onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 hover:border-violet-300 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition"
           >
             <CalendarPlus className="w-3 h-3" /> Compromisso
           </button>
-
-          {/* Push to right */}
           <span className="flex-1" />
-
-          {/* Utility */}
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
-            title="Exportar ficha do cliente"
+            title="Exportar ficha"
           >
             <Printer className="w-3 h-3" /> Exportar
           </button>
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          TABS — underline limpo, sem wash de cor no fundo
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── Tabs card ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex border-b border-slate-200 overflow-x-auto bg-slate-50/40">
+        <div className="flex border-b border-slate-200 overflow-x-auto bg-slate-50/40 flex-shrink-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -1798,7 +2012,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
         <div className="p-5 space-y-4">
 
-          {/* ═══════════════════════════════════════════════════════════════════
+          {/* ════════════════════════════════��══════════════════════════════════
               TAB: DADOS (padrão)
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'data' && (
@@ -2048,14 +2262,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           <div className="flex items-start gap-3 group/root">
                             {/* Ícone raiz */}
                             <div className={`relative z-10 flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center shadow-sm border-2 border-white ${
-                              root.type === 'process' ? 'bg-blue-500' :
-                              root.type === 'requirement' ? 'bg-orange-500' : 'bg-slate-400'
+                              root.type === 'process'        ? 'bg-blue-500'   :
+                              root.type === 'requirement'    ? 'bg-orange-500' :
+                              root.iconType === 'portal'     ? 'bg-emerald-500':
+                              root.iconType === 'scanner'    ? 'bg-indigo-500' :
+                              root.iconType === 'notification'? 'bg-amber-500' :
+                              root.iconType === 'profile'    ? 'bg-violet-500' :
+                                                               'bg-slate-400'
                             }`}>
-                              {root.type === 'process'
-                                ? <Scale className="w-4 h-4 text-white" />
-                                : root.type === 'requirement'
-                                  ? <ClipboardList className="w-4 h-4 text-white" />
-                                  : <Star className="w-4 h-4 text-white" />}
+                              {root.type === 'process'          ? <Scale className="w-4 h-4 text-white" />
+                               : root.type === 'requirement'    ? <ClipboardList className="w-4 h-4 text-white" />
+                               : root.iconType === 'portal'     ? <ShieldCheck className="w-4 h-4 text-white" />
+                               : root.iconType === 'scanner'    ? <FileText className="w-4 h-4 text-white" />
+                               : root.iconType === 'notification'? <Bell className="w-4 h-4 text-white" />
+                               : root.iconType === 'profile'    ? <UserCheck className="w-4 h-4 text-white" />
+                               :                                  <Star className="w-4 h-4 text-white" />}
                             </div>
 
                             {/* Info raiz */}
@@ -3024,6 +3245,433 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Scanner uploads do portal */}
+                  {portalUser && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-500" />
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Enviados pelo Scanner/Portal</p>
+                        {scannerUploadsLoaded && scannerUploads.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">{scannerUploads.length}</span>
+                        )}
+                      </div>
+                      {scannerUploadsLoading ? (
+                        <div className="flex items-center gap-2 text-slate-400 py-3">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                        </div>
+                      ) : scannerUploadsLoaded && scannerUploads.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                          Nenhum envio pelo scanner registrado
+                        </div>
+                      ) : scannerUploadsLoaded ? (
+                        <div className="space-y-1.5">
+                          {scannerUploads.map((u) => {
+                            const sizeLabel = u.size
+                              ? u.size > 1_048_576 ? `${(u.size / 1_048_576).toFixed(1)} MB` : `${Math.round(u.size / 1024)} KB`
+                              : null;
+                            return (
+                              <div key={u.messageId} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 flex items-center justify-between gap-3 group">
+                                <div className="min-w-0 flex items-center gap-2.5">
+                                  <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-slate-800 truncate">{u.fileName}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                                      {new Date(u.sentAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      {sizeLabel && <span className="ml-1.5">{sizeLabel}</span>}
+                                    </p>
+                                  </div>
+                                </div>
+                                {u.signedUrl && (
+                                  <a
+                                    href={u.signedUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" /> Ver
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                          Abra esta aba para carregar os envios
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              TAB: ATENDIMENTO
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'atendimento' && (
+            <div className="space-y-3">
+              {portalDataLoading ? (
+                <div className="flex items-center gap-2 text-slate-400 py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                </div>
+              ) : !portalUser ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                  <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
+                  <p className="text-xs text-slate-400 mt-1">Este cliente não possui acesso ao portal do cliente.</p>
+                </div>
+              ) : clientChatRooms.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                  <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-500">Nenhuma conversa iniciada</p>
+                  <p className="text-xs text-slate-400 mt-1">O cliente ainda não abriu uma conversa pelo portal.</p>
+                  <button
+                    onClick={() => navigateTo('chat')}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-orange-600 hover:text-orange-800 hover:bg-orange-50 border border-orange-200 transition"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" /> Abrir Chat
+                  </button>
+                </div>
+              ) : (() => {
+                const room = clientChatRooms[0];
+                const isWaiting = !room.accepted_by && !!room.last_message_at;
+                const isOpen = !!room.accepted_by;
+                const statusLabel = isWaiting ? 'Aguardando atendimento' : isOpen ? 'Em atendimento' : 'Sem conversas';
+                const statusCls = isWaiting
+                  ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
+                  : isOpen
+                    ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
+                    : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200';
+                const stripCls = isWaiting ? 'bg-amber-400' : isOpen ? 'bg-emerald-400' : 'bg-slate-300';
+
+                return (
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-orange-200 hover:shadow-md transition-all duration-200">
+                    <div className={`h-[3px] w-full ${stripCls}`} />
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MessageCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                          <p className="text-sm font-semibold text-slate-900 truncate">
+                            {room.name || 'Atendimento portal'}
+                          </p>
+                        </div>
+                        <span className={`flex-shrink-0 px-2.5 py-1 text-[10px] font-bold rounded-full ${statusCls}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+
+                      {room.last_message_at && (
+                        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                          <p className="text-[11px] text-slate-500 font-medium mb-0.5">Última atividade</p>
+                          <p className="text-[10px] text-slate-400 tabular-nums">
+                            {new Date(room.last_message_at).toLocaleString('pt-BR', {
+                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="text-[11px] text-slate-400">
+                          {room.last_message_at
+                            ? `Última atividade: ${new Date(room.last_message_at).toLocaleDateString('pt-BR')}`
+                            : 'Sem mensagens ainda'}
+                        </div>
+                        <button
+                          onClick={() => navigateTo('chat', { roomId: room.id } as any)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition shadow-sm"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" /> Abrir conversa
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              TAB: PORTAL
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'portal' && (
+            <div className="space-y-4">
+              {/* ── Acesso ao portal ── */}
+              {portalDataLoading ? (
+                <div className="flex items-center gap-2 text-slate-400 py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                </div>
+              ) : !portalUser ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                  <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                    Este cliente não possui cadastro no portal. O acesso é criado automaticamente no primeiro login.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* ── Status compacto ── */}
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                          portalUser.is_active ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-100 text-red-600 ring-1 ring-red-200'
+                        }`}>
+                          {portalUser.is_active ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                          Portal {portalUser.is_active ? 'ativo' : 'inativo'}
+                        </span>
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                          pushActive ? 'bg-sky-100 text-sky-700 ring-1 ring-sky-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'
+                        }`}>
+                          {pushActive ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
+                          Push {pushActive ? 'ativo' : 'inativo'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-slate-400">Último acesso</p>
+                        <p className="text-xs font-semibold text-slate-700">
+                          {portalUser.last_login_at
+                            ? new Date(portalUser.last_login_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            : '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Histórico de Conversas ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4 text-slate-400" />
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Conversas</p>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                        {clientChatRooms.length}
+                      </span>
+                    </div>
+                    {clientChatRooms.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                        Nenhuma conversa ainda
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {clientChatRooms.map((room, idx) => {
+                          const isExpanded = expandedRooms.has(room.id);
+                          const msgs = roomMessages[room.id];
+                          const isLoadingMsgs = loadingRoomIds.has(room.id);
+                          const isActive = idx === 0;
+                          const isWaiting = !room.accepted_by && !!room.last_message_at;
+                          const isAttended = !!room.accepted_by;
+                          const statusLabel = isWaiting ? 'Aguardando' : isAttended ? 'Atendido' : 'Encerrado';
+                          const statusCls = isActive && isWaiting
+                            ? 'bg-amber-100 text-amber-700'
+                            : isActive && isAttended
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-500';
+                          return (
+                            <div key={room.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                              <button
+                                onClick={() => toggleRoom(room.id)}
+                                className="w-full px-3 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-50 transition"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusCls}`}>
+                                    {isActive ? (isWaiting ? 'Aguardando' : isAttended ? 'Em atendimento' : 'Ativo') : statusLabel}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 tabular-nums">
+                                    {room.last_message_at
+                                      ? new Date(room.last_message_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                      : new Date(room.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {isActive && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); navigateTo('chat', { roomId: room.id } as any); }}
+                                      className="px-2 py-0.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-semibold transition"
+                                    >
+                                      Abrir
+                                    </button>
+                                  )}
+                                  <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </div>
+                              </button>
+                              {isExpanded && (
+                                <div className="border-t border-slate-100 px-3 py-2 max-h-64 overflow-y-auto space-y-1.5 bg-slate-50/50">
+                                  {isLoadingMsgs ? (
+                                    <div className="flex items-center gap-2 text-slate-400 py-2 text-xs">
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando mensagens...
+                                    </div>
+                                  ) : !msgs || msgs.length === 0 ? (
+                                    <p className="text-xs text-slate-400 py-2 text-center">Nenhuma mensagem</p>
+                                  ) : (
+                                    msgs.map((msg) => {
+                                      if (msg.is_system) {
+                                        return (
+                                          <div key={msg.id} className="text-center">
+                                            <span className="text-[10px] text-slate-400 italic">{msg.content}</span>
+                                          </div>
+                                        );
+                                      }
+                                      const isClient = !!msg.portal_client_id;
+                                      return (
+                                        <div key={msg.id} className={`flex flex-col ${isClient ? 'items-end' : 'items-start'}`}>
+                                          <div className={`max-w-[85%] px-2.5 py-1.5 rounded-xl text-xs ${
+                                            isClient
+                                              ? 'bg-orange-100 text-orange-900'
+                                              : 'bg-white border border-slate-200 text-slate-800'
+                                          }`}>
+                                            {msg.content.startsWith('__anexo__:')
+                                              ? <span className="italic text-slate-500">📎 Arquivo enviado</span>
+                                              : msg.content}
+                                          </div>
+                                          <span className="text-[9px] text-slate-400 mt-0.5 tabular-nums">
+                                            {new Date(msg.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                            {' · '}{isClient ? 'Cliente' : 'Escritório'}
+                                          </span>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Notificações do portal ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-slate-400" />
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Notificações</p>
+                        {portalNotifsLoaded && (() => {
+                          const c = portalNotifications.filter(n => n.type !== 'chat_reply').length;
+                          return c > 0 ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{c}</span>
+                          ) : null;
+                        })()}
+                      </div>
+                      {portalNotifsLoaded && (() => {
+                        const c = portalNotifications.filter(n => n.type !== 'chat_reply').length;
+                        return c > 6 ? (
+                          <button onClick={() => setShowAllNotifs((v) => !v)} className="text-[11px] text-orange-500 hover:text-orange-700 font-semibold">
+                            {showAllNotifs ? 'Ver menos' : `Ver todas (${c})`}
+                          </button>
+                        ) : null;
+                      })()}
+                    </div>
+                    {portalNotifsLoading ? (
+                      <div className="flex items-center gap-2 text-slate-400 py-3">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                      </div>
+                    ) : portalNotifsLoaded && portalNotifications.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                        Nenhuma notificação enviada
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {(() => {
+                          const filtered = portalNotifications.filter((n) => n.type !== 'chat_reply');
+                          const visible = showAllNotifs ? filtered : filtered.slice(0, 6);
+                          if (filtered.length === 0) return (
+                            <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                              Nenhuma notificação relevante
+                            </div>
+                          );
+                          return visible.map((n) => {
+                          const NOTIF_ICONS: Record<string, string> = {
+                            profile_update_approved: '✅',
+                            profile_update_rejected: '❌',
+                            process_status_changed:  '⚖️',
+                            new_signature_request:   '✍️',
+                            new_document_request:    '📄',
+                            document_upload_rejected:'🔄',
+                          };
+                          const isChatReply = false;
+                          return (
+                            <div
+                              key={n.id}
+                              className={`rounded-xl border px-3 py-2 flex items-center justify-between gap-2 ${
+                                n.is_read ? 'border-slate-100 bg-slate-50' : 'border-orange-100 bg-orange-50/60'
+                              }`}
+                            >
+                              <div className="min-w-0 flex items-center gap-2">
+                                <span className="text-sm flex-shrink-0">{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-slate-800 truncate">{n.title}</p>
+                                  {!isChatReply && n.message && (
+                                    <p className="text-[11px] text-slate-500 truncate">{n.message}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="text-[9px] text-slate-400 tabular-nums whitespace-nowrap">
+                                  {new Date(n.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                </span>
+                                {!n.is_read && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />}
+                              </div>
+                            </div>
+                          );
+                        });
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Solicitações de atualização cadastral ── */}
+                  {(profileReqLoading || profileReqs.length > 0) && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-slate-400" />
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Solicitações Cadastrais</p>
+                        {profileReqs.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                            {profileReqs.filter((r) => r.status === 'pending').length} pendente{profileReqs.filter((r) => r.status === 'pending').length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      {profileReqLoading ? (
+                        <div className="flex items-center gap-2 text-slate-400 py-3">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {profileReqs.map((req) => {
+                            const reqStatusCls = req.status === 'pending'
+                              ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
+                              : req.status === 'approved'
+                                ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
+                                : 'bg-red-100 text-red-600 ring-1 ring-red-200';
+                            const reqStatusLabel = req.status === 'pending' ? 'Pendente' : req.status === 'approved' ? 'Aprovado' : 'Rejeitado';
+                            const changedFields = Object.keys(req.changes).length;
+                            return (
+                              <div key={req.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-slate-800">
+                                    {changedFields} campo{changedFields !== 1 ? 's' : ''} alterado{changedFields !== 1 ? 's' : ''}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                                    {new Date(req.requested_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </p>
+                                </div>
+                                <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold ${reqStatusCls}`}>
+                                  {reqStatusLabel}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>

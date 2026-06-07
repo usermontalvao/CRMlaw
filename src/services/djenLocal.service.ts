@@ -592,6 +592,30 @@ class DjenLocalService {
   }
 
   /**
+   * Marca um conjunto de comunicações como lidas em um único UPDATE.
+   * IMPORTANTE: a tabela djen_comunicacoes usa RLS permissivo (WHERE true) sem
+   * coluna office_id. Para evitar afetar dados de outros escritórios em cenários
+   * multi-tenant, SEMPRE passe os `ids` carregados na sessão atual.
+   * Nunca chame sem `ids` — o parâmetro é obrigatório por design.
+   */
+  async marcarTodasComoLidas(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ lida: true, lida_em: now })
+      .in('id', ids)
+      .select('id');
+
+    if (error) {
+      console.error('Erro ao marcar todas como lidas:', error);
+      throw new Error(error.message);
+    }
+
+    return data?.length ?? 0;
+  }
+
+  /**
    * Remove todas as intimações locais
    */
   async clearAll(): Promise<void> {

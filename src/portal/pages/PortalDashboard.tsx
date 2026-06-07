@@ -130,22 +130,10 @@ export const PortalDashboard: React.FC = () => {
           <div className="relative mt-6 flex items-center gap-2.5">
             <button
               onClick={() => navigate('casos')}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white/10 py-3 text-[13px] font-semibold text-white transition active:bg-white/15"
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[13px] font-semibold text-slate-900 shadow-lg transition active:bg-slate-100"
             >
               <Briefcase className="h-4 w-4" strokeWidth={1.75} />
               Meus casos
-            </button>
-            <button
-              onClick={() => navigate('assinar')}
-              className="relative flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[13px] font-semibold text-slate-900 shadow-lg transition active:bg-slate-100"
-            >
-              <PenTool className="h-4 w-4" strokeWidth={1.75} />
-              Assinar
-              {hasPendingSig && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white ring-2 ring-slate-900">
-                  {data!.signaturesPending}
-                </span>
-              )}
             </button>
             {isEnabled('mensagens' as never) && (
               <button

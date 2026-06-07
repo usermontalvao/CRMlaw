@@ -9,8 +9,9 @@ export interface ChatRoom {
   created_by: string | null;
   created_at: string;
   last_message_at: string | null;
-  last_message_preview: string | null;
+  last_message_preview?: string | null;
   portal_client_id?: string | null;
+  session_start_at?: string | null;
   accepted_by?: string | null;
 }
 

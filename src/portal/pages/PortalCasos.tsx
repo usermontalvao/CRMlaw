@@ -6,7 +6,7 @@ import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, SkeletonCard, formatRelative } from '../components/PortalUI';
 import { statusMeta, TONE_CLASSES, requirementMeta, BENEFIT_TYPE_LABELS } from '../lib/domain';
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
+// -- Tipos ----
 
 interface ProcessItem {
   id: string; process_code: string; status: string;
@@ -26,7 +26,7 @@ interface RequirementItem {
 type CaseKind  = 'process' | 'requirement';
 type FilterTab = 'all' | 'processos' | 'requerimentos';
 
-// ── Componente principal ───────────────────────────────────────────────────────
+// -- Componente principal ----
 
 export const PortalCasos: React.FC = () => {
   const { session }   = useClientAuth();
@@ -115,13 +115,13 @@ export const PortalCasos: React.FC = () => {
   return (
     <div className="flex flex-col gap-4">
 
-      {/* ── Search ──────────────────────────────────────────────────────── */}
+      {/* -- Search ---- */}
       <div className="relative">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text" value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar por número, tipo ou situação…"
+          placeholder="Buscar por n&uacute;mero, tipo ou situa&ccedil;&atilde;o..."
           className="h-12 w-full rounded-2xl bg-slate-100 pl-11 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-orange-400/30"
         />
         {search && (
@@ -132,7 +132,7 @@ export const PortalCasos: React.FC = () => {
         )}
       </div>
 
-      {/* ── Tabs ────────────────────────────────────────────────────────── */}
+      {/* -- Tabs ---- */}
       <div className="flex gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
         {TABS.map(t => {
           const on = tab === t.id;
@@ -151,7 +151,7 @@ export const PortalCasos: React.FC = () => {
         })}
       </div>
 
-      {/* ── Lista ───────────────────────────────────────────────────────── */}
+      {/* -- Lista ---- */}
       {loading ? (
         <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] bg-white px-6 py-10 text-center shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
           <div className="relative mb-4 flex h-20 w-20 items-center justify-center">
@@ -170,7 +170,7 @@ export const PortalCasos: React.FC = () => {
         <EmptyState
           icon={Scale}
           title={search ? 'Nenhum caso encontrado' : 'Nenhum caso'}
-          description={search ? 'Tente outros termos de busca.' : 'Quando o escritório vincular casos ao seu CPF, eles aparecerão aqui.'}
+          description={search ? 'Tente outros termos de busca.' : 'Quando o escrit\u00F3rio vincular casos ao seu CPF, eles aparecer\u00E3o aqui.'}
         />
       ) : (
         <ul className="flex flex-col gap-2.5">
@@ -185,20 +185,20 @@ export const PortalCasos: React.FC = () => {
   );
 };
 
-// ── ProcessCard ────────────────────────────────────────────────────────────────
+// -- ProcessCard ----
 
 const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ process: p, onClick }) => {
   const meta       = statusMeta(p.status);
   const tone       = TONE_CLASSES[meta.tone];
   const lastMov    = p.last_movement?.nome;
   const lastMovDate = p.last_movement?.data_hora || p.last_movement?.data;
-  const subtitle   = [p.practice_area, p.court].filter(Boolean).join(' · ');
+  const subtitle   = [p.practice_area, p.court].filter(Boolean).join(' . ');
 
   const appt = p.next_appointment;
   const apptLabel = appt
-    ? appt.event_type === 'hearing' ? 'Audiência'
-    : appt.event_type === 'pericia' ? 'Perícia'
-    : appt.event_type === 'meeting' ? 'Reunião'
+    ? appt.event_type === 'hearing' ? 'Audi\u00EAncia'
+    : appt.event_type === 'pericia' ? 'Per\u00EDcia'
+    : appt.event_type === 'meeting' ? 'Reuni\u00E3o'
     : 'Compromisso'
     : null;
 
@@ -228,10 +228,10 @@ const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ 
                 </span>
               </div>
 
-              {/* Subtítulo */}
+              {/* Subtitulo */}
               {subtitle && <p className="mt-1.5 pl-[52px] text-xs capitalize text-slate-400">{subtitle}</p>}
 
-              {/* Última movimentação */}
+              {/* Ultima movimentacao */}
               {lastMov && (
                 <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2.5">
                   <p className="flex-1 truncate text-xs text-slate-600">{lastMov}</p>
@@ -245,12 +245,12 @@ const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ 
             </div>
           </div>
 
-          {/* Rodapé de compromisso */}
+          {/* Rodape de compromisso */}
           {appt && apptLabel && (
             <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-5 py-2.5">
               <Calendar className="h-3.5 w-3.5 shrink-0 text-amber-600" />
               <p className="text-xs font-semibold text-amber-700">
-                {apptLabel} · {new Date(appt.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {apptLabel} . {new Date(appt.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </p>
             </div>
           )}
@@ -260,7 +260,7 @@ const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ 
   );
 };
 
-// ── RequirementCard ────────────────────────────────────────────────────────────
+// -- RequirementCard ----
 
 const RequirementCard: React.FC<{ req: RequirementItem; onClick: () => void }> = ({ req: r, onClick }) => {
   const meta         = requirementMeta(r.status);
@@ -269,9 +269,9 @@ const RequirementCard: React.FC<{ req: RequirementItem; onClick: () => void }> =
   const nextDate     = r.exigency_due_date || r.pericia_medica_at || r.pericia_social_at;
   const isArchived   = r.archived === true;
 
-  const nextLabel = r.exigency_due_date ? 'Prazo exigência'
-    : r.pericia_medica_at ? 'Perícia médica'
-    : r.pericia_social_at ? 'Perícia social'
+  const nextLabel = r.exigency_due_date ? 'Prazo exig\u00EAncia'
+    : r.pericia_medica_at ? 'Per\u00EDcia m\u00E9dica'
+    : r.pericia_social_at ? 'Per\u00EDcia social'
     : null;
 
   return (

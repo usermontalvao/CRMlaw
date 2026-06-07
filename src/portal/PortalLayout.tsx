@@ -358,7 +358,6 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
             {BOTTOM_NAV
               .filter(({ id }) => {
                 if (id === 'dashboard') return true;
-                if (id === 'assinar') return signaturesPending > 0 || route === 'assinar';
                 return isEnabled(id as never);
               })
               .map(({ id, icon: Icon, label }) => {

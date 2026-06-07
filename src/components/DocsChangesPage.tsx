@@ -876,6 +876,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.214',
+    date: '06/06/2026',
+    summary: 'Cliente: ficha 360 consolidada com portal, atendimento e agenda em uma visão unica.',
+    modules: [
+      { moduleId: 'Clientes', changes: [
+        { type: 'improvement' as const, title: 'Ficha do cliente passou a consolidar dados essenciais em um unico lugar', description: 'O detalhe do cliente ganhou uma base agregada para concentrar processos, requerimentos, agenda, financeiro, assinaturas, documentos e informacoes do portal sem depender de carregamentos espalhados.' },
+        { type: 'feature' as const, title: 'Portal do cliente entrou na ficha 360', description: 'A tela do cliente agora considera usuario do portal, push ativo, salas de atendimento e solicitacoes cadastrais como parte da visao operacional, aproximando o CRM da jornada real do cliente.' },
+        { type: 'feature' as const, title: 'Agenda deixou de carregar de forma global no detalhe', description: 'Os eventos de agenda vinculados ao cliente passaram a ser buscados por RPC filtrada, reduzindo o custo da abertura da ficha e evitando filtragem client-side de toda a tabela.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.213',
     date: '06/06/2026',
     summary: 'Portal: carregamento de casos ficou mais claro e previs?vel durante a busca dos processos.',

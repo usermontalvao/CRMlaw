@@ -927,12 +927,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         toast.info('Info', 'Nenhuma intimação não lida encontrada');
         return;
       }
-      for (const id of unreadIds) {
-        await djenLocalService.marcarComoLida(id);
-      }
+      // Passa os IDs explicitamente para evitar UPDATE cego na tabela (sem escopo de office)
+      const count = await djenLocalService.marcarTodasComoLidas(unreadIds);
       await reloadIntimations();
       events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
-      toast.success('Sucesso', `${unreadIds.length} intimações marcadas como lidas`);
+      toast.success('Sucesso', `${count} intimações marcadas como lidas`);
     } catch (err: any) {
       toast.error('Erro', err.message);
     }
@@ -1211,6 +1210,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Contadores das abas — derivados do baseFiltered para ficarem em sincronia com os filtros ativos
   const unreadCount = baseFiltered.filter((i) => !i.lida).length;
   const readCount = baseFiltered.filter((i) => i.lida).length;
+  // Total de não lidas em todo o banco (sem filtro de data) — usado para o botão "marcar todas como lidas"
+  const totalUnreadAllTime = intimations.filter((i) => !i.lida).length;
 
   const newTodayCount = useMemo(() => {
     const startOfDay = startOfToday();
@@ -2125,11 +2126,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <h4 className="text-base font-semibold text-slate-900 mb-1">Nenhuma intimação encontrada</h4>
               <p className="text-sm text-slate-500">
                 {statusFilter === 'unread'
-                  ? 'Não há intimações não lidas no momento'
+                  ? totalUnreadAllTime > 0
+                    ? `Não há não lidas nos últimos ${dateFilter === '60days' ? '60' : dateFilter === '90days' ? '90' : '30'} dias, mas há ${totalUnreadAllTime} não lidas em períodos anteriores.`
+                    : 'Não há intimações não lidas no momento'
                   : statusFilter === 'read'
                   ? 'Não há intimações lidas'
                   : 'Clique em "Sincronizar" para buscar novas intimações'}
               </p>
+              {statusFilter === 'unread' && totalUnreadAllTime > 0 && (
+                <button
+                  onClick={handleMarkAllAsRead}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Marcar todas as {totalUnreadAllTime} como lidas
+                </button>
+              )}
             </div>
 
           ) : groupByProcess && groupedByProcess ? (
