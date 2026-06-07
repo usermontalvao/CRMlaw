@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText, FileCheck, Plus, Clock, FolderPlus,
   Gavel, Loader2, PenTool, Trash2, DollarSign, AlertTriangle,
   Scale, ExternalLink, Search, Printer, CalendarPlus, StickyNote,
   User, Mail, Phone, Calendar as CalendarIcon, ChevronRight, Building2, MessageCircle, Sparkles, Check,
   Star, X, Image as ImageIcon, MapPin, AlarmClock, ClipboardList, UserCheck, UserX,
-  Bell, ShieldCheck, BellOff,
+  Bell, ShieldCheck, BellOff, Edit,
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -1435,7 +1436,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               <button
                 type="button"
                 onClick={() => setPreviewSelfie(profileSelfie)}
-                className="group relative w-12 h-12 rounded-full overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm flex-shrink-0 transition focus:outline-none"
+                className="group relative w-10 h-[52px] rounded overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm flex-shrink-0 transition focus:outline-none"
                 title="Ampliar foto"
               >
                 <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
@@ -1449,7 +1450,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             const hue = stringHue(client.full_name);
             return (
               <div
-                className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
+                className="flex-shrink-0 w-10 h-[52px] rounded flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
                 style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
               >
                 {isPj ? <Building2 className="w-5 h-5" strokeWidth={1.5} /> : initials}
@@ -1774,8 +1775,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       })()}
 
       {/* ── Preview modal (full-size) ── */}
-      {previewSelfie && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90" onClick={() => setPreviewSelfie(null)}>
+      {previewSelfie && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90" onClick={() => setPreviewSelfie(null)}>
           <div className="relative" style={{ maxHeight: '90vh', maxWidth: '380px', width: '100%', margin: '0 16px' }} onClick={(e) => e.stopPropagation()}>
 
             {/* Fechar */}
@@ -1801,7 +1802,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* ── Foto manager modal ── */}
       {selfiePickerOpen && selfies.length > 0 && (() => {
@@ -1840,8 +1841,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           }
         };
 
-        return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={() => setSelfiePickerOpen(false)}>
+        return createPortal(
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={() => setSelfiePickerOpen(false)}>
             <div className="bg-white w-full sm:max-w-lg flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
 
               {/* Handle bar (mobile) */}
@@ -1934,7 +1935,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               </div>
             </div>
           </div>
-        );
+        , document.body);
       })()}
 
       {/* ── Quick Actions ── */}
@@ -1979,38 +1980,48 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           >
             <Printer className="w-3 h-3" /> Exportar
           </button>
+          <button
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition"
+          >
+            <Edit className="w-3 h-3" /> Editar
+          </button>
         </div>
       </div>
 
       {/* ── Tabs card ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex border-b border-slate-200 overflow-x-auto bg-slate-50/40 flex-shrink-0">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-shrink-0 px-5 py-3 text-sm font-semibold transition relative ${
-                activeTab === tab.id
-                  ? 'text-orange-600'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {tab.label}
-                {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${
-                    activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
-                  }`}>{tab.count}</span>
-                )}
-              </span>
-              {activeTab === tab.id && (
-                <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-orange-500 rounded-t-full" />
+        <div className="flex flex-wrap border-b border-slate-200 bg-slate-50/40">
+          {TABS.map((tab, index) => (
+            <React.Fragment key={tab.id}>
+              {index > 0 && (
+                <span className="self-center text-slate-300 text-xs select-none leading-none">/</span>
               )}
-            </button>
+              <button
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-2.5 py-2 text-[11px] font-semibold transition relative whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'text-orange-600'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {tab.label}
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span className={`px-1 py-0.5 rounded text-[9px] font-bold tabular-nums ${
+                      activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
+                    }`}>{tab.count}</span>
+                  )}
+                </span>
+                {activeTab === tab.id && (
+                  <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-orange-500 rounded-t-full" />
+                )}
+              </button>
+            </React.Fragment>
           ))}
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 min-h-[320px]">
 
           {/* ════════════════════════════════��══════════════════════════════════
               TAB: DADOS (padrão)

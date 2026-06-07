@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.215': { name: 'Café Modal Limpo', emoji: '🪟' },
   '1.10.212': { name: 'Cafe SemVer', emoji: '??' },
   '1.10.211': { name: 'Cafe Portal Vivo', emoji: '??' },
   '1.10.210': { name: 'Caf? Portal Alerta', emoji: '??' },
@@ -875,6 +876,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.215',
+    date: '06/06/2026',
+    summary: 'Modal do cliente redesenhado: sem arredondamento, abas compactas com separador /, foto 3x4 e correções de z-index.',
+    modules: [
+      { moduleId: 'Clientes', changes: [
+        { type: 'improvement' as const, title: 'Modal do cliente passou a ter cantos retos', description: 'Removido o arredondamento do modal de detalhes do cliente para visual mais limpo e profissional.' },
+        { type: 'improvement' as const, title: 'Barra de abas compactada com separador /', description: 'As abas do modal deixaram de usar scroll horizontal e passaram a exibir todas as opções em flex-wrap com separadores / e fonte reduzida, mantendo tudo visível sem rolagem.' },
+        { type: 'improvement' as const, title: 'Foto do cliente em formato 3x4 (retrato)', description: 'O avatar do cliente no modal passou de círculo para retângulo portrait 3x4, compatível com fotos de documentos.' },
+        { type: 'improvement' as const, title: 'Botão Editar movido para barra de ações rápidas', description: 'O footer redundante do modal foi removido. O botão Editar agora está integrado na barra de ações junto com Processo, Requerimento e Prazo.' },
+        { type: 'fix' as const, title: 'Modais internos de foto não ficam mais escondidos', description: 'O preview de selfie e o seletor de foto passaram a usar createPortal com z-[80], escapando do stacking context do ClientModal (z-70) onde ficavam invisíveis.' },
+        { type: 'fix' as const, title: 'Modal não deforma mais ao trocar de aba vazia', description: 'Adicionado min-h-[320px] no conteúdo das abas para evitar que o modal encolha ao acessar abas sem dados como Financeiro.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.214',
     date: '06/06/2026',

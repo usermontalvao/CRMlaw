@@ -36,7 +36,7 @@ const ClientModal: React.FC<ClientModalProps> = ({
         aria-hidden="true"
       />
       <div
-        className={`relative w-full ${sizeClassMap[size]} max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden`}
+        className={`relative w-full ${sizeClassMap[size]} max-h-[92vh] bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/10 flex flex-col overflow-hidden`}
       >
         <div className="h-2 w-full bg-orange-500" />
         <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
