@@ -328,8 +328,8 @@ const ReceiptCard: React.FC<{ inst: Installment & { agreement: Agreement } }> = 
       clientCpf,
       amount: honorarios,
       description: num
-        ? `Honorários advocatícios referente à parcela ${num}/${a.installments_count ?? '?'} do acordo "${a.title}".`
-        : `Honorários advocatícios referente ao acordo "${a.title}".`,
+        ? `Honorários advocatícios referente à parcela ${num}/${a.installments_count ?? '?'} de "${a.title}"`
+        : `Honorários advocatícios referente a "${a.title}"`,
       serviceDescription: a.description || undefined,
       paymentMethod: paymentMethodLabel(inst.payment_method),
       paymentDateDisplay: inst.payment_date

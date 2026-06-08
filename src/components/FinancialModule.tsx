@@ -2575,8 +2575,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     
     const description = options?.descriptionOverride
       || (installment
-        ? `Honorários advocatícios referente à parcela ${installment.installment_number}/${agreement.installments_count} do acordo "${agreement.title}".`
-        : `Honorários advocatícios referente ao acordo "${agreement.title}".`);
+        ? `Honorários advocatícios referente à parcela ${installment.installment_number}/${agreement.installments_count} de "${agreement.title}"`
+        : `Honorários advocatícios referente a "${agreement.title}"`);
     
     const serviceDescription = agreement.description || 'Serviços advocatícios prestados conforme contrato de honorários.';
     const paidInstallmentsAsc = [...paidInstallmentsForAgreement].sort((a, b) => (a.installment_number ?? 0) - (b.installment_number ?? 0));
@@ -2721,7 +2721,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         <span class="detail-key">Cliente / Pagador</span>
         <span class="detail-val">${clientName}</span>
       </div>
-      ${clientCpf ? `<div class="detail-row"><span class="detail-key">CPF</span><span class="detail-val">${clientCpf}</span></div>` : `<div class="detail-row"><span class="detail-key">Referente ao Acordo</span><span class="detail-val">${agreement.title}</span></div>`}
+      ${clientCpf ? `<div class="detail-row"><span class="detail-key">CPF</span><span class="detail-val">${clientCpf}</span></div>` : `<div class="detail-row"><span class="detail-key">Referente</span><span class="detail-val">${agreement.title}</span></div>`}
       <div class="detail-row">
         <span class="detail-key">Data do Recebimento</span>
         <span class="detail-val">${paymentDateDisplay}</span>

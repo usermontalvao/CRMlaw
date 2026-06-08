@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.217': { name: 'Café Recibo Limpo', emoji: '🧾' },
   '1.10.216': { name: 'Café Componentes Padrão', emoji: '🎨' },
   '1.10.215': { name: 'Café Modal Limpo', emoji: '🪟' },
   '1.10.212': { name: 'Cafe SemVer', emoji: '??' },
@@ -877,6 +878,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.217',
+    date: '08/06/2026',
+    summary: 'Correção no texto do recibo de honorários: remoção do termo redundante/fixo "acordo" e correção de duplo ponto final.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Termo "acordo" removido da descrição do recibo', description: 'Removido o termo fixo "do acordo" e "referente ao acordo" para permitir que o recibo seja usado de forma genérica para qualquer tipo de contrato ou lançamento.' },
+        { type: 'fix' as const, title: 'Correção de duplo ponto final em recibos', description: 'Corrigido problema em que a descrição concatenada exibia dois pontos finais consecutivos ("..") no documento do recibo.' }
+      ]},
+    ],
+  },
   {
     version: '1.10.216',
     date: '08/06/2026',

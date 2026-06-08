@@ -225,7 +225,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         <span class="detail-key">Cliente / Pagador</span>
         <span class="detail-val">${clientName}</span>
       </div>
-      ${clientCpf ? `<div class="detail-row"><span class="detail-key">CPF</span><span class="detail-val">${clientCpf}</span></div>` : `<div class="detail-row"><span class="detail-key">Referente ao Acordo</span><span class="detail-val">${input.agreementTitle}</span></div>`}
+      ${clientCpf ? `<div class="detail-row"><span class="detail-key">CPF</span><span class="detail-val">${clientCpf}</span></div>` : `<div class="detail-row"><span class="detail-key">Referente</span><span class="detail-val">${input.agreementTitle}</span></div>`}
       <div class="detail-row">
         <span class="detail-key">Data do Recebimento</span>
         <span class="detail-val">${input.paymentDateDisplay}</span>
