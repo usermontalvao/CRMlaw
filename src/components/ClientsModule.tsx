@@ -15,6 +15,7 @@ import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { Modal, ModalBody } from './ui';
 import { buildDuplicateGroups, buildDuplicateSummaryMap, pickPrimaryClient, type DuplicateGroup } from '../utils/clientDuplicates';
 import { useSelectionState } from '../hooks/useSelectionState';
 import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
@@ -1200,26 +1201,29 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       )}
 
       {/* Manual Merge Modal */}
-      {showManualMerge && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                  <Merge className="w-4 h-4 text-orange-500" />
-                  Mesclar Contatos Manualmente
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">Busque e selecione os contatos a serem mesclados. O mais recente será o principal por padrão.</p>
-              </div>
-              <button
-                onClick={() => setShowManualMerge(false)}
-                className="text-slate-400 hover:text-slate-600 transition p-1 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
+      <Modal
+        open={showManualMerge}
+        onClose={() => setShowManualMerge(false)}
+        title="Mesclar Contatos Manualmente"
+        subtitle="Busque e selecione os contatos a serem mesclados. O mais recente será o principal por padrão."
+        icon={<Merge className="w-5 h-5" />}
+        size="lg"
+        zIndex={50}
+        footer={
+          <div className="flex items-center justify-between gap-3 w-full">
+            <p className="text-xs text-slate-500">
+              {manualMergeSelected.length < 2 ? 'Selecione ao menos 2 contatos' : `${manualMergeSelected.length} contatos selecionados`}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowManualMerge(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">Cancelar</button>
+              <button type="button" onClick={executeManualMerge} disabled={manualMergeSelected.length < 2 || !manualMergePrimaryId || manualMergeLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                {manualMergeLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Mesclando...</> : <><Merge className="w-4 h-4" /> Mesclar contatos</>}
               </button>
             </div>
-
+          </div>
+        }
+      >
+        <ModalBody>
             {/* Search */}
             <div className="px-5 pt-4 pb-2">
               <div className="relative">
@@ -1339,38 +1343,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               )}
             </div>
 
-            {/* Footer */}
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-500">
-                {manualMergeSelected.length < 2
-                  ? 'Selecione ao menos 2 contatos'
-                  : `${manualMergeSelected.length} contatos selecionados`}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowManualMerge(false)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={executeManualMerge}
-                  disabled={manualMergeSelected.length < 2 || !manualMergePrimaryId || manualMergeLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {manualMergeLoading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Mesclando...</>
-                  ) : (
-                    <><Merge className="w-4 h-4" /> Mesclar contatos</>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Details Modal */}
       {isDetailsModalOpen && selectedClient && (

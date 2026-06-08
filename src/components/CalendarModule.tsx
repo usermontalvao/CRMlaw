@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -30,6 +29,7 @@ import type { Client } from '../types/client.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
+import { Modal, ModalBody } from './ui';
 
 declare global {
   interface Window {
@@ -2650,8 +2650,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         </div>
       )}
 
-      {/* Dropdown "Determinado" via portal */}
-      {showResponsiblePicker && createPortal(
+      {/* Dropdown "Determinado" — posicionado via fixed */}
+      {showResponsiblePicker && (
         <div
           ref={responsibleDropdownRef}
           className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[200px]"
@@ -2696,8 +2696,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               );
             })}
           </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {/* ═══ CRONOGRAMA VIEW ═══ */}
@@ -2969,7 +2968,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Botão Flutuante para Novo Compromisso */}
       <button
         onClick={() => openEventForm()}
-        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
         title="Criar novo compromisso"
       >
         <CalendarIcon className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform" />
@@ -2979,498 +2978,60 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       </button>
 
       {/* Modal de Detalhes do Evento */}
-      {selectedEvent && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4"
-          onClick={() => setSelectedEvent(null)}
-        >
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" aria-hidden="true" />
-          <div
-            className="relative w-full sm:max-w-lg max-h-[96vh] sm:max-h-[90vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Faixa de cor por tipo */}
-            {(() => {
-              const t = selectedEvent.extendedProps.type as string;
-              const barColor =
-                t === 'deadline'    ? 'from-indigo-400 to-indigo-500' :
-                t === 'hearing'     ? 'from-red-400 to-red-500' :
-                t === 'requirement' ? 'from-orange-400 to-amber-500' :
-                t === 'payment'     ? 'from-sky-400 to-sky-500' :
-                t === 'meeting'     ? 'from-emerald-400 to-emerald-500' :
-                t === 'pericia'     ? 'from-purple-400 to-purple-500' :
-                t === 'personal'    ? 'from-fuchsia-400 to-fuchsia-500' :
-                'from-orange-400 to-amber-500';
-              return <div className={`h-1 w-full bg-gradient-to-r ${barColor} flex-shrink-0`} />;
-            })()}
-
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 bg-white">
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
-                  <CalendarIcon className="w-4 h-4 text-amber-500" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Compromisso</p>
-                  <h2 className="text-base font-bold text-slate-800 leading-snug break-words">{selectedEvent.title}</h2>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    {selectedEvent.extendedProps.type && (
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                        selectedEvent.extendedProps.type === 'deadline'    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                        selectedEvent.extendedProps.type === 'hearing'     ? 'bg-red-50 text-red-700 border-red-200' :
-                        selectedEvent.extendedProps.type === 'requirement' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                        selectedEvent.extendedProps.type === 'payment'     ? 'bg-sky-50 text-sky-700 border-sky-200' :
-                        selectedEvent.extendedProps.type === 'meeting'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        selectedEvent.extendedProps.type === 'pericia'     ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                        selectedEvent.extendedProps.type === 'personal'    ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' :
-                        'bg-slate-100 text-slate-600 border-slate-200'
-                      }`}>
-                        {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
-                      </span>
-                    )}
-                    {selectedEvent.extendedProps.status && (
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                        selectedEvent.extendedProps.status === 'concluido' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        selectedEvent.extendedProps.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200' :
-                        'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {selectedEvent.extendedProps.status === 'concluido' ? 'Concluído' :
-                         selectedEvent.extendedProps.status === 'cancelado' ? 'Cancelado' : 'Pendente'}
-                      </span>
-                    )}
-                    {selectedEventModuleLabel && (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                        {selectedEventModuleLabel}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+      <Modal
+        open={!!selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        title={selectedEvent?.title ?? ''}
+        eyebrow="Compromisso"
+        icon={<CalendarIcon className="w-4 h-4" />}
+        size="md"
+        zIndex={70}
+        subtitle={selectedEvent ? (
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            {selectedEvent.extendedProps.type && (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                selectedEvent.extendedProps.type === 'deadline'    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                selectedEvent.extendedProps.type === 'hearing'     ? 'bg-red-50 text-red-700 border-red-200' :
+                selectedEvent.extendedProps.type === 'requirement' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                selectedEvent.extendedProps.type === 'payment'     ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                selectedEvent.extendedProps.type === 'meeting'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                selectedEvent.extendedProps.type === 'pericia'     ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                selectedEvent.extendedProps.type === 'personal'    ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' :
+                'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+                {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
+              </span>
+            )}
+            {selectedEvent.extendedProps.status && (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                selectedEvent.extendedProps.status === 'concluido' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                selectedEvent.extendedProps.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200' :
+                'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                {selectedEvent.extendedProps.status === 'concluido' ? 'Concluído' :
+                 selectedEvent.extendedProps.status === 'cancelado' ? 'Cancelado' : 'Pendente'}
+              </span>
+            )}
+            {selectedEventModuleLabel && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                {selectedEventModuleLabel}
+              </span>
+            )}
+          </div>
+        ) : undefined}
+        footer={selectedEvent ? (
+          <div className="flex items-center justify-between gap-2 w-full">
+            {selectedEvent.extendedProps.calendarEventId ? (
               <button
                 type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0"
-                aria-label="Fechar"
+                onClick={handleDeleteSelectedEvent}
+                disabled={savingEvent}
+                className="shrink-0 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
               >
-                <X className="w-4 h-4" />
+                Excluir
               </button>
-            </div>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto bg-white">
-              <div className="px-5 py-4 space-y-3">
-
-                {/* Data e Hora */}
-                <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-                    <CalendarIcon className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Data e hora</p>
-                    <p className="text-sm font-semibold text-slate-800 mt-0.5">
-                      {selectedEvent.start ? formatDateTime(new Date(selectedEvent.start).toISOString()) : '—'}
-                    </p>
-                    {selectedEvent.end && (
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        até {formatDateTime(new Date(selectedEvent.end).toISOString())}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Prioridade */}
-                {selectedEvent.extendedProps.priority && (
-                  <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                    <span className={`w-3 h-3 rounded-full shrink-0 ${
-                      selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
-                      selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
-                      'bg-slate-400'
-                    }`} />
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Prioridade</p>
-                      <p className="text-sm font-semibold text-slate-800 mt-0.5 capitalize">{selectedEvent.extendedProps.priority}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Cliente + Telefone */}
-                {selectedEvent.extendedProps.clientName && (
-                  <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
-                      <User className="w-4 h-4 text-violet-500" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cliente</p>
-                      {selectedEvent.extendedProps.clientId ? (
-                        <button
-                          type="button"
-                          onClick={() => handleNavigateToModule('clientes', selectedEvent.extendedProps.clientId)}
-                          className="text-sm font-semibold text-amber-600 hover:text-amber-700 hover:underline mt-0.5 truncate text-left transition"
-                        >
-                          {selectedEvent.extendedProps.clientName}
-                        </button>
-                      ) : (
-                        <p className="text-sm font-semibold text-slate-800 mt-0.5 truncate">{selectedEvent.extendedProps.clientName}</p>
-                      )}
-                      {selectedEvent.extendedProps.clientPhone && (
-                        <p className="text-xs text-slate-500 mt-0.5">{selectedEvent.extendedProps.clientPhone}</p>
-                      )}
-                    </div>
-                    {selectedEvent.extendedProps.clientPhone && (
-                      <a
-                        href={`tel:${selectedEvent.extendedProps.clientPhone}`}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0"
-                        title="Ligar"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                {/* Correspondente */}
-                {selectedEventRepresentativeAppointments.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">Correspondente</p>
-                    {selectedEventRepresentativeAppointments.map((appointment) => {
-                      const representative = appointment.representative;
-                      const whatsappUrl = buildWhatsAppUrl(representative?.phone);
-                      const representativeName = representative?.full_name || 'Não encontrado';
-                      return (
-                        <div key={appointment.id} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                                {representativeName.charAt(0).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-slate-800">{representativeName}</p>
-                                <p className="text-xs text-slate-500">{representative?.oab_number || 'OAB não informada'}</p>
-                              </div>
-                            </div>
-                            {whatsappUrl ? (
-                              <a
-                                href={whatsappUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition shrink-0"
-                              >
-                                <MessageCircle className="w-3.5 h-3.5" />
-                                WhatsApp
-                              </a>
-                            ) : (
-                              <span className="text-xs text-slate-400">Sem telefone</span>
-                            )}
-                          </div>
-                          {appointment.diligence_location && (
-                            <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
-                              <MapPin className="w-3.5 h-3.5" />
-                              <span className="truncate">{appointment.diligence_location}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Modalidade (presencial / online) */}
-                {(() => {
-                  const mode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
-                  if (!mode) return null;
-                  const isOnline = mode === 'online';
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-                        isOnline
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}>
-                        {isOnline ? '📹' : '📍'} {isOnline ? 'Online' : 'Presencial'}
-                      </span>
-                    </div>
-                  );
-                })()}
-
-                {/* Descrição */}
-                {selectedEvent.extendedProps.description && (
-                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Descrição</p>
-                    <p className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
-                      {(selectedEvent.extendedProps.description as string)
-                        .replace(/\[agreement_id:[^\]]+\]/g, '')
-                        .replace(/\[installment:\d+\]/g, '')
-                        .replace(/\[inadimplencia\]/g, '')
-                        .split('\n')
-                        .filter(line => !/Valor:\s*R\$\s*(NaN|undefined|null|--)/.test(line))
-                        .join('\n')
-                        .trim()}
-                    </p>
-                  </div>
-                )}
-
-                {/* Botão Registrar Pagamento — visível apenas em eventos do tipo payment com parcela vinculada */}
-                {(() => {
-                  const desc = selectedEvent.extendedProps.description as string | undefined;
-                  if (!desc) return null;
-                  const agreementMatch = desc.match(/\[agreement_id:([^\]]+)\]/);
-                  const installmentMatch = desc.match(/\[installment:(\d+)\]/);
-                  if (!agreementMatch || !installmentMatch) return null;
-                  const agreementId = agreementMatch[1];
-                  const instNum = parseInt(installmentMatch[1], 10);
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToModule('financeiro', agreementId, { installmentNumber: instNum })}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition"
-                    >
-                      <DollarSign className="w-4 h-4" />
-                      Registrar Pagamento
-                    </button>
-                  );
-                })()}
-
-                {/* Detalhes extras */}
-                {selectedEventDataDetails.length > 0 && (
-                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Detalhes</p>
-                    {selectedEventDataDetails.map((detail) => (
-                      <div key={`${detail.label}-${detail.value}`} className="flex justify-between gap-3">
-                        <span className="shrink-0 text-xs text-slate-500">{detail.label}</span>
-                        <span className="text-right">
-                          <span className="block text-xs font-semibold text-slate-700">{detail.value}</span>
-                          {detail.secondaryValue && (
-                            <span className="mt-0.5 block text-[11px] text-slate-500">{detail.secondaryValue}</span>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* DJEN — confronto de confirmação */}
-                {['hearing', 'pericia'].includes(selectedEvent.extendedProps.type ?? '') && (() => {
-                  const djenStatus = selectedEvent.extendedProps.djenStatus as string | undefined;
-                  const eventDateObj = selectedEvent.start ? new Date(selectedEvent.start) : null;
-                  const eventDate = eventDateObj
-                    ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(eventDateObj)
-                    : null;
-                  const eventTime = eventDateObj
-                    ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(eventDateObj)
-                    : null;
-                  const eventMode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
-
-                  const StatusIcon =
-                    djenStatus === 'confirmed'  ? ShieldCheck :
-                    djenStatus === 'divergence' ? AlertTriangle :
-                                                  HelpCircle;
-                  const iconColor =
-                    djenStatus === 'confirmed'  ? 'text-green-600' :
-                    djenStatus === 'divergence' ? 'text-amber-500' :
-                                                  'text-slate-400';
-                  const badgeStyle =
-                    djenStatus === 'confirmed'  ? 'bg-green-100 text-green-700 ring-green-200' :
-                    djenStatus === 'divergence' ? 'bg-amber-100 text-amber-700 ring-amber-200' :
-                                                  'bg-slate-100 text-slate-500 ring-slate-200';
-                  const statusLabel =
-                    djenStatus === 'confirmed'  ? 'Confirmado' :
-                    djenStatus === 'divergence' ? 'Divergência' :
-                                                  'Não confirmado';
-                  const borderColor =
-                    djenStatus === 'confirmed'  ? 'border-green-100' :
-                    djenStatus === 'divergence' ? 'border-amber-100' :
-                                                  'border-slate-100';
-
-                  return (
-                    <div className={`rounded-xl border bg-white px-4 py-3 space-y-3 ${borderColor}`}>
-
-                      {/* Header */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <StatusIcon className={`w-4 h-4 shrink-0 ${iconColor}`} />
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            Verificação DJEN
-                          </p>
-                        </div>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${badgeStyle}`}>
-                          {statusLabel}
-                        </span>
-                      </div>
-
-                      {/* Confronto data + hora */}
-                      {eventDate && (
-                        <div className="space-y-2">
-                          {/* Data */}
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
-                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Data na agenda</p>
-                              <p className="text-sm font-bold text-slate-800">{eventDate}</p>
-                            </div>
-                            <div className="shrink-0">
-                              {djenStatus === 'confirmed'
-                                ? <Check className="w-4 h-4 text-green-500" />
-                                : djenStatus === 'divergence'
-                                ? <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                : <span className="text-slate-300">→</span>}
-                            </div>
-                            <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
-                              djenStatus === 'confirmed' ? 'bg-green-50 border-green-200' :
-                              djenStatus === 'divergence' ? 'bg-amber-50 border-amber-200' :
-                              'bg-slate-50 border-slate-200'
-                            }`}>
-                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Data no DJEN</p>
-                              <p className={`text-sm font-bold ${
-                                djenStatus === 'confirmed' ? 'text-green-700' :
-                                djenStatus === 'divergence' ? 'text-amber-700' : 'text-slate-500'
-                              }`}>
-                                {selectedEventDjenData?.datesFound[0] ?? '—'}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Hora */}
-                          {eventTime && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Hora na agenda</p>
-                                <p className="text-sm font-bold text-slate-800">{eventTime}</p>
-                              </div>
-                              <div className="shrink-0">
-                                {selectedEventDjenData?.timesFound.length
-                                  ? <Check className="w-4 h-4 text-green-500" />
-                                  : <span className="text-slate-300">→</span>}
-                              </div>
-                              <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
-                                selectedEventDjenData?.timesFound.length
-                                  ? 'bg-green-50 border-green-200'
-                                  : 'bg-slate-50 border-slate-200'
-                              }`}>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Hora no DJEN</p>
-                                <p className={`text-sm font-bold ${
-                                  selectedEventDjenData?.timesFound.length ? 'text-green-700' : 'text-slate-400'
-                                }`}>
-                                  {selectedEventDjenData?.timesFound.join(' / ') ?? '—'}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Modalidade */}
-                          {(eventMode || selectedEventDjenData?.detectedMode) && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-center">
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Modalidade agenda</p>
-                                <p className="text-sm font-bold text-slate-800 capitalize">
-                                  {eventMode === 'online' ? '📹 Online' : eventMode === 'presencial' ? '📍 Presencial' : '—'}
-                                </p>
-                              </div>
-                              <div className="shrink-0">
-                                {eventMode && selectedEventDjenData?.detectedMode
-                                  ? eventMode === selectedEventDjenData.detectedMode
-                                    ? <Check className="w-4 h-4 text-green-500" />
-                                    : <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                  : <span className="text-slate-300">→</span>}
-                              </div>
-                              <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${
-                                !selectedEventDjenData?.detectedMode ? 'bg-slate-50 border-slate-200' :
-                                eventMode === selectedEventDjenData.detectedMode ? 'bg-green-50 border-green-200' :
-                                'bg-amber-50 border-amber-200'
-                              }`}>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Modalidade DJEN</p>
-                                <p className={`text-sm font-bold ${
-                                  !selectedEventDjenData?.detectedMode ? 'text-slate-400' :
-                                  eventMode === selectedEventDjenData.detectedMode ? 'text-green-700' : 'text-amber-700'
-                                }`}>
-                                  {selectedEventDjenData?.detectedMode === 'online' ? '📹 Online' :
-                                   selectedEventDjenData?.detectedMode === 'presencial' ? '📍 Presencial' : '—'}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Processo + Tribunal + Data publicação */}
-                      {selectedEventDjenData && (
-                        <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-1.5">
-                          {selectedEventDjenData.numero_processo && (
-                            <div className="flex justify-between gap-2 items-baseline">
-                              <span className="text-[11px] text-slate-400 shrink-0">Processo</span>
-                              <span className="text-[11px] font-semibold text-slate-700 text-right tabular-nums">
-                                {selectedEventDjenData.numero_processo}
-                              </span>
-                            </div>
-                          )}
-                          {selectedEventDjenData.sigla_tribunal && (
-                            <div className="flex justify-between gap-2 items-baseline">
-                              <span className="text-[11px] text-slate-400 shrink-0">Tribunal</span>
-                              <span className="text-[11px] font-semibold text-slate-700 text-right">
-                                {selectedEventDjenData.sigla_tribunal}
-                                {selectedEventDjenData.nome_orgao ? ` · ${selectedEventDjenData.nome_orgao}` : ''}
-                              </span>
-                            </div>
-                          )}
-                          {selectedEventDjenData.data_disponibilizacao && (
-                            <div className="flex justify-between gap-2 items-baseline">
-                              <span className="text-[11px] text-slate-400 shrink-0">Publicado em</span>
-                              <span className="text-[11px] font-semibold text-slate-700 text-right">
-                                {new Intl.DateTimeFormat('pt-BR').format(new Date(selectedEventDjenData.data_disponibilizacao))}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Trecho da intimação — colapsável com highlight */}
-                      {selectedEventDjenData?.texto && (
-                        <details className="group">
-                          <summary className="cursor-pointer list-none flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-slate-600 transition select-none">
-                            <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
-                            Ver trecho da intimação
-                          </summary>
-                          <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
-                            <p className="text-[11px] text-slate-600 leading-relaxed">
-                              {(() => {
-                                const snippet = selectedEventDjenData.texto.slice(0, 800);
-                                const pattern = /(\d{2}\/\d{2}\/\d{4}|\d{1,2}[h:]\d{2}(?:min)?(?:h)?|videoconferência|presencial|virtual|zoom|teams)/gi;
-                                const parts = snippet.split(pattern);
-                                return parts.map((part, i) =>
-                                  pattern.test(part)
-                                    ? <strong key={i} className="text-slate-900 font-bold">{part}</strong>
-                                    : <span key={i}>{part}</span>
-                                );
-                              })()}
-                              {selectedEventDjenData.texto.length > 800 ? '…' : ''}
-                            </p>
-                          </div>
-                        </details>
-                      )}
-
-                      {/* Sem DJEN */}
-                      {(!djenStatus || djenStatus === 'unconfirmed') && !selectedEventDjenData && (
-                        <p className="text-[11px] text-slate-400 italic text-center py-1">
-                          Nenhuma intimação DJEN localizada para este evento.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-              {selectedEvent.extendedProps.calendarEventId ? (
-                <button
-                  type="button"
-                  onClick={handleDeleteSelectedEvent}
-                  disabled={savingEvent}
-                  className="shrink-0 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
-                >
-                  Excluir
-                </button>
-              ) : <span />}
-              <div className="flex items-center gap-1.5">
+            ) : <span />}
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
@@ -3523,98 +3084,535 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   {editButtonLabel}
                 </button>
               )}
-              </div>
             </div>
           </div>
-        </div>
-      )}
+        ) : undefined}
+      >
+        {selectedEvent && (
+        <ModalBody className="space-y-2.5">
 
-      {/* Modal de Criação/Edição de Compromisso */}
-      {isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            onClick={handleCloseCreateModal}
-            aria-hidden="true"
-          />
-          <div className="relative w-full sm:max-w-2xl max-h-[96vh] sm:max-h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            {/* Faixa laranja */}
-            <div className="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-500 flex-shrink-0" />
+          {/* ── Resumo compacto ── */}
+          <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
 
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                  <CalendarIcon className="w-4 h-4 text-orange-500" />
-                </div>
+              {/* Data/Hora */}
+              <div className="flex items-start gap-2">
+                <CalendarIcon className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Agenda</p>
-                  <h2 className="text-base font-bold text-slate-800 leading-tight">
-                    {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
-                  </h2>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Data e hora</p>
+                  <p className="text-xs font-semibold text-slate-800 mt-0.5">
+                    {selectedEvent.start ? formatDateTime(new Date(selectedEvent.start).toISOString()) : '—'}
+                  </p>
+                  {selectedEvent.end && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">até {formatDateTime(new Date(selectedEvent.end).toISOString())}</p>
+                  )}
                 </div>
               </div>
+
+              {/* Cliente */}
+              {selectedEvent.extendedProps.clientName && (
+                <div className="flex items-start gap-2 min-w-0">
+                  <User className="w-3.5 h-3.5 text-violet-400 mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cliente</p>
+                    {selectedEvent.extendedProps.clientId ? (
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateToModule('clientes', selectedEvent.extendedProps.clientId)}
+                        className="text-xs font-semibold text-amber-600 hover:underline text-left truncate max-w-full transition mt-0.5 block"
+                      >
+                        {selectedEvent.extendedProps.clientName}
+                      </button>
+                    ) : (
+                      <p className="text-xs font-semibold text-slate-800 truncate mt-0.5">{selectedEvent.extendedProps.clientName}</p>
+                    )}
+                    {selectedEvent.extendedProps.clientPhone && (
+                      <p className="text-[10px] text-slate-400">{selectedEvent.extendedProps.clientPhone}</p>
+                    )}
+                  </div>
+                  {selectedEvent.extendedProps.clientPhone && (
+                    <a
+                      href={`tel:${selectedEvent.extendedProps.clientPhone}`}
+                      className="w-6 h-6 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0 mt-0.5"
+                      title="Ligar"
+                    >
+                      <Phone className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Processo */}
+              {selectedEventProcess && (
+                <div className="flex items-start gap-2 min-w-0">
+                  <div className="w-3.5 mt-1.5 shrink-0 flex justify-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 block" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Processo</p>
+                    <p className="text-xs font-semibold text-slate-800 font-mono truncate mt-0.5">{selectedEventProcess.process_code}</p>
+                    {selectedEventProcess.practice_area && (
+                      <p className="text-[10px] text-slate-400 capitalize">{selectedEventProcess.practice_area}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Vara / Órgão */}
+              {(selectedEventProcessOrgao || selectedEventDjenData?.nome_orgao) && (
+                <div className="flex items-start gap-2 min-w-0">
+                  <div className="w-3.5 mt-1.5 shrink-0 flex justify-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 block" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Vara / Tribunal</p>
+                    <p className="text-xs font-semibold text-slate-700 truncate mt-0.5">
+                      {selectedEventProcessOrgao || selectedEventDjenData?.nome_orgao}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Prioridade */}
+              {selectedEvent.extendedProps.priority && (
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
+                    selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
+                    'bg-slate-400'
+                  }`} />
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Prioridade</p>
+                    <p className="text-xs font-semibold text-slate-800 capitalize mt-0.5">{selectedEvent.extendedProps.priority}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Modalidade */}
+              {(() => {
+                const mode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
+                if (!mode) return null;
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm leading-none">{mode === 'online' ? '📹' : '📍'}</span>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Modalidade</p>
+                      <p className="text-xs font-semibold text-slate-800 capitalize mt-0.5">{mode === 'online' ? 'Online' : 'Presencial'}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+            </div>
+          </div>
+
+          {/* ── Verificação DJEN ── */}
+          {['hearing', 'pericia'].includes(selectedEvent.extendedProps.type ?? '') && (() => {
+            const djenStatus = selectedEvent.extendedProps.djenStatus as string | undefined;
+            const eventDateObj = selectedEvent.start ? new Date(selectedEvent.start) : null;
+            const eventDate = eventDateObj
+              ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(eventDateObj)
+              : null;
+            const eventTime = eventDateObj
+              ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(eventDateObj)
+              : null;
+            const eventMode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
+
+            const StatusIcon =
+              djenStatus === 'confirmed'  ? ShieldCheck :
+              djenStatus === 'divergence' ? AlertTriangle :
+                                            HelpCircle;
+            const iconColor =
+              djenStatus === 'confirmed'  ? 'text-green-600' :
+              djenStatus === 'divergence' ? 'text-amber-500' :
+                                            'text-slate-400';
+            const badgeStyle =
+              djenStatus === 'confirmed'  ? 'bg-green-100 text-green-700 ring-green-200' :
+              djenStatus === 'divergence' ? 'bg-amber-100 text-amber-700 ring-amber-200' :
+                                            'bg-slate-100 text-slate-500 ring-slate-200';
+            const statusLabel =
+              djenStatus === 'confirmed'  ? 'Confirmado' :
+              djenStatus === 'divergence' ? 'Divergência' :
+                                            'Não confirmado';
+            const borderColor =
+              djenStatus === 'confirmed'  ? 'border-green-100' :
+              djenStatus === 'divergence' ? 'border-amber-100' :
+                                            'border-slate-100';
+
+            return (
+              <div className={`rounded-xl border bg-white px-3 py-2.5 space-y-2 ${borderColor}`}>
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${iconColor}`} />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Verificação DJEN</p>
+                  </div>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ${badgeStyle}`}>
+                    {statusLabel}
+                  </span>
+                </div>
+
+                {/* Tabela de comparação compacta */}
+                {eventDate && (
+                  <div className="rounded-lg overflow-hidden border border-slate-100">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="text-left px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide w-[26%]">Campo</th>
+                          <th className="text-right px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Agenda</th>
+                          <th className="text-right px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">DJEN</th>
+                          <th className="w-8 px-2 py-1"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {/* Data */}
+                        <tr>
+                          <td className="px-2 py-1.5 text-slate-500">Data</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-slate-700 tabular-nums">{eventDate}</td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                            djenStatus === 'confirmed' ? 'text-green-700' :
+                            djenStatus === 'divergence' ? 'text-amber-700' : 'text-slate-400'
+                          }`}>
+                            {selectedEventDjenData?.datesFound[0] ?? '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            {djenStatus === 'confirmed'
+                              ? <Check className="w-3.5 h-3.5 text-green-500 mx-auto" />
+                              : djenStatus === 'divergence'
+                              ? <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mx-auto" />
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                        </tr>
+                        {/* Hora */}
+                        {eventTime && (
+                          <tr>
+                            <td className="px-2 py-1.5 text-slate-500">Hora</td>
+                            <td className="px-2 py-1.5 text-right font-semibold text-slate-700 tabular-nums">{eventTime}</td>
+                            <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                              selectedEventDjenData?.timesFound.length ? 'text-green-700' : 'text-slate-400'
+                            }`}>
+                              {selectedEventDjenData?.timesFound.join(' / ') ?? '—'}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              {selectedEventDjenData?.timesFound.length
+                                ? <Check className="w-3.5 h-3.5 text-green-500 mx-auto" />
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                          </tr>
+                        )}
+                        {/* Modalidade */}
+                        {(eventMode || selectedEventDjenData?.detectedMode) && (
+                          <tr className={
+                            eventMode && selectedEventDjenData?.detectedMode && eventMode !== selectedEventDjenData.detectedMode
+                              ? 'bg-amber-50'
+                              : ''
+                          }>
+                            <td className="px-2 py-1.5 text-slate-500">Modalidade</td>
+                            <td className="px-2 py-1.5 text-right font-semibold text-slate-700">
+                              {eventMode === 'online' ? 'Online' : eventMode === 'presencial' ? 'Presencial' : '—'}
+                            </td>
+                            <td className={`px-2 py-1.5 text-right font-semibold ${
+                              !selectedEventDjenData?.detectedMode ? 'text-slate-400' :
+                              eventMode === selectedEventDjenData.detectedMode ? 'text-green-700' : 'text-amber-700'
+                            }`}>
+                              {selectedEventDjenData?.detectedMode === 'online' ? 'Online' :
+                               selectedEventDjenData?.detectedMode === 'presencial' ? 'Presencial' : '—'}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              {eventMode && selectedEventDjenData?.detectedMode
+                                ? eventMode === selectedEventDjenData.detectedMode
+                                  ? <Check className="w-3.5 h-3.5 text-green-500 mx-auto" />
+                                  : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mx-auto" />
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Meta DJEN compacto */}
+                {selectedEventDjenData && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-1">
+                    {selectedEventDjenData.numero_processo && (
+                      <span className="text-[10px] text-slate-400">
+                        Proc. <span className="font-semibold text-slate-600 tabular-nums">{selectedEventDjenData.numero_processo}</span>
+                      </span>
+                    )}
+                    {selectedEventDjenData.sigla_tribunal && (
+                      <span className="text-[10px] text-slate-400">
+                        {selectedEventDjenData.sigla_tribunal}
+                        {selectedEventDjenData.nome_orgao ? ` · ${selectedEventDjenData.nome_orgao}` : ''}
+                      </span>
+                    )}
+                    {selectedEventDjenData.data_disponibilizacao && (
+                      <span className="text-[10px] text-slate-400">
+                        Pub. <span className="font-semibold text-slate-600">
+                          {new Intl.DateTimeFormat('pt-BR').format(new Date(selectedEventDjenData.data_disponibilizacao))}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Trecho da intimação */}
+                {selectedEventDjenData?.texto && (
+                  <details className="group">
+                    <summary className="cursor-pointer list-none flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition select-none">
+                      <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                      Ver trecho da intimação
+                    </summary>
+                    <div className="mt-1.5 max-h-32 overflow-y-auto rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-2">
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        {(() => {
+                          const snippet = selectedEventDjenData.texto.slice(0, 800);
+                          const pattern = /(\d{2}\/\d{2}\/\d{4}|\d{1,2}[h:]\d{2}(?:min)?(?:h)?|videoconferência|presencial|virtual|zoom|teams)/gi;
+                          const parts = snippet.split(pattern);
+                          return parts.map((part, i) =>
+                            pattern.test(part)
+                              ? <strong key={i} className="text-slate-900 font-bold">{part}</strong>
+                              : <span key={i}>{part}</span>
+                          );
+                        })()}
+                        {selectedEventDjenData.texto.length > 800 ? '…' : ''}
+                      </p>
+                    </div>
+                  </details>
+                )}
+
+                {/* Sem DJEN */}
+                {(!djenStatus || djenStatus === 'unconfirmed') && !selectedEventDjenData && (
+                  <p className="text-[10px] text-slate-400 italic text-center py-0.5">
+                    Nenhuma intimação DJEN localizada para este evento.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Correspondente ── */}
+          {selectedEventRepresentativeAppointments.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">Correspondente</p>
+              {selectedEventRepresentativeAppointments.map((appointment) => {
+                const representative = appointment.representative;
+                const whatsappUrl = buildWhatsAppUrl(representative?.phone);
+                const representativeName = representative?.full_name || 'Não encontrado';
+                return (
+                  <div key={appointment.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                          {representativeName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-800">{representativeName}</p>
+                          <p className="text-[10px] text-slate-500">{representative?.oab_number || 'OAB não informada'}</p>
+                        </div>
+                      </div>
+                      {whatsappUrl ? (
+                        <a
+                          href={whatsappUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition shrink-0"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          WhatsApp
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">Sem telefone</span>
+                      )}
+                    </div>
+                    {appointment.diligence_location && (
+                      <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                        <MapPin className="w-3 h-3" />
+                        <span className="truncate">{appointment.diligence_location}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Botão Registrar Pagamento ── */}
+          {(() => {
+            const desc = selectedEvent.extendedProps.description as string | undefined;
+            if (!desc) return null;
+            const agreementMatch = desc.match(/\[agreement_id:([^\]]+)\]/);
+            const installmentMatch = desc.match(/\[installment:(\d+)\]/);
+            if (!agreementMatch || !installmentMatch) return null;
+            const agreementId = agreementMatch[1];
+            const instNum = parseInt(installmentMatch[1], 10);
+            return (
+              <button
+                type="button"
+                onClick={() => handleNavigateToModule('financeiro', agreementId, { installmentNumber: instNum })}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition"
+              >
+                <DollarSign className="w-4 h-4" />
+                Registrar Pagamento
+              </button>
+            );
+          })()}
+
+          {/* ── Descrição ── */}
+          {selectedEvent.extendedProps.description && (
+            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Descrição</p>
+              <p className="whitespace-pre-wrap text-xs text-slate-700 leading-relaxed">
+                {(selectedEvent.extendedProps.description as string)
+                  .replace(/\[agreement_id:[^\]]+\]/g, '')
+                  .replace(/\[installment:\d+\]/g, '')
+                  .replace(/\[inadimplencia\]/g, '')
+                  .split('\n')
+                  .filter(line => !/Valor:\s*R\$\s*(NaN|undefined|null|--)/.test(line))
+                  .join('\n')
+                  .trim()}
+              </p>
+            </div>
+          )}
+
+          {/* ── Detalhes extras ── */}
+          {selectedEventDataDetails.length > 0 && (
+            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Detalhes</p>
+              {selectedEventDataDetails.map((detail) => (
+                <div key={`${detail.label}-${detail.value}`} className="flex justify-between gap-3">
+                  <span className="shrink-0 text-xs text-slate-500">{detail.label}</span>
+                  <span className="text-right">
+                    <span className="block text-xs font-semibold text-slate-700">{detail.value}</span>
+                    {detail.secondaryValue && (
+                      <span className="mt-0.5 block text-[10px] text-slate-500">{detail.secondaryValue}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+        </ModalBody>
+        )}
+      </Modal>
+
+      {/* Modal de Criação/Edição de Compromisso */}
+      <Modal
+        open={isCreateModalOpen}
+        onClose={handleCloseCreateModal}
+        title={editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
+        eyebrow="Agenda"
+        icon={<CalendarIcon className="w-4 h-4" />}
+        size="lg"
+        zIndex={70}
+        footer={
+          <div className="flex items-center justify-between gap-3 w-full">
+            <div>
+              {editingEventId && (
+                <button
+                  type="button"
+                  onClick={handleDeleteEvent}
+                  className="px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
+                  disabled={savingEvent}
+                >
+                  Excluir
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleCloseCreateModal}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                aria-label="Fechar"
+                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
+                disabled={savingEvent}
               >
-                <X className="w-4 h-4" />
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitEvent}
+                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition disabled:opacity-60 shadow-sm shadow-amber-200"
+                disabled={savingEvent}
+              >
+                {savingEvent && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingEventId ? 'Salvar alterações' : 'Criar compromisso'}
               </button>
             </div>
-
-            {/* Body — 2 colunas */}
-            <div className="flex-1 overflow-y-auto bg-white">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-5 px-6 py-5">
+          </div>
+        }
+      >
+        <ModalBody>
+          <div className="grid grid-cols-12 gap-x-4 gap-y-3">
 
                 {/* Título — coluna inteira */}
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                <div className="col-span-12">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Título <span className="text-red-400">*</span>
                   </label>
                   <input
                     value={newEventForm.title}
                     onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                     placeholder="Ex: Reunião com cliente"
                     autoFocus
                   />
                 </div>
 
                 {/* Data */}
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                <div className="col-span-3">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Data <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                     required
                   />
                 </div>
 
                 {/* Horário */}
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                <div className="col-span-3">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Horário
                   </label>
                   <input
                     type="time"
                     value={newEventForm.time}
                     onChange={(e) => setNewEventForm({ ...newEventForm, time: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                   />
                 </div>
 
+                {/* Modalidade — select compacto ao lado de Data/Horário */}
+                <div className="col-span-6">
+                  {(['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
+                    <>
+                      <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                        Modalidade
+                      </label>
+                      <select
+                        value={newEventForm.event_mode}
+                        onChange={(e) => setNewEventForm(prev => ({ ...prev, event_mode: e.target.value as '' | 'presencial' | 'online' }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                      >
+                        <option value="">Não definida</option>
+                        <option value="presencial">Presencial</option>
+                        <option value="online">Online</option>
+                      </select>
+                    </>
+                  )}
+                </div>
+
                 {/* Tipo — coluna inteira */}
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                <div className="col-span-12">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Tipo
                   </label>
-                  <div className="grid grid-cols-7 gap-2">
+                  <div className="grid grid-cols-7 gap-1.5">
                     {([
                       { value: 'meeting',     label: 'Reunião',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400 hover:text-emerald-600' },
                       { value: 'deadline',    label: 'Prazo',       active: 'bg-indigo-500 text-white border-indigo-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400 hover:text-indigo-600' },
@@ -3635,7 +3633,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           // Ao sair de perícia, limpa o requerimento
                           ...(value !== 'pericia' ? { requirement_id: '', pericia_link_type: 'process' as const } : {}),
                         }))}
-                        className={`py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        className={`py-1.5 rounded-lg text-xs font-semibold border transition-all text-center ${
                           newEventForm.type === value ? active : idle
                         }`}
                       >
@@ -3645,224 +3643,159 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   </div>
                 </div>
 
-                {/* Modalidade — presencial / online (Audiência, Reunião, Perícia) */}
-                {(['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
-                  <div className="col-span-2">
-                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
-                      Modalidade
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([
-                        { value: '',           label: 'Não definida' },
-                        { value: 'presencial', label: 'Presencial'   },
-                        { value: 'online',     label: 'Online'       },
-                      ] as const).map(({ value, label }) => {
-                        const on = newEventForm.event_mode === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setNewEventForm(prev => ({ ...prev, event_mode: value }))}
-                            className={`py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
-                              on
-                                ? 'bg-slate-800 text-white border-slate-800'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* Cliente | Processo | Responsável — linha fixa */}
+                <div className="col-span-12 pt-1 border-t border-slate-100">
+                  <div className="grid grid-cols-12 gap-x-3">
 
-                {/* Cliente + Responsável — linha dividida */}
-                <div className="col-span-2 grid grid-cols-2 gap-5 pt-1 border-t border-slate-100">
-
-                  {/* Cliente — campo unificado (livre ou vinculado) */}
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
-                      Cliente <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
-                    </label>
-                    <div ref={clientSearchRef} className="relative">
-                      {newEventForm.client_id ? (
-                        /* Cliente cadastrado vinculado — badge verde */
-                        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 border border-emerald-300 rounded-xl">
-                          <Link className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span className="flex-1 text-sm font-semibold text-emerald-800 truncate">
-                            {linkedClient?.full_name || createFormInitialClientName}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
-                            Cliente
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNewEventForm(prev => ({ ...prev, client_id: '', client_name: '', process_id: '', requirement_id: '' }));
-                              setCreateFormInitialClientName('');
-                              setClientSearchTerm('');
-                            }}
-                            className="w-5 h-5 flex items-center justify-center text-emerald-500 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        /* Input livre com busca */
-                        <>
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                            <input
-                              type="text"
-                              value={clientSearchTerm || newEventForm.client_name}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setClientSearchTerm(v);
-                                setNewEventForm(prev => ({ ...prev, client_name: v }));
-                                setClientSearchOpen(true);
+                    {/* ── Cliente ── */}
+                    <div className="col-span-4">
+                      <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                        Cliente <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                      </label>
+                      <div ref={clientSearchRef} className="relative">
+                        {newEventForm.client_id ? (
+                          /* Cliente cadastrado vinculado — badge verde */
+                          <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-300 rounded-xl">
+                            <Link className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="flex-1 text-sm font-semibold text-emerald-800 truncate">
+                              {linkedClient?.full_name || createFormInitialClientName}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
+                              Cliente
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewEventForm(prev => ({ ...prev, client_id: '', client_name: '', process_id: '', requirement_id: '' }));
+                                setCreateFormInitialClientName('');
+                                setClientSearchTerm('');
                               }}
-                              onFocus={() => { if (clientSearchTerm.trim()) setClientSearchOpen(true); }}
-                              placeholder="Nome ou buscar cliente cadastrado..."
-                              className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
-                            />
+                              className="w-5 h-5 flex items-center justify-center text-emerald-500 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          {clientSearchOpen && (clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 1) && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
-                              {clientSearchResults.length > 0 && (
-                                <>
-                                  <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes cadastrados</p>
-                                  {clientSearchResults.map(c => (
-                                    <button
-                                      key={c.id}
-                                      type="button"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        setNewEventForm(prev => ({ ...prev, client_id: c.id, client_name: '', process_id: '', requirement_id: '' }));
-                                        setCreateFormInitialClientName(c.full_name);
-                                        setClientSearchTerm('');
-                                        setClientSearchOpen(false);
-                                      }}
-                                      className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-amber-50 text-left transition"
-                                    >
-                                      <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
-                                        {c.full_name?.charAt(0)?.toUpperCase() || '?'}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <p className="text-sm font-medium text-slate-800 truncate">{c.full_name}</p>
-                                        {c.cpf_cnpj && <p className="text-xs text-slate-400">{c.cpf_cnpj}</p>}
-                                      </div>
-                                      <Link className="w-3 h-3 text-emerald-500 ml-auto shrink-0" />
-                                    </button>
-                                  ))}
-                                  <div className="border-t border-slate-100" />
-                                </>
-                              )}
+                        ) : (
+                          /* Input livre com busca */
+                          <>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={clientSearchTerm || newEventForm.client_name}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setClientSearchTerm(v);
+                                  setNewEventForm(prev => ({ ...prev, client_name: v }));
+                                  setClientSearchOpen(true);
+                                }}
+                                onFocus={() => { if (clientSearchTerm.trim()) setClientSearchOpen(true); }}
+                                placeholder="Nome ou buscar..."
+                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                              />
+                            </div>
+                            {clientSearchOpen && (clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 1) && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                                {clientSearchResults.length > 0 && (
+                                  <>
+                                    <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes cadastrados</p>
+                                    {clientSearchResults.map(c => (
+                                      <button
+                                        key={c.id}
+                                        type="button"
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          setNewEventForm(prev => ({ ...prev, client_id: c.id, client_name: '', process_id: '', requirement_id: '' }));
+                                          setCreateFormInitialClientName(c.full_name);
+                                          setClientSearchTerm('');
+                                          setClientSearchOpen(false);
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-amber-50 text-left transition"
+                                      >
+                                        <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
+                                          {c.full_name?.charAt(0)?.toUpperCase() || '?'}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-sm font-medium text-slate-800 truncate">{c.full_name}</p>
+                                          {c.cpf_cnpj && <p className="text-xs text-slate-400">{c.cpf_cnpj}</p>}
+                                        </div>
+                                        <Link className="w-3 h-3 text-emerald-500 ml-auto shrink-0" />
+                                      </button>
+                                    ))}
+                                    <div className="border-t border-slate-100" />
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setClientSearchOpen(false);
+                                    setIsClientFormOpen(true);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-emerald-50 text-left transition text-emerald-700"
+                                >
+                                  <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                    <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                                  </div>
+                                  <span className="text-sm font-medium">Cadastrar novo cliente</span>
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Processo / Requerimento — sempre na mesma coluna ── */}
+                    {newEventForm.type !== 'personal' && (() => {
+                      const clientProcesses = processes.filter(p => p.client_id === newEventForm.client_id);
+                      const selectedProcess = clientProcesses.find(p => p.id === newEventForm.process_id);
+                      const clientRequirements = requirements.filter(r => r.client_id === newEventForm.client_id);
+                      const selectedReq = clientRequirements.find(r => r.id === newEventForm.requirement_id);
+                      const showReq = newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement';
+                      return (
+                        <div className="col-span-4">
+                          {/* Toggle Processo / Requerimento — apenas para Perícia com cliente selecionado */}
+                          {newEventForm.type === 'pericia' && newEventForm.client_id && (
+                            <div className="flex gap-1.5 mb-1.5">
                               <button
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  setClientSearchOpen(false);
-                                  setIsClientFormOpen(true);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-emerald-50 text-left transition text-emerald-700"
+                                onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'process', requirement_id: '' }))}
+                                className={`flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
+                                  newEventForm.pericia_link_type === 'process'
+                                    ? 'bg-purple-500 text-white border-purple-500'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                                }`}
                               >
-                                <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                                  <Plus className="w-3.5 h-3.5 text-emerald-600" />
-                                </div>
-                                <span className="text-sm font-medium">Cadastrar novo cliente</span>
+                                Processo jud.
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'requirement', process_id: '' }))}
+                                className={`flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
+                                  newEventForm.pericia_link_type === 'requirement'
+                                    ? 'bg-purple-500 text-white border-purple-500'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                                }`}
+                              >
+                                Req. adm.
                               </button>
                             </div>
                           )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Vínculo com processo ou requerimento — oculto para Pessoal e quando não há cliente cadastrado */}
-                  {newEventForm.type !== 'personal' && newEventForm.client_id && (
-                    <div className="col-span-2 pt-1 border-t border-slate-100">
-                      {/* Toggle Processo / Requerimento — apenas para Perícia */}
-                      {newEventForm.type === 'pericia' && (
-                        <div className="flex gap-2 mb-3">
-                          <button
-                            type="button"
-                            onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'process', requirement_id: '' }))}
-                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                              newEventForm.pericia_link_type === 'process'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
-                            }`}
-                          >
-                            Processo judicial
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'requirement', process_id: '' }))}
-                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                              newEventForm.pericia_link_type === 'requirement'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
-                            }`}
-                          >
-                            Requerimento adm.
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Seletor de Processo */}
-                      {(newEventForm.type !== 'pericia' || newEventForm.pericia_link_type === 'process') && (() => {
-                        const clientProcesses = processes.filter(p => p.client_id === newEventForm.client_id);
-                        const selectedProcess = clientProcesses.find(p => p.id === newEventForm.process_id);
-                        return (
-                          <div>
-                            <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
-                              Processo <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
-                            </label>
-                            {selectedProcess ? (
-                              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-blue-50 border border-blue-300 rounded-xl">
-                                <span className="flex-1 text-sm font-semibold text-blue-800 truncate font-mono">{selectedProcess.process_code}</span>
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full shrink-0 capitalize">{selectedProcess.practice_area}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setNewEventForm(prev => ({ ...prev, process_id: '' }))}
-                                  className="w-5 h-5 flex items-center justify-center text-blue-400 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <select
-                                value={newEventForm.process_id}
-                                onChange={e => setNewEventForm(prev => ({ ...prev, process_id: e.target.value }))}
-                                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all"
-                              >
-                                <option value="">— Sem vínculo —</option>
-                                {clientProcesses.length === 0 && (
-                                  <option disabled>Nenhum processo para este cliente</option>
-                                )}
-                                {clientProcesses.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.process_code}{p.practice_area ? ` · ${p.practice_area}` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Seletor de Requerimento (apenas Perícia + requerimento adm.) */}
-                      {newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement' && (() => {
-                        const clientRequirements = requirements.filter(r => r.client_id === newEventForm.client_id);
-                        const selectedReq = clientRequirements.find(r => r.id === newEventForm.requirement_id);
-                        return (
-                          <div>
-                            <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
-                              Requerimento adm. <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
-                            </label>
-                            {selectedReq ? (
-                              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-purple-50 border border-purple-300 rounded-xl">
+                          <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                            {showReq ? 'Requerimento' : 'Processo'}{' '}
+                            <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                          </label>
+                          {!newEventForm.client_id ? (
+                            <select
+                              disabled
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-400 opacity-60 cursor-not-allowed"
+                            >
+                              <option>— Sem vínculo —</option>
+                            </select>
+                          ) : showReq ? (
+                            selectedReq ? (
+                              <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-300 rounded-xl">
                                 <span className="flex-1 text-sm font-semibold text-purple-800 truncate">{selectedReq.beneficiary}</span>
                                 {selectedReq.protocol && <span className="text-[10px] font-mono text-purple-600 shrink-0">{selectedReq.protocol}</span>}
                                 <button
@@ -3877,7 +3810,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                               <select
                                 value={newEventForm.requirement_id}
                                 onChange={e => setNewEventForm(prev => ({ ...prev, requirement_id: e.target.value }))}
-                                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
                               >
                                 <option value="">— Sem vínculo —</option>
                                 {clientRequirements.length === 0 && (
@@ -3889,91 +3822,121 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                   </option>
                                 ))}
                               </select>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Responsável — oculto para eventos pessoais */}
-                  {newEventForm.type !== 'personal' && <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        Responsável <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
-                      </label>
-                      {newEventForm.responsible_id && (
-                        <span className="text-[11px] font-semibold text-orange-500 truncate max-w-[120px]">
-                          {(members.find(m => m.id === newEventForm.responsible_id || m.user_id === newEventForm.responsible_id)?.name || '').split(' ')[0]}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2.5 min-h-[46px] items-center">
-                      {[...members].sort((a, b) => {
-                        const rank = (m: Profile) => {
-                          const r = (m.role || '').toLowerCase();
-                          if (r.includes('admin')) return 0;
-                          if (r.includes('advogad')) return 1;
-                          return 2;
-                        };
-                        return rank(a) - rank(b);
-                      }).map((member) => {
-                        const memberId = member.user_id || member.id;
-                        const isSelected = newEventForm.responsible_id === memberId;
-                        const hue = getMemberHue(member.name || '');
-                        const initials = getMemberInitials(member.name || '');
-                        return (
-                          <button
-                            key={member.id}
-                            type="button"
-                            title={member.name}
-                            onClick={() => setNewEventForm(prev => ({
-                              ...prev,
-                              responsible_id: isSelected ? '' : memberId,
-                            }))}
-                            className="relative group transition-transform hover:z-10 hover:scale-110 focus:outline-none"
-                          >
-                            <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
-                                isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
-                              }`}
-                              style={{
-                                background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '93%'})`,
-                                color: `hsl(${hue}, 45%, 30%)`,
-                              }}
-                            >
-                              {initials}
-                              {(member as any).avatar_url && (
-                                <img
-                                  src={(member as any).avatar_url}
-                                  alt={member.name}
-                                  loading="eager"
-                                  decoding="async"
-                                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                                  className={`absolute inset-0 w-full h-full rounded-full object-cover transition-all ${
-                                    isSelected ? '' : 'grayscale-[40%] group-hover:grayscale-0'
-                                  }`}
-                                />
-                              )}
+                            )
+                          ) : selectedProcess ? (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-300 rounded-xl">
+                              <span className="flex-1 text-sm font-semibold text-blue-800 truncate font-mono">{selectedProcess.process_code}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full shrink-0 capitalize">{selectedProcess.practice_area}</span>
+                              <button
+                                type="button"
+                                onClick={() => setNewEventForm(prev => ({ ...prev, process_id: '' }))}
+                                className="w-5 h-5 flex items-center justify-center text-blue-400 hover:text-red-500 hover:bg-red-50 rounded-full transition shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            {isSelected && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
-                                <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                      {members.length === 0 && (
-                        <p className="text-xs text-slate-400 italic">Nenhum membro.</p>
-                      )}
-                    </div>
-                  </div>}
+                          ) : (
+                            <select
+                              value={newEventForm.process_id}
+                              onChange={e => setNewEventForm(prev => ({ ...prev, process_id: e.target.value }))}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                            >
+                              <option value="">— Sem vínculo —</option>
+                              {clientProcesses.length === 0 && (
+                                <option disabled>Nenhum processo para este cliente</option>
+                              )}
+                              {clientProcesses.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.process_code}{p.practice_area ? ` · ${p.practice_area}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })()}
 
+                    {/* ── Responsável — oculto para eventos pessoais ── */}
+                    {newEventForm.type !== 'personal' && (
+                      <div className="col-span-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                            Responsável <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
+                          </label>
+                          {newEventForm.responsible_id && (
+                            <span className="text-[11px] font-semibold text-orange-500 truncate max-w-[100px]">
+                              {(members.find(m => m.id === newEventForm.responsible_id || m.user_id === newEventForm.responsible_id)?.name || '').split(' ')[0]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 bg-slate-50 rounded-xl border border-slate-200 px-2 py-2 min-h-[42px] items-center">
+                          {[...members].sort((a, b) => {
+                            const rank = (m: Profile) => {
+                              const r = (m.role || '').toLowerCase();
+                              if (r.includes('admin')) return 0;
+                              if (r.includes('advogad')) return 1;
+                              return 2;
+                            };
+                            return rank(a) - rank(b);
+                          }).map((member) => {
+                            const memberId = member.user_id || member.id;
+                            const isSelected = newEventForm.responsible_id === memberId;
+                            const hue = getMemberHue(member.name || '');
+                            const initials = getMemberInitials(member.name || '');
+                            return (
+                              <button
+                                key={member.id}
+                                type="button"
+                                title={member.name}
+                                onClick={() => setNewEventForm(prev => ({
+                                  ...prev,
+                                  responsible_id: isSelected ? '' : memberId,
+                                }))}
+                                className="relative group transition-transform hover:z-10 hover:scale-110 focus:outline-none"
+                              >
+                                <div
+                                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
+                                    isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
+                                  }`}
+                                  style={{
+                                    background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '93%'})`,
+                                    color: `hsl(${hue}, 45%, 30%)`,
+                                  }}
+                                >
+                                  {initials}
+                                  {(member as any).avatar_url && (
+                                    <img
+                                      src={(member as any).avatar_url}
+                                      alt={member.name}
+                                      loading="eager"
+                                      decoding="async"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                      className={`absolute inset-0 w-full h-full rounded-full object-cover transition-all ${
+                                        isSelected ? '' : 'grayscale-[40%] group-hover:grayscale-0'
+                                      }`}
+                                    />
+                                  )}
+                                </div>
+                                {isSelected && (
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
+                                    <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                          {members.length === 0 && (
+                            <p className="text-xs text-slate-400 italic">Nenhum membro.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
                 </div>
 
                 {/* Privacidade / Compartilhamento — coluna inteira */}
-                <div className="col-span-2 border-t border-slate-100 pt-4">
+                <div className="col-span-12 border-t border-slate-100 pt-3">
                   {newEventForm.type === 'personal' ? (
                     /* Pessoal: sempre privado, pergunta só quem compartilhar */
                     <div>
@@ -4175,105 +4138,49 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
 
                 {/* Observações — coluna inteira */}
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                <div className="col-span-12">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Observações <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                   </label>
                   <textarea
                     value={newEventForm.description}
                     onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
                     rows={2}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
                     placeholder="Anotações, detalhes adicionais..."
                   />
                 </div>
 
-              </div>{/* fim grid */}
-            </div>
-
-            {/* Footer */}
-            <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50 px-5 py-4 flex items-center justify-between gap-3">
-              <div>
-                {editingEventId && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteEvent}
-                    className="px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
-                    disabled={savingEvent}
-                  >
-                    Excluir
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCloseCreateModal}
-                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
-                  disabled={savingEvent}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSubmitEvent}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition disabled:opacity-60 shadow-sm shadow-orange-200"
-                  disabled={savingEvent}
-                >
-                  {savingEvent && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {editingEventId ? 'Salvar alterações' : 'Criar compromisso'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      , document.body)}
+          </div>{/* fim grid */}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de cadastro de novo cliente */}
-      {isClientFormOpen && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center px-0 sm:px-6 py-0 sm:py-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsClientFormOpen(false)} />
-          <div className="relative w-full sm:max-w-4xl max-h-[96vh] sm:max-h-[92vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            {/* Faixa verde — identidade de cliente */}
-            <div className="h-1 w-full bg-gradient-to-r from-emerald-400 to-teal-500 flex-shrink-0" />
-            {/* Header premium */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                  <User className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes</p>
-                  <h2 className="text-base font-bold text-slate-800 leading-tight">Novo Cliente</h2>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsClientFormOpen(false)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {/* Corpo do ClientForm */}
-            <div className="flex-1 overflow-y-auto">
-              <ClientForm
-                client={null}
-                prefill={clientSearchTerm.trim() ? { full_name: clientSearchTerm.trim() } : null}
-                variant="modal"
-                onBack={() => setIsClientFormOpen(false)}
-                onSave={(savedClient) => {
-                  setClients(prev => [savedClient, ...prev]);
-                  setNewEventForm(prev => ({ ...prev, client_id: savedClient.id, client_name: '' }));
-                  setCreateFormInitialClientName(savedClient.full_name);
-                  setClientSearchTerm('');
-                  setIsClientFormOpen(false);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      , document.body)}
+      <Modal
+        open={isClientFormOpen}
+        onClose={() => setIsClientFormOpen(false)}
+        title="Novo Cliente"
+        eyebrow="Clientes"
+        icon={<User className="w-4 h-4" />}
+        size="xl"
+        zIndex={80}
+      >
+        <ModalBody className="p-0">
+          <ClientForm
+            client={null}
+            prefill={clientSearchTerm.trim() ? { full_name: clientSearchTerm.trim() } : null}
+            variant="modal"
+            onBack={() => setIsClientFormOpen(false)}
+            onSave={(savedClient) => {
+              setClients(prev => [savedClient, ...prev]);
+              setNewEventForm(prev => ({ ...prev, client_id: savedClient.id, client_name: '' }));
+              setCreateFormInitialClientName(savedClient.full_name);
+              setClientSearchTerm('');
+              setIsClientFormOpen(false);
+            }}
+          />
+        </ModalBody>
+      </Modal>
 
       {/* CSS para FullCalendar */}
       <style>{`
@@ -4629,18 +4536,40 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       `}</style>
 
       {/* Modal de Exportação */}
-      {isExportModalOpen && (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsExportModalOpen(false)} aria-hidden="true" />
-        <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Exportação</p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Exportar Agenda</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Selecione o período que deseja exportar</p>
+      <Modal
+        open={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title="Exportar Agenda"
+        eyebrow="Exportação"
+        subtitle="Selecione o período que deseja exportar"
+        size="sm"
+        zIndex={70}
+        footer={
+          <div className="flex gap-3 w-full">
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(false)}
+              className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCalendar}
+              className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap ${
+                exportFormat === 'pdf' && exportPrivate
+                  ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600'
+                  : exportFormat === 'pdf'
+                  ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
+                  : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600'
+              }`}
+            >
+              {exportFormat === 'pdf' && exportPrivate ? '🔒 Exportar com Sigilo' : exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
+            </button>
           </div>
-          <div className="p-6 bg-white dark:bg-zinc-900">
-
+        }
+      >
+        <ModalBody>
           <div className="space-y-4">
             {/* Opções de Período */}
             <div className="space-y-2">
@@ -4751,66 +4680,31 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
             )}
 
-            {/* Botões */}
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsExportModalOpen(false)}
-                className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleExportCalendar}
-                className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap ${
-                  exportFormat === 'pdf' && exportPrivate
-                    ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600'
-                    : exportFormat === 'pdf'
-                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
-                    : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600'
-                }`}
-              >
-                {exportFormat === 'pdf' && exportPrivate ? '🔒 Exportar com Sigilo' : exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
-              </button>
-            </div>
           </div>
-          </div>
-        </div>
-      </div>
-      )}
+        </ModalBody>
+      </Modal>
 
-      {isDeletionLogOpen &&
-        createPortal(
-          <div className="fixed inset-0 z-[75] flex items-center justify-center px-3 sm:px-6 py-4">
-            <div
-              className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+      <Modal
+        open={isDeletionLogOpen}
+        onClose={() => setIsDeletionLogOpen(false)}
+        title="Log de Exclusões"
+        eyebrow="Auditoria"
+        subtitle="Exclusões dos últimos 30 dias."
+        size="lg"
+        zIndex={75}
+        footer={
+          <div className="flex justify-end w-full">
+            <button
+              type="button"
               onClick={() => setIsDeletionLogOpen(false)}
-              aria-hidden="true"
-            />
-            <div className="relative w-full max-w-2xl max-h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-              <div className="h-2 w-full bg-orange-500" />
-              <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                    Auditoria
-                  </p>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Log de Exclusões</h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                    Exclusões dos últimos 30 dias.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsDeletionLogOpen(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                  aria-label="Fechar modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-4 sm:p-6">
+              className="px-4 py-2 text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition"
+            >
+              Fechar
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
                 {(() => {
                   const thirtyDaysAgo = new Date();
                   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -4898,41 +4792,24 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     </div>
                   );
                 })()}
-              </div>
-
-              <div className="flex-shrink-0 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3 sm:py-4">
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setIsDeletionLogOpen(false)}
-                    className="px-4 py-2 text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Correspondentes */}
-      {isRepresentativesPanelOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setIsRepresentativesPanelOpen(false)}
-            aria-hidden="true"
+      <Modal
+        open={isRepresentativesPanelOpen}
+        onClose={() => setIsRepresentativesPanelOpen(false)}
+        title="Correspondentes"
+        size="xl"
+        zIndex={70}
+      >
+        <ModalBody className="p-0">
+          <RepresentativesPanel
+            onClose={() => setIsRepresentativesPanelOpen(false)}
+            onDataChanged={loadData}
           />
-          <div className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl shadow-2xl">
-            <RepresentativesPanel
-              onClose={() => setIsRepresentativesPanelOpen(false)}
-              onDataChanged={loadData}
-            />
-          </div>
-        </div>,
-        document.body,
-      )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 };

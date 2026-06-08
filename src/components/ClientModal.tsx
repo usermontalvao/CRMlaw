@@ -14,7 +14,7 @@ interface ClientModalProps {
 
 const sizeClassMap: Record<NonNullable<ClientModalProps['size']>, string> = {
   lg: 'max-w-3xl',
-  xl: 'max-w-6xl w-[92vw]',
+  xl: 'max-w-[900px]',
 };
 
 const ClientModal: React.FC<ClientModalProps> = ({
@@ -39,12 +39,12 @@ const ClientModal: React.FC<ClientModalProps> = ({
         className={`relative w-full ${sizeClassMap[size]} max-h-[92vh] bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/10 flex flex-col overflow-hidden`}
       >
         <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+        <div className="px-5 sm:px-6 py-3.5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               {subtitle || 'Formulário'}
             </p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h2>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h2>
           </div>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal, ModalBody } from './ui';
 import {
   Plus,
   FileText,
@@ -2149,358 +2149,58 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       )}
 
       {/* Novo template modal */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
-            onClick={handleCloseModal}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
+      <Modal
+        open={isModalOpen}
+        onClose={handleCloseModal}
+        title="Adicionar Template"
+        eyebrow="Formulário"
+        size="md"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleCloseModal}
+              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="template-form"
+              disabled={uploading}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {uploading ? 'Enviando...' : 'Salvar Template'}
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+          <form id="template-form" onSubmit={handleUploadTemplate} className="flex flex-col gap-6">
+            {/* Form Fields */}
+            <div className="space-y-5">
+              {/* Nome */}
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
-                  Formulário
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 ">Adicionar Template</h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white ">
-              <form id="template-form" onSubmit={handleUploadTemplate} className="flex flex-col p-6 md:p-8 gap-6">
-                {/* Form Fields */}
-                <div className="space-y-5">
-                  {/* Nome */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Template</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      placeholder="Digite o nome do template"
-                    />
-                  </div>
-
-                  {/* Descrição */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
-                    <textarea
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      rows={3}
-                      value={descriptionInput}
-                      onChange={(e) => setDescriptionInput(e.target.value)}
-                      placeholder="Digite a descrição do template"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
-                      <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
-                    </div>
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={enableDefendantInput}
-                        onChange={(e) => setEnableDefendantInput(e.target.checked)}
-                      />
-                      Habilitar
-                    </label>
-                  </div>
-
-                  {/* File Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Template</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        id="template-file-input"
-                        type="file"
-                        accept=".doc,.docx"
-                        className="hidden"
-                        onChange={(e) => setFileInput(e.target.files?.[0] || null)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => document.getElementById('template-file-input')?.click()}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        <UploadIcon className="w-4 h-4" />
-                        {fileInput ? fileInput.name : 'Selecionar arquivo...'}
-                      </button>
-                      {fileInput && (
-                        <button
-                          type="button"
-                          onClick={() => setFileInput(null)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {uploadError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
-                    {uploadError}
-                  </div>
-                )}
-              </form>
-            </div>
-
-            <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  form="template-form"
-                  disabled={uploading}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-                >
-                  {uploading ? 'Enviando...' : 'Salvar Template'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-    {/* Preview Modal */}
-    {isPreviewModalOpen && createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
-          onClick={handleClosePreviewModal}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
-                Visualizar Template
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 ">{previewTemplate?.name}</h2>
-            </div>
-            <button
-              type="button"
-              onClick={handleClosePreviewModal}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-              aria-label="Fechar modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white  p-6">
-            {previewLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              </div>
-            ) : previewError ? (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{previewError}</div>
-            ) : previewTemplate?.file_path ? (
-              <div className="flex h-full flex-col gap-4">
-                {previewPdfUrl ? (
-                  <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-gray-200" />
-                ) : (
-                  <p className="text-sm text-gray-500">Carregando documento...</p>
-                )}
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => previewTemplate && handleOpenEditModal(previewTemplate)}
-                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Editar Template
-                  </button>
-                  <button
-                    onClick={() => previewTemplate && handleDownloadTemplate(previewTemplate)}
-                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <FileDown className="h-4 w-4" />
-                    Baixar Arquivo
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500">A edição direta está disponível apenas para templates em texto.</p>
-              </div>
-            ) : previewTemplate ? (
-              isPreviewEditing ? (
-                <form onSubmit={handleSavePreviewEdits} className="flex h-full flex-col gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                      value={previewEditName}
-                      onChange={(e) => setPreviewEditName(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
-                    <textarea
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                      rows={3}
-                      value={previewEditDescription}
-                      onChange={(e) => setPreviewEditDescription(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
-                    <textarea
-                      className="w-full h-full min-h-[280px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                      value={previewEditContent}
-                      onChange={(e) => setPreviewEditContent(e.target.value)}
-                    />
-                  </div>
-                  {previewEditError && <p className="text-sm text-red-600">{previewEditError}</p>}
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleCancelPreviewEditing}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={previewSaving}
-                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                    >
-                      {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="flex h-full flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-500">Conteúdo em texto com variáveis prontas para edição.</p>
-                    <button
-                      onClick={handleStartPreviewEditing}
-                      className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      <Pencil className="h-4 w-4" />
-                      Editar Conteúdo
-                    </button>
-                  </div>
-                  <pre className="flex-1 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-700 whitespace-pre-wrap">
-                    {previewEditContent}
-                  </pre>
-                </div>
-              )
-            ) : (
-              <p className="text-sm text-gray-500">Nenhum conteúdo para visualizar.</p>
-            )}
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* Modal Preparando Assinatura */}
-    {preparingSignature && createPortal(
-      <div className="fixed inset-0 z-[90] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-md max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                Aguarde
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Preparando documentos...</h2>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-slate-500 dark:text-slate-400">Enviando documento e anexos para assinatura digital</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* Edit Modal */}
-    {isEditModalOpen && editingTemplate && createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
-          onClick={handleCloseEditModal}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-2xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
-                Editar Template
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 ">{editingTemplate.name}</h2>
-            </div>
-            <button
-              type="button"
-              onClick={handleCloseEditModal}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-              aria-label="Fechar modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white ">
-            <form id="edit-form" onSubmit={handleSaveTemplateEdits} className="p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Template</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="Digite o nome do template"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
+
+              {/* Descrição */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
                 <textarea
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   rows={3}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
-                <textarea
-                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="Conteúdo do template com variáveis entre colchetes duplos, ex: [[NOME]]"
+                  value={descriptionInput}
+                  onChange={(e) => setDescriptionInput(e.target.value)}
+                  placeholder="Digite a descrição do template"
                 />
               </div>
 
@@ -2512,39 +2212,262 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
-                    checked={editEnableDefendant}
-                    onChange={(e) => setEditEnableDefendant(e.target.checked)}
+                    checked={enableDefendantInput}
+                    onChange={(e) => setEnableDefendantInput(e.target.checked)}
                   />
                   Habilitar
                 </label>
               </div>
-              {editError && <p className="text-sm text-red-600">{editError}</p>}
-            </form>
-          </div>
 
-          <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
-            <div className="flex gap-3">
+              {/* File Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Template</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    id="template-file-input"
+                    type="file"
+                    accept=".doc,.docx"
+                    className="hidden"
+                    onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById('template-file-input')?.click()}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <UploadIcon className="w-4 h-4" />
+                    {fileInput ? fileInput.name : 'Selecionar arquivo...'}
+                  </button>
+                  {fileInput && (
+                    <button
+                      type="button"
+                      onClick={() => setFileInput(null)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {uploadError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                {uploadError}
+              </div>
+            )}
+          </form>
+        </ModalBody>
+      </Modal>
+
+    {/* Preview Modal */}
+    <Modal
+      open={isPreviewModalOpen}
+      onClose={handleClosePreviewModal}
+      title={previewTemplate?.name ?? ''}
+      eyebrow="Visualizar Template"
+      size="xl"
+      zIndex={70}
+    >
+      <ModalBody>
+        {previewLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : previewError ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{previewError}</div>
+        ) : previewTemplate?.file_path ? (
+          <div className="flex h-full flex-col gap-4">
+            {previewPdfUrl ? (
+              <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-gray-200" />
+            ) : (
+              <p className="text-sm text-gray-500">Carregando documento...</p>
+            )}
+            <div className="flex flex-wrap gap-3">
               <button
-                type="button"
-                onClick={handleCloseEditModal}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => previewTemplate && handleOpenEditModal(previewTemplate)}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                Cancelar
+                <Pencil className="h-4 w-4" />
+                Editar Template
               </button>
               <button
-                type="submit"
-                form="edit-form"
-                disabled={previewSaving}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                onClick={() => previewTemplate && handleDownloadTemplate(previewTemplate)}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
+                <FileDown className="h-4 w-4" />
+                Baixar Arquivo
               </button>
             </div>
+            <p className="text-xs text-gray-500">A edição direta está disponível apenas para templates em texto.</p>
+          </div>
+        ) : previewTemplate ? (
+          isPreviewEditing ? (
+            <form onSubmit={handleSavePreviewEdits} className="flex h-full flex-col gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  value={previewEditName}
+                  onChange={(e) => setPreviewEditName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  rows={3}
+                  value={previewEditDescription}
+                  onChange={(e) => setPreviewEditDescription(e.target.value)}
+                />
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
+                <textarea
+                  className="w-full h-full min-h-[280px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  value={previewEditContent}
+                  onChange={(e) => setPreviewEditContent(e.target.value)}
+                />
+              </div>
+              {previewEditError && <p className="text-sm text-red-600">{previewEditError}</p>}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelPreviewEditing}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={previewSaving}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex h-full flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">Conteúdo em texto com variáveis prontas para edição.</p>
+                <button
+                  onClick={handleStartPreviewEditing}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Editar Conteúdo
+                </button>
+              </div>
+              <pre className="flex-1 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-700 whitespace-pre-wrap">
+                {previewEditContent}
+              </pre>
+            </div>
+          )
+        ) : (
+          <p className="text-sm text-gray-500">Nenhum conteúdo para visualizar.</p>
+        )}
+      </ModalBody>
+    </Modal>
+
+    {/* Modal Preparando Assinatura */}
+    <Modal
+      open={preparingSignature}
+      onClose={() => {}}
+      title="Preparando documentos..."
+      eyebrow="Aguarde"
+      size="sm"
+      zIndex={90}
+    >
+      <ModalBody>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+            <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Enviando documento e anexos para assinatura digital</p>
           </div>
         </div>
-      </div>,
-      document.body
-    )}
+      </ModalBody>
+    </Modal>
+
+    {/* Edit Modal */}
+    <Modal
+      open={isEditModalOpen && !!editingTemplate}
+      onClose={handleCloseEditModal}
+      title={editingTemplate?.name ?? ''}
+      eyebrow="Editar Template"
+      size="lg"
+      zIndex={70}
+      footer={
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleCloseEditModal}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="edit-form"
+            disabled={previewSaving}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
+          </button>
+        </div>
+      }
+    >
+      <ModalBody>
+        <form id="edit-form" onSubmit={handleSaveTemplateEdits} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
+            <textarea
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              rows={3}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
+            <textarea
+              className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              placeholder="Conteúdo do template com variáveis entre colchetes duplos, ex: [[NOME]]"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
+              <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
+            </div>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={editEnableDefendant}
+                onChange={(e) => setEditEnableDefendant(e.target.checked)}
+              />
+              Habilitar
+            </label>
+          </div>
+          {editError && <p className="text-sm text-red-600">{editError}</p>}
+        </form>
+      </ModalBody>
+    </Modal>
 
     {/* Designer de posição de assinatura */}
     {signatureDesignerTemplate && (
@@ -2590,581 +2513,474 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     />
 
     {/* Modal de opções do documento gerado */}
-    {showDocOptionsModal && createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+    <Modal
+      open={showDocOptionsModal}
+      onClose={() => setShowDocOptionsModal(false)}
+      title="Documento Gerado!"
+      eyebrow="Sucesso"
+      icon={<CheckCircle2 className="w-5 h-5" />}
+      size="sm"
+      zIndex={70}
+      footer={
+        <button
           onClick={() => setShowDocOptionsModal(false)}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-emerald-500" />
-          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                  Sucesso
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Documento Gerado!</h2>
-              </div>
+          className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+        >
+          Fechar
+        </button>
+      }
+    >
+      <ModalBody>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 break-all">{generatedDocName}</p>
+        {generatedAttachments.length > 0 && (
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-4">
+            + {generatedAttachments.length} anexo{generatedAttachments.length > 1 ? 's' : ''}: {generatedAttachments.map(a => a.name).join(', ')}
+          </p>
+        )}
+
+        <div className="space-y-3">
+          <button
+            onClick={handleDownloadWord}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl transition border border-slate-200 dark:border-slate-700"
+          >
+            <div className="w-10 h-10 bg-slate-700 dark:bg-slate-600 rounded-lg flex items-center justify-center">
+              <FileText className="w-5 h-5 text-white" />
             </div>
-            <button
-              type="button"
-              onClick={() => setShowDocOptionsModal(false)}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-              aria-label="Fechar modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 break-all">{generatedDocName}</p>
-            {generatedAttachments.length > 0 && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-4">
-                + {generatedAttachments.length} anexo{generatedAttachments.length > 1 ? 's' : ''}: {generatedAttachments.map(a => a.name).join(', ')}
-              </p>
-            )}
-            
-            <div className="space-y-3">
-              <button
-                onClick={handleDownloadWord}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition border border-blue-100 dark:border-blue-800"
-              >
-                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="font-medium text-slate-800 dark:text-white">Baixar Word</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Arquivo .docx editável</p>
-                </div>
-              </button>
-
-              <button
-                onClick={handleDownloadPdf}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/30 rounded-xl transition border border-rose-100 dark:border-rose-800"
-              >
-                <div className="w-10 h-10 bg-rose-600 rounded-lg flex items-center justify-center">
-                  <FileDown className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="font-medium text-slate-800 dark:text-white">Baixar PDF</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Documento para impressão</p>
-                </div>
-              </button>
-
-              <button
-                onClick={handleSendForSignature}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-xl transition border border-emerald-100 dark:border-emerald-800"
-              >
-                <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
-                  <PenTool className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="font-medium text-slate-800 dark:text-white">Enviar para Assinatura</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Gerar link para cliente assinar</p>
-                </div>
-              </button>
+            <div className="text-left">
+              <p className="font-medium text-slate-800 dark:text-white">Baixar Word</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Arquivo .docx editável</p>
             </div>
-          </div>
+          </button>
 
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
-            <button
-              onClick={() => setShowDocOptionsModal(false)}
-              className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            >
-              Fechar
-            </button>
-          </div>
+          <button
+            onClick={handleDownloadPdf}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/30 rounded-xl transition border border-rose-100 dark:border-rose-800"
+          >
+            <div className="w-10 h-10 bg-rose-600 rounded-lg flex items-center justify-center">
+              <FileDown className="w-5 h-5 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-slate-800 dark:text-white">Baixar PDF</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Documento para impressão</p>
+            </div>
+          </button>
+
+          <button
+            onClick={handleSendForSignature}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-xl transition border border-emerald-100 dark:border-emerald-800"
+          >
+            <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
+              <PenTool className="w-5 h-5 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-slate-800 dark:text-white">Enviar para Assinatura</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Gerar link para cliente assinar</p>
+            </div>
+          </button>
         </div>
-      </div>,
-      document.body
-    )}
+      </ModalBody>
+    </Modal>
 
-    {showTemplateFillLinkModal && createPortal(
-      <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+    <Modal
+      open={showTemplateFillLinkModal}
+      onClose={() => setShowTemplateFillLinkModal(false)}
+      title="Link de Preenchimento"
+      eyebrow="Pronto para enviar"
+      icon={<Link2 className="w-5 h-5" />}
+      size="md"
+      zIndex={80}
+      footer={
+        <button
           onClick={() => setShowTemplateFillLinkModal(false)}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-indigo-500" />
-          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
-                <Link2 className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                  Pronto para enviar
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Link de Preenchimento</h2>
-              </div>
-            </div>
+          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+        >
+          Fechar
+        </button>
+      }
+    >
+      <ModalBody>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+          Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
+        </p>
+
+        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
+          <div className="flex items-center gap-2 flex-col sm:flex-row">
+            <input
+              type="text"
+              readOnly
+              value={templateFillLink}
+              className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+            />
             <button
               type="button"
-              onClick={() => setShowTemplateFillLinkModal(false)}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-              aria-label="Fechar modal"
+              onClick={handleCopyTemplateFillLink}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm ring-1 ring-inset ${
+                templateFillLinkCopied
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-emerald-700'
+                  : 'bg-amber-500 hover:bg-amber-600 text-white ring-amber-600'
+              }`}
+              title="Copiar link"
+              aria-label="Copiar link"
             >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-              Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
-            </p>
-
-            <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
-              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
-              <div className="flex items-center gap-2 flex-col sm:flex-row">
-                <input
-                  type="text"
-                  readOnly
-                  value={templateFillLink}
-                  className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyTemplateFillLink}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm ring-1 ring-inset ${
-                    templateFillLinkCopied
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-emerald-700'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white ring-indigo-700'
-                  }`}
-                  title="Copiar link"
-                  aria-label="Copiar link"
-                >
-                  {templateFillLinkCopied ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      Copiado!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      Copiar
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                <strong>Dica:</strong> Você pode enviar por WhatsApp/e-mail. O cliente preenche e no final já recebe o link de assinatura.
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
-            <button
-              onClick={() => setShowTemplateFillLinkModal(false)}
-              className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
-            >
-              Fechar
+              {templateFillLinkCopied ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Copiar
+                </>
+              )}
             </button>
           </div>
         </div>
-      </div>,
-      document.body
-    )}
 
-    {showTemplateFormConfigModal && templateFormConfigTemplate && createPortal(
-      <div className="fixed inset-0 z-[85] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            <strong>Dica:</strong> Você pode enviar por WhatsApp/e-mail. O cliente preenche e no final já recebe o link de assinatura.
+          </p>
+        </div>
+      </ModalBody>
+    </Modal>
+
+    <Modal
+      open={showTemplateFormConfigModal && !!templateFormConfigTemplate}
+      onClose={() => {
+        if (!templateFormConfigSaving) {
+          setShowTemplateFormConfigModal(false);
+          setTemplateFormConfigTemplate(null);
+        }
+      }}
+      title={templateFormConfigTemplate?.name ?? ''}
+      eyebrow="Configuração do link público"
+      subtitle="Edite o título, a descrição e se o campo é obrigatório no formulário público."
+      size="lg"
+      zIndex={85}
+      headerActions={
+        <button
+          type="button"
           onClick={() => {
-            if (!templateFormConfigSaving) {
-              setShowTemplateFormConfigModal(false);
-              setTemplateFormConfigTemplate(null);
-            }
+            if (templateFormConfigSaving || templateFormConfigLoading) return;
+            void handleSaveTemplateFormConfig();
           }}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-slate-900" />
-          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                Configuração do link público
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{templateFormConfigTemplate.name}</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Edite o título, a descrição e se o campo é obrigatório no formulário público.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (templateFormConfigSaving || templateFormConfigLoading) return;
-                  void handleSaveTemplateFormConfig();
-                }}
-                className={`px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition inline-flex items-center justify-center gap-2 ${(templateFormConfigSaving || templateFormConfigLoading) ? 'opacity-60 pointer-events-none' : ''}`}
-              >
-                {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Salvar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!templateFormConfigSaving) {
-                    setShowTemplateFormConfigModal(false);
-                    setTemplateFormConfigTemplate(null);
-                  }
-                }}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
-            {templateFormConfigError && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {templateFormConfigError}
-              </div>
-            )}
-
-            {templateFormConfigLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-              </div>
-            ) : templateFormConfigFields.length === 0 ? (
-              <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum placeholder encontrado no template.</p>
-            ) : (
-              <div className="space-y-3">
-                {templateFormConfigFields.map((f, idx) => (
-                  <div
-                    key={`${f.placeholder}-${idx}`}
-                    className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
-                    draggable={!templateFormConfigSaving && !templateFormConfigLoading}
-                    onDragStart={() => {
-                      templateFormConfigDragIndexRef.current = idx;
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const from = templateFormConfigDragIndexRef.current;
-                      templateFormConfigDragIndexRef.current = null;
-                      if (from === null) return;
-                      if (from === idx) return;
-                      setTemplateFormConfigFields((prev) => {
-                        const next = [...prev];
-                        const [moved] = next.splice(from, 1);
-                        next.splice(idx, 0, moved);
-                        return templateFormConfigRecomputeOrder(next);
-                      });
-                    }}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold">Placeholder</p>
-                        <p className="font-mono text-sm text-slate-800 dark:text-white break-all">[[{f.placeholder}]]</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
-                          <GripVertical className="w-5 h-5" />
-                        </div>
-                      <div className="flex flex-col sm:items-end gap-2">
-                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                          <input
-                            type="checkbox"
-                            checked={f.enabled !== false}
-                            onChange={(e) =>
-                              setTemplateFormConfigFields((prev) =>
-                                prev.map((p, i) => (i === idx ? { ...p, enabled: e.target.checked, required: e.target.checked ? p.required : false } : p)),
-                              )
-                            }
-                          />
-                          Ativo
-                        </label>
-                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                          <input
-                            type="checkbox"
-                            checked={!!f.required}
-                            disabled={f.enabled === false}
-                            onChange={(e) =>
-                              setTemplateFormConfigFields((prev) =>
-                                prev.map((p, i) => (i === idx ? { ...p, required: e.target.checked } : p)),
-                              )
-                            }
-                          />
-                          Obrigatório
-                        </label>
-                      </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <label className="block">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Título</span>
-                        <input
-                          value={f.name}
-                          onChange={(e) =>
-                            setTemplateFormConfigFields((prev) =>
-                              prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p)),
-                            )
-                          }
-                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tipo</span>
-                        <select
-                          value={f.field_type}
-                          disabled={f.enabled === false}
-                          onChange={(e) => {
-                            const nextType = e.target.value as any;
-                            setTemplateFormConfigFields((prev) =>
-                              prev.map((p, i) => {
-                                if (i !== idx) return p;
-                                if (nextType !== 'select') {
-                                  return { ...p, field_type: nextType, options: null };
-                                }
-                                const k = normalizeKey(p.placeholder);
-                                const hasAny = Array.isArray(p.options) && p.options.length > 0;
-                                const preset =
-                                  k === 'ESTADO CIVIL'
-                                    ? [
-                                        { label: 'Solteiro(a)', value: 'Solteiro(a)' },
-                                        { label: 'Casado(a)', value: 'Casado(a)' },
-                                        { label: 'União estável', value: 'União estável' },
-                                        { label: 'Divorciado(a)', value: 'Divorciado(a)' },
-                                        { label: 'Viúvo(a)', value: 'Viúvo(a)' },
-                                      ]
-                                    : k === 'NACIONALIDADE'
-                                      ? [
-                                          { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
-                                          { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
-                                        ]
-                                      : null;
-                                return { ...p, field_type: nextType, options: hasAny ? p.options : preset };
-                              }),
-                            );
-                          }}
-                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
-                        >
-                          <option value="text">Texto</option>
-                          <option value="name">Nome</option>
-                          <option value="cpf">CPF</option>
-                          <option value="phone">Telefone</option>
-                          <option value="cep">CEP</option>
-                          <option value="textarea">Texto longo</option>
-                          <option value="number">Número</option>
-                          <option value="date">Data</option>
-                          <option value="select">Seleção</option>
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Descrição</span>
-                        <input
-                          value={(f.description as any) ?? ''}
-                          onChange={(e) =>
-                            setTemplateFormConfigFields((prev) =>
-                              prev.map((p, i) => (i === idx ? { ...p, description: e.target.value } : p)),
-                            )
-                          }
-                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
-                          placeholder="Ex: Digite o número com DDD"
-                        />
-                      </label>
-                    </div>
-
-                    {f.field_type === 'select' && (
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Opções (1 por linha)</span>
-                          <div className="flex items-center gap-2">
-                            {['ESTADO CIVIL', 'NACIONALIDADE'].includes(normalizeKey(f.placeholder)) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const k = normalizeKey(f.placeholder);
-                                  const preset =
-                                    k === 'ESTADO CIVIL'
-                                      ? [
-                                          { label: 'Solteiro(a)', value: 'Solteiro(a)' },
-                                          { label: 'Casado(a)', value: 'Casado(a)' },
-                                          { label: 'União estável', value: 'União estável' },
-                                          { label: 'Divorciado(a)', value: 'Divorciado(a)' },
-                                          { label: 'Viúvo(a)', value: 'Viúvo(a)' },
-                                        ]
-                                      : [
-                                          { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
-                                          { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
-                                        ];
-                                  setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: preset } : p)));
-                                }}
-                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
-                              >
-                                Aplicar padrão
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: null } : p)))}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
-                            >
-                              Limpar
-                            </button>
-                          </div>
-                        </div>
-                        <textarea
-                          value={templateFormConfigOptionsToText(f.options)}
-                          disabled={f.enabled === false}
-                          onChange={(e) => {
-                            const parsed = templateFormConfigParseOptions(e.target.value);
-                            setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));
-                          }}
-                          className="mt-2 w-full min-h-[96px] rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
-                          placeholder="Ex:\nSolteiro(a)\nCasado(a)"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
-            <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!templateFormConfigSaving) {
-                    setShowTemplateFormConfigModal(false);
-                    setTemplateFormConfigTemplate(null);
-                  }
-                }}
-                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
-                disabled={templateFormConfigSaving}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (templateFormConfigSaving || templateFormConfigLoading) return;
-                  void handleSaveTemplateFormConfig();
-                }}
-                disabled={templateFormConfigSaving || templateFormConfigLoading}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition inline-flex items-center justify-center gap-2"
-                style={{
-                  backgroundColor: (templateFormConfigSaving || templateFormConfigLoading) ? '#cbd5e1' : '#0f172a',
-                  color: (templateFormConfigSaving || templateFormConfigLoading) ? '#475569' : '#ffffff',
-                  cursor: (templateFormConfigSaving || templateFormConfigLoading) ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Salvar configuração
-              </button>
-            </div>
-          </div>
+          className={`px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition inline-flex items-center justify-center gap-2 ${(templateFormConfigSaving || templateFormConfigLoading) ? 'opacity-60 pointer-events-none' : ''}`}
+        >
+          {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+          Salvar
+        </button>
+      }
+      footer={
+        <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              if (!templateFormConfigSaving) {
+                setShowTemplateFormConfigModal(false);
+                setTemplateFormConfigTemplate(null);
+              }
+            }}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+            disabled={templateFormConfigSaving}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (templateFormConfigSaving || templateFormConfigLoading) return;
+              void handleSaveTemplateFormConfig();
+            }}
+            disabled={templateFormConfigSaving || templateFormConfigLoading}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold transition inline-flex items-center justify-center gap-2"
+            style={{
+              backgroundColor: (templateFormConfigSaving || templateFormConfigLoading) ? '#cbd5e1' : '#0f172a',
+              color: (templateFormConfigSaving || templateFormConfigLoading) ? '#475569' : '#ffffff',
+              cursor: (templateFormConfigSaving || templateFormConfigLoading) ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+            Salvar configuração
+          </button>
         </div>
-      </div>,
-      document.body
-    )}
+      }
+    >
+      <ModalBody>
+        {templateFormConfigError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {templateFormConfigError}
+          </div>
+        )}
+
+        {templateFormConfigLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+          </div>
+        ) : templateFormConfigFields.length === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum placeholder encontrado no template.</p>
+        ) : (
+          <div className="space-y-3">
+            {templateFormConfigFields.map((f, idx) => (
+              <div
+                key={`${f.placeholder}-${idx}`}
+                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
+                draggable={!templateFormConfigSaving && !templateFormConfigLoading}
+                onDragStart={() => {
+                  templateFormConfigDragIndexRef.current = idx;
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = templateFormConfigDragIndexRef.current;
+                  templateFormConfigDragIndexRef.current = null;
+                  if (from === null) return;
+                  if (from === idx) return;
+                  setTemplateFormConfigFields((prev) => {
+                    const next = [...prev];
+                    const [moved] = next.splice(from, 1);
+                    next.splice(idx, 0, moved);
+                    return templateFormConfigRecomputeOrder(next);
+                  });
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold">Placeholder</p>
+                    <p className="font-mono text-sm text-slate-800 dark:text-white break-all">[[{f.placeholder}]]</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
+                      <GripVertical className="w-5 h-5" />
+                    </div>
+                  <div className="flex flex-col sm:items-end gap-2">
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={f.enabled !== false}
+                        onChange={(e) =>
+                          setTemplateFormConfigFields((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, enabled: e.target.checked, required: e.target.checked ? p.required : false } : p)),
+                          )
+                        }
+                      />
+                      Ativo
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={!!f.required}
+                        disabled={f.enabled === false}
+                        onChange={(e) =>
+                          setTemplateFormConfigFields((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, required: e.target.checked } : p)),
+                          )
+                        }
+                      />
+                      Obrigatório
+                    </label>
+                  </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Título</span>
+                    <input
+                      value={f.name}
+                      onChange={(e) =>
+                        setTemplateFormConfigFields((prev) =>
+                          prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p)),
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tipo</span>
+                    <select
+                      value={f.field_type}
+                      disabled={f.enabled === false}
+                      onChange={(e) => {
+                        const nextType = e.target.value as any;
+                        setTemplateFormConfigFields((prev) =>
+                          prev.map((p, i) => {
+                            if (i !== idx) return p;
+                            if (nextType !== 'select') {
+                              return { ...p, field_type: nextType, options: null };
+                            }
+                            const k = normalizeKey(p.placeholder);
+                            const hasAny = Array.isArray(p.options) && p.options.length > 0;
+                            const preset =
+                              k === 'ESTADO CIVIL'
+                                ? [
+                                    { label: 'Solteiro(a)', value: 'Solteiro(a)' },
+                                    { label: 'Casado(a)', value: 'Casado(a)' },
+                                    { label: 'União estável', value: 'União estável' },
+                                    { label: 'Divorciado(a)', value: 'Divorciado(a)' },
+                                    { label: 'Viúvo(a)', value: 'Viúvo(a)' },
+                                  ]
+                                : k === 'NACIONALIDADE'
+                                  ? [
+                                      { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
+                                      { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
+                                    ]
+                                  : null;
+                            return { ...p, field_type: nextType, options: hasAny ? p.options : preset };
+                          }),
+                        );
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="text">Texto</option>
+                      <option value="name">Nome</option>
+                      <option value="cpf">CPF</option>
+                      <option value="phone">Telefone</option>
+                      <option value="cep">CEP</option>
+                      <option value="textarea">Texto longo</option>
+                      <option value="number">Número</option>
+                      <option value="date">Data</option>
+                      <option value="select">Seleção</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Descrição</span>
+                    <input
+                      value={(f.description as any) ?? ''}
+                      onChange={(e) =>
+                        setTemplateFormConfigFields((prev) =>
+                          prev.map((p, i) => (i === idx ? { ...p, description: e.target.value } : p)),
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      placeholder="Ex: Digite o número com DDD"
+                    />
+                  </label>
+                </div>
+
+                {f.field_type === 'select' && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Opções (1 por linha)</span>
+                      <div className="flex items-center gap-2">
+                        {['ESTADO CIVIL', 'NACIONALIDADE'].includes(normalizeKey(f.placeholder)) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const k = normalizeKey(f.placeholder);
+                              const preset =
+                                k === 'ESTADO CIVIL'
+                                  ? [
+                                      { label: 'Solteiro(a)', value: 'Solteiro(a)' },
+                                      { label: 'Casado(a)', value: 'Casado(a)' },
+                                      { label: 'União estável', value: 'União estável' },
+                                      { label: 'Divorciado(a)', value: 'Divorciado(a)' },
+                                      { label: 'Viúvo(a)', value: 'Viúvo(a)' },
+                                    ]
+                                  : [
+                                      { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
+                                      { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
+                                    ];
+                              setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: preset } : p)));
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                          >
+                            Aplicar padrão
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: null } : p)))}
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={templateFormConfigOptionsToText(f.options)}
+                      disabled={f.enabled === false}
+                      onChange={(e) => {
+                        const parsed = templateFormConfigParseOptions(e.target.value);
+                        setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));
+                      }}
+                      className="mt-2 w-full min-h-[96px] rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      placeholder="Ex:\nSolteiro(a)\nCasado(a)"
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </ModalBody>
+    </Modal>
 
     {/* Modal de Link de Assinatura */}
-    {showSignatureLinkModal && createPortal(
-      <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+    <Modal
+      open={showSignatureLinkModal}
+      onClose={() => setShowSignatureLinkModal(false)}
+      title="Link de Assinatura"
+      eyebrow="Pronto para enviar"
+      icon={<Link2 className="w-5 h-5" />}
+      size="md"
+      zIndex={80}
+      footer={
+        <button
           onClick={() => setShowSignatureLinkModal(false)}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-emerald-500" />
-          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
-                <Link2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                  Pronto para enviar
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Link de Assinatura</h2>
-              </div>
-            </div>
+          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+        >
+          Fechar
+        </button>
+      }
+    >
+      <ModalBody>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+          Envie este link para o cliente assinar o documento
+        </p>
+
+        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para assinatura:</p>
+          <div className="flex items-center gap-2 flex-col sm:flex-row">
+            <input
+              type="text"
+              readOnly
+              value={signatureLink}
+              className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+            />
             <button
-              type="button"
-              onClick={() => setShowSignatureLinkModal(false)}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-              aria-label="Fechar modal"
+              onClick={handleCopyLink}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto ${
+                linkCopied
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+              }`}
             >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-              Envie este link para o cliente assinar o documento
-            </p>
-            
-            <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
-              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para assinatura:</p>
-              <div className="flex items-center gap-2 flex-col sm:flex-row">
-                <input
-                  type="text"
-                  readOnly
-                  value={signatureLink}
-                  className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
-                />
-                <button
-                  onClick={handleCopyLink}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto ${
-                    linkCopied 
-                      ? 'bg-emerald-600 text-white' 
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  {linkCopied ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      Copiado!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      Copiar
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                <strong>Dica:</strong> Envie este link por WhatsApp, e-mail ou SMS para o cliente. Ele poderá assinar o documento diretamente pelo celular ou computador.
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
-            <button
-              onClick={() => setShowSignatureLinkModal(false)}
-              className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
-            >
-              Fechar
+              {linkCopied ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Copiar
+                </>
+              )}
             </button>
           </div>
         </div>
-      </div>,
-      document.body
-    )}
+
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            <strong>Dica:</strong> Envie este link por WhatsApp, e-mail ou SMS para o cliente. Ele poderá assinar o documento diretamente pelo celular ou computador.
+          </p>
+        </div>
+      </ModalBody>
+    </Modal>
     </div>
   );
 }

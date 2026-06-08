@@ -133,6 +133,44 @@
   accent-color: #6366f1;
 }
 
+/* ===== ROW FADE-IN — linhas da tabela aparecem suavemente ===== */
+@keyframes row-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.row-enter {
+  animation: row-fade-in 0.22s ease-out both;
+}
+
+/* ===== SKELETON SHIMMER — app-like loading ===== */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -480px 0; }
+  100% { background-position:  480px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 0px,
+    #f8fafc 120px,
+    #e2e8f0 240px
+  );
+  background-size: 480px 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    #27272a 0px,
+    #3f3f46 120px,
+    #27272a 240px
+  );
+  background-size: 480px 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
 /* ===== FINANCIAL MODULE — LIQUID PROGRESS ANIMATION ===== */
 @keyframes financial-liquid-shimmer {
   0%   { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
@@ -516,16 +554,23 @@ body {
    Aero / Apple-style Glass Effect
    ───────────────────────────────────────────────────────────── */
 
-/* Backdrop: vignette suave (não bloco preto) */
+/* Backdrop: vignette suave + halo âmbar atrás do modal (luz concentrada no vidro) */
 .aero-backdrop {
   background:
+    /* caustic glow — simula luz concentrada pelo vidro */
+    radial-gradient(
+      ellipse 55% 30% at 50% 32%,
+      rgba(251, 146, 60, 0.07) 0%,
+      transparent 70%
+    ),
+    /* vignette base */
     radial-gradient(
       ellipse 140% 110% at center,
-      rgba(0, 0, 0, 0.22) 0%,
-      rgba(0, 0, 0, 0.55) 100%
+      rgba(0, 0, 0, 0.18) 0%,
+      rgba(0, 0, 0, 0.58) 100%
     );
-  backdrop-filter: blur(8px) saturate(140%);
-  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
 }
 
 /* Modal de vidro principal */
@@ -540,20 +585,42 @@ body {
     );
   backdrop-filter: blur(60px) saturate(190%);
   -webkit-backdrop-filter: blur(60px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
+  /* edge chrome: borda lateral/inferior discreta, topo quase espelho */
+  border-top: 1.5px solid rgba(255, 255, 255, 0.92);
+  border-left: 1px solid rgba(255, 255, 255, 0.55);
+  border-right: 1px solid rgba(255, 255, 255, 0.40);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.30);
   box-shadow:
-    /* highlight branco no topo (Aero shine) */
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    /* glow interno sutil */
+    /* specular line no topo — chanfro de vidro */
+    inset 0 1.5px 0 rgba(255, 255, 255, 1.0),
+    /* glow interno */
     inset 0 0 0 1px rgba(255, 255, 255, 0.18),
     /* reflexo inferior */
-    inset 0 -1px 1px rgba(255, 255, 255, 0.30),
-    /* halo externo */
-    0 0 0 0.5px rgba(255, 255, 255, 0.45),
-    /* sombra profunda Apple */
-    0 24px 48px -8px rgba(15, 23, 42, 0.32),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.28),
+    /* halo externo branco */
+    0 0 0 0.5px rgba(255, 255, 255, 0.42),
+    /* uplift âmbar sutil — o vidro "aquece" a sombra */
+    0 0 40px -8px rgba(251, 146, 60, 0.10),
+    /* sombra profunda */
+    0 28px 56px -8px rgba(15, 23, 42, 0.34),
     /* sombra ambiente próxima */
-    0 4px 14px rgba(15, 23, 42, 0.10);
+    0 4px 16px rgba(15, 23, 42, 0.10);
+}
+
+/* Textura de ruído — grão fosco do vidro Aero (fractalNoise 300×300) */
+.aero-modal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  opacity: 0.030;
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: overlay;
+  border-radius: inherit;
 }
 
 /* Brilho diagonal no topo do vidro — só light mode */
@@ -582,13 +649,17 @@ body {
       rgba(22, 20, 22, 0.48) 50%,
       rgba(28, 24, 24, 0.55) 100%
     );
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.22);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.22),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05),
     inset 0 -1px 0 rgba(0, 0, 0, 0.30),
     0 0 0 0.5px rgba(0, 0, 0, 0.40),
-    0 24px 48px -8px rgba(0, 0, 0, 0.70),
+    0 0 40px -8px rgba(251, 146, 60, 0.08),
+    0 28px 56px -8px rgba(0, 0, 0, 0.72),
     0 4px 14px rgba(0, 0, 0, 0.45);
 }
 
@@ -642,6 +713,42 @@ body {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.10),
     0 1px 2px rgba(0, 0, 0, 0.20);
+}
+
+/* ── Aero sweep shimmer — luz diagonal que varre o vidro ao abrir ── */
+@keyframes aeroSweep {
+  0%   { transform: translateX(-120%) skewX(-18deg); opacity: 0;   }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(280%)  skewX(-18deg); opacity: 0;   }
+}
+
+.aero-shimmer-once {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.aero-shimmer-once::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(
+    105deg,
+    transparent           0%,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.22) 50%,
+    rgba(255,255,255,0.04) 75%,
+    transparent           100%
+  );
+  animation: aeroSweep 0.85s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  animation-delay: 0.06s;
 }
 
 @keyframes fadeIn {

@@ -64,6 +64,7 @@ import type {
 } from '../types/financial.types';
 import type { Client } from '../types/client.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { Modal, ModalBody } from './ui';
 
 interface FinancialModuleProps {
   entityId?: string;
@@ -1086,7 +1087,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         });
         await updateCalendarEventStatus(
           selectedAgreement.id,
-          selectedInstallment.installment_number,
+          selectedInstallment!.installment_number,
           'concluido',
           paymentData.paymentDate
         );
@@ -3056,27 +3057,67 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       </div>
 
       {/* Modal de edição de acordo */}
-      {isEditModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseEditModal} aria-hidden="true" />
-          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-amber-400" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Edição</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Editar Acordo</h2>
-              </div>
+      <Modal
+        open={isEditModalOpen && !!selectedAgreement}
+        onClose={handleCloseEditModal}
+        title="Editar Acordo"
+        eyebrow="Edição"
+        size="xl"
+        zIndex={70}
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                if (!selectedAgreement) return;
+                const confirmed = await confirmDelete({
+                  title: 'Excluir acordo',
+                  entityName: selectedAgreement.title,
+                  message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
+                  confirmLabel: 'Excluir acordo',
+                });
+                if (!confirmed) return;
+                await handleDeleteAgreement(selectedAgreement);
+                handleCloseEditModal();
+              }}
+              disabled={editLoading}
+              className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition border border-red-200 dark:border-red-900/50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir
+            </button>
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleCloseEditModal}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
+                disabled={editLoading}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
               >
-                <X className="w-5 h-5" />
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="edit-agreement-form"
+                disabled={editLoading}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
+              >
+                {editLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" /> Salvar Alterações
+                  </>
+                )}
               </button>
             </div>
+          </div>
+        }
+      >
+        <ModalBody>
             <form id="edit-agreement-form" onSubmit={handleSubmitEdit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-5 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
+              <div className="flex flex-col gap-4">
 
                 {editInitialLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -3442,60 +3483,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 )}
               </div>
             </form>
-            {/* Footer */}
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!selectedAgreement) return;
-                    const confirmed = await confirmDelete({
-                      title: 'Excluir acordo',
-                      entityName: selectedAgreement.title,
-                      message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
-                      confirmLabel: 'Excluir acordo',
-                    });
-                    if (!confirmed) return;
-                    await handleDeleteAgreement(selectedAgreement);
-                    handleCloseEditModal();
-                  }}
-                  disabled={editLoading}
-                  className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition border border-red-200 dark:border-red-900/50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Excluir
-                </button>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCloseEditModal}
-                    disabled={editLoading}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    form="edit-agreement-form"
-                    disabled={editLoading}
-                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
-                  >
-                    {editLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="w-4 h-4" /> Salvar Alterações
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Parcelas Vencidas */}
       {stats && stats.overdue_installments > 0 && (
@@ -4284,132 +4273,173 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       </div>
 
       {/* Modal de novo lançamento */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseModal} aria-hidden="true" />
-          <div className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-emerald-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Novo Lançamento</h2>
+      <Modal
+        open={isModalOpen}
+        onClose={handleCloseModal}
+        title="Novo Lançamento"
+        eyebrow="Financeiro"
+        size="xl"
+        zIndex={70}
+        footer={
+          <div className="w-full overflow-x-hidden">
+            {/* Faixa RESUMO */}
+            {(() => {
+              const total = parseCurrencyToNumber(formData.totalValue);
+              if (total <= 0) return null;
+              const feeVal = formData.feeType === 'percentage'
+                ? total * (Number(formData.feePercentage || '0') / 100)
+                : parseCurrencyToNumber(formData.feeFixedValue);
+              const count = formData.paymentType === 'upfront' ? 1 : Math.max(Number(formData.installmentsCount || '1'), 1);
+              const perInst = total / count;
+              const dueDateStr = formData.firstDueDate
+                ? new Date(formData.firstDueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                : '—';
+              return (
+                <div className="rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 mb-3 px-4 py-2.5 flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600 dark:text-emerald-400 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-emerald-400" /> Resumo
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">Valor <strong className="text-slate-900 dark:text-white tabular-nums font-semibold ml-0.5">{formatCurrency(total)}</strong></span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">Honorários <strong className="text-emerald-700 dark:text-emerald-400 tabular-nums font-semibold ml-0.5">{formatCurrency(feeVal)}</strong></span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    {count === 1 ? 'À vista' : `${count}× de`} <strong className="text-slate-900 dark:text-white tabular-nums font-semibold ml-0.5">{formatCurrency(perInst)}</strong>
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">{count === 1 ? 'Vence' : '1ª parcela'} <strong className="text-slate-900 dark:text-white font-semibold ml-0.5">{dueDateStr}</strong></span>
+                </div>
+              );
+            })()}
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs text-slate-400 hidden sm:block">Campos com <span className="text-red-400">*</span> são obrigatórios</p>
+              <div className="flex items-center gap-3 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  disabled={formLoading}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="new-agreement-form"
+                  disabled={formLoading}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
+                >
+                  {formLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
+                  ) : (
+                    <><PlusCircle className="w-4 h-4" /> Criar Lançamento</>
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
-            <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-4 gap-4 flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950">
+          </div>
+        }
+      >
+        <ModalBody>
+          <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col gap-4 pb-1">
 
-                {formError && (
-                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-                    {formError}
-                  </div>
-                )}
+            {formError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+                {formError}
+              </div>
+            )}
 
-                {/* Seção 1 — Identificação */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
-                  <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100 dark:border-zinc-800">
-                    <div className="w-5 h-5 rounded bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
-                      <User className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                    </div>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Identificação</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-x-4 gap-y-3">
-                  <div className="flex flex-col w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></p>
-                    <ClientSearchSelect
-                      value={formData.clientId}
-                      onChange={(clientId) => handleChange('clientId', clientId)}
-                      label=""
-                      placeholder="Selecione o cliente"
-                      required
-                      allowCreate={true}
-                    />
-                  </div>
-                  <div className="flex flex-col w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
-                      Processo / Requerimento
-                      <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
-                    </p>
-                    <div className="relative">
-                      <select
-                        value={formData.processId}
-                        onChange={(e) => handleChange('processId', e.target.value)}
-                        disabled={!formData.clientId || loadingLinkedEntities}
-                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
-                      >
-                        <option value="">
-                          {!formData.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
-                        </option>
-                        {clientProcesses.length > 0 && (
-                          <optgroup label="Processos">
-                            {clientProcesses.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.process_code || '—'} · {practiceLabelMap[p.practice_area] ?? p.practice_area}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {clientRequirements.length > 0 && (
-                          <optgroup label="Requerimentos">
-                            {clientRequirements.map(r => (
-                              <option key={r.id} value={r.id}>
-                                {r.protocol ? `Prot. ${r.protocol}` : 'Sem protocolo'} · {benefitLabelMap[r.benefit_type] ?? r.benefit_type}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                        {loadingLinkedEntities
-                          ? <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
-                          : <ChevronDown className="w-4 h-4 text-zinc-400" />}
-                      </div>
+            {/* ── Identificação ── */}
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Identificação</span>
+                <div className="flex-1 h-px bg-slate-100 dark:bg-zinc-800" />
+              </div>
+              <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+                {/* Line 1: Cliente | Processo | Data */}
+                <div className="col-span-4">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></label>
+                  <ClientSearchSelect
+                    value={formData.clientId}
+                    onChange={(clientId) => handleChange('clientId', clientId)}
+                    label=""
+                    placeholder="Selecione o cliente"
+                    required
+                    allowCreate={true}
+                  />
+                </div>
+                <div className="col-span-5">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                    Processo / Requerimento <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={formData.processId}
+                      onChange={(e) => handleChange('processId', e.target.value)}
+                      disabled={!formData.clientId || loadingLinkedEntities}
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
+                    >
+                      <option value="">
+                        {!formData.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
+                      </option>
+                      {clientProcesses.length > 0 && (
+                        <optgroup label="Processos">
+                          {clientProcesses.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.process_code || '—'} · {practiceLabelMap[p.practice_area] ?? p.practice_area}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {clientRequirements.length > 0 && (
+                        <optgroup label="Requerimentos">
+                          {clientRequirements.map(r => (
+                            <option key={r.id} value={r.id}>
+                              {r.protocol ? `Prot. ${r.protocol}` : 'Sem protocolo'} · {benefitLabelMap[r.benefit_type] ?? r.benefit_type}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                      {loadingLinkedEntities
+                        ? <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+                        : <ChevronDown className="w-4 h-4 text-zinc-400" />}
                     </div>
                   </div>
-                  <div className="flex flex-col w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Título do lançamento <span className="text-red-400">*</span></p>
-                    <input
-                      type="text"
-                      placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
-                      value={formData.title}
-                      onChange={(e) => handleChange('title', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
-                      required
-                    />
-                  </div>
-                  <div className="flex flex-col w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Data do lançamento</p>
-                    <input
-                      type="date"
-                      value={formData.agreementDate}
-                      onChange={(e) => handleChange('agreementDate', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
-                    />
-                  </div>
-                  <div className="flex flex-col w-full col-span-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
-                      Objeto / Descrição
-                      <span className="text-slate-400 dark:text-slate-500 font-normal normal-case ml-1">(opcional)</span>
-                    </p>
-                    <textarea
-                      placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
-                      value={formData.description}
-                      onChange={(e) => handleChange('description', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
-                    />
-                  </div>
-                  {members.length > 0 && (
-                    <div className="flex flex-col w-full col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Responsável pelos recebimentos na agenda <span className="text-red-400">*</span></p>
-                      <div className="flex flex-wrap gap-2">
-                        {members.map((m) => (
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Data do lançamento</label>
+                  <input
+                    type="date"
+                    value={formData.agreementDate}
+                    onChange={(e) => handleChange('agreementDate', e.target.value)}
+                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
+                  />
+                </div>
+                {/* Line 2: Título | Responsável */}
+                <div className="col-span-7">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Título do lançamento <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
+                    value={formData.title}
+                    onChange={(e) => handleChange('title', e.target.value)}
+                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
+                    required
+                  />
+                </div>
+                {members.length > 0 && (
+                  <div className="col-span-5">
+                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                      Responsável pelos recebimentos <span className="text-red-400">*</span>
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 items-center min-h-[2.75rem]">
+                      {[...members]
+                        .sort((a, b) => {
+                          const order = (m: typeof a) => { const r = (m.role || '').toLowerCase(); return r.includes('admin') ? 0 : r.includes('advog') ? 1 : 2; };
+                          return order(a) - order(b);
+                        })
+                        .map((m) => (
                           <button
                             key={m.id}
                             type="button"
@@ -4422,421 +4452,390 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             title={m.name || m.email || ''}
                           >
                             {m.avatar_url ? (
-                              <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                              <img src={m.avatar_url} className="w-8 h-8 rounded-full object-cover" alt={m.name || ''} />
                             ) : (
-                              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700">
                                 {(m.name || m.email || '?')[0].toUpperCase()}
                               </div>
                             )}
                             {calendarResponsibleId === (m.user_id || m.id) && (
-                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
-                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="M2 6l3 3 5-5"/>
                                 </svg>
                               </span>
                             )}
                           </button>
                         ))}
-                      </div>
                       {calendarResponsibleId && (
-                        <p className="text-xs text-amber-600 mt-1">
+                        <p className="text-xs text-amber-600 ml-1">
                           ✓ {members.find(m => (m.user_id || m.id) === calendarResponsibleId)?.name || 'Responsável selecionado'}
                         </p>
                       )}
                     </div>
-                  )}
+                  </div>
+                )}
+                {/* Line 3: Descrição */}
+                <div className="col-span-12">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                    Objeto / Descrição <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                  </label>
+                  <textarea
+                    placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
+                    value={formData.description}
+                    onChange={(e) => handleChange('description', e.target.value)}
+                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Financeiro ── */}
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Financeiro</span>
+                <div className="flex-1 h-px bg-slate-100 dark:bg-zinc-800" />
+              </div>
+              <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+
+                {/* Linha 1: Valor | Tipo honorário | % ou R$ fixo | Honorários calculados */}
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none select-none">R$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      value={formData.totalValue}
+                      onChange={(e) => handleChange('totalValue', e.target.value)}
+                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 pl-10 pr-4 text-sm font-medium tabular-nums transition"
+                      required
+                    />
                   </div>
                 </div>
 
-                {/* Seção 2 — Financeiro */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
-                  <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100 dark:border-zinc-800">
-                    <div className="w-5 h-5 rounded bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
-                      <DollarSign className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Financeiro</span>
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Tipo de honorário</label>
+                  <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleChange('feeType', 'percentage')}
+                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                        formData.feeType === 'percentage'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      Percentual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleChange('feeType', 'fixed')}
+                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                        formData.feeType === 'fixed'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      Valor fixo
+                    </button>
                   </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-3">
-                  <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></p>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none select-none">R$</span>
+                </div>
+
+                {formData.feeType === 'percentage' ? (
+                  <>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Percentual (%) <span className="text-red-400">*</span></label>
                       <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0,00"
-                        value={formData.totalValue}
-                        onChange={(e) => handleChange('totalValue', e.target.value)}
-                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 pl-10 pr-4 text-sm font-medium tabular-nums transition"
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="0.5"
+                        placeholder="0"
+                        value={formData.feePercentage}
+                        onChange={(e) => handleChange('feePercentage', e.target.value)}
+                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
                         required
                       />
                     </div>
-                  </div>
-                  <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Tipo de honorário</p>
-                    <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
-                      <button
-                        type="button"
-                        onClick={() => handleChange('feeType', 'percentage')}
-                        className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
-                          formData.feeType === 'percentage'
-                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        Percentual
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChange('feeType', 'fixed')}
-                        className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
-                          formData.feeType === 'fixed'
-                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        Valor fixo
-                      </button>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários calc.</label>
+                      <div className="h-11 flex items-center">
+                        {formData.totalValue && formData.feePercentage ? (
+                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                            {formatCurrency(parseCurrencyToNumber(formData.totalValue) * (Number(formData.feePercentage || '0') / 100))}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  {formData.feeType === 'percentage' ? (
-                    <>
-                      <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Percentual (%) <span className="text-red-400">*</span></p>
+                  </>
+                ) : (
+                  <>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários fixos <span className="text-red-400">*</span></label>
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition">
+                        <span className="text-slate-500 dark:text-slate-400 text-sm font-medium select-none">R$</span>
                         <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          step="0.5"
-                          placeholder="0"
-                          value={formData.feePercentage}
-                          onChange={(e) => handleChange('feePercentage', e.target.value)}
-                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0,00"
+                          value={formData.feeFixedValue}
+                          onChange={(e) => handleChange('feeFixedValue', e.target.value)}
+                          className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums"
                           required
                         />
                       </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1">
-                        <div className="h-11 flex items-center">
-                          {formData.totalValue && formData.feePercentage ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              {formatCurrency(parseCurrencyToNumber(formData.totalValue) * (Number(formData.feePercentage || '0') / 100))}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Honorários fixos <span className="text-red-400">*</span></p>
-                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition">
-                          <span className="text-slate-500 dark:text-slate-400 text-sm font-medium select-none">R$</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0,00"
-                            value={formData.feeFixedValue}
-                            onChange={(e) => handleChange('feeFixedValue', e.target.value)}
-                            className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums"
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1">
-                        <div className="h-11 flex items-center">
-                          {formData.feeFixedValue ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              {formatCurrency(parseCurrencyToNumber(formData.feeFixedValue))}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-slate-400 dark:text-slate-500">Honorários: —</span>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Forma de pagamento</p>
-                    <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
-                      <button
-                        type="button"
-                        onClick={() => handleChange('paymentType', 'upfront')}
-                        className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
-                          formData.paymentType === 'upfront'
-                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        À vista
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChange('paymentType', 'installments')}
-                        className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
-                          formData.paymentType === 'installments'
-                            ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        Parcelado
-                      </button>
                     </div>
-                  </div>
-                  <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Primeiro vencimento</p>
-                    <input
-                      type="date"
-                      value={formData.firstDueDate}
-                      onChange={(e) => handleChange('firstDueDate', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
-                      required={formData.paymentType === 'upfront' || !formData.customInstallments.length}
-                    />
-                  </div>
-                  {formData.paymentType === 'installments' && (
-                    <>
-                      <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Nº de parcelas</p>
-                        <input
-                          type="number"
-                          min="2"
-                          max="120"
-                          placeholder="2"
-                          value={formData.installmentsCount}
-                          onChange={(e) => handleChange('installmentsCount', e.target.value)}
-                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
-                          required
-                        />
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários calc.</label>
+                      <div className="h-11 flex items-center">
+                        {formData.feeFixedValue ? (
+                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                            {formatCurrency(parseCurrencyToNumber(formData.feeFixedValue))}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                        )}
                       </div>
-                      <div className="flex flex-col w-full justify-end md:col-span-1 gap-2">
-                        <div className="h-11 flex items-center gap-3">
-                          {formData.totalValue && formData.installmentsCount ? (
-                            <span className="text-sm text-slate-500 dark:text-slate-400">
-                              Parcela: <strong className="text-slate-800 dark:text-white tabular-nums">{formatCurrency(parseCurrencyToNumber(formData.totalValue) / Number(formData.installmentsCount))}</strong>
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                customInstallments: prev.customInstallments.length
-                                  ? []
-                                  : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
-                                      dueDate: index === 0 ? prev.firstDueDate : '',
-                                      value: prev.totalValue && prev.installmentsCount
-                                        ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                        : '',
-                                    })),
-                              }))
-                            }
-                            className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
-                          >
-                            {formData.customInstallments.length ? 'Remover personalizadas' : 'Personalizar parcelas'}
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  {formData.customInstallments.length > 0 && (
-                    <div className="md:col-span-4 border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-50 dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700">
-                          <tr>
-                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
-                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencimento</th>
-                            <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-zinc-700">
-                          {formData.customInstallments.map((item, index) => (
-                            <tr key={index} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
-                              <td className="py-2 px-4 text-slate-500 dark:text-slate-400 font-medium">{index + 1}</td>
-                              <td className="py-2 px-4">
-                                <input
-                                  type="date"
-                                  value={item.dueDate}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      customInstallments: prev.customInstallments.map((ci, ciIndex) =>
-                                        ciIndex === index ? { ...ci, dueDate: value } : ci
-                                      ),
-                                    }));
-                                  }}
-                                  className="border border-slate-200 dark:border-zinc-600 rounded-lg px-2 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm"
-                                />
-                              </td>
-                              <td className="py-2 px-4">
-                                <input
-                                  type="text"
-                                  placeholder="R$ 0,00"
-                                  value={item.value}
-                                  onChange={(e) => {
-                                    const formatted = formatCurrencyInput(e.target.value);
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      customInstallments: prev.customInstallments.map((ci, ciIndex) =>
-                                        ciIndex === index ? { ...ci, value: formatted } : ci
-                                      ),
-                                    }));
-                                  }}
-                                  className="w-full border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 tabular-nums"
-                                />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="bg-slate-50 dark:bg-zinc-800 py-2.5 px-4 text-sm text-slate-600 dark:text-slate-300 flex justify-between items-center border-t border-slate-100 dark:border-zinc-700">
-                        <span className="font-medium">
-                          Total: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{
-                            formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0)
-                              ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0))
-                              : '—'
-                          }</span>
+                    </div>
+                  </>
+                )}
+
+                {/* Linha 2: Forma pagamento | 1º vencimento | Nº parcelas | Valor/parcela */}
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Forma de pagamento</label>
+                  <div className="flex rounded-lg border border-slate-200 dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleChange('paymentType', 'upfront')}
+                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                        formData.paymentType === 'upfront'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      À vista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleChange('paymentType', 'installments')}
+                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                        formData.paymentType === 'installments'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      Parcelado
+                    </button>
+                  </div>
+                </div>
+
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Primeiro vencimento</label>
+                  <input
+                    type="date"
+                    value={formData.firstDueDate}
+                    onChange={(e) => handleChange('firstDueDate', e.target.value)}
+                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-4 text-sm transition"
+                    required={formData.paymentType === 'upfront' || !formData.customInstallments.length}
+                  />
+                </div>
+
+                {formData.paymentType === 'installments' && (
+                  <>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Nº de parcelas</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="120"
+                        placeholder="2"
+                        value={formData.installmentsCount}
+                        onChange={(e) => handleChange('installmentsCount', e.target.value)}
+                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Valor / parcela</label>
+                      <div className="h-11 flex flex-col justify-center gap-0.5">
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
+                          {formData.totalValue && formData.installmentsCount
+                            ? formatCurrency(parseCurrencyToNumber(formData.totalValue) / Number(formData.installmentsCount))
+                            : '—'}
                         </span>
                         <button
                           type="button"
                           onClick={() =>
                             setFormData((prev) => ({
                               ...prev,
-                              customInstallments: prev.customInstallments.map((item, index) => ({
-                                dueDate:
-                                  index === 0
-                                    ? prev.firstDueDate
-                                    : prev.customInstallments[index - 1]?.dueDate || prev.firstDueDate,
-                                value:
-                                  prev.totalValue && prev.installmentsCount
-                                    ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                    : item.value,
-                              })),
+                              customInstallments: prev.customInstallments.length
+                                ? []
+                                : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
+                                    dueDate: prev.firstDueDate
+                                      ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })()
+                                      : '',
+                                    value: prev.totalValue && prev.installmentsCount
+                                      ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : '',
+                                  })),
                             }))
                           }
-                          className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                          className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline text-left leading-none"
                         >
-                          Recalcular
+                          {formData.customInstallments.length ? 'Remover personalizadas' : 'Personalizar'}
                         </button>
                       </div>
                     </div>
-                  )}
-                  <div className="flex flex-col w-full col-span-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Notas internas <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span></p>
-                    <textarea
-                      placeholder="Observações internas sobre este lançamento…"
-                      value={formData.notes}
-                      onChange={(e) => handleChange('notes', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
-                    />
+                  </>
+                )}
+
+                {/* Parcelas personalizadas */}
+                {formData.customInstallments.length > 0 && (
+                  <div className="col-span-12 border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700">
+                        <tr>
+                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
+                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencimento</th>
+                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-zinc-700">
+                        {formData.customInstallments.map((item, index) => (
+                          <tr key={index} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
+                            <td className="py-2 px-4 text-slate-500 dark:text-slate-400 font-medium">{index + 1}</td>
+                            <td className="py-2 px-4">
+                              <input
+                                type="date"
+                                value={item.dueDate}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    customInstallments: prev.customInstallments.map((ci, ciIndex) =>
+                                      ciIndex === index ? { ...ci, dueDate: value } : ci
+                                    ),
+                                  }));
+                                }}
+                                className="border border-slate-200 dark:border-zinc-600 rounded-lg px-2 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm"
+                              />
+                            </td>
+                            <td className="py-2 px-4">
+                              <input
+                                type="text"
+                                placeholder="R$ 0,00"
+                                value={item.value}
+                                onChange={(e) => {
+                                  const formatted = formatCurrencyInput(e.target.value);
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    customInstallments: prev.customInstallments.map((ci, ciIndex) =>
+                                      ciIndex === index ? { ...ci, value: formatted } : ci
+                                    ),
+                                  }));
+                                }}
+                                className="w-full border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-1.5 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 tabular-nums"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="bg-slate-50 dark:bg-zinc-800 py-2.5 px-4 text-sm text-slate-600 dark:text-slate-300 flex justify-between items-center border-t border-slate-100 dark:border-zinc-700">
+                      <span className="font-medium">
+                        Total: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{
+                          formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0)
+                            ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0))
+                            : '—'
+                        }</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            customInstallments: prev.customInstallments.map((item, index) => ({
+                              dueDate: prev.firstDueDate
+                                ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })()
+                                : item.dueDate,
+                              value:
+                                prev.totalValue && prev.installmentsCount
+                                  ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                  : item.value,
+                            })),
+                          }))
+                        }
+                        className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                      >
+                        Recalcular
+                      </button>
+                    </div>
                   </div>
-                </div>
-                </div>
-              </div>
-            </form>
-            {/* Live Summary Preview */}
-            {(() => {
-              const total = parseCurrencyToNumber(formData.totalValue);
-              if (total <= 0) return null;
-              const feeVal = formData.feeType === 'percentage'
-                ? total * (Number(formData.feePercentage || '0') / 100)
-                : parseCurrencyToNumber(formData.feeFixedValue);
-              const count = formData.paymentType === 'upfront' ? 1 : Math.max(Number(formData.installmentsCount || '1'), 1);
-              const perInst = total / count;
-              const dueDateStr = formData.firstDueDate
-                ? new Date(formData.firstDueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-                : '—';
-              return (
-                <div className="border-t border-slate-900/10 bg-slate-900 dark:bg-zinc-950 px-5 sm:px-8 py-3">
-                  <div className="flex items-center gap-x-5 gap-y-1.5 flex-wrap text-xs">
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
-                      <span className="w-1 h-1 rounded-full bg-emerald-400" /> Resumo
-                    </span>
-                    <span className="text-slate-400">Valor <strong className="text-white tabular-nums font-semibold ml-1">{formatCurrency(total)}</strong></span>
-                    <span className="text-slate-700">|</span>
-                    <span className="text-slate-400">Honorários <strong className="text-emerald-400 tabular-nums font-semibold ml-1">{formatCurrency(feeVal)}</strong></span>
-                    <span className="text-slate-700">|</span>
-                    <span className="text-slate-400">
-                      {count === 1 ? 'À vista' : `${count}× de`} <strong className="text-white tabular-nums font-semibold ml-1">{formatCurrency(perInst)}</strong>
-                    </span>
-                    <span className="text-slate-700">|</span>
-                    <span className="text-slate-400">{count === 1 ? 'Vence' : '1ª parcela'} <strong className="text-white font-semibold ml-1">{dueDateStr}</strong></span>
-                  </div>
-                </div>
-              );
-            })()}
-            {/* Footer */}
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-xs text-slate-400 hidden sm:block">Campos com <span className="text-red-400">*</span> são obrigatórios</p>
-                <div className="flex items-center gap-3 ml-auto">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    disabled={formLoading}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    form="new-agreement-form"
-                    disabled={formLoading}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
-                  >
-                    {formLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
-                      </>
-                    ) : (
-                      <>
-                        <PlusCircle className="w-4 h-4" /> Criar Lançamento
-                      </>
-                    )}
-                  </button>
+                )}
+
+                {/* Notas */}
+                <div className="col-span-12">
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                    Notas internas <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                  </label>
+                  <textarea
+                    placeholder="Observações internas sobre este lançamento…"
+                    value={formData.notes}
+                    onChange={(e) => handleChange('notes', e.target.value)}
+                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-slate-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
+                  />
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+
+          </form>
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Detalhes do Acordo */}
-      {isDetailsModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center px-3 sm:px-6 py-4 overflow-y-auto">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseDetails} aria-hidden="true" />
-          <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-slate-800" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white leading-tight">{selectedAgreement.title}</h2>
-                <button
-                  type="button"
-                  onClick={() => { handleCloseDetails(); navigateToClient(selectedAgreement.client_id); }}
-                  className="mt-1 inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition group"
-                  title="Abrir ficha do cliente"
-                >
-                  <User className="w-3.5 h-3.5" />
-                  {getClientName(selectedAgreement.client_id)}
-                  <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseDetails}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex flex-col p-6 gap-6 flex-1 min-h-0 overflow-y-auto touch-pan-y overscroll-contain [-webkit-overflow-scrolling:touch] bg-white dark:bg-zinc-900">
-
-              {/* Grid de 3 colunas */}
+      <Modal
+        open={isDetailsModalOpen && !!selectedAgreement}
+        onClose={handleCloseDetails}
+        title={selectedAgreement?.title ?? ''}
+        eyebrow="Detalhes"
+        subtitle={
+          selectedAgreement ? (
+            <button
+              type="button"
+              onClick={() => { handleCloseDetails(); navigateToClient(selectedAgreement.client_id); }}
+              className="mt-1 inline-flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:underline transition group"
+              title="Abrir ficha do cliente"
+            >
+              <User className="w-3.5 h-3.5" />
+              {getClientName(selectedAgreement.client_id)}
+              <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+            </button>
+          ) : undefined
+        }
+        size="xl"
+        zIndex={70}
+        footer={
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-slate-400 dark:text-slate-500">
+              {selectedAgreement ? `Criado em ${new Date(selectedAgreement.created_at).toLocaleDateString('pt-BR')}` : ''}
+            </span>
+            <button
+              onClick={handleCloseDetails}
+              className="px-4 py-2 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 text-sm font-medium rounded-lg transition"
+            >
+              Fechar
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+              {selectedAgreement && <>{/* Grid de 3 colunas */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
                 {/* Coluna 1 - Resumo e Ações */}
                 <div className="lg:col-span-1 flex flex-col gap-6">
@@ -4875,19 +4874,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             </div>
                             <div className="flex justify-between items-center py-2.5">
                               <span className="text-slate-500 dark:text-slate-400">Faltante</span>
-                              <div className="flex items-center gap-2">
-                                <span className={`font-semibold tabular-nums ${remaining <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{formatCurrency(Math.max(remaining, 0))}</span>
-                                {pendingInstallments.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setBulkPaymentData({ paymentDate: today, paymentMethod: 'pix' }); setIsBulkPaymentOpen(true); }}
-                                    className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-400 transition"
-                                  >
-                                    Quitar
-                                  </button>
-                                )}
-                              </div>
+                              <span className={`font-semibold tabular-nums ${remaining <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{formatCurrency(Math.max(remaining, 0))}</span>
                             </div>
+                            {pendingInstallments.length > 0 && !isBulkPaymentOpen && (
+                              <div className="pb-1">
+                                <button
+                                  type="button"
+                                  onClick={() => { setBulkPaymentData({ paymentDate: today, paymentMethod: 'pix' }); setIsBulkPaymentOpen(true); }}
+                                  className="w-full text-[10px] font-semibold py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700/40 transition"
+                                >
+                                  Quitar {pendingInstallments.length} parcela{pendingInstallments.length > 1 ? 's' : ''} pendente{pendingInstallments.length > 1 ? 's' : ''}
+                                </button>
+                              </div>
+                            )}
                             {isBulkPaymentOpen && pendingInstallments.length > 0 && (
                               <div className="mt-1 mb-1 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-3 space-y-3">
                                 <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -5110,7 +5109,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                 </div>
                                 <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                                   {showPaidInstallments ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  {showPaidInstallments ? 'Ocultar' : 'Expandir'}
+                                  {showPaidInstallments ? 'Ocultar pagas' : 'Ver pagas'}
                                 </div>
                               </button>
                               {showPaidInstallments && (
@@ -5183,7 +5182,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                 </div>
                                 <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
                                   {showAvulsoEntries ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  {showAvulsoEntries ? 'Ocultar' : 'Expandir'}
+                                  {showAvulsoEntries ? 'Ocultar avulsas' : 'Ver avulsas'}
                                 </div>
                               </button>
                               {showAvulsoEntries && (
@@ -5267,10 +5266,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             : isOverdue
                               ? {
                                   border: 'border-rose-200 dark:border-[#fb7185]/40',
-                                  bg: 'from-rose-50/80 via-white to-white dark:from-[#3f0b1d] dark:via-[#1a090f] dark:to-[#09090b]',
-                                  badge: 'bg-rose-100 text-rose-800 dark:bg-[#4c0e1f] dark:text-[#ffe4e6]',
-                                  pill: 'bg-rose-500/15 text-rose-700 dark:bg-[#4c0e1f]/80 dark:text-[#fecdd3]',
-                                  number: 'bg-rose-500 dark:bg-[#fb7185]',
+                                  bg: 'from-rose-50/35 via-white to-white dark:from-rose-950/25 dark:via-zinc-900 dark:to-zinc-900',
+                                  badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
+                                  pill: 'bg-rose-500/10 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300',
+                                  number: 'bg-rose-500 dark:bg-rose-500',
                                 }
                               : {
                                   border: 'border-slate-200 dark:border-slate-600',
@@ -5297,141 +5296,42 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                               <div
                                 className={`rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} shadow-sm transition-all duration-200 hover:shadow-md`}
                               >
-                              {/* Header da parcela */}
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/70 dark:border-white/10 px-3 py-3">
-                                <div className="flex items-center gap-2">
-                                  <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl text-white text-xs font-bold ${theme.number}`}>
-                                    {installment.installment_number}
-                                  </span>
-                                  <div>
+                              {/* Linha compacta: badge + info + "Dar baixa" */}
+                              <div className="flex items-start gap-2.5 px-3 py-2.5">
+                                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-white text-[10px] font-bold shrink-0 mt-0.5 ${theme.number}`}>
+                                  {installment.installment_number}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <p className="text-xs font-semibold text-slate-900 dark:text-white">
                                       Parcela {installment.installment_number}/{selectedAgreement.installments_count}
                                     </p>
-                                    <span
-                                      className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${theme.pill}`}
-                                    >
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.pill}`}>
                                       {statusDescription}
                                     </span>
-                                  </div>
-                                </div>
-                                <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${theme.badge}`}>
-                                  {statusBadge}
-                                </span>
-                              </div>
-
-                              {/* Detalhes da parcela */}
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 px-3 py-3 text-xs">
-                                {isPaid ? (
-                                  <>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Recebido em</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {new Date(installment.payment_date!).toLocaleDateString('pt-BR')}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor recebido</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(installment.paid_value || installment.value)}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Método</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {installment.payment_method ? paymentMethodLabels[installment.payment_method] : 'Não informado'}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Vencimento</span>
-                                      {(() => {
-                                        const pay = installment.payment_date ? (parseLocalDate(installment.payment_date) ?? new Date(installment.payment_date)) : null;
-                                        const late = pay ? pay.getTime() > dueDate.getTime() : false;
-                                        return (
-                                          <p className={`text-xs font-semibold ${late ? 'text-rose-600 dark:text-rose-200' : 'text-emerald-600 dark:text-emerald-200'}`}>
-                                            {late ? 'Pago com atraso' : 'Pago em dia'}
-                                          </p>
-                                        );
-                                      })()}
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(selectedAgreement.fee_type === 'fixed' ? selectedAgreement.fee_value : selectedAgreement.fee_value / selectedAgreement.installments_count)}
-                                      </p>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Vencimento</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {dueDate.toLocaleDateString('pt-BR')}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(selectedAgreement.total_value / installmentsCount)}
-                                      </p>
-                                    </div>
-                                    {selectedAgreement.fee_type === 'percentage' && (
-                                      <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                        <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor cliente</span>
-                                        <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                          {formatCurrency(clientInstallmentValue)}
-                                        </p>
-                                      </div>
-                                    )}
-                                    {selectedAgreement.fee_type === 'percentage' && (
-                                      <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                        <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
-                                        <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                          {formatCurrency(selectedAgreement.fee_value / installmentsCount)}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-
-                              {/* Footer da parcela */}
-                              {isPaid ? (
-                                <div className="px-3 pb-3">
-                                  <div className="mt-1 flex items-center justify-end gap-2">
-                                    <button
-                                      onClick={() => handleEditPayment(installment)}
-                                      className="inline-flex items-center gap-2 rounded-xl border border-amber-100 bg-white/90 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow-sm transition hover:bg-amber-50 dark:border-amber-500/40 dark:bg-zinc-900/60 dark:text-amber-300"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                      Editar baixa
-                                    </button>
-                                    <button
-                                      onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
-                                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-white dark:border-emerald-500/40 dark:bg-zinc-900/60 dark:text-emerald-200"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      Gerar recibo
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="px-3 pb-3">
-                                  <div className="mt-1 flex flex-col gap-1.5 text-xs text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-                                    <span>
-                                      Registre o pagamento assim que receber para manter o financeiro atualizado.
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.badge}`}>
+                                      {statusBadge}
                                     </span>
-                                    <button
-                                      onClick={() => handleOpenPaymentModal(installment)}
-                                      className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition ${
-                                        isOverdue ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
-                                      }`}
-                                    >
-                                      <CheckCircle className="w-3.5 h-3.5" />
-                                      Dar baixa
-                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                    <span>Vence <strong className="font-semibold text-slate-700 dark:text-slate-200">{dueDate.toLocaleDateString('pt-BR')}</strong></span>
+                                    <span>Total <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(selectedAgreement.total_value / installmentsCount)}</strong></span>
+                                    {selectedAgreement.fee_type === 'percentage' && (
+                                      <span>Cliente <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(clientInstallmentValue)}</strong></span>
+                                    )}
+                                    {selectedAgreement.fee_type === 'percentage' && (
+                                      <span>Honor. <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(selectedAgreement.fee_value / installmentsCount)}</strong></span>
+                                    )}
                                   </div>
                                 </div>
-                              )}
+                                <button
+                                  onClick={() => handleOpenPaymentModal(installment)}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition bg-amber-500 hover:bg-amber-600 shadow-amber-500/30 whitespace-nowrap shrink-0"
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                  Dar baixa
+                                </button>
+                              </div>
                               </div>
                               {index < installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').length - 1 && (
                                 <div className="hidden dark:block h-px bg-gradient-to-r from-transparent via-white/15 to-transparent mx-2 rounded-full" />
@@ -5444,45 +5344,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-between items-center border-t border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900 px-5 sm:px-8 py-3.5">
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                Criado em {new Date(selectedAgreement.created_at).toLocaleDateString('pt-BR')}
-              </span>
-              <button
-                onClick={handleCloseDetails}
-                className="px-4 py-2 border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 text-sm font-medium rounded-lg transition"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </>}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Baixa Avulsa */}
-      {isManualEntryOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsManualEntryOpen(false)} aria-hidden="true" />
-          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-blue-500" />
-            <div className="px-6 py-5 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Baixa Avulsa</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Entrada manual fora do cronograma de parcelas
-                </p>
-              </div>
-              <button type="button" onClick={() => setIsManualEntryOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+      <Modal
+        open={isManualEntryOpen && !!selectedAgreement}
+        onClose={() => setIsManualEntryOpen(false)}
+        title="Baixa Avulsa"
+        eyebrow="Financeiro"
+        subtitle="Entrada manual fora do cronograma de parcelas"
+        size="md"
+        zIndex={70}
+      >
+        <ModalBody className="space-y-4">
               {/* Data e Valor */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -5544,50 +5420,46 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-100 px-3 py-2 resize-none transition"
                   rows={2} placeholder="Anotações internas sobre este recebimento..." />
               </div>
-            </div>
-
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-6 py-4 flex justify-end gap-3">
-              <button type="button" onClick={() => setIsManualEntryOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition">
-                Cancelar
-              </button>
-              <button type="button" onClick={handleAddManualEntry} disabled={manualEntryLoading || !manualEntryData.paymentDate || parsePaidValue(manualEntryData.paidValue) <= 0}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-                {manualEntryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Registrar Entrada
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Baixa de Pagamento */}
-      {isPaymentModalOpen && selectedInstallment && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleClosePaymentModal} aria-hidden="true" />
-          <div className="relative w-full max-w-3xl max-h-[85vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className={`h-1 w-full ${isEditingPayment ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{isEditingPayment ? 'Edição' : 'Pagamento'}</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{isEditingPayment ? 'Editar Baixa' : 'Registrar Pagamento'}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Parcela {selectedInstallment.installment_number}/{selectedAgreement?.installments_count} - Vencimento {(parseLocalDate(selectedInstallment.due_date) ?? new Date(selectedInstallment.due_date)).toLocaleDateString('pt-BR')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleClosePaymentModal}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            {/* Conteúdo rolável */}
-            <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-zinc-900">
-
-              <div className="space-y-5">
+      <Modal
+        open={isPaymentModalOpen && !!selectedInstallment}
+        onClose={handleClosePaymentModal}
+        title={isEditingPayment ? 'Editar Baixa' : 'Registrar Pagamento'}
+        eyebrow={isEditingPayment ? 'Edição' : 'Pagamento'}
+        subtitle={
+          selectedInstallment
+            ? `Parcela ${selectedInstallment!.installment_number}/${selectedAgreement?.installments_count} - Vencimento ${(parseLocalDate(selectedInstallment!.due_date) ?? new Date(selectedInstallment!.due_date)).toLocaleDateString('pt-BR')}`
+            : undefined
+        }
+        size="lg"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleClosePaymentModal}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmPayment}
+              disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
+              className={`px-5 py-2 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${isEditingPayment ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+            >
+              <CheckCircle className="w-4 h-4" />
+              {isEditingPayment ? 'Salvar Alterações' : 'Confirmar Pagamento'}
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+          {selectedInstallment && (
+            <div className="space-y-5">
                 {/* Resumo da Parcela */}
                 <div className="rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-4 flex items-center justify-between gap-4">
                   <div>
@@ -5702,56 +5574,41 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   />
                 </div>
               </div>
-            </div>
-
-            {/* Footer fixo */}
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={handleClosePaymentModal}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmPayment}
-                  disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
-                  className={`px-5 py-2 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${isEditingPayment ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  {isEditingPayment ? 'Salvar Alterações' : 'Confirmar Pagamento'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Relatório Mensal para IR */}
-      {isReportModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsReportModalOpen(false)} aria-hidden="true" />
-          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-blue-600" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Relatório Mensal para IR</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Receitas de honorários advocatícios</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsReportModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-6 space-y-6">
+      <Modal
+        open={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        title="Relatório Mensal para IR"
+        eyebrow="Relatório"
+        subtitle="Receitas de honorários advocatícios"
+        size="xl"
+        zIndex={70}
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setIsReportModalOpen(false)}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={handleExportMonthlyReport}
+              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition shadow-sm"
+            >
+              <Download className="w-4 h-4" />
+              Exportar PDF
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+            <div className="space-y-6">
               {/* Seletor de Mês */}
               <div>
                 <label className="text-sm font-semibold text-slate-700 mb-2 block">Selecione o Mês</label>
@@ -5759,7 +5616,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   type="month"
                   value={reportMonth}
                   onChange={(e) => setReportMonth(e.target.value)}
-                  className="border-2 border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="border-2 border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
 
@@ -5895,54 +5752,25 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 </ul>
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 sticky bottom-0">
-              <button
-                type="button"
-                onClick={() => setIsReportModalOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                onClick={handleExportMonthlyReport}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                Exportar PDF
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Seleção de Ano para Relatório IR */}
-      {isIRModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsIRModalOpen(false)} aria-hidden="true" />
-          <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-indigo-600" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                  Imposto de Renda
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Selecione o ano para gerar o relatório</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsIRModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-6 bg-white dark:bg-zinc-900">
+      <Modal
+        open={isIRModalOpen}
+        onClose={() => setIsIRModalOpen(false)}
+        title="Imposto de Renda"
+        eyebrow="Relatório"
+        subtitle="Selecione o ano para gerar o relatório"
+        size="sm"
+        zIndex={70}
+        footer={
+          <p className="text-xs text-slate-500 dark:text-slate-400 text-center w-full">
+            O relatório incluirá todos os honorários recebidos no ano selecionado
+          </p>
+        }
+      >
+        <ModalBody>
               {availableYears.length === 0 ? (
                 <div className="text-center py-8">
                   <FileSpreadsheet className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
@@ -5957,9 +5785,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     Anos disponíveis com pagamentos registrados:
                   </p>
                   {availableYears.map((year) => {
-                    const yearPayments = allInstallments.filter(inst => 
-                      inst.status === 'pago' && 
-                      inst.payment_date && 
+                    const yearPayments = allInstallments.filter(inst =>
+                      inst.status === 'pago' &&
+                      inst.payment_date &&
                       new Date(inst.payment_date).getFullYear() === year
                     );
                     const yearTotal = yearPayments.reduce((sum, inst) => {
@@ -5974,22 +5802,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           handleGenerateIRReport(year);
                           setIsIRModalOpen(false);
                         }}
-                        className="w-full border border-slate-200 dark:border-zinc-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 rounded-xl p-4 transition text-left group shadow-sm hover:shadow-md"
+                        className="w-full border border-slate-200 dark:border-zinc-700 hover:border-amber-400 dark:hover:border-amber-500 hover:bg-amber-50/50 dark:hover:bg-amber-900/20 rounded-xl p-4 transition text-left group shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="bg-indigo-600 group-hover:bg-indigo-700 text-white rounded-xl w-12 h-12 flex items-center justify-center font-bold text-sm transition">
+                            <div className="bg-amber-500 group-hover:bg-amber-600 text-white rounded-xl w-12 h-12 flex items-center justify-center font-bold text-sm transition">
                               {year}
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400">Exercício {year}</p>
+                              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-amber-700 dark:group-hover:text-amber-400">Exercício {year}</p>
                               <p className="text-sm text-slate-500 dark:text-slate-400">
                                 {yearPayments.length} pagamento{yearPayments.length > 1 ? 's' : ''} registrado{yearPayments.length > 1 ? 's' : ''}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(yearTotal)}</p>
+                            <p className="text-base font-bold text-amber-600 dark:text-amber-400">{formatCurrency(yearTotal)}</p>
                             <p className="text-xs text-slate-400 dark:text-slate-500">Honorários</p>
                           </div>
                         </div>
@@ -5998,73 +5826,57 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   })}
                 </div>
               )}
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900">
-              <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
-                💡 O relatório incluirá todos os honorários recebidos no ano selecionado
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Auditoria de Pagamentos */}
-      {isAuditModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseAuditModal} aria-hidden="true" />
-          <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-1 w-full bg-purple-600" />
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky top-0">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center rounded-xl p-2.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-                  <ClipboardList className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Auditoria</p>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Histórico de Baixas</h2>
-                  {auditAgreementId && (() => {
-                    const ag = agreements.find(a => a.id === auditAgreementId);
-                    return ag ? (
-                      <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mt-0.5">
-                        {ag.title} — {getClientName(ag.client_id)}
-                      </p>
-                    ) : null;
-                  })()}
-                  {!auditAgreementId && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Todos os acordos</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {/* Filtro de Mês */}
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="w-4 h-4 text-slate-500" />
-                  <input
-                    type="month"
-                    value={auditFilterMonth}
-                    onChange={(e) => {
-                      setAuditFilterMonth(e.target.value);
-                      loadAuditByMonth(e.target.value);
-                    }}
-                    className="border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <button 
-                  type="button"
-                  onClick={handleCloseAuditModal} 
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                  aria-label="Fechar modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
+      <Modal
+        open={isAuditModalOpen}
+        onClose={handleCloseAuditModal}
+        title="Histórico de Baixas"
+        eyebrow="Auditoria"
+        subtitle={
+          auditAgreementId
+            ? (() => {
+                const ag = agreements.find(a => a.id === auditAgreementId);
+                return ag ? `${ag.title} — ${getClientName(ag.client_id)}` : undefined;
+              })()
+            : 'Todos os acordos'
+        }
+        size="xl"
+        zIndex={70}
+        headerActions={
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4 text-slate-500" />
+            <input
+              type="month"
+              value={auditFilterMonth}
+              onChange={(e) => {
+                setAuditFilterMonth(e.target.value);
+                loadAuditByMonth(e.target.value);
+              }}
+              className="border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+        }
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <p className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
+              <span className="text-red-500">▌</span>
+              {auditTotals.count} registro{auditTotals.count !== 1 ? 's' : ''} em {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </p>
+            <button
+              onClick={handleCloseAuditModal}
+              className="px-5 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-600 transition"
+            >
+              Fechar
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
             {/* Resumo do Mês */}
-            <div className="px-6 py-4 bg-slate-50/80 dark:bg-zinc-900/60 border-b border-slate-200/80 dark:border-zinc-800/80 backdrop-blur-sm">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-slate-200 dark:border-zinc-800 shadow-sm">
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-medium mb-1">Período</p>
                   <p className="text-base font-bold text-slate-900 dark:text-white">
@@ -6084,10 +5896,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   <p className="text-base font-bold text-emerald-600">{formatCurrency(auditTotals.totalHonorarios)}</p>
                 </div>
               </div>
-            </div>
 
             {/* Conteúdo - Lista de Baixas */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 bg-white dark:bg-zinc-900">
+            <div>
               {loadingAudit ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
@@ -6259,23 +6070,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 </div>
               )}
             </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-zinc-700 bg-slate-50/90 dark:bg-zinc-900/80 sticky bottom-0 backdrop-blur-sm">
-              <p className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
-                <span className="text-red-500">▌</span>
-                {auditTotals.count} registro{auditTotals.count !== 1 ? 's' : ''} em {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-              </p>
-              <button
-                onClick={handleCloseAuditModal}
-                className="px-5 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-600 transition"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 };

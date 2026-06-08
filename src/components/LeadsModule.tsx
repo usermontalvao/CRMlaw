@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, TrendingUp, Clock, FileCheck, Target, Edit2, Save } from 'lucide-react';
+import { Modal, ModalBody } from './ui';
 import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
 import type { Lead, LeadStage, CreateLeadDTO } from '../types/lead.types';
@@ -372,65 +373,40 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       </div>
 
       {/* Modal Visualizar/Editar Lead */}
-      {isViewModalOpen && selectedLead && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => {
-              setIsViewModalOpen(false);
-              setSelectedLead(null);
-              setEditMode(false);
-            }}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            
-            {/* Header padrão do sistema */}
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  {editMode ? 'Editando Lead' : 'Detalhes do Lead'}
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900">{selectedLead.name}</h2>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-600">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${STAGES.find(s => s.key === selectedLead.stage)?.accent || 'text-slate-600'}`}>
-                    {STAGES.find(s => s.key === selectedLead.stage)?.icon}
-                    {STAGES.find(s => s.key === selectedLead.stage)?.label}
-                  </span>
-                  {selectedLead.email && (
-                    <span className="text-slate-500">{selectedLead.email}</span>
-                  )}
-                  {selectedLead.phone && (
-                    <span className="text-slate-500">{selectedLead.phone}</span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {!editMode && (
-                  <button
-                    onClick={() => setEditMode(true)}
-                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                    title="Editar"
-                  >
-                    <Edit2 className="w-5 h-5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setIsViewModalOpen(false);
-                    setSelectedLead(null);
-                    setEditMode(false);
-                  }}
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                  aria-label="Fechar modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      <Modal
+        open={isViewModalOpen && !!selectedLead}
+        onClose={() => { setIsViewModalOpen(false); setSelectedLead(null); setEditMode(false); }}
+        title={selectedLead?.name ?? ''}
+        eyebrow={editMode ? 'Editando Lead' : 'Detalhes do Lead'}
+        subtitle={selectedLead ? [STAGES.find(s => s.key === selectedLead.stage)?.label, selectedLead.email, selectedLead.phone].filter(Boolean).join(' · ') : undefined}
+        size="lg"
+        zIndex={70}
+        headerActions={
+          !editMode ? (
+            <button onClick={() => setEditMode(true)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Editar">
+              <Edit2 className="w-5 h-5" />
+            </button>
+          ) : undefined
+        }
+        footer={
+          editMode ? (
+            <div className="flex justify-end items-center gap-4 w-full">
+              <button type="button" onClick={() => { setEditMode(false); if (selectedLead) setFormData({ name: selectedLead.name, email: selectedLead.email || '', phone: selectedLead.phone || '', source: selectedLead.source || '', stage: selectedLead.stage, notes: selectedLead.notes || '' }); }} className="px-6 py-2.5 rounded-lg text-sm font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors">Cancelar</button>
+              <button type="submit" form="lead-edit-form" disabled={saving} className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {saving ? 'Salvando...' : 'Salvar Alterações'}
+              </button>
             </div>
-
-            <form onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5 bg-white">
+          ) : selectedLead ? (
+            <button type="button" onClick={() => { setIsViewModalOpen(false); onConvertLead(selectedLead); }} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600">
+              <CheckCircle2 className="w-4 h-4" /> Converter em Cliente
+            </button>
+          ) : undefined
+        }
+      >
+        <ModalBody>
+          {selectedLead && (
+            <form id="lead-edit-form" onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5 bg-white">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-2">Nome *</label>
@@ -579,25 +555,10 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                 </div>
               )}
 
-              {!editMode && (
-                <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsViewModalOpen(false);
-                      onConvertLead(selectedLead);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 border border-amber-600/60 shadow-md shadow-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:ring-offset-1 focus:ring-offset-white transition-all"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Converter em Cliente
-                  </button>
-                </div>
-              )}
             </form>
-          </div>
-        </div>
-      )}
+          )}
+        </ModalBody>
+      </Modal>
 
       
       {/* Modal Novo Lead */}

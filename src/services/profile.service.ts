@@ -100,8 +100,8 @@ class ProfileService {
       .order('name', { ascending: true });
 
     if (error) throw new Error(error.message);
-    const badgeOrder: Record<string, number> = { administrador: 0, advogado: 1, estagiario: 2, secretario: 3 };
-    return (data ?? []).sort((a, b) => (badgeOrder[a.badge ?? ''] ?? 4) - (badgeOrder[b.badge ?? ''] ?? 4));
+    const roleOrder = (r: string) => { const rl = r.toLowerCase(); return rl.includes('admin') ? 0 : rl.includes('advog') ? 1 : 2; };
+    return (data ?? []).sort((a, b) => roleOrder(a.role ?? '') - roleOrder(b.role ?? ''));
   }
 
   async searchMembers(query: string): Promise<Profile[]> {

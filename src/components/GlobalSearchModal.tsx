@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
-  Search, X, FileText, Users, Loader2, ChevronRight, ArrowRight,
+  Search, X, FileText, Users, Loader2, ChevronRight, ChevronLeft, ArrowRight,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
   Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
   Phone, Mail, Hash, Building2, Tag, User, CreditCard, Copy, Check,
@@ -221,8 +221,8 @@ const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso + (iso.length === 10 ? 'T12:00:00' : '')).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
 
 const AVATAR_PALETTE = [
-  '#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899',
-  '#f59e0b','#06b6d4','#6366f1','#14b8a6','#ef4444',
+  '#475569','#6366f1','#0891b2','#059669','#7c3aed',
+  '#0369a1','#0f766e','#4338ca','#be185d','#b45309',
 ];
 function avatarColor(name: string) {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -280,7 +280,7 @@ function topScore(fields: string[], needle: string): number {
   return Math.max(0, ...fields.map(f => score(f, needle)));
 }
 
-/** Highlight: wraps the matching substring with orange color */
+/** Highlight: wraps the matching substring — bold amber text, no background paint */
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query || !text) return <>{text}</>;
   const nText = nrm(text);
@@ -290,7 +290,9 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <span className="text-orange-500 font-semibold not-italic">{text.slice(idx, idx + query.length)}</span>
+      <span className="search-highlight">
+        {text.slice(idx, idx + query.length)}
+      </span>
       {text.slice(idx + query.length)}
     </>
   );
@@ -327,6 +329,35 @@ const TYPE_MODULE: Record<string, string> = {
   assinatura:           'assinaturas',
 };
 
+// Mapa ResultType → módulo de navegação para o botão "Ver todos"
+const TYPE_NAV: Record<string, string> = {
+  cliente:              'clientes',
+  processo:             'processos',
+  'processo-via-cliente': 'processos',
+  requerimento:         'requerimentos',
+  prazo:                'prazos',
+  agenda:               'agenda',
+  tarefa:               'tarefas',
+  financeiro:           'financeiro',
+  cloud:                'cloud',
+  assinatura:           'assinaturas',
+};
+
+// ─── Sidebar module list (static, always visible) ────────────────────────────
+
+const SIDEBAR_MODULES: Array<{ key: ResultType | 'all'; label: string; icon: React.ElementType; mod: string | null }> = [
+  { key: 'all',          label: 'Tudo',          icon: Sparkles,      mod: null },
+  { key: 'cliente',      label: 'Clientes',      icon: Users,         mod: 'clientes' },
+  { key: 'processo',     label: 'Processos',     icon: FileText,      mod: 'processos' },
+  { key: 'requerimento', label: 'Requerimentos', icon: ClipboardList, mod: 'requerimentos' },
+  { key: 'prazo',        label: 'Prazos',        icon: AlarmClock,    mod: 'prazos' },
+  { key: 'agenda',       label: 'Agenda',        icon: Calendar,      mod: 'agenda' },
+  { key: 'tarefa',       label: 'Tarefas',       icon: CheckSquare,   mod: 'tarefas' },
+  { key: 'financeiro',   label: 'Financeiro',    icon: DollarSign,    mod: 'financeiro' },
+  { key: 'cloud',        label: 'Cloud',         icon: FolderOpen,    mod: 'cloud' },
+  { key: 'assinatura',   label: 'Assinaturas',   icon: PenTool,       mod: 'assinaturas' },
+];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onClose, onNavigate }) => {
@@ -353,11 +384,35 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const [activeFilter, setActiveFilter] = useState<ResultType | 'all'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
+  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem('gsLayout_sidebar') !== 'false'; } catch { return true; }
+  });
+  const [previewExpanded, setPreviewExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem('gsLayout_preview') === 'true'; } catch { return false; }
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const toggleSidebar = () => {
+    setSidebarExpanded(v => {
+      const next = !v;
+      try { localStorage.setItem('gsLayout_sidebar', String(next)); } catch {}
+      return next;
+    });
+  };
+  const togglePreview = () => {
+    setPreviewExpanded(v => {
+      const next = !v;
+      try { localStorage.setItem('gsLayout_preview', String(next)); } catch {}
+      return next;
+    });
+  };
+
   // Reset filtro ao mudar a query
   useEffect(() => { setActiveFilter('all'); setSelected(0); setSelectedCmd(0); }, [query]);
+
+  // Re-foca o input quando a sidebar é colapsada/expandida
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80); }, [sidebarExpanded]);
 
   // Reset + pre-warm cache on open
   useEffect(() => {
@@ -398,12 +453,21 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         }
       }
 
+      // digits-only extracted once — reused for CPF/CNPJ and process code matching
+      const queryDigits = q2.replace(/\D/g, '');
+
       // ── Clientes ──────────────────────────────────────────────────────────
       const clientResults: SearchResult[] = clients
-        .map(c => ({
-          s: topScore([c.full_name ?? '', c.cpf_cnpj ?? '', c.email ?? '', c.phone ?? ''], q2),
-          c,
-        }))
+        .map(c => {
+          const base = topScore([c.full_name ?? '', c.cpf_cnpj ?? '', c.email ?? '', c.phone ?? ''], q2);
+          let s = base;
+          if (!base && queryDigits.length >= 4) {
+            const cpf = (c.cpf_cnpj ?? '').replace(/\D/g, '');
+            if (cpf.startsWith(queryDigits)) s = 5;
+            else if (cpf.includes(queryDigits)) s = 2;
+          }
+          return { s, c };
+        })
         .filter(x => x.s > 0)
         .sort((a, b) => b.s - a.s)
         .slice(0, 5)
@@ -433,12 +497,25 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         return [clientName, court].filter(Boolean).join(' · ') || undefined;
       };
 
+      // Digits-only matching: lets users type CNJ numbers without separators
+      // e.g. "100231203" matches "1002312-03.2026.8.11.0045"
+      const scoreProcessCode = (code: string): number => {
+        const base = score(code, q2);
+        if (base > 0) return base;
+        if (queryDigits.length >= 3) {
+          const codeDigits = code.replace(/\D/g, '');
+          if (codeDigits.startsWith(queryDigits)) return 5;
+          if (codeDigits.includes(queryDigits)) return 2;
+        }
+        return 0;
+      };
+
       // ── Processos (só número e comarca — advogado removido para evitar
       //    retornar TODOS os casos do usuário logado ao buscar seu próprio nome)
       const processResults: SearchResult[] = processes
         .map(p => {
           const client = clientById.get(p.client_id ?? '');
-          const sc = topScore([p.process_code ?? '', p.court ?? ''], q2);
+          const sc = Math.max(scoreProcessCode(p.process_code ?? ''), score(p.court ?? '', q2));
           return { p, client, s: sc };
         })
         .filter(x => x.s > 0)
@@ -504,10 +581,16 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
       // ── Requerimentos ─────────────────────────────────────────────────────
       const reqResults: SearchResult[] = requirements
-        .map(r => ({
-          r,
-          s: topScore([r.beneficiary ?? '', r.cpf ?? '', r.protocol ?? '', BENEFIT_LABELS[r.benefit_type] ?? ''], q2),
-        }))
+        .map(r => {
+          const base = topScore([r.beneficiary ?? '', r.cpf ?? '', r.protocol ?? '', BENEFIT_LABELS[r.benefit_type] ?? ''], q2);
+          let s = base;
+          if (!base && queryDigits.length >= 4) {
+            const cpf = (r.cpf ?? '').replace(/\D/g, '');
+            if (cpf.startsWith(queryDigits)) s = 5;
+            else if (cpf.includes(queryDigits)) s = 2;
+          }
+          return { r, s };
+        })
         .filter(x => x.s > 0)
         .sort((a, b) => b.s - a.s)
         .slice(0, 4)
@@ -696,7 +779,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       ];
       const seen = new Set<string>();
       const deduped = merged.filter(r => {
-        const key = `${r.type}:${r.id}`;
+        // processos aparecem em dois tipos distintos — dedupe pela id pura
+        // para que o mesmo processo não apareça duas vezes na lista
+        const key = (r.type === 'processo' || r.type === 'processo-via-cliente')
+          ? r.id
+          : `${r.type}:${r.id}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -808,8 +895,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, flatResults.length - 1)); }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
       if (e.key === 'Enter' && flatResults[selected]) handleSelect(flatResults[selected]);
-      // 1-9: jump directly to Nth result
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+      // 1-9: jump directly to Nth result (only when input is not focused to avoid eating digits while typing)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '9' && document.activeElement !== inputRef.current) {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < flatResults.length) { e.preventDefault(); setSelected(idx); }
       }
@@ -835,20 +922,45 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
   if (!open) return null;
 
-  // Cor do ícone por tipo
+  // Ícone com acento sutil por tipo — fundo levemente colorido, ícone monocromático escuro
   const TYPE_ICON_COLOR: Record<ResultType, string> = {
-    cliente:                'text-slate-500 bg-slate-100',
-    processo:               'text-amber-600 bg-amber-50',
-    'processo-via-cliente': 'text-amber-600 bg-amber-50',
-    intimacao:              'text-orange-600 bg-orange-50',
-    requerimento:           'text-purple-600 bg-purple-50',
-    prazo:                  'text-red-500 bg-red-50',
-    agenda:                 'text-teal-600 bg-teal-50',
-    tarefa:                 'text-sky-600 bg-sky-50',
-    financeiro:             'text-emerald-600 bg-emerald-50',
-    cloud:                  'text-indigo-600 bg-indigo-50',
-    assinatura:             'text-violet-600 bg-violet-50',
+    cliente:                'text-slate-600',
+    processo:               'text-amber-700',
+    'processo-via-cliente': 'text-amber-700',
+    intimacao:              'text-orange-600',
+    requerimento:           'text-violet-600',
+    prazo:                  'text-red-600',
+    agenda:                 'text-teal-600',
+    tarefa:                 'text-sky-600',
+    financeiro:             'text-emerald-600',
+    cloud:                  'text-indigo-600',
+    assinatura:             'text-purple-600',
   };
+  const TYPE_ICON_BG: Record<ResultType, string> = {
+    cliente:                '#f1f5f9',
+    processo:               '#fef9ec',
+    'processo-via-cliente': '#fef9ec',
+    intimacao:              '#fff7ed',
+    requerimento:           '#f5f3ff',
+    prazo:                  '#fef2f2',
+    agenda:                 '#f0fdfa',
+    tarefa:                 '#f0f9ff',
+    financeiro:             '#f0fdf4',
+    cloud:                  '#eef2ff',
+    assinatura:             '#faf5ff',
+  };
+  const ICON_BOX_STYLE: React.CSSProperties = {
+    background: '#f4f4f5',
+    border: '1px solid rgba(0,0,0,0.06)',
+  };
+  const iconBoxStyle = (type: ResultType): React.CSSProperties => ({
+    background: TYPE_ICON_BG[type] ?? '#f4f4f5',
+    border: '1px solid rgba(0,0,0,0.06)',
+  });
+  // alias para compatibilidade
+  const TYPE_ICON_STYLE: Record<ResultType, React.CSSProperties> = Object.fromEntries(
+    (Object.keys(TYPE_ICON_COLOR) as ResultType[]).map(k => [k, iconBoxStyle(k)])
+  ) as Record<ResultType, React.CSSProperties>;
 
   // Contagem por tipo (respeitando dedupe de processo-via-cliente no grupo processo)
   const allGroups = GROUP_ORDER
@@ -894,637 +1006,1158 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const showResults = !isEmpty && results.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[6vh]" onClick={onClose}>
+    <div className="global-search-overlay" onClick={onClose}>
       <style>{`
         @keyframes gsOverlayIn { from { opacity:0 } to { opacity:1 } }
         @keyframes gsModalIn {
-          from { opacity:0; transform:translateY(-16px) scale(.97) }
-          to   { opacity:1; transform:translateY(0) scale(1) }
+          from { opacity:0; transform:scale(.97) translateY(-8px) }
+          to   { opacity:1; transform:scale(1) translateY(0) }
         }
-        .gs-overlay { animation: gsOverlayIn .2s ease-out }
-        .gs-modal   { animation: gsModalIn .28s cubic-bezier(.16,1,.3,1) }
-        .gs-chips   { scrollbar-width:none; -ms-overflow-style:none }
-        .gs-chips::-webkit-scrollbar { display:none }
-        .gs-scroll::-webkit-scrollbar { width:5px }
-        .gs-scroll::-webkit-scrollbar-track { background:transparent }
-        .gs-scroll::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.08); border-radius:10px }
+        @keyframes gsContentIn {
+          from { opacity:0; transform:translateY(6px) }
+          to   { opacity:1; transform:translateY(0) }
+        }
+        .gs-content-anim { animation: gsContentIn .2s ease-out; }
 
-        /* ── Glass quick-access cards ── */
-        .gs-card {
-          position: relative;
-          background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.32) 100%);
-          border: 1px solid rgba(255,255,255,0.65);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.85),
-            0 1px 2px rgba(15,23,42,0.04);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          transition: all .22s cubic-bezier(.4,0,.2,1);
-        }
-        .gs-card:hover {
-          background: linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,247,237,0.55) 100%);
-          border-color: rgba(245,158,11,0.45);
-          transform: translateY(-1px);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.95),
-            0 6px 20px -4px rgba(245,158,11,0.18),
-            0 2px 6px rgba(15,23,42,0.06);
-        }
-        .gs-card:active { transform: scale(0.98); }
-
-        /* ── Search input frame (vidro claro sobre vidro) ── */
-        .gs-search-frame {
-          background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.32) 100%);
-          border: 1px solid rgba(255,255,255,0.70);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.90),
-            inset 0 -1px 0 rgba(255,255,255,0.20),
-            0 1px 2px rgba(15,23,42,0.04);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        }
-        .gs-search-frame:focus-within {
-          border-color: rgba(245,158,11,0.55);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.95),
-            0 0 0 3px rgba(245,158,11,0.12),
-            0 4px 14px -2px rgba(245,158,11,0.18);
+        /* Overlay */
+        .global-search-overlay {
+          position: fixed; inset: 0; z-index: 9999;
+          display: flex; align-items: flex-start; justify-content: center;
+          padding-top: 80px;
+          background: rgba(0, 0, 0, 0.40);
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          animation: gsOverlayIn .18s ease-out;
         }
 
-        /* ── Filter pills ── */
-        .gs-chip-btn {
-          transition: all .15s ease;
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-        }
-        .gs-chip-btn.gs-active {
-          background: #f97316 !important;
-          color: white !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.25),
-            0 6px 16px -4px rgba(249,115,22,0.55),
-            0 2px 4px rgba(249,115,22,0.20) !important;
-          border-color: rgba(249,115,22,0.6) !important;
+        /* Modal */
+        .global-search-modal {
+          width: min(1120px, calc(100vw - 32px));
+          height: min(760px, 82vh);
+          display: flex; flex-direction: column; overflow: hidden;
+          background: #ffffff;
+          border: 1px solid #c4c7c7; border-radius: 12px;
+          box-shadow: 0 32px 80px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.03);
+          animation: gsModalIn .18s cubic-bezier(.32,0,.67,0);
         }
 
-        /* ── Result rows ── */
-        .gs-result {
-          transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
-          border-left: 4px solid transparent;
-        }
-        .gs-result:hover {
-          background: rgba(255,255,255,0.50) !important;
-        }
-        .gs-result.gs-sel {
-          background: rgba(255,255,255,0.60) !important;
-          border-left-color: #f97316 !important;
-          box-shadow: 0 0 0 1px rgba(249,115,22,0.20) !important;
+        /* Header */
+        .global-search-header {
+          flex-shrink: 0; padding: 24px 24px 8px;
+          border-bottom: 1px solid rgba(15,23,42,0.06);
         }
 
-        /* ── Recent pills ── */
-        .gs-recent-pill {
-          background: linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.40) 100%);
-          border: 1px solid rgba(255,255,255,0.65);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          transition: all .15s ease;
+        /* Input wrap */
+        .global-search-input-wrap {
+          height: 56px; display: flex; align-items: center; gap: 12px;
+          padding: 0 16px;
+          background: #eceef0; border: 1px solid #747878; border-radius: 8px;
+          transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .gs-recent-pill:hover {
-          background: linear-gradient(180deg, rgba(254,243,199,0.85) 0%, rgba(253,230,138,0.55) 100%);
-          border-color: rgba(251,191,36,0.55);
-          color: rgb(120,53,15);
+        .global-search-input-wrap:focus-within {
+          border-color: #ff8a00; box-shadow: 0 0 0 2px rgba(255,138,0,0.18), 0 0 0 1px #ff8a00;
+        }
+        .global-search-icon { width:20px; height:20px; color:#747878; flex-shrink:0; }
+        .global-search-input-wrap:focus-within .global-search-icon { color: #ff8a00; }
+
+        .global-search-input {
+          flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+          font-size: 18px; font-weight: 500; color: #191c1e;
+        }
+        .global-search-input::placeholder { color: #c4c7c7; }
+
+        .global-search-clear {
+          border: 0; background: transparent; color: #9ca3af; cursor: pointer;
+          padding: 5px; border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          transition: background .12s ease, color .12s ease;
+        }
+        .global-search-clear:hover { background: #e0e3e5; color: #444748; }
+
+        .global-search-keycap {
+          padding: 4px 8px; border-radius: 6px;
+          border: 1px solid #c4c7c7; background: #e6e8ea; color: #444748;
+          font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
         }
 
-        /* ── Kbd keys ── */
-        .gs-kbd {
-          background: linear-gradient(180deg, rgba(255,255,255,0.90) 0%, rgba(241,245,249,0.75) 100%);
-          border: 1px solid rgba(203,213,225,0.55);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.95),
-            0 1px 2px rgba(15,23,42,0.08);
+        /* Filter tabs — pill shape */
+        .global-search-tabs {
+          display: flex; align-items: center; gap: 6px;
+          padding: 10px 0 2px; overflow-x: auto; scrollbar-width: none;
         }
+        .global-search-tabs::-webkit-scrollbar { display: none; }
+
+        .global-search-tab {
+          display: inline-flex; align-items: center; gap: 6px;
+          height: 32px; padding: 0 16px; border-radius: 999px; border: 0;
+          background: #e6e8ea; color: #444748;
+          font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: background .15s ease, color .15s ease, transform .12s ease;
+        }
+        .global-search-tab:hover { background: #e0e3e5; color: #191c1e; }
+        .global-search-tab:active { transform: scale(0.97); }
+        .global-search-tab.active {
+          background: #000000; color: #fff;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+        }
+        .global-search-tab-count {
+          min-width: 18px; height: 18px; padding: 0 4px;
+          display: inline-flex; align-items: center; justify-content: center;
+          border-radius: 999px; background: rgba(0,0,0,0.10);
+          color: inherit; font-size: 10px; font-weight: 700;
+        }
+        .global-search-tab.active .global-search-tab-count { background: rgba(255,255,255,0.20); }
+
+        /* Body grid */
+        .global-search-body {
+          flex: 1; min-height: 0; display: grid;
+          grid-template-columns: minmax(0,1fr) 380px;
+        }
+        .global-search-body.no-preview { grid-template-columns: 1fr; }
+
+        /* Results list */
+        .global-search-results {
+          min-width: 0; overflow-y: auto; padding: 16px;
+          scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.10) transparent;
+        }
+        .global-search-results::-webkit-scrollbar { width: 4px; }
+        .global-search-results::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.10); border-radius: 4px; }
+        .global-search-results::-webkit-scrollbar-track { background: transparent; }
+
+        /* Section */
+        .search-section { margin-bottom: 20px; }
+        .search-section-header {
+          display: flex; align-items: center; gap: 8px;
+          margin-bottom: 8px; padding: 0 4px;
+        }
+        .search-section-title {
+          font-size: 11px; font-weight: 800; letter-spacing: 0.07em;
+          color: #747878; text-transform: uppercase; white-space: nowrap;
+        }
+        .search-section-count {
+          min-width: 18px; height: 18px; padding: 0 5px;
+          display: inline-flex; align-items: center; justify-content: center;
+          border-radius: 999px; background: #eceef0; color: #747878;
+          font-size: 10px; font-weight: 700;
+        }
+        .search-section-line { flex: 1; height: 1px; background: rgba(15,23,42,0.07); }
+        .search-section-see-all {
+          border: 0; background: transparent; color: #914c00;
+          font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; padding: 0;
+          transition: color .12s ease;
+        }
+        .search-section-see-all:hover { color: #ff8a00; }
+
+        /* Result item */
+        .search-result-item {
+          position: relative; display: flex; align-items: center; gap: 12px;
+          min-height: 60px; padding: 10px 12px;
+          border: 1px solid transparent; border-radius: 12px;
+          cursor: pointer; width: 100%; text-align: left; background: transparent;
+          transition: background .15s ease, border-color .15s ease, transform .12s ease;
+        }
+        .search-result-item:hover { background: #f2f4f6; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .search-result-item:active { transform: scale(0.997); }
+        .search-result-item.selected {
+          background: rgba(255,138,0,0.05); border-color: rgba(255,138,0,0.50);
+          box-shadow: 0 0 0 1px rgba(255,138,0,0.12);
+        }
+
+        /* Avatar / icon */
+        .search-result-avatar {
+          width: 48px; height: 48px; border-radius: 999px;
+          object-fit: cover; flex-shrink: 0;
+          border: 1px solid #e0e3e5;
+        }
+        .search-result-avatar-initials {
+          width: 48px; height: 48px; border-radius: 999px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          color: white; font-weight: 700; font-size: 14px;
+          border: 1px solid rgba(0,0,0,0.06);
+        }
+        .search-result-icon {
+          width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Content */
+        .search-result-content { min-width: 0; flex: 1; }
+        .search-result-title {
+          font-size: 14px; font-weight: 650; color: #191c1e;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;
+        }
+        .search-result-subtitle {
+          display: block; margin-top: 2px; font-size: 12px; color: #747878;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;
+        }
+        /* Client-specific: title + phone on same row */
+        .search-result-title-row {
+          display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        }
+        .search-result-phone { font-size: 12px; color: #747878; flex-shrink: 0; white-space: nowrap; }
+        .search-result-meta-row { display: flex; gap: 12px; margin-top: 2px; font-size: 12px; color: #747878; }
+
+        /* Highlight */
+        .search-highlight {
+          color: #c2410c; font-weight: 700;
+          background: rgba(255,138,0,0.12); border-radius: 3px; padding: 0 2px;
+        }
+
+        /* Meta / right column */
+        .search-result-meta {
+          display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: #94a3b8;
+        }
+        .search-result-badge {
+          height: 22px; padding: 0 8px;
+          display: inline-flex; align-items: center;
+          border-radius: 4px; background: #e0e3e5; color: #444748;
+          font-size: 10px; font-weight: 700; white-space: nowrap;
+          text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .search-result-arrow { display: flex; align-items: center; color: #c4c7c7; }
+        .search-result-item.selected .search-result-arrow { color: #ff8a00; }
+
+        /* Index badge — visible on hover only */
+        .result-index {
+          opacity: 0; transition: opacity .15s ease;
+          padding: 2px 5px; border-radius: 4px; border: 1px solid #c4c7c7;
+          font-size: 10px; font-weight: 700; color: #747878; line-height: 1;
+        }
+        .search-result-item:hover .result-index { opacity: 1; }
+        .search-result-item.selected .result-index { display: none; }
+
+        /* ── Preview inspector ── */
+        .global-search-preview {
+          min-height: 0; border-left: 1px solid #c4c7c7;
+          background: #f2f4f6;
+          display: flex; flex-direction: column;
+        }
+        .preview-content {
+          flex: 1; min-height: 0; overflow-y: auto; padding: 32px 32px 16px;
+          scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.08) transparent;
+        }
+        .preview-content::-webkit-scrollbar { width: 4px; }
+        .preview-content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius:4px; }
+
+        .preview-header {
+          display: flex; flex-direction: column; align-items: center; text-align: center;
+          padding-bottom: 24px; border-bottom: 1px solid rgba(15,23,42,0.08);
+          margin-bottom: 16px; gap: 12px;
+        }
+        .preview-avatar {
+          width: 96px; height: 96px; border-radius: 999px; object-fit: cover; flex-shrink: 0;
+          border: 2px solid #fff; box-shadow: 0 6px 18px rgba(15,23,42,0.14);
+        }
+        .preview-avatar-initials {
+          width: 96px; height: 96px; border-radius: 999px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          color: white; font-weight: 800; font-size: 28px;
+          box-shadow: 0 6px 18px rgba(15,23,42,0.16);
+        }
+        .preview-avatar-icon {
+          width: 96px; height: 96px; border-radius: 999px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          border: 1px solid rgba(0,0,0,0.06);
+        }
+        .preview-type {
+          font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+          color: #747878; text-transform: uppercase;
+          display: flex; align-items: center; justify-content: center; gap: 4px;
+        }
+        .preview-name {
+          font-size: 18px; line-height: 1.3; font-weight: 700; color: #191c1e; word-break: break-word;
+        }
+        .preview-fields { padding-top: 4px; }
+        .preview-field {
+          position: relative; padding: 10px 0; border-bottom: 1px solid rgba(15,23,42,0.06);
+        }
+        .preview-field:last-child { border-bottom: 0; }
+        .preview-field-label {
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.07em;
+          color: #747878; text-transform: uppercase; margin-bottom: 4px;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .preview-field-icon { color: #747878; }
+        .preview-field-value {
+          font-size: 15px; color: #191c1e; word-break: break-all; line-height: 1.4;
+        }
+        .preview-field-actions {
+          position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+          display: none; align-items: center; gap: 2px;
+        }
+        .preview-field:hover .preview-field-actions { display: flex; }
+        .preview-field-action-btn {
+          padding: 4px; border: 0; background: transparent; cursor: pointer;
+          border-radius: 5px; color: #c4c7c7; display: flex; align-items: center;
+          transition: background .1s ease, color .1s ease;
+        }
+        .preview-field-action-btn:hover { background: rgba(0,0,0,0.07); color: #444748; }
+
+        /* Preview action */
+        .preview-action-wrap {
+          flex-shrink: 0; padding: 16px 32px 24px;
+          border-top: 1px solid rgba(15,23,42,0.07);
+        }
+        .preview-open-button {
+          width: 100%; height: 56px; border: 0; border-radius: 8px;
+          background: #000000;
+          color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          transition: opacity .15s ease, transform .15s ease;
+        }
+        .preview-open-button:hover { opacity: 0.85; }
+        .preview-open-button:active { transform: scale(0.985); }
+        .preview-hint { text-align: center; margin-top: 10px; font-size: 11px; color: #94a3b8; }
+
+        /* Footer */
+        .global-search-footer {
+          flex-shrink: 0; height: 48px; padding: 0 24px;
+          display: flex; align-items: center; justify-content: space-between;
+          border-top: 1px solid rgba(15,23,42,0.07); background: #eceef0;
+        }
+        .footer-shortcuts {
+          display: flex; align-items: center; gap: 8px;
+          color: #747878; font-size: 12px; font-weight: 500;
+        }
+        .footer-key {
+          display: inline-flex; align-items: center; justify-content: center;
+          height: 22px; min-width: 22px; padding: 0 6px; border-radius: 6px;
+          border: 1px solid #c4c7c7; background: #fff; color: #444748;
+          font-size: 11px; font-weight: 700;
+          font-family: ui-monospace, SFMono-Regular, monospace;
+        }
+
+        /* Quick access */
+        .quick-access-section { padding: 18px 18px 22px; }
+        .quick-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+        .quick-card {
+          display: flex; align-items: center; gap: 12px;
+          min-height: 68px; padding: 12px 14px;
+          border: 1px solid #e0e3e5; border-radius: 12px;
+          background: #fff; cursor: pointer; text-align: left;
+          transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+        }
+        .quick-card:hover {
+          transform: translateY(-2px); border-color: rgba(255,138,0,0.30);
+          box-shadow: 0 8px 24px rgba(15,23,42,0.08);
+        }
+        .quick-card:active { transform: scale(0.98); }
+        .quick-card-icon {
+          width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .quick-card-title {
+          font-size: 13px; font-weight: 700; color: #191c1e; line-height: 1.3;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .quick-card-subtitle {
+          margin-top: 2px; font-size: 11px; color: #94a3b8;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* Recent searches */
+        .recent-section { padding: 14px 18px 0; }
+        .recent-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .recent-pill {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 5px 12px; border-radius: 8px;
+          background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.07);
+          color: #444748; font-size: 12px; font-weight: 500; cursor: pointer;
+          transition: background .12s ease;
+        }
+        .recent-pill:hover { background: rgba(0,0,0,0.08); color: #191c1e; }
+
+        /* No results */
+        .no-results-state {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          padding: 80px 40px; gap: 14px; text-align: center;
+        }
+        .no-results-icon {
+          width: 52px; height: 52px; border-radius: 14px; background: #eceef0;
+          display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Dark mode */
+        .dark .global-search-modal {
+          background: rgba(24,24,27,0.97); border-color: rgba(255,255,255,0.10);
+          box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+        }
+        .dark .global-search-input-wrap { background: rgba(39,39,42,0.92); border-color: rgba(255,255,255,0.18); }
+        .dark .global-search-input-wrap:focus-within { border-color: #ff8a00; box-shadow: 0 0 0 1px #ff8a00; }
+        .dark .global-search-input { color: #fafafa; }
+        .dark .global-search-keycap, .dark .footer-key {
+          background: #27272a; color: #d4d4d8; border-color: rgba(255,255,255,0.12);
+        }
+        .dark .global-search-header { border-bottom-color: rgba(255,255,255,0.07); }
+        .dark .global-search-tab { background: rgba(255,255,255,0.08); color: #a1a1aa; }
+        .dark .global-search-tab:hover { background: rgba(255,255,255,0.12); color: #fafafa; }
+        .dark .global-search-tab.active { background: #fafafa; color: #18181b; }
+        .dark .search-result-item:hover { background: rgba(255,255,255,0.05); }
+        .dark .search-result-item.selected { background: rgba(255,138,0,0.08); border-color: #ff8a00; }
+        .dark .search-result-title, .dark .quick-card-title, .dark .preview-name { color: #fafafa; }
+        .dark .search-result-subtitle, .dark .search-result-phone { color: #a1a1aa; }
+        .dark .global-search-preview { background: rgba(24,24,27,0.95); border-left-color: rgba(255,255,255,0.08); }
+        .dark .global-search-footer { background: rgba(24,24,27,0.92); border-top-color: rgba(255,255,255,0.08); }
+        .dark .quick-card { background: rgba(39,39,42,0.72); border-color: rgba(255,255,255,0.08); }
+        .dark .search-section-count { background: rgba(255,255,255,0.08); color: #a1a1aa; }
+        .dark .preview-field-value { color: #e4e4e7; }
+        .dark .preview-type { color: #a1a1aa; }
+        .dark .result-index { border-color: rgba(255,255,255,0.15); color: #a1a1aa; }
+        .dark .search-result-badge { background: rgba(255,255,255,0.10); color: #d4d4d8; }
+
+        /* ── Sidebar layout ── */
+        .gs-layout {
+          flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden;
+        }
+
+        .gs-sidebar {
+          flex-shrink: 0; width: 280px;
+          border-right: 1px solid #c4c7c7;
+          background: #f2f4f6;
+          display: flex; flex-direction: column;
+          padding: 24px 20px;
+          overflow: hidden;
+          transition: width .2s ease, padding .2s ease;
+        }
+        .gs-sidebar.collapsed {
+          width: 48px; padding: 12px 8px;
+          align-items: center;
+        }
+
+        .gs-sidebar-heading {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 12px;
+        }
+        .gs-sidebar-label {
+          font-size: 10px; font-weight: 800; letter-spacing: 0.07em;
+          color: #747878; text-transform: uppercase;
+        }
+
+        .gs-collapse-btn {
+          border: 0; background: transparent; cursor: pointer; padding: 4px;
+          border-radius: 6px; color: #747878; display: flex; align-items: center;
+          flex-shrink: 0;
+          transition: background .12s ease, color .12s ease;
+        }
+        .gs-collapse-btn:hover { background: #e0e3e5; color: #191c1e; }
+
+        .gs-sidebar-filters {
+          flex: 1; overflow-y: auto; padding-top: 16px; margin-top: 4px;
+          scrollbar-width: none;
+        }
+        .gs-sidebar-filters::-webkit-scrollbar { display: none; }
+
+        .gs-filter-btn {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 8px 12px; border-radius: 8px; border: 0;
+          width: 100%; text-align: left; cursor: pointer;
+          font-size: 12px; font-weight: 600; color: #444748;
+          background: transparent; margin-bottom: 2px;
+          transition: background .15s ease;
+        }
+        .gs-filter-btn:hover { background: #e0e3e5; }
+        .gs-filter-btn.active { background: #000; color: #fff; }
+        .gs-filter-btn-left { display: flex; align-items: center; gap: 10px; }
+        .gs-filter-count { font-size: 10px; opacity: 0.55; font-weight: 700; }
+        .gs-filter-btn.active .gs-filter-count { opacity: 0.7; }
+
+        .gs-sidebar-footer {
+          flex-shrink: 0; margin-top: auto; padding-top: 0;
+        }
+
+        .gs-main {
+          flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0;
+        }
+
+        /* Dark mode sidebar */
+        .dark .gs-sidebar { background: rgba(24,24,27,0.95); border-right-color: rgba(255,255,255,0.08); }
+        .dark .gs-collapse-btn { color: #a1a1aa; }
+        .dark .gs-collapse-btn:hover { background: rgba(255,255,255,0.08); color: #fafafa; }
+        .dark .gs-filter-btn { color: #a1a1aa; }
+        .dark .gs-filter-btn:hover { background: rgba(255,255,255,0.07); color: #fafafa; }
+        .dark .gs-filter-btn.active { background: #fafafa; color: #18181b; }
       `}</style>
 
-      {/* Overlay */}
-      <div
-        className="gs-overlay absolute inset-0 aero-backdrop"
-      />
+      <div className="global-search-modal" onClick={e => e.stopPropagation()}>
 
-      {/* ═══════════════════════════════════
-          MODAL — Aero / Apple Glass Panel
-          ═══════════════════════════════════ */}
-      <div
-        className="gs-modal aero-modal relative w-full max-w-3xl mx-4 rounded-xl flex flex-col max-h-[85vh] overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* ── Search header ── */}
-        <div className="relative z-10 px-5 pt-4 pb-3 border-b border-white/40 flex-shrink-0">
-          <div className="gs-search-frame flex items-center gap-3 rounded-lg px-4 py-2.5">
-            <div className="flex-shrink-0">
-              {loading
-                ? <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
-                : isCommandMode
-                ? <Terminal className="w-5 h-5 text-orange-500" />
-                : <Search className="w-5 h-5 text-amber-500" />
-              }
-            </div>
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder={isCommandMode ? "Digite um comando… (ex: novo cliente, ir para agenda)" : "Buscar clientes, processos, prazos… ou / para comandos"}
-              className="flex-1 text-[15px] text-gray-800 placeholder-gray-400 bg-transparent outline-none font-medium"
-            />
-            <div className="flex items-center gap-2">
-              {priming && !loading && (
-                <span className="flex items-center gap-1 text-[10px] text-amber-500 font-medium">
-                  <Zap className="w-3 h-3" /> indexando…
-                </span>
-              )}
-              {query && (
-                <button
-                  onClick={() => setQuery('')}
-                  className="text-gray-400 hover:text-gray-600 p-1 hover:bg-white/50 rounded-lg transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                onClick={onClose}
-                className="hidden sm:inline-flex px-2.5 py-1 text-[11px] font-semibold text-gray-500 rounded-lg hover:bg-white/60 transition-colors"
-                style={{
-                  background: 'rgba(255,255,255,0.70)',
-                  border: '1px solid rgba(203,213,225,0.45)',
-                  boxShadow: '0 1px 3px rgba(15,23,42,0.06)',
-                }}
-              >
-                ESC
-              </button>
-            </div>
-          </div>
+        {/* ── Layout: sidebar + main ── */}
+        <div className="gs-layout">
 
-          {/* Filter pills */}
-          {!isCommandMode && showResults && filters.length > 1 && (
-            <div className="gs-chips flex items-center gap-2 mt-3 overflow-x-auto">
-              {filters.map(f => {
-                const active = f.key === activeFilter;
-                const FIcon = f.icon;
-                return (
+          {/* ── LEFT SIDEBAR ── */}
+          <aside className={`gs-sidebar${sidebarExpanded ? '' : ' collapsed'}`}>
+            {sidebarExpanded ? (
+              <>
+                {/* Heading */}
+                <div className="gs-sidebar-heading">
+                  <span className="gs-sidebar-label">Busca Global</span>
                   <button
-                    key={f.key}
-                    onClick={() => { setActiveFilter(f.key); setSelected(0); }}
-                    className={`gs-chip-btn${active ? ' gs-active' : ''} inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium whitespace-nowrap`}
-                    style={!active ? {
-                      background: 'rgba(255,255,255,0.40)',
-                      border: '1px solid rgba(255,255,255,0.35)',
-                      color: 'rgb(71,85,105)',
-                    } : {}}
+                    className="gs-collapse-btn"
+                    onClick={toggleSidebar}
+                    type="button"
+                    title="Colapsar sidebar"
                   >
-                    <FIcon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-500'}`} />
-                    {f.label}
-                    <span className={`tabular-nums text-[11px] font-semibold ${active ? 'text-white/80' : 'text-slate-400'}`}>
-                      {f.count}
-                    </span>
+                    <ChevronLeft style={{ width: 16, height: 16 }} />
                   </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </div>
 
-        {/* ── Body ── */}
-        <div className="relative z-10 flex flex-1 min-h-0">
+                {/* Search input */}
+                <div className="global-search-input-wrap">
+                  <div style={{ flexShrink: 0 }}>
+                    {loading
+                      ? <Loader2 className="global-search-icon animate-spin" />
+                      : isCommandMode
+                      ? <Terminal className="global-search-icon" />
+                      : <Search className="global-search-icon" />
+                    }
+                  </div>
+                  <input
+                    ref={sidebarExpanded ? inputRef : undefined}
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder={isCommandMode ? 'Digite um comando…' : 'Pesquisar...'}
+                    className="global-search-input"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {priming && !loading && (
+                      <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>indexando…</span>
+                    )}
+                    {query && (
+                      <button className="global-search-clear" onClick={() => setQuery('')} type="button">
+                        <X style={{ width: 14, height: 14 }} />
+                      </button>
+                    )}
+                    <span className="global-search-keycap">ESC</span>
+                  </div>
+                </div>
 
-          {/* Left: results list */}
-          <div className={`flex-1 min-w-0 overflow-y-auto gs-scroll ${!isCommandMode && showResults && previewItem ? 'sm:border-r border-white/30' : ''}`}>
+                {/* Count + ⌘K */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '0 2px' }}>
+                  <span className="global-search-keycap">⌘K</span>
+                  {!isEmpty && (
+                    <span style={{ fontSize: 11, color: '#747878', fontWeight: 500 }}>
+                      {permitted.length} resultado{permitted.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
 
-            {/* ── Command Palette ── */}
-            {isCommandMode ? (
-              <div className="py-2">
-                {filteredCmds.length === 0 ? (
-                  <div className="py-16 flex flex-col items-center justify-center gap-3">
-                    <div className="w-14 h-14 rounded-xl bg-white/60 border border-white/50 flex items-center justify-center">
-                      <Terminal className="w-5 h-5 text-gray-300" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm text-gray-400">Nenhum comando encontrado</p>
-                      <p className="text-[11px] text-gray-400 mt-1">Tente "novo cliente" ou "ir para processos"</p>
+                {/* Module nav — always visible */}
+                <div className="gs-sidebar-filters">
+                  <div className="gs-sidebar-label" style={{ marginBottom: 8 }}>
+                    {showResults && !isCommandMode ? 'Filtrar por' : 'Módulos'}
+                  </div>
+                  {SIDEBAR_MODULES
+                    .filter(m => m.mod === null || canSeeModule(m.mod))
+                    .map(m => {
+                      const active = !isCommandMode && showResults && m.key === activeFilter;
+                      const count = !isCommandMode && showResults
+                        ? (filters.find(f => f.key === m.key)?.count ?? 0)
+                        : null;
+                      const dimmed = count === 0 && count !== null;
+                      const MIcon = m.icon;
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => {
+                            if (!isCommandMode && showResults) {
+                              setActiveFilter(m.key); setSelected(0);
+                            } else if (m.mod) {
+                              onNavigate(m.mod); onClose();
+                            }
+                          }}
+                          className={`gs-filter-btn${active ? ' active' : ''}`}
+                          style={dimmed ? { opacity: 0.35 } : {}}
+                        >
+                          <div className="gs-filter-btn-left">
+                            <MIcon style={{ width: 15, height: 15 }} />
+                            <span>{m.label}</span>
+                          </div>
+                          {count !== null && <span className="gs-filter-count">{count}</span>}
+                        </button>
+                      );
+                    })}
+                </div>
+
+                {/* Sidebar shortcuts */}
+                <div className="gs-sidebar-footer">
+                  <div style={{ borderTop: '1px solid rgba(15,23,42,0.07)', paddingTop: 14 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, color: '#747878', fontSize: 12, fontWeight: 500 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="footer-key" style={{ fontSize: 13 }}>⇅</span>
+                        <span>navegar</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="footer-key">↵</span>
+                        <span>abrir</span>
+                      </div>
+                      {!isCommandMode && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="footer-key">/</span>
+                          <span>comandos</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ) : (
-                  (() => {
-                    const categories: CmdCategory[] = ['criar', 'navegar', 'sistema'];
-                    let globalIdx = 0;
-                    return categories.map(cat => {
-                      const cmds = filteredCmds.filter(c => c.category === cat);
-                      if (cmds.length === 0) return null;
+                </div>
+              </>
+            ) : (
+              /* Collapsed: só botão de expandir */
+              <button
+                className="gs-collapse-btn"
+                onClick={toggleSidebar}
+                type="button"
+                title="Expandir sidebar"
+                style={{ margin: '8px auto' }}
+              >
+                <ChevronRight style={{ width: 18, height: 18 }} />
+              </button>
+            )}
+          </aside>
+
+          {/* ── RIGHT MAIN AREA ── */}
+          <div className="gs-main">
+
+            {/* Header com search visível apenas quando sidebar colapsada */}
+            {!sidebarExpanded && (
+              <div className="global-search-header">
+                <div className="global-search-input-wrap">
+                  <div style={{ flexShrink: 0 }}>
+                    {loading
+                      ? <Loader2 className="global-search-icon animate-spin" />
+                      : isCommandMode
+                      ? <Terminal className="global-search-icon" />
+                      : <Search className="global-search-icon" />
+                    }
+                  </div>
+                  <input
+                    ref={!sidebarExpanded ? inputRef : undefined}
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder={isCommandMode ? 'Digite um comando…' : 'Pesquisar...'}
+                    className="global-search-input"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {priming && !loading && (
+                      <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>indexando…</span>
+                    )}
+                    {query && (
+                      <button className="global-search-clear" onClick={() => setQuery('')} type="button">
+                        <X style={{ width: 16, height: 16 }} />
+                      </button>
+                    )}
+                    <span className="global-search-keycap">ESC</span>
+                  </div>
+                </div>
+                {!isCommandMode && showResults && filters.length > 1 && (
+                  <div className="global-search-tabs">
+                    {filters.map(f => {
+                      const active = f.key === activeFilter;
+                      const FIcon = f.icon;
                       return (
-                        <div key={cat}>
-                          <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                              {CMD_CATEGORY_LABEL[cat]}
-                            </span>
-                            <div className="flex-1 h-px bg-gray-200/70" />
-                          </div>
-                          <div className="space-y-0.5 px-3">
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => { setActiveFilter(f.key); setSelected(0); }}
+                          className={`global-search-tab${active ? ' active' : ''}`}
+                        >
+                          <FIcon style={{ width: 13, height: 13, opacity: active ? 0.9 : 0.6 }} />
+                          {f.label}
+                          <span className="global-search-tab-count">{f.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Body: results + preview */}
+            {(() => {
+              const hasPreview = !isCommandMode && showResults && !!previewItem && !!previewCfg && previewExpanded;
+              return (
+                <div className={`global-search-body${hasPreview ? '' : ' no-preview'}`}>
+
+                  {/* Left: results list */}
+                  <div className="global-search-results">
+                  {(() => {
+                    const stateKey = isCommandMode ? 'cmd' : isEmpty ? 'empty' : noResults ? 'nores' : 'results';
+                    return (
+                    <div key={stateKey} className="gs-content-anim">
+
+                {/* ── Command palette mode ── */}
+                {isCommandMode ? (
+                  filteredCmds.length === 0 ? (
+                    <div className="no-results-state">
+                      <div className="no-results-icon">
+                        <Terminal style={{ width: 22, height: 22, color: '#94a3b8' }} />
+                      </div>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: '#475569', margin: 0 }}>
+                          Nenhum comando encontrado
+                        </p>
+                        <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                          Tente "novo cliente" ou "ir para processos"
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    (() => {
+                      const categories: CmdCategory[] = ['criar', 'navegar', 'sistema'];
+                      let gIdx = 0;
+                      return categories.map(cat => {
+                        const cmds = filteredCmds.filter(c => c.category === cat);
+                        if (cmds.length === 0) return null;
+                        return (
+                          <div key={cat} className="search-section">
+                            <div className="search-section-header">
+                              <span className="search-section-title">{CMD_CATEGORY_LABEL[cat]}</span>
+                              <div className="search-section-line" />
+                            </div>
                             {cmds.map(cmd => {
-                              const idx = globalIdx++;
-                              const isSelected = idx === selectedCmd;
+                              const idx = gIdx++;
+                              const isSel = idx === selectedCmd;
                               const CmdIcon = cmd.icon;
                               return (
                                 <button
                                   key={cmd.id}
+                                  type="button"
                                   onClick={() => cmd.action({ onNavigate, onClose, userId })}
                                   onMouseEnter={() => setSelectedCmd(idx)}
-                                  className={`gs-result${isSelected ? ' gs-sel' : ''} w-full flex items-center gap-4 px-4 py-3 rounded-lg text-left`}
+                                  className={`search-result-item${isSel ? ' selected' : ''}`}
                                 >
-                                  <span className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
-                                    isSelected ? 'bg-orange-50 text-orange-500' : 'bg-slate-50 text-slate-400'
-                                  }`}>
-                                    <CmdIcon className="w-4 h-4" />
+                                  <span
+                                    className="search-result-icon"
+                                    style={{ background: '#f8fafc', border: '1px solid rgba(0,0,0,0.07)', color: '#64748b' }}
+                                  >
+                                    <CmdIcon style={{ width: 17, height: 17 }} />
                                   </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className={`text-[13px] font-medium truncate ${isSelected ? 'text-slate-800' : 'text-slate-600'}`}>
-                                      {cmd.label}
-                                    </div>
-                                    <div className="text-[11px] text-slate-400 truncate mt-0.5 font-normal">
-                                      {cmd.description}
-                                    </div>
+                                  <div className="search-result-content">
+                                    <span className="search-result-title">{cmd.label}</span>
+                                    <span className="search-result-subtitle">{cmd.description}</span>
                                   </div>
-                                  {cmd.shortcut && (
-                                    <kbd className={`gs-kbd px-1.5 py-0.5 rounded text-[10px] ${isSelected ? 'text-orange-500' : 'text-gray-500'}`}>
-                                      {cmd.shortcut}
-                                    </kbd>
-                                  )}
-                                  <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-orange-500' : 'text-slate-300'}`} />
+                                  <div className="search-result-meta">
+                                    {cmd.shortcut && (
+                                      <span className="footer-key">{cmd.shortcut}</span>
+                                    )}
+                                    <span className="search-result-arrow">
+                                      {isSel
+                                        ? <CornerDownLeft style={{ width: 14, height: 14, color: '#f97316' }} />
+                                        : <ChevronRight style={{ width: 14, height: 14 }} />
+                                      }
+                                    </span>
+                                  </div>
                                 </button>
                               );
                             })}
                           </div>
+                        );
+                      });
+                    })()
+                  )
+
+                ) : showResults ? (
+                  /* ── Search results ── */
+                  <>
+                    {grouped.map(({ type, cfg, items }) => (
+                      <div key={type} className="search-section">
+                        <div className="search-section-header">
+                          <span className="search-section-title">{cfg.group}</span>
+                          <span className="search-section-count">{items.length}</span>
+                          <div className="search-section-line" />
+                          {TYPE_NAV[type] && (
+                            <button
+                              type="button"
+                              className="search-section-see-all"
+                              onClick={() => { onNavigate(TYPE_NAV[type]); onClose(); }}
+                            >
+                              Ver todos
+                            </button>
+                          )}
                         </div>
-                      );
-                    });
-                  })()
-                )}
+
+                        {items.map(r => {
+                          const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
+                          const isSel = fi === safeSelected;
+                          const Icon = cfg.icon;
+                          return (
+                            <button
+                              key={`${r.type}-${r.id}`}
+                              type="button"
+                              className={`search-result-item${isSel ? ' selected' : ''}`}
+                              onClick={() => handleSelect(r)}
+                              onMouseEnter={() => setSelected(fi)}
+                            >
+                                {r.type === 'cliente' ? (
+                                <>
+                                  {/* Clientes: avatar circular grande */}
+                                  {photoUrls.get(r.id) ? (
+                                    <img src={photoUrls.get(r.id)} className="search-result-avatar" alt="" />
+                                  ) : (
+                                    <span className="search-result-avatar-initials" style={{ background: avatarColor(r.title) }}>
+                                      {initials(r.title)}
+                                    </span>
+                                  )}
+                                  <div className="search-result-content">
+                                    <div className="search-result-title-row">
+                                      <span className="search-result-title">
+                                        <Highlight text={r.title} query={query} />
+                                      </span>
+                                      {r.meta && <span className="search-result-phone">{r.meta}</span>}
+                                    </div>
+                                    {r.subtitle && (
+                                      <div className="search-result-meta-row">
+                                        <span><Highlight text={r.subtitle} query={query} /></span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="search-result-meta">
+                                    {fi >= 0 && fi < 9 && (
+                                      <span className="result-index">{fi + 1}</span>
+                                    )}
+                                    <span className="search-result-arrow">
+                                      {isSel
+                                        ? <CornerDownLeft style={{ width: 14, height: 14, color: '#ff8a00' }} />
+                                        : <ChevronRight style={{ width: 14, height: 14 }} />
+                                      }
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  {/* Demais tipos: ícone quadrado */}
+                                  <span
+                                    className={`search-result-icon ${TYPE_ICON_COLOR[r.type as ResultType]}`}
+                                    style={iconBoxStyle(r.type as ResultType)}
+                                  >
+                                    <Icon style={{ width: 17, height: 17 }} />
+                                  </span>
+                                  <div className="search-result-content">
+                                    <span className="search-result-title">
+                                      <Highlight text={r.title} query={query} />
+                                    </span>
+                                    {r.subtitle && (
+                                      <span className="search-result-subtitle">
+                                        <Highlight text={r.subtitle} query={query} />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="search-result-meta">
+                                    {r.meta && (() => {
+                                      const st = STATUS_STYLE[r.meta.toLowerCase()];
+                                      return (
+                                        <span className="search-result-badge" style={st ? { background: st.bg, color: st.text } : {}}>
+                                          {r.meta}
+                                        </span>
+                                      );
+                                    })()}
+                                    {fi >= 0 && fi < 9 && (
+                                      <span className="result-index">{fi + 1}</span>
+                                    )}
+                                    <span className="search-result-arrow">
+                                      {isSel
+                                        ? <CornerDownLeft style={{ width: 14, height: 14, color: '#ff8a00' }} />
+                                        : <ChevronRight style={{ width: 14, height: 14 }} />
+                                      }
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </>
+
+                ) : noResults ? (
+                  /* ── No results ── */
+                  <div className="no-results-state">
+                    <div className="no-results-icon">
+                      <Search style={{ width: 22, height: 22, color: '#94a3b8' }} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: '#475569', margin: 0 }}>
+                        Nenhum resultado para
+                      </p>
+                      <p style={{ fontSize: 18, fontWeight: 700, color: '#111827', margin: '4px 0 0' }}>
+                        &ldquo;{query}&rdquo;
+                      </p>
+                      <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+                        Tente outro nome, número ou CPF
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setQuery('/' + query.trim())}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '8px 16px', borderRadius: 10,
+                          background: '#f1f5f9', border: '0',
+                          fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer',
+                        }}
+                      >
+                        <Terminal style={{ width: 13, height: 13 }} /> Usar como comando
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuery('')}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '8px 16px', borderRadius: 10,
+                          background: 'transparent', border: '1px solid rgba(0,0,0,0.10)',
+                          fontSize: 12, fontWeight: 600, color: '#94a3b8', cursor: 'pointer',
+                        }}
+                      >
+                        <X style={{ width: 12, height: 12 }} /> Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                ) : isEmpty ? (
+                  /* ── Empty / quick access ── */
+                  <>
+                    {recentSearches.length > 0 && (
+                      <div className="recent-section">
+                        <div className="search-section-header">
+                          <Clock style={{ width: 11, height: 11, color: '#94a3b8' }} />
+                          <span className="search-section-title">Recentes</span>
+                          <div className="search-section-line" />
+                          <button
+                            type="button"
+                            className="search-section-see-all"
+                            onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                        <div className="recent-pills">
+                          {recentSearches.map(r => (
+                            <button key={r} type="button" className="recent-pill" onClick={() => setQuery(r)}>
+                              <Search style={{ width: 11, height: 11, color: '#94a3b8' }} />
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="quick-access-section">
+                      <div className="quick-section-header">
+                        <span className="search-section-title">Acesso rápido</span>
+                        <div className="search-section-line" />
+                      </div>
+                      <div className="quick-grid">
+                        {([
+                          { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',       mod: 'clientes',      iColor: 'text-slate-600',   iBg: '#f1f5f9' },
+                          { icon: FileText,      label: 'Processos',     desc: 'número, comarca',         mod: 'processos',     iColor: 'text-amber-700',   iBg: '#fef9ec' },
+                          { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, protocolo', mod: 'requerimentos', iColor: 'text-violet-600',  iBg: '#f5f3ff' },
+                          { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente',         mod: 'prazos',        iColor: 'text-red-600',     iBg: '#fef2f2' },
+                          { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões',    mod: 'agenda',        iColor: 'text-teal-600',    iBg: '#f0fdfa' },
+                          { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição',       mod: 'tarefas',       iColor: 'text-sky-600',     iBg: '#f0f9ff' },
+                          { icon: DollarSign,    label: 'Financeiro',    desc: 'acordo, cliente',         mod: 'financeiro',    iColor: 'text-emerald-600', iBg: '#f0fdf4' },
+                          { icon: FolderOpen,    label: 'Cloud',         desc: 'pasta, cliente',          mod: 'cloud',         iColor: 'text-indigo-600',  iBg: '#eef2ff' },
+                          { icon: PenTool,       label: 'Assinaturas',   desc: 'documento, cliente',      mod: 'assinaturas',   iColor: 'text-purple-600',  iBg: '#faf5ff' },
+                        ] as { icon: React.ElementType; label: string; desc: string; mod: string; iColor: string; iBg: string }[])
+                          .filter(item => canSeeModule(item.mod))
+                          .map(({ icon: Icon, label, desc, mod, iColor, iBg }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className="quick-card"
+                              onClick={() => { onNavigate(mod, undefined); onClose(); }}
+                            >
+                              <span
+                                className={`quick-card-icon ${iColor}`}
+                                style={{ background: iBg, border: '1px solid rgba(0,0,0,0.05)' }}
+                              >
+                                <Icon style={{ width: 18, height: 18 }} />
+                              </span>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="quick-card-title">{label}</div>
+                                <div className="quick-card-subtitle">{desc}</div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  </>
+
+                ) : null}
+                    </div>
+                    );
+                  })()}
               </div>
-            ) : showResults ? (
-              <div className="py-2">
-                {grouped.map(({ type, cfg, items }) => (
-                  <div key={type}>
-                    {/* Section header */}
-                    <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{cfg.group}</span>
-                      <span className="text-[10px] font-bold text-gray-300 tabular-nums">{items.length}</span>
-                      <div className="flex-1 h-px bg-gray-200/70" />
+
+              {/* ── Preview inspector (right column) ── */}
+              {hasPreview && previewItem && previewCfg && (
+                <div className="global-search-preview">
+                  {/* Botão fechar preview */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 14px 0', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={togglePreview}
+                      className="gs-collapse-btn"
+                      title="Ocultar preview"
+                      style={{ padding: 5 }}
+                    >
+                      <X style={{ width: 14, height: 14 }} />
+                    </button>
+                  </div>
+                  <div className="preview-content" style={{ paddingTop: 12 }}>
+                    {/* Header — centrado */}
+                    <div className="preview-header">
+                      {previewItem.type === 'cliente' && photoUrls.get(previewItem.id) ? (
+                        <img src={photoUrls.get(previewItem.id)} className="preview-avatar" alt="" />
+                      ) : previewItem.type === 'cliente' ? (
+                        <div className="preview-avatar-initials" style={{ background: avatarColor(previewItem.title) }}>
+                          {initials(previewItem.title)}
+                        </div>
+                      ) : (
+                        <div className={`preview-avatar-icon ${TYPE_ICON_COLOR[previewItem.type]}`} style={{ background: TYPE_ICON_BG[previewItem.type] }}>
+                          <previewCfg.icon style={{ width: 36, height: 36 }} />
+                        </div>
+                      )}
+                      <div>
+                        <div className="preview-type">{previewCfg.label}</div>
+                        <div className="preview-name">{previewItem.title}</div>
+                      </div>
                     </div>
 
-                    <div className="space-y-0.5 px-3">
-                      {items.map(r => {
-                        const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
-                        const isSelected = fi === safeSelected;
-                        const Icon = cfg.icon;
-                        const iconCls = TYPE_ICON_COLOR[r.type];
+                    {/* Detail rows */}
+                    <div className="preview-fields">
+                      {(previewItem.details && previewItem.details.length > 0
+                        ? previewItem.details
+                        : [
+                            previewItem.subtitle ? { icon: Tag, label: 'Info',  value: previewItem.subtitle } : null,
+                            previewItem.meta     ? { icon: Tag, label: 'Status', value: previewItem.meta }     : null,
+                          ].filter(Boolean) as DetailRow[]
+                      ).map(({ icon: DIcon, label, value }) => {
+                        const st = label === 'Status' ? STATUS_STYLE[value.toLowerCase()] : undefined;
+                        const copyId = `${previewItem.id}:${label}`;
+                        const isCopied = copiedKey === copyId;
+                        const isPhone = label === 'Telefone';
+                        const isEmail = label === 'E-mail';
+                        const phoneDigits = isPhone ? value.replace(/\D/g, '') : '';
                         return (
-                          <button
-                            key={`${r.type}-${r.id}`}
-                            onClick={() => handleSelect(r)}
-                            onMouseEnter={() => setSelected(fi)}
-                            className={`gs-result${isSelected ? ' gs-sel' : ''} w-full flex items-center gap-4 px-4 py-3 rounded-lg text-left`}
-                          >
-                            {/* Icon / Photo */}
-                            {r.type === 'cliente' && photoUrls.get(r.id) ? (
-                              <img
-                                src={photoUrls.get(r.id)}
-                                className="flex-shrink-0 w-10 h-10 rounded-lg object-cover object-top"
-                                alt=""
-                              />
-                            ) : r.type === 'cliente' ? (
-                              <span className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-slate-100 text-slate-500 text-[13px] font-semibold">
-                                {initials(r.title)}
-                              </span>
-                            ) : (
-                              <span className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-slate-50 text-slate-400">
-                                <Icon className="w-5 h-5" />
-                              </span>
-                            )}
-
-                            {/* Text */}
-                            <div className="flex-1 min-w-0">
-                              <div className={`text-[13px] font-medium truncate ${isSelected ? 'text-slate-800' : 'text-slate-600'}`}>
-                                <Highlight text={r.title} query={query} />
-                              </div>
-                              {r.subtitle && (
-                                <div className="text-[11px] text-slate-400 truncate mt-0.5 font-normal">
-                                  <Highlight text={r.subtitle} query={query} />
-                                </div>
+                          <div key={label} className="preview-field">
+                            <div className="preview-field-label">
+                              <DIcon className="preview-field-icon" style={{ width: 12, height: 12 }} />
+                              {label}
+                            </div>
+                            <div>
+                              {st ? (
+                                <span style={{
+                                  display: 'inline-block', fontSize: 12, fontWeight: 600,
+                                  padding: '2px 10px', borderRadius: 999,
+                                  background: st.bg, color: st.text,
+                                }}>{value}</span>
+                              ) : (
+                                <div className="preview-field-value">{value}</div>
                               )}
                             </div>
-
-                            {/* Meta + index hint + chevron */}
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {r.meta && (
-                                <span className={`text-[10px] font-normal px-2.5 py-1 rounded-lg border ${
-                                  isSelected
-                                    ? 'bg-orange-50 text-orange-500 border-orange-200/60'
-                                    : 'text-slate-400 border-white/50 bg-white/60'
-                                }`}>
-                                  {r.meta}
-                                </span>
+                            {/* Hover action buttons */}
+                            <div className="preview-field-actions">
+                              {isPhone && (
+                                <>
+                                  <a
+                                    href={`https://wa.me/55${phoneDigits}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    onClick={e => e.stopPropagation()}
+                                    className="preview-field-action-btn" title="WhatsApp"
+                                  >
+                                    <MessageCircle style={{ width: 12, height: 12, color: '#22c55e' }} />
+                                  </a>
+                                  <a
+                                    href={`tel:+55${phoneDigits}`}
+                                    onClick={e => e.stopPropagation()}
+                                    className="preview-field-action-btn" title="Ligar"
+                                  >
+                                    <Phone style={{ width: 12, height: 12 }} />
+                                  </a>
+                                </>
                               )}
-                              {fi >= 0 && fi < 9 && !isSelected && (
-                                <span className="hidden sm:inline text-[10px] text-slate-300 font-mono bg-slate-50 border border-slate-100 px-1 rounded">
-                                  {fi + 1}
-                                </span>
+                              {isEmail && (
+                                <a
+                                  href={`mailto:${value}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="preview-field-action-btn" title="E-mail"
+                                >
+                                  <Mail style={{ width: 12, height: 12 }} />
+                                </a>
                               )}
-                              <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-orange-500' : 'text-slate-300'}`} />
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(value).then(() => {
+                                    setCopiedKey(copyId);
+                                    setTimeout(() => setCopiedKey(null), 2000);
+                                  });
+                                }}
+                                className="preview-field-action-btn" title="Copiar"
+                              >
+                                {isCopied
+                                  ? <Check style={{ width: 12, height: 12, color: '#22c55e' }} />
+                                  : <Copy style={{ width: 12, height: 12 }} />
+                                }
+                              </button>
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
                   </div>
-                ))}
-              </div>
 
-            ) : noResults ? (
-              <div className="py-16 flex flex-col items-center justify-center gap-3">
-                <div className="w-14 h-14 rounded-xl bg-white/60 border border-white/50 flex items-center justify-center">
-                  <Search className="w-5 h-5 text-gray-300" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">Nenhum resultado para</p>
-                  <p className="text-sm font-semibold text-gray-700 mt-0.5">"{query}"</p>
-                  <p className="text-[11px] text-gray-400 mt-2">Tente outro nome, número ou CPF</p>
-                </div>
-              </div>
-
-            ) : isEmpty ? (
-              <div className="py-1">
-                {/* Recent searches */}
-                {recentSearches.length > 0 && (
-                  <div className="px-5 pt-3 pb-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <Clock className="w-3 h-3" /> Recentes
-                      </span>
-                      <button
-                        onClick={() => { localStorage.removeItem(recentKey(userId)); setRecentSearches([]); }}
-                        className="text-[11px] text-amber-500 hover:text-amber-600 font-medium transition-colors"
-                      >
-                        Limpar
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {recentSearches.map(r => (
-                        <button
-                          key={r}
-                          onClick={() => setQuery(r)}
-                          className="gs-recent-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-gray-500"
-                        >
-                          <Search className="w-3 h-3 opacity-40" />
-                          {r}
-                        </button>
-                      ))}
-                    </div>
+                  {/* Open button */}
+                  <div className="preview-action-wrap">
+                    <button
+                      type="button"
+                      className="preview-open-button"
+                      onClick={() => handleSelect(previewItem)}
+                    >
+                      <ArrowRight style={{ width: 18, height: 18 }} />
+                      Abrir
+                    </button>
+                    <p className="preview-hint">
+                      ou pressione{' '}
+                      <span className="footer-key" style={{ fontSize: 10, height: 18, minWidth: 18, padding: '0 4px' }}>↵</span>
+                    </p>
                   </div>
-                )}
-
-                {/* Quick access grid */}
-                <div className="px-5 pt-3 pb-4">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5 flex items-center gap-1.5">
-                    <LayoutGrid className="w-3 h-3" /> Acesso rápido
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {([
-                      { icon: Users,         label: 'Clientes',      desc: 'nome, CPF, e-mail',          module: 'clientes',      color: 'text-slate-600 bg-slate-100'    },
-                      { icon: FileText,      label: 'Processos',     desc: 'número, comarca, partes',     module: 'processos',     color: 'text-amber-600 bg-amber-50'     },
-                      { icon: ClipboardList, label: 'Requerimentos', desc: 'beneficiário, protocolo',     module: 'requerimentos', color: 'text-purple-600 bg-purple-50'   },
-                      { icon: AlarmClock,    label: 'Prazos',        desc: 'título, cliente',             module: 'prazos',        color: 'text-red-500 bg-red-50'         },
-                      { icon: Calendar,      label: 'Agenda',        desc: 'audiências, reuniões',        module: 'agenda',        color: 'text-teal-600 bg-teal-50'       },
-                      { icon: CheckSquare,   label: 'Tarefas',       desc: 'título, descrição',           module: 'tarefas',       color: 'text-sky-600 bg-sky-50'         },
-                      { icon: DollarSign,    label: 'Financeiro',    desc: 'acordo, cliente',             module: 'financeiro',    color: 'text-emerald-600 bg-emerald-50' },
-                      { icon: FolderOpen,    label: 'Cloud',         desc: 'pasta, cliente',              module: 'cloud',         color: 'text-indigo-600 bg-indigo-50'   },
-                      { icon: PenTool,       label: 'Assinaturas',   desc: 'documento, cliente',          module: 'assinaturas',   color: 'text-violet-600 bg-violet-50'   },
-                    ] as { icon: React.ElementType; label: string; desc: string; module: string; color: string }[])
-                      .filter(item => canSeeModule(item.module))
-                      .map(({ icon: Icon, label, desc, color, module }) => (
-                        <button
-                          key={label}
-                          onClick={() => { onNavigate(module, undefined); onClose(); }}
-                          className="gs-card flex items-start gap-3 p-4 rounded-xl text-left group"
-                        >
-                          <span className={`flex-shrink-0 p-2.5 rounded-lg ${color} group-hover:scale-105 transition-transform`}>
-                            <Icon className="w-5 h-5" />
-                          </span>
-                          <div className="min-w-0 pt-0.5">
-                            <div className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 leading-none mb-1 truncate">{label}</div>
-                            <div className="text-[11px] text-slate-400 leading-tight truncate font-normal">{desc}</div>
-                          </div>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Right: detail preview panel */}
-          {!isCommandMode && showResults && previewItem && previewCfg && (
-            <div
-              className="hidden sm:flex w-[260px] flex-shrink-0 flex-col items-center justify-start p-5 gap-0"
-              style={{
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,247,237,0.30) 100%)',
-                borderLeft: '1px solid rgba(255,255,255,0.50)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-              }}
-            >
-              {/* Avatar — real photo → initials for clients, icon for others */}
-              {previewItem.type === 'cliente' && photoUrls.get(previewItem.id) ? (
-                <div
-                  className="w-28 h-28 rounded-xl mb-3 flex-shrink-0 overflow-hidden"
-                  style={{ boxShadow: '0 12px 32px -8px rgba(0,0,0,0.25)' }}
-                >
-                  <img src={photoUrls.get(previewItem.id)} className="w-full h-full object-cover object-top" alt="" />
-                </div>
-              ) : previewItem.type === 'cliente' ? (
-                <div
-                  className="w-28 h-28 rounded-xl flex items-center justify-center mb-3 text-white text-[32px] font-bold flex-shrink-0"
-                  style={{
-                    background: '#1e293b',
-                    boxShadow: '0 12px 32px -8px rgba(15,23,42,0.35)',
-                  }}
-                >
-                  {initials(previewItem.title)}
-                </div>
-              ) : (
-                <div
-                  className={`w-20 h-20 rounded-xl flex items-center justify-center mb-3 ${TYPE_ICON_COLOR[previewItem.type]} flex-shrink-0`}
-                  style={{
-                    background: 'rgba(255,255,255,0.70)',
-                    border: '1px solid rgba(255,255,255,0.55)',
-                    boxShadow: '0 6px 20px -4px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.90)',
-                  }}
-                >
-                  <previewCfg.icon className="w-10 h-10" />
                 </div>
               )}
+                </div>
+              );
+            })()}
 
-              {/* Type badge */}
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                {previewCfg.label}
-              </p>
-
-              {/* Title */}
-              <h3 className="text-[15px] font-semibold text-slate-800 leading-snug mb-3 break-words text-center w-full">
-                {previewItem.title}
-              </h3>
-
-              {/* Detail rows */}
-              <div className="w-full space-y-1.5 flex-1">
-                {(previewItem.details && previewItem.details.length > 0
-                  ? previewItem.details
-                  : [
-                      previewItem.subtitle ? { icon: Tag, label: 'Info', value: previewItem.subtitle } : null,
-                      previewItem.meta     ? { icon: Tag, label: 'Meta', value: previewItem.meta }     : null,
-                    ].filter(Boolean) as DetailRow[]
-                ).map(({ icon: DIcon, label, value }) => {
-                  const st = label === 'Status' ? STATUS_STYLE[value.toLowerCase()] : undefined;
-                  const copyId = `${previewItem.id}:${label}`;
-                  const isCopied = copiedKey === copyId;
-                  const isPhone = label === 'Telefone';
-                  const isEmail = label === 'E-mail';
-                  const phoneDigits = isPhone ? value.replace(/\D/g, '') : '';
-                  return (
-                    <div
-                      key={label}
-                      className="group/row flex items-center gap-2 px-3 py-2.5 rounded-lg transition-colors hover:bg-white/60"
-                      style={{ background: 'rgba(255,255,255,0.40)' }}
-                    >
-                      <DIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                      <div className="min-w-0 text-left flex-1">
-                        <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider leading-none mb-0.5">{label}</div>
-                        {st ? (
-                          <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: st.bg, color: st.text }}>
-                            {value}
-                          </span>
-                        ) : (
-                          <div className="text-[12px] text-slate-700 font-normal truncate">{value}</div>
-                        )}
-                      </div>
-                      {/* Quick action buttons — visible on hover */}
-                      <div className="opacity-0 group-hover/row:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0">
-                        {isPhone && (
-                          <>
-                            <a
-                              href={`https://wa.me/55${phoneDigits}`} target="_blank" rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="p-1 hover:bg-green-50 rounded-md" title="WhatsApp"
-                            >
-                              <MessageCircle className="w-3 h-3 text-green-500" />
-                            </a>
-                            <a
-                              href={`tel:+55${phoneDigits}`}
-                              onClick={e => e.stopPropagation()}
-                              className="p-1 hover:bg-blue-50 rounded-md" title="Ligar"
-                            >
-                              <Phone className="w-3 h-3 text-blue-500" />
-                            </a>
-                          </>
-                        )}
-                        {isEmail && (
-                          <a
-                            href={`mailto:${value}`}
-                            onClick={e => e.stopPropagation()}
-                            className="p-1 hover:bg-orange-50 rounded-md" title="Enviar e-mail"
-                          >
-                            <Mail className="w-3 h-3 text-orange-400" />
-                          </a>
-                        )}
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(value).then(() => {
-                              setCopiedKey(copyId);
-                              setTimeout(() => setCopiedKey(null), 2000);
-                            });
-                          }}
-                          className="p-1 hover:bg-white/70 rounded-md flex-shrink-0" title="Copiar"
-                        >
-                          {isCopied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Open button */}
-              <button
-                onClick={() => handleSelect(previewItem)}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-white text-[13px] font-semibold transition-all active:scale-[0.98] mt-4 group"
-                style={{
-                  background: '#f97316',
-                  boxShadow: '0 6px 20px -4px rgba(249,115,22,0.45)',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#ea6b0a')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#f97316')}
-              >
-                Abrir
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          )}
-        </div>
+          </div>{/* /gs-main */}
+        </div>{/* /gs-layout */}
 
         {/* ── Footer ── */}
-        <div
-          className="relative z-10 px-5 py-2 flex items-center justify-between text-[11px] text-gray-500 flex-shrink-0"
-          style={{
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.40) 100%)',
-            borderTop: '1px solid rgba(255,255,255,0.45)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-          }}
-        >
-          <div className="flex items-center gap-5">
-            <span className="flex items-center gap-1.5">
-              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">↑↓</kbd>
-              navegar
-            </span>
-            {!isCommandMode && showResults && filters.length > 1 && (
-              <span className="flex items-center gap-1.5">
-                <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">Tab</kbd>
-                filtrar
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
-              <kbd className="gs-kbd px-1.5 py-0.5 rounded text-gray-500 text-[10px]">↵</kbd>
-              abrir
-            </span>
-            {flatResults.length > 0 && (
-              <span className="text-gray-400 tabular-nums">
-                {flatResults.length} resultado{flatResults.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-gray-400 text-[10px]">
-            {!isCommandMode && (
-              <span className="flex items-center gap-1 text-gray-400">
-                <Terminal className="w-3 h-3 text-orange-400" />
-                <span>digite <span className="font-mono font-bold text-orange-400">/</span> para comandos</span>
-              </span>
-            )}
-            {isCommandMode && filteredCmds.length > 0 && (
-              <span className="tabular-nums text-gray-400">
-                {filteredCmds.length} comando{filteredCmds.length !== 1 ? 's' : ''}
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>⌘K · Ctrl+K</span>
-            </span>
+        <div className="global-search-footer">
+          {/* Toggle de preview — visível quando há resultados */}
+          {showResults && !isCommandMode && previewItem ? (
+            <button
+              type="button"
+              onClick={togglePreview}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 12px', borderRadius: 999,
+                border: '1px solid #c4c7c7',
+                background: previewExpanded ? '#000' : '#e6e8ea',
+                color: previewExpanded ? '#fff' : '#444748',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                transition: 'background .15s ease, color .15s ease',
+              }}
+            >
+              <ChevronRight style={{ width: 14, height: 14, transform: previewExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }} />
+              {previewExpanded ? 'Ocultar detalhe' : 'Ver detalhe'}
+            </button>
+          ) : (
+            <div />
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 999, border: '1px solid #c4c7c7', background: '#e6e8ea' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#444748' }}>comandos</span>
+            <span className="footer-key" style={{ marginLeft: 4 }}>⌘K</span>
           </div>
         </div>
       </div>

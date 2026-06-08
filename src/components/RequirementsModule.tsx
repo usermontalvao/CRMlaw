@@ -79,6 +79,7 @@ import type { CreateCalendarEventDTO } from '../types/calendar.types';
 import type { Process, CreateProcessDTO, RequirementRole } from '../types/process.types';
 import type { RequirementDocument } from '../types/requirementDocument.types';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
+import { Modal, ModalBody } from './ui';
 
 const STATUS_OPTIONS: {
   key: RequirementStatus;
@@ -3234,38 +3235,29 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const textareaClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none min-h-[80px]";
   const labelClass = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5";
 
-  const requirementModal = isModalOpen && createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-      <div
-        className="aero-backdrop absolute inset-0"
-        onClick={handleCloseModal}
-        aria-hidden="true"
-      />
-      <div className="aero-modal relative w-full max-w-3xl max-h-[92vh] rounded-2xl flex flex-col overflow-hidden">
-        <div className="h-1.5 w-full bg-orange-500 shrink-0" />
-
-        {/* Header */}
-        <div className="aero-modal-inner px-5 sm:px-7 py-4 border-b border-white/30 dark:border-white/10 flex items-start justify-between gap-4 shrink-0">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-              {selectedRequirement ? 'Editar' : 'Novo'}
-            </p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
-            </h2>
+  const requirementModal = (
+    <Modal
+      open={isModalOpen}
+      onClose={handleCloseModal}
+      title={selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
+      eyebrow={selectedRequirement ? 'Editar' : 'Novo'}
+      size="xl"
+      zIndex={70}
+      footer={
+        <div className="flex items-center justify-between gap-3 w-full">
+          <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleCloseModal} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition">Cancelar</button>
+            <button type="submit" form="requirement-form" disabled={saving} className="inline-flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleCloseModal}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-5">
+      }
+    >
+      <ModalBody>
+        <form id="requirement-form" onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -3275,9 +3267,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* ── Seção: Identificação ── */}
             <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-12 gap-4">
                 {/* Protocolo */}
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-3">
                   <span className={labelClass}>Protocolo INSS *</span>
                   <input
                     value={formData.protocol}
@@ -3289,7 +3281,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* Beneficiário */}
-                <label className="flex flex-col sm:col-span-2">
+                <label className="flex flex-col col-span-12 sm:col-span-6">
                   <span className={labelClass}>Beneficiário *</span>
                   <div className="relative">
                     <input
@@ -3362,7 +3354,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* CPF */}
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-3">
                   <span className={labelClass}>CPF *</span>
                   <input
                     value={formData.cpf}
@@ -3378,9 +3370,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* ── Seção: Benefício e Status ── */}
             <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-12 gap-4">
                 {/* Tipo de Benefício */}
-                <label className="flex flex-col sm:col-span-2">
+                <label className="flex flex-col col-span-12 sm:col-span-5">
                   <span className={labelClass}>Tipo de Benefício</span>
                   <select
                     value={formData.benefit_type}
@@ -3395,7 +3387,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* Status */}
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-4">
                   <span className={labelClass}>Status</span>
                   <select
                     value={formData.status}
@@ -3409,7 +3401,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* Data de Entrada */}
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-3">
                   <span className={labelClass}>Data de Entrada</span>
                   <input
                     type="date"
@@ -3421,7 +3413,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                 {/* Prazo da Exigência (condicional) */}
                 {formData.status === 'em_exigencia' && (
-                  <label className="flex flex-col">
+                  <label className="flex flex-col col-span-12 sm:col-span-3">
                     <span className={labelClass}>Prazo da Exigência</span>
                     <input
                       type="date"
@@ -3437,8 +3429,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* ── Seção: Contato e Acesso ── */}
             <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="flex flex-col">
+              <div className="grid grid-cols-12 gap-4">
+                <label className="flex flex-col col-span-12 sm:col-span-6">
                   <span className={labelClass}>Telefone</span>
                   <input
                     value={formData.phone}
@@ -3448,7 +3440,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     maxLength={15}
                   />
                 </label>
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-6">
                   <span className={labelClass}>Senha do INSS</span>
                   <input
                     type="text"
@@ -3463,8 +3455,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* ── Seção: Notas ── */}
             <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="flex flex-col">
+              <div className="grid grid-cols-12 gap-4">
+                <label className="flex flex-col col-span-12 sm:col-span-6">
                   <span className={labelClass}>Observações</span>
                   <textarea
                     value={formData.observations}
@@ -3473,7 +3465,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     placeholder="Observações sobre o requerimento..."
                   />
                 </label>
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-12 sm:col-span-6">
                   <span className={labelClass}>Notas Internas</span>
                   <textarea
                     value={formData.notes}
@@ -3484,35 +3476,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="shrink-0 px-5 sm:px-7 py-4 border-t border-slate-100 dark:border-white/10 flex items-center justify-between gap-3">
-            <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                onClick={handleSubmit}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {saving ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
-          </div>
         </form>
-      </div>
-    </div>
-  , document.body);
+      </ModalBody>
+    </Modal>
+  );
 
   const exigencyDeadlineModal = exigencyModal && (
     <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
@@ -3667,42 +3635,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     </div>
   );
 
-  const periciaSchedulingModal = periciaModal && (
-    <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
-      <div className="absolute inset-0" onClick={handleClosePericiaModal} aria-hidden="true" />
-      <div className="pericia-light-modal__panel relative w-full max-w-lg rounded-2xl shadow-2xl bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="h-2 w-full bg-cyan-500" />
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="mt-0.5 h-10 w-10 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
-              <Stethoscope className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Agendar perícia</h3>
-              <div className="mt-1 space-y-0.5">
-                {periciaModal.beneficiaryName && (
-                  <p className="text-sm text-slate-700 dark:text-zinc-300 truncate">
-                    Beneficiário: <span className="font-medium">{periciaModal.beneficiaryName}</span>
-                  </p>
-                )}
-                {periciaModal.benefitTypeLabel && (
-                  <p className="text-xs text-slate-600 dark:text-zinc-400 truncate">Benefício: {periciaModal.benefitTypeLabel}</p>
-                )}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleClosePericiaModal}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            title="Fechar"
-            aria-label="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
+  const periciaSchedulingModal = (
+    <Modal
+      open={!!periciaModal}
+      onClose={handleClosePericiaModal}
+      title="Agendar perícia"
+      subtitle={[periciaModal?.beneficiaryName && `Beneficiário: ${periciaModal.beneficiaryName}`, periciaModal?.benefitTypeLabel && `Benefício: ${periciaModal.benefitTypeLabel}`].filter(Boolean).join(' · ') || undefined}
+      icon={<Stethoscope className="w-5 h-5" />}
+      size="md"
+      zIndex={95}
+    >
+      <ModalBody className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
               <input
@@ -3823,29 +3766,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </div>
             </div>
           )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
-          <button
-            type="button"
-            onClick={handleClosePericiaModal}
-            disabled={periciaSaving}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition disabled:opacity-60"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSavePericiaSchedule}
-            disabled={periciaSaving}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60"
-          >
-            {periciaSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Salvar agendamento
-          </button>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+    </Modal>
   );
 
   const detailsModal = viewMode === 'details' && selectedRequirementForView ? (() => {
@@ -3868,78 +3790,93 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       return getStatusLabel(status as any);
     };
 
-    return createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-          onClick={handleBackToList}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          
-          {/* Header padrão do sistema */}
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                Detalhes do Requerimento
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.beneficiary}</h2>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-400">
-                <span className="font-mono">{selectedRequirementForView.protocol}</span>
+    return (
+      <Modal
+        open={viewMode === 'details' && !!selectedRequirementForView}
+        onClose={handleBackToList}
+        title={selectedRequirementForView.beneficiary}
+        eyebrow="Detalhes do Requerimento"
+        subtitle={selectedRequirementForView.protocol ?? undefined}
+        size="xl"
+        zIndex={70}
+        headerActions={
+          <div className="flex items-center gap-2">
+            {statusUpdatingId === selectedRequirementForView.id ? (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`}>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Atualizando...
+              </span>
+            ) : (
+              <div className="relative" title="Alterar status">
+                <select
+                  value={selectedRequirementForView.status}
+                  onChange={(e) => void handleStatusChange(selectedRequirementForView.id, e.target.value as RequirementStatus)}
+                  disabled={!!statusUpdatingId}
+                  className={`appearance-none text-xs font-bold pl-2.5 pr-6 py-1 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 disabled:opacity-60 transition-all ${getStatusBadge(selectedRequirementForView.status)}`}
+                  style={detailStatusConfig?.animationStyle}
+                >
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.key} value={opt.key}>{opt.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 opacity-80" />
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                {statusUpdatingId === selectedRequirementForView.id ? (
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`}>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Atualizando...
-                  </span>
-                ) : (
-                  <div className="relative" title="Alterar status">
-                    <select
-                      value={selectedRequirementForView.status}
-                      onChange={(e) => void handleStatusChange(selectedRequirementForView.id, e.target.value as RequirementStatus)}
-                      disabled={!!statusUpdatingId}
-                      className={`appearance-none text-xs font-bold pl-2.5 pr-6 py-1 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 disabled:opacity-60 transition-all ${getStatusBadge(selectedRequirementForView.status)}`}
-                      style={detailStatusConfig?.animationStyle}
-                    >
-                      {STATUS_OPTIONS.map((opt) => (
-                        <option key={opt.key} value={opt.key}>{opt.label}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 opacity-80" />
-                  </div>
-                )}
-                {showMandadoRisk && (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">
-                    <AlertTriangle className="w-3 h-3" /> MS Risk
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handlePrintRequirement(selectedRequirementForView)}
-                className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition"
-                aria-label="Exportar/Imprimir"
-                title="Exportar / Imprimir"
-              >
-                <Printer className="w-4 h-4" />
+            )}
+            {showMandadoRisk && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">
+                <AlertTriangle className="w-3 h-3" /> MS Risk
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => handlePrintRequirement(selectedRequirementForView)}
+              className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition"
+              aria-label="Exportar/Imprimir"
+              title="Exportar / Imprimir"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+          </div>
+        }
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+            <button
+              type="button"
+              onClick={() => { handleDeleteRequirement(selectedRequirementForView.id); handleBackToList(); }}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView.phone)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+                <MessageSquare className="w-4 h-4" />
+                WhatsApp
               </button>
-              <button
-                type="button"
-                onClick={handleBackToList}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
+              {selectedRequirementForView.status !== 'em_analise' && (
+                <button type="button" onClick={handleQuickBackToAnalysis} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition">
+                  <Clock className="w-4 h-4" />
+                  Análise
+                </button>
+              )}
+              <button type="button" onClick={() => openExigencyModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition">
+                <Calendar className="w-4 h-4" />
+                Exigência
+              </button>
+              <button type="button" onClick={() => openPericiaModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition">
+                <Stethoscope className="w-4 h-4" />
+                Perícia
+              </button>
+              <button type="button" onClick={() => handleOpenModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                <Edit2 className="w-4 h-4" />
+                Editar
               </button>
             </div>
           </div>
-
-          {/* Abas de navegação */}
-          <div className="px-5 sm:px-6 py-2 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 flex items-center gap-1 overflow-x-auto">
+        }
+      >
+        {/* Abas de navegação — pinned above scroll */}
+        <div className="px-5 sm:px-6 py-2 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 flex items-center gap-1 overflow-x-auto shrink-0">
             {[
               { key: 'overview', label: 'Visão Geral', icon: ClipboardList },
               { key: 'notes', label: 'Notas', icon: MessageSquare, count: noteThreads.length },
@@ -4456,44 +4393,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             )}
           </div>
 
-          {/* Footer com ações */}
-          <div className="px-5 sm:px-6 py-4 bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => { handleDeleteRequirement(selectedRequirementForView.id); handleBackToList(); }}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-            >
-              <Trash2 className="w-4 h-4" />
-              Excluir
-            </button>
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView.phone)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
-                <MessageSquare className="w-4 h-4" />
-                WhatsApp
-              </button>
-              {selectedRequirementForView.status !== 'em_analise' && (
-                <button type="button" onClick={handleQuickBackToAnalysis} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition">
-                  <Clock className="w-4 h-4" />
-                  Análise
-                </button>
-              )}
-              <button type="button" onClick={() => openExigencyModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition">
-                <Calendar className="w-4 h-4" />
-                Exigência
-              </button>
-              <button type="button" onClick={() => openPericiaModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition">
-                <Stethoscope className="w-4 h-4" />
-                Perícia
-              </button>
-              <button type="button" onClick={() => handleOpenModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
-                <Edit2 className="w-4 h-4" />
-                Editar
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>,
-      document.body
+      </Modal>
     );
   })() : null;
 

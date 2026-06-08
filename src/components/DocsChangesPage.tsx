@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.216': { name: 'Café Componentes Padrão', emoji: '🎨' },
   '1.10.215': { name: 'Café Modal Limpo', emoji: '🪟' },
   '1.10.212': { name: 'Cafe SemVer', emoji: '??' },
   '1.10.211': { name: 'Cafe Portal Vivo', emoji: '??' },
@@ -876,6 +877,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.216',
+    date: '08/06/2026',
+    summary: 'Refatoração global de módulos e introdução de componentes de UI padrão (Badge, Button, Card, EmptyState, Input, Modal, PageHeader, SearchBar) e novas migrações Supabase.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'Componentes de UI padrão criados', description: 'Desenvolvimento e introdução de um conjunto de componentes visuais reutilizáveis em src/components/ui (Button, Card, Badge, Modal, Input, EmptyState, etc.).' },
+        { type: 'improvement' as const, title: 'Refatoração global de módulos com novos componentes UI', description: 'Atualização e polimento de módulos críticos do sistema (Calendar, Clients, Deadlines, Documents, Financial, Leads, Processes, Requirements, Settings, etc.) para utilizar os novos componentes padronizados.' },
+        { type: 'feature' as const, title: 'Novas migrações do banco de dados Supabase', description: 'Inseridas migrações para simplificar o status do processo (single source) e permitir análise com IA nas publicações de portal.' }
+      ]},
+    ],
+  },
   {
     version: '1.10.215',
     date: '06/06/2026',

@@ -38,6 +38,7 @@ import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { clientService } from '../services/client.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import { Modal, ModalBody } from './ui';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
@@ -2409,7 +2410,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
                                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
-                                <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
+                                <CalendarIcon className="w-3.5 h-3.5 text-amber-600" /> Compromisso
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); setLinkingIntimation(intimation); setSelectedClientId(intimation.client_id || ''); setSelectedProcessId(intimation.process_id || ''); setLinkModalOpen(true); }}
                                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
@@ -2693,7 +2694,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
                           className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
-                          <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
+                          <CalendarIcon className="w-3.5 h-3.5 text-amber-600" /> Compromisso
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
                           className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
@@ -2724,31 +2725,33 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       {/* end premium card */}
 
       {/* Modal de Vínculo */}
-      {linkModalOpen && linkingIntimation && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setLinkModalOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col" style={{ minHeight: creatingProcess ? 640 : 480 }}>
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Vínculo</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Vincular Intimação</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setLinkModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-5">
+      <Modal
+        open={linkModalOpen && !!linkingIntimation}
+        onClose={() => setLinkModalOpen(false)}
+        title="Vincular Intimação"
+        eyebrow="Vínculo"
+        size="md"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setLinkModalOpen(false)}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveLinks}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+            >
+              Salvar Vínculos
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="space-y-5">
               {/* Cliente — AJAX search */}
               <ClientSearchSelect
                 value={selectedClientId}
@@ -2906,29 +2909,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setLinkModalOpen(false)}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveLinks}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
-                >
-                  Salvar Vínculos
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Criação de Prazo */}
       {deadlineModalOpen && currentIntimationForAction && (
@@ -2971,37 +2953,36 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       )}
 
       {/* Modal de Prescrição */}
-      {prescriptionModalOpen && currentIntimationForAction && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => {
-              setPrescriptionModalOpen(false);
-              setCurrentIntimationForAction(null);
-            }}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Prescrição</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Execução Sobrestada</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setPrescriptionModalOpen(false);
-                  setCurrentIntimationForAction(null);
-                }}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-4">
+      <Modal
+        open={prescriptionModalOpen && !!currentIntimationForAction}
+        onClose={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
+        title="Execução Sobrestada"
+        eyebrow="Prescrição"
+        size="md"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleCreatePrescriptionEvent}
+              disabled={savingPrescription}
+              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+            >
+              {savingPrescription && <Loader2 className="w-4 h-4 animate-spin" />}
+              Criar na Agenda
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="space-y-4">
+              {currentIntimationForAction && <>
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <p className="text-xs text-amber-800">
                   <strong>Processo:</strong> {currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo || 'Sem número'}
@@ -3075,34 +3056,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <p className="text-sm text-emerald-800">{prescriptionSuccess}</p>
                 </div>
               )}
-            </div>
-
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrescriptionModalOpen(false);
-                    setCurrentIntimationForAction(null);
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreatePrescriptionEvent}
-                  disabled={savingPrescription}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
-                >
-                  {savingPrescription && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Criar na Agenda
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              </>}
+        </ModalBody>
+      </Modal>
     </div>
   );
 };
@@ -3238,30 +3194,35 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-      <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Novo Prazo</p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Criar Prazo</h2>
-          </div>
+    <Modal
+      open={true}
+      onClose={onClose}
+      title="Criar Prazo"
+      eyebrow="Novo Prazo"
+      size="lg"
+      zIndex={70}
+      footer={
+        <div className="flex justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
+            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
           >
-            <X className="w-5 h-5" />
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="deadline-form"
+            disabled={saving}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            Criar Prazo
           </button>
         </div>
-
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+      }
+    >
+      <ModalBody>
         {/* Informações da Intimação */}
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
@@ -3429,30 +3390,8 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
             </div>
           )}
         </form>
-        </div>
-
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              form="deadline-form"
-              disabled={saving}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Criar Prazo
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+    </Modal>
   );
 };
 
@@ -3590,30 +3529,35 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
   const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-      <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Novo Compromisso</p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Adicionar Compromisso</h2>
-          </div>
+    <Modal
+      open={true}
+      onClose={onClose}
+      title="Adicionar Compromisso"
+      eyebrow="Novo Compromisso"
+      size="lg"
+      zIndex={70}
+      footer={
+        <div className="flex justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
+            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
           >
-            <X className="w-5 h-5" />
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="appointment-form"
+            disabled={saving}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            Criar Compromisso
           </button>
         </div>
-
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+      }
+    >
+      <ModalBody>
         {/* Informações da Intimação */}
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
@@ -3654,7 +3598,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={4}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             />
           </div>
 
@@ -3679,12 +3623,12 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 min={new Date().toISOString().split('T')[0]}
                 required
               />
               {analysis?.deadline?.dueDate && (
-                <p className="text-xs text-indigo-600 mt-1">
+                <p className="text-xs text-amber-600 mt-1">
                   ℹ️ Data exata da audiência/prazo
                 </p>
               )}
@@ -3698,11 +3642,11 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 type="time"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 required
               />
               {analysis?.deadline && (
-                <p className="text-xs text-indigo-600 mt-1">
+                <p className="text-xs text-amber-600 mt-1">
                   ℹ️ Horário padrão: 14:00 (audiências)
                 </p>
               )}
@@ -3759,7 +3703,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             <select
               value={formData.type}
               onChange={(e) => setFormData({ ...formData, type: e.target.value as CalendarEventType })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             >
               <option value="meeting">Reunião</option>
               <option value="hearing">Audiência</option>
@@ -3776,30 +3720,8 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             </div>
           )}
         </form>
-        </div>
-
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              form="appointment-form"
-              disabled={saving}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Criar Compromisso
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+    </Modal>
   );
 };
 

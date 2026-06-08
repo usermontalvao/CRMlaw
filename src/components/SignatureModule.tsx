@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { renderAsync } from 'docx-preview';
 import {
@@ -39,6 +38,7 @@ import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
 import type { ProcessPracticeArea } from '../types/process.types';
 import type { Client } from '../types/client.types';
+import { Modal, ModalBody } from './ui';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -943,7 +943,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           docxHtmlContentRef.current = container.innerHTML;
 
           // Contar páginas renderizadas.
-          // Preferência: section/article/.docx. Fallback: estimar por altura (A4) quando vier uma única página “alta”.
+          // Preferência: section/article/.docx. Fallback: estimar por altura (A4) quando vier uma única página "alta".
           const explicitPages = (sectionsEls.length || articlesEls.length || docxEls.length);
           let pageCount = explicitPages || 1;
           if (pageCount <= 1 && wrapper) {
@@ -962,7 +962,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           );
         })
         .catch((err: any) => {
-          // Evitar que um erro antigo “trave” novos renders
+          // Evitar que um erro antigo "trave" novos renders
           if (renderToken !== docxRenderTokenRef.current || renderDocId !== currentViewerDocIdRef.current) {
             return;
           }
@@ -5418,35 +5418,32 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         </div>
       </div>
 
-      {deleteFolderTarget && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setDeleteFolderTarget(null)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-md max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-red-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
-                <h2 className="text-xl font-semibold text-slate-900 truncate">Remover pasta</h2>
-                <p className="text-xs text-slate-500 mt-1 truncate">{deleteFolderTarget.name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDeleteFolderTarget(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-5 space-y-3">
-              <div className="text-sm text-slate-600">
-                O que você deseja fazer com os itens dentro desta pasta?
-              </div>
+      <Modal
+        open={!!deleteFolderTarget}
+        onClose={() => setDeleteFolderTarget(null)}
+        title="Remover pasta"
+        eyebrow="Explorer"
+        subtitle={deleteFolderTarget?.name}
+        size="sm"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setDeleteFolderTarget(null)}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
+            >
+              Cancelar
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="space-y-3">
+          <div className="text-sm text-slate-600">
+            O que você deseja fazer com os itens dentro desta pasta?
+          </div>
+          {deleteFolderTarget && (
+            <>
               <button
                 type="button"
                 onClick={() => void handleDeleteFolder({ folder: deleteFolderTarget, mode: 'move_root' })}
@@ -5454,7 +5451,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left hover:bg-slate-50 transition"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-slate-900">Mover itens para “Sem pasta”</div>
+                  <div className="text-sm font-semibold text-slate-900">Mover itens para "Sem pasta"</div>
                   {deleteFolderSaving === 'move_root' && <Loader2 className="w-4 h-4 animate-spin text-slate-500" />}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">Remove apenas a pasta. Os itens ficam na raiz do Explorer.</div>
@@ -5471,89 +5468,54 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 </div>
                 <div className="text-xs text-red-700/80 mt-1">Tenta remover também os itens que você criou.</div>
               </button>
-            </div>
+            </>
+          )}
+        </ModalBody>
+      </Modal>
 
-            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDeleteFolderTarget(null)}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
+      <Modal
+        open={createFolderModalOpen}
+        onClose={() => setCreateFolderModalOpen(false)}
+        title="Nova pasta"
+        eyebrow="Explorer"
+        subtitle={createFolderParentId ? `Em: ${folderPathLabelById.get(createFolderParentId) || '—'}` : undefined}
+        size="sm"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setCreateFolderModalOpen(false)}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={createFolderSaving || !createFolderName.trim()}
+              onClick={() => void handleSubmitCreateFolder()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+            >
+              {createFolderSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Criar
+            </button>
           </div>
-        </div>,
-        document.body
-      )}
-
-      {createFolderModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setCreateFolderModalOpen(false)}
-            aria-hidden="true"
+        }
+      >
+        <ModalBody className="space-y-2">
+          <label className="text-xs font-semibold text-slate-500">Nome da pasta</label>
+          <input
+            autoFocus
+            value={createFolderName}
+            onChange={(e) => setCreateFolderName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSubmitCreateFolder();
+            }}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+            placeholder="Ex: Clientes, Contratos..."
           />
-          <div className="relative w-full max-w-md max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
-                <h2 className="text-xl font-semibold text-slate-900">Nova pasta</h2>
-                {createFolderParentId && (
-                  <p className="text-xs text-slate-500 mt-1 truncate">Em: {folderPathLabelById.get(createFolderParentId) || '—'}</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setCreateFolderModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-6 space-y-2">
-              <label className="text-xs font-semibold text-slate-500">Nome da pasta</label>
-              <input
-                autoFocus
-                value={createFolderName}
-                onChange={(e) => setCreateFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void handleSubmitCreateFolder();
-                }}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
-                placeholder="Ex: Clientes, Contratos..."
-              />
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateFolderModalOpen(false)}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={createFolderSaving || !createFolderName.trim()}
-                  onClick={() => void handleSubmitCreateFolder()}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
-                >
-                  {createFolderSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  Criar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+        </ModalBody>
+      </Modal>
 
       {contextMenu && (
         <div
@@ -5580,209 +5542,172 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         </div>
       )}
 
-      {moveModalOpen && moveTarget && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setMoveModalOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-indigo-600" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
-                <h2 className="text-xl font-semibold text-slate-900">Mover item</h2>
-              </div>
+      <Modal
+        open={moveModalOpen && !!moveTarget}
+        onClose={() => setMoveModalOpen(false)}
+        title="Mover item"
+        eyebrow="Explorer"
+        size="md"
+        zIndex={70}
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] text-slate-500 truncate">
+              {moveSelectedFolderId ? `Destino: ${folderPathLabelById.get(moveSelectedFolderId) || '—'}` : 'Destino: Sem pasta'}
+            </div>
+            <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setMoveModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-6">
-              <div className="text-xs font-semibold text-slate-500 mb-2">Destino</div>
-              <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setMoveSelectedFolderId(null)}
-                  className={`relative w-full px-4 py-3 text-left text-sm font-medium transition ${
-                    moveSelectedFolderId === null
-                      ? 'bg-orange-50 text-slate-900'
-                      : 'hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  {moveSelectedFolderId === null && (
-                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
-                  )}
-                  Sem pasta
-                </button>
-                {explorerFolders
-                  .slice()
-                  .sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
-                  .map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setMoveSelectedFolderId(f.id)}
-                      className={`relative w-full px-4 py-3 text-left text-sm transition ${
-                        moveSelectedFolderId === f.id
-                          ? 'bg-orange-50 text-slate-900'
-                          : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                      title={folderPathLabelById.get(f.id) || f.name}
-                    >
-                      {moveSelectedFolderId === f.id && (
-                        <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
-                      )}
-                      {folderPathLabelById.get(f.id) || f.name}
-                    </button>
-                  ))}
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[11px] text-slate-500 truncate">
-                  {moveSelectedFolderId ? `Destino: ${folderPathLabelById.get(moveSelectedFolderId) || '—'}` : 'Destino: Sem pasta'}
-                </div>
-                <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setMoveModalOpen(false)}
-                    className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!user?.id) return;
-                      setMoveSaving(true);
-                      try {
-                        await handleMoveItemToFolder({ itemType: moveTarget.itemType, itemId: moveTarget.itemId, folderId: moveSelectedFolderId });
-                      } finally {
-                        setMoveSaving(false);
-                      }
-                      setMoveModalOpen(false);
-                    }}
-                    disabled={moveSaving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
-                  >
-                    {moveSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Mover
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ── Modal: Excluir documento (com opção de bloquear) ── */}
-      {deleteModalTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-5 h-5 text-red-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-slate-900">Remover documento</p>
-                <p className="text-xs text-slate-500 truncate mt-0.5">{deleteModalTarget.name}</p>
-              </div>
-              <button onClick={() => setDeleteModalTarget(null)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="px-5 py-4 space-y-4">
-              <p className="text-sm text-slate-600 leading-relaxed">
-                O documento será movido para a lixeira. O link de assinatura pública será invalidado. O PDF assinado permanece preservado e consultável pelo código.
-              </p>
-
-              {/* Opção: bloquear também */}
-              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={deleteAlsoBlock}
-                  onChange={(e) => setDeleteAlsoBlock(e.target.checked)}
-                  className="mt-0.5 accent-orange-500 w-4 h-4 flex-shrink-0"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-orange-500" />
-                    Bloquear também
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                    Impede a validação pública pelo código de autenticação. Útil quando o documento foi revogado ou houve erro.
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* Footer */}
-            <div className="flex gap-2 px-5 pb-5">
-              <button
-                onClick={() => setDeleteModalTarget(null)}
-                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
               >
                 Cancelar
               </button>
               <button
-                onClick={confirmDeleteRequest}
-                disabled={deleteLoading}
-                className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
-                style={{ background: deleteAlsoBlock ? '#dc2626' : '#ea580c' }}
+                type="button"
+                onClick={async () => {
+                  if (!user?.id || !moveTarget) return;
+                  setMoveSaving(true);
+                  try {
+                    await handleMoveItemToFolder({ itemType: moveTarget.itemType, itemId: moveTarget.itemId, folderId: moveSelectedFolderId });
+                  } finally {
+                    setMoveSaving(false);
+                  }
+                  setMoveModalOpen(false);
+                }}
+                disabled={moveSaving}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
               >
-                {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : deleteAlsoBlock ? 'Remover e bloquear' : 'Remover'}
+                {moveSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Mover
               </button>
             </div>
           </div>
-        </div>
-      )}
+        }
+      >
+        <ModalBody>
+          <div className="text-xs font-semibold text-slate-500 mb-2">Destino</div>
+          <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setMoveSelectedFolderId(null)}
+              className={`relative w-full px-4 py-3 text-left text-sm font-medium transition ${
+                moveSelectedFolderId === null
+                  ? 'bg-orange-50 text-slate-900'
+                  : 'hover:bg-slate-50 text-slate-700'
+              }`}
+            >
+              {moveSelectedFolderId === null && (
+                <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
+              )}
+              Sem pasta
+            </button>
+            {explorerFolders
+              .slice()
+              .sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+              .map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setMoveSelectedFolderId(f.id)}
+                  className={`relative w-full px-4 py-3 text-left text-sm transition ${
+                    moveSelectedFolderId === f.id
+                      ? 'bg-orange-50 text-slate-900'
+                      : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                  title={folderPathLabelById.get(f.id) || f.name}
+                >
+                  {moveSelectedFolderId === f.id && (
+                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
+                  )}
+                  {folderPathLabelById.get(f.id) || f.name}
+                </button>
+              ))}
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* ── Modal: Excluir documento (com opção de bloquear) ── */}
+      <Modal
+        open={!!deleteModalTarget}
+        onClose={() => setDeleteModalTarget(null)}
+        title="Remover documento"
+        subtitle={deleteModalTarget?.name}
+        icon={<Trash2 className="w-5 h-5" />}
+        size="sm"
+        zIndex={60}
+        footer={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDeleteModalTarget(null)}
+              className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmDeleteRequest}
+              disabled={deleteLoading}
+              className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+              style={{ background: deleteAlsoBlock ? '#dc2626' : '#ea580c' }}
+            >
+              {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : deleteAlsoBlock ? 'Remover e bloquear' : 'Remover'}
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="space-y-4">
+          <p className="text-sm text-slate-600 leading-relaxed">
+            O documento será movido para a lixeira. O link de assinatura pública será invalidado. O PDF assinado permanece preservado e consultável pelo código.
+          </p>
+
+          {/* Opção: bloquear também */}
+          <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-colors">
+            <input
+              type="checkbox"
+              checked={deleteAlsoBlock}
+              onChange={(e) => setDeleteAlsoBlock(e.target.checked)}
+              className="mt-0.5 accent-orange-500 w-4 h-4 flex-shrink-0"
+            />
+            <div>
+              <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-orange-500" />
+                Bloquear também
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Impede a validação pública pelo código de autenticação. Útil quando o documento foi revogado ou houve erro.
+              </p>
+            </div>
+          </label>
+        </ModalBody>
+      </Modal>
 
       {/* ── Modal: Documentos excluídos (lixeira) ── */}
-      {trashOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 24px 80px rgba(0,0,0,0.18)', width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Trash2 style={{ width: 18, height: 18, color: '#ef4444' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Documentos excluídos</p>
-                <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                  {archivedList.length} {archivedList.length === 1 ? 'documento' : 'documentos'} na lixeira
-                </p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <button
-                  onClick={() => void loadArchived()}
-                  disabled={archivedLoading}
-                  title="Atualizar"
-                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, opacity: archivedLoading ? 0.5 : 1 }}
-                >
-                  <RotateCcw style={{ width: 14, height: 14, animation: archivedLoading ? 'spin 1s linear infinite' : undefined }} />
-                </button>
-                <button
-                  onClick={() => setTrashOpen(false)}
-                  title="Fechar"
-                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-                >
-                  <X style={{ width: 16, height: 16 }} />
-                </button>
-              </div>
-            </div>
+      <Modal
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        title="Documentos excluídos"
+        subtitle={`${archivedList.length} ${archivedList.length === 1 ? 'documento' : 'documentos'} na lixeira`}
+        icon={<Trash2 className="w-5 h-5" />}
+        size="lg"
+        zIndex={50}
+        headerActions={
+          <button
+            onClick={() => void loadArchived()}
+            disabled={archivedLoading}
+            title="Atualizar"
+            className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-100 transition disabled:opacity-50"
+          >
+            <RotateCcw style={{ width: 14, height: 14, animation: archivedLoading ? 'spin 1s linear infinite' : undefined }} />
+          </button>
+        }
+        footer={
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            {isAdmin
+              ? '⚠️ Excluir definitivamente apaga o registro e TODOS os arquivos do servidor. Ação irreversível.'
+              : 'Documentos restaurados voltam ao painel e ficam disponíveis normalmente.'}
+          </p>
+        }
+      >
+        <div>{/* search + bulk bar + list */}
 
             {/* Search */}
             {archivedList.length > 0 && (
@@ -5969,79 +5894,41 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               })()}
             </div>
 
-            {/* Footer */}
-            <div style={{ padding: '10px 20px', borderTop: '1px solid #f1f5f9', background: '#f8fafc', flexShrink: 0 }}>
-              <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
-                {isAdmin
-                  ? '⚠️ Excluir definitivamente apaga o registro e TODOS os arquivos do servidor. Ação irreversível.'
-                  : 'Documentos restaurados voltam ao painel e ficam disponíveis normalmente.'}
-              </p>
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
 
-      {detailsRequest && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 pb-6 px-3 sm:pt-10 sm:px-6 bg-black/50 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
-
-            {/* ── Header ── */}
-            <div className="relative px-5 pt-4 pb-3" style={{ borderBottom: '1px solid #f1f5f9' }}>
-              {/* Top row: label + status + close */}
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold text-orange-500 uppercase tracking-[0.18em]">Assinatura Digital</span>
-                  {detailsRequest.signers.every(s => s.status === 'signed') ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #bbf7d0' }}>
-                      <CheckCircle className="w-3 h-3" />Concluído
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #fde68a' }}>
-                      <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    detailsRequestIdRef.current = null;
-                    detailsLoadTokenRef.current += 1;
-                    setAuditLogLoading(false);
-                    setAuditLog([]);
-                    setSignerImages({});
-                    setDetailsRequest(null);
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0 transition"
-                  style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#e2e8f0')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#f1f5f9')}
-                  aria-label="Fechar"
-                >
-                  <X style={{ width: 15, height: 15 }} />
-                </button>
-              </div>
-              {/* Title */}
-              <h2 className="text-[15px] font-bold text-slate-800 leading-snug break-words pr-2">{detailsRequest.document_name}</h2>
-              {/* Meta */}
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
-                <span className="text-[11px] text-slate-400">{formatDate(detailsRequest.created_at)}</span>
-                {detailsRequest.client_name && <span className="text-[11px] text-slate-500 flex items-center gap-1"><User className="w-3 h-3" />{detailsRequest.client_name}</span>}
-                {detailsRequest.process_number && <span className="text-[11px] text-slate-500 flex items-center gap-1"><Hash className="w-3 h-3" />{detailsRequest.process_number}</span>}
-                {cloudSyncStatusByRequestId[detailsRequest.id] && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><FolderOpen className="w-3 h-3" />Pasta criada</span>}
-                {(() => {
-                  const exp = (detailsRequest as any).expires_at as string | null | undefined;
-                  if (!exp) return null;
-                  const expMs = new Date(exp).getTime();
-                  const isExp = expMs < Date.now() && !detailsRequest.signers.every(s => s.status === 'signed');
-                  const within48h = !isExp && (expMs - Date.now()) < 48 * 3600 * 1000;
-                  if (isExp) return <span className="text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expirado em {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                  if (within48h) return <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                  return <span className="text-[11px] text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
-                })()}
-              </div>
-              {/* Orange accent bar */}
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl bg-orange-500" />
-            </div>
-
+      <Modal
+        open={!!detailsRequest}
+        onClose={() => {
+          detailsRequestIdRef.current = null;
+          detailsLoadTokenRef.current += 1;
+          setAuditLogLoading(false);
+          setAuditLog([]);
+          setSignerImages({});
+          setDetailsRequest(null);
+        }}
+        title={detailsRequest?.document_name ?? ''}
+        eyebrow="Assinatura Digital"
+        subtitle={detailsRequest ? [
+          formatDate(detailsRequest.created_at),
+          detailsRequest.client_name,
+          detailsRequest.process_number,
+        ].filter(Boolean).join(' · ') : undefined}
+        size="lg"
+        zIndex={50}
+        headerActions={detailsRequest ? (
+          detailsRequest.signers.every(s => s.status === 'signed') ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #bbf7d0' }}>
+              <CheckCircle className="w-3 h-3" />Concluído
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #fde68a' }}>
+              <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
+            </span>
+          )
+        ) : undefined}
+      >
+        {detailsRequest && (<>
             {/* ── Banner de bloqueio ── */}
             {(detailsRequest as any).blocked_at && (
               <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
@@ -6066,7 +5953,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
             )}
 
-            <div className="bg-white rounded-b-2xl overflow-hidden">
+            <div className="bg-white overflow-hidden">
 
               {/* ── Ações principais ── */}
               <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -6838,118 +6725,101 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
               </div>{/* end content sections */}
             </div>{/* end body */}
-          </div>
-        </div>
-      )}
-      {signModalOpen && signingSigner && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6 bg-slate-50/80 dark:bg-slate-50/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 dark:border-slate-200 w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col mx-auto">
-            <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-200 bg-white dark:bg-white flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Assinar documento</div>
-                <h2 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 truncate">{signingSigner.name}</h2>
-              </div>
-              <button onClick={() => setSignModalOpen(false)} className="self-end sm:self-auto p-2 text-slate-400 hover:text-slate-600 rounded-lg"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-white dark:bg-white">
-              {signStep === 'signature' && (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-3">Sua Assinatura</p>
-                  <SignatureCanvas onSignatureChange={setSignatureData} responsive={true} width={420} height={160} />
-                </div>
-              )}
-              {signStep === 'facial' && (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-3">Foto Facial</p>
-                  <FacialCapture onCapture={setFacialData} width={300} height={220} />
-                </div>
-              )}
-              {signStep === 'confirm' && (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-3">Confirmar dados</p>
-                  {signatureData && (
-                    <div className="p-3 bg-slate-50 rounded mb-3">
-                      <p className="text-xs text-slate-500 mb-1">Assinatura</p>
-                      <img src={signatureData} alt="Assinatura" className="max-w-full max-h-20 border border-slate-200 rounded bg-white" />
-                    </div>
-                  )}
-                  {facialData && (
-                    <div className="p-3 bg-slate-50 rounded">
-                      <p className="text-xs text-slate-500 mb-1">Foto</p>
-                      <img src={facialData} alt="Foto" className="w-20 h-20 object-cover rounded border" style={{ transform: 'scaleX(-1)' }} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-slate-200">
-              <button 
-                onClick={() => { 
-                  if (signStep === 'signature') setSignModalOpen(false); 
-                  else if (signStep === 'facial') setSignStep('signature'); 
-                  else setSignStep('facial'); 
-                }} 
-                className="px-3 py-2 text-xs sm:text-sm text-slate-600 hover:text-slate-800"
-              >
-                {signStep === 'signature' ? 'Cancelar' : 'Voltar'}
-              </button>
-              {signStep === 'confirm' ? (
-                <button 
-                  onClick={confirmSignature} 
-                  disabled={signLoading} 
-                  className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-900 text-white rounded text-xs sm:text-sm font-medium disabled:opacity-50"
-                >
-                  {signLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
-                </button>
-              ) : (
-                <button 
-                  onClick={() => { 
-                    if (signStep === 'signature' && signatureData) setSignStep('facial'); 
-                    else if (signStep === 'facial') setSignStep('confirm'); 
-                  }} 
-                  disabled={(signStep === 'signature' && !signatureData)} 
-                  className="px-3 sm:px-4 py-2 bg-slate-900 text-white rounded text-xs sm:text-sm font-medium disabled:opacity-50"
-                >
-                  Próximo
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Modal de zoom para imagens */}
-      {zoomImageUrl && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6 bg-slate-50/80 dark:bg-slate-50/80 backdrop-blur-md"
-          onClick={() => setZoomImageUrl(null)}
-        >
-          <div
-            className="bg-white dark:bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 dark:border-slate-200 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col mx-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-200 bg-white dark:bg-white flex items-start justify-between gap-3">
-              <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-400">Visualização</div>
+        </>)}
+      </Modal>
+      <Modal
+        open={signModalOpen && !!signingSigner}
+        onClose={() => setSignModalOpen(false)}
+        title={signingSigner?.name ?? ''}
+        eyebrow="Assinar documento"
+        size="md"
+        zIndex={60}
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={() => {
+                if (signStep === 'signature') setSignModalOpen(false);
+                else if (signStep === 'facial') setSignStep('signature');
+                else setSignStep('facial');
+              }}
+              className="px-3 py-2 text-xs sm:text-sm text-slate-600 hover:text-slate-800"
+            >
+              {signStep === 'signature' ? 'Cancelar' : 'Voltar'}
+            </button>
+            {signStep === 'confirm' ? (
               <button
-                onClick={() => setZoomImageUrl(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg"
+                onClick={confirmSignature}
+                disabled={signLoading}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-900 text-white rounded text-xs sm:text-sm font-medium disabled:opacity-50"
               >
-                <X className="w-5 h-5" />
+                {signLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
               </button>
-            </div>
-
-            <div className="flex-1 p-2 sm:p-4 bg-slate-50 dark:bg-slate-50 flex items-center justify-center">
-              <img
-                src={zoomImageUrl}
-                alt="Imagem ampliada"
-                className="max-w-full max-h-[70vh] sm:max-h-[75vh] object-contain rounded-xl border border-slate-200 bg-white"
-                style={{ transform: zoomImageUrl.includes('facial') ? 'scaleX(-1)' : 'none' }}
-              />
-            </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (signStep === 'signature' && signatureData) setSignStep('facial');
+                  else if (signStep === 'facial') setSignStep('confirm');
+                }}
+                disabled={(signStep === 'signature' && !signatureData)}
+                className="px-3 sm:px-4 py-2 bg-slate-900 text-white rounded text-xs sm:text-sm font-medium disabled:opacity-50"
+              >
+                Próximo
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        }
+      >
+        <ModalBody>
+          {signStep === 'signature' && (
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-3">Sua Assinatura</p>
+              <SignatureCanvas onSignatureChange={setSignatureData} responsive={true} width={420} height={160} />
+            </div>
+          )}
+          {signStep === 'facial' && (
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-3">Foto Facial</p>
+              <FacialCapture onCapture={setFacialData} width={300} height={220} />
+            </div>
+          )}
+          {signStep === 'confirm' && (
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-3">Confirmar dados</p>
+              {signatureData && (
+                <div className="p-3 bg-slate-50 rounded mb-3">
+                  <p className="text-xs text-slate-500 mb-1">Assinatura</p>
+                  <img src={signatureData} alt="Assinatura" className="max-w-full max-h-20 border border-slate-200 rounded bg-white" />
+                </div>
+              )}
+              {facialData && (
+                <div className="p-3 bg-slate-50 rounded">
+                  <p className="text-xs text-slate-500 mb-1">Foto</p>
+                  <img src={facialData} alt="Foto" className="w-20 h-20 object-cover rounded border" style={{ transform: 'scaleX(-1)' }} />
+                </div>
+              )}
+            </div>
+          )}
+        </ModalBody>
+      </Modal>
+      {/* Modal de zoom para imagens */}
+      <Modal
+        open={!!zoomImageUrl}
+        onClose={() => setZoomImageUrl(null)}
+        title="Visualização"
+        size="xl"
+        zIndex={70}
+      >
+        <ModalBody className="bg-slate-50 flex items-center justify-center">
+          {zoomImageUrl && (
+            <img
+              src={zoomImageUrl}
+              alt="Imagem ampliada"
+              className="max-w-full max-h-[70vh] sm:max-h-[75vh] object-contain rounded-xl border border-slate-200 bg-white"
+              style={{ transform: zoomImageUrl.includes('facial') ? 'scaleX(-1)' : 'none' }}
+            />
+          )}
+        </ModalBody>
+      </Modal>
       {/* Modal de confirmação de exclusão */}
 
       {/* Modal: Relatório / Certificado de Assinatura */}

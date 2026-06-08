@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Modal, ModalBody, ModalFooter } from './ui';
 import {
   Plus,
   Loader2,
@@ -927,7 +928,8 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
         // Usar settingsService.listUsers() que filtra is_active = true
         const data = await settingsService.listUsers();
         if (!active) return;
-        setMembers(data);
+        const roleOrder = (r: string) => { const rl = r.toLowerCase(); return rl.includes('admin') ? 0 : rl.includes('advog') ? 1 : 2; };
+        setMembers((data as any[]).sort((a, b) => roleOrder(a.role ?? '') - roleOrder(b.role ?? '')));
       } catch (err) {
         console.error(err);
       }
@@ -2448,57 +2450,65 @@ Regras:
   }, [selectedProcessForView]);
 
   const inputStyle =
-    'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
-  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+    'w-full h-9 px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5';
 
-  const processModal = isModalOpen ? createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
-      <div
-        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-        onClick={handleCloseModal}
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-        <div className="h-2 w-full bg-orange-500" />
-        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Formulário</p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
-            </h2>
-          </div>
+  const processModal = (
+    <Modal
+      open={isModalOpen}
+      onClose={handleCloseModal}
+      title={selectedProcess ? 'Editar Processo' : 'Novo Processo'}
+      eyebrow="Formulário"
+      size="xl"
+      zIndex={80}
+      footer={
+        <div className="flex justify-end gap-3">
           <button
             type="button"
             onClick={handleCloseModal}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
+            disabled={saving}
+            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
           >
-            <X className="w-5 h-5" />
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            Salvar
           </button>
         </div>
+      }
+    >
+      <ModalBody className="p-4 sm:p-5">
+        {error && (
+          <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-3">
 
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
-          {error && (
-            <div className="mx-6 mt-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm relative z-[90]">
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <ClientSearchSelect
-              value={formData.client_id}
-              onChange={(clientId, clientName) => {
-                handleFormChange('client_id', clientId);
-                setClientSearchTerm(clientName);
-              }}
-              label="Cliente"
-              placeholder="Buscar cliente..."
-              required
-              allowCreate={true}
-            />
-
-            <div>
-              <label className={labelStyle}>Número do Processo</label>
-              <div className="flex gap-2">
+          {/* Linha 1 — Cliente | Número do Processo | Buscar */}
+          <div>
+            <div className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-5">
+                <ClientSearchSelect
+                  value={formData.client_id}
+                  onChange={(clientId, clientName) => {
+                    handleFormChange('client_id', clientId);
+                    setClientSearchTerm(clientName);
+                  }}
+                  label="Cliente"
+                  placeholder="Buscar cliente..."
+                  required
+                  allowCreate={true}
+                />
+              </div>
+              <div className="col-span-6">
+                <label className={labelStyle}>Número do Processo</label>
                 <input
                   value={formData.process_code}
                   onChange={(e) => {
@@ -2509,34 +2519,42 @@ Regras:
                       handleSearchDjen(val);
                     }
                   }}
-                  className={`${inputStyle} flex-1`}
+                  className={inputStyle}
                   placeholder="0001234-56.2024.8.26.0100"
                   required
                 />
+              </div>
+              <div className="col-span-1">
                 <button
                   type="button"
                   onClick={() => handleSearchDjen()}
                   disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
-                  className="px-3 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm"
+                  className="w-full h-9 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                 >
                   {searchingDjen ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 </button>
               </div>
-              {djenData && (
-                <div
-                  className={`mt-2 p-2 rounded-lg text-xs ${
-                    djenData._noData
-                      ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
-                      : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                  }`}
-                >
-                  {djenData._noData ? 'Nenhum dado encontrado no DJEN' : `Vara: ${djenData.nomeOrgao}`}
-                </div>
-              )}
             </div>
+            {djenData && (
+              <div
+                className={`mt-1.5 p-2 rounded-lg text-xs ${
+                  djenData._noData
+                    ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
+                    : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                }`}
+              >
+                {djenData._noData ? 'Nenhum dado encontrado no DJEN' : `Vara: ${djenData.nomeOrgao}`}
+              </div>
+            )}
+          </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div>
+          {/* Seção: Dados do Processo */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-600">Dados do Processo</p>
+
+            {/* Linha 3 — Área | Status | Distribuição | Vara/Comarca */}
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-3">
                 <label className={labelStyle}>Área</label>
                 <select
                   value={formData.practice_area}
@@ -2544,13 +2562,11 @@ Regras:
                   className={inputStyle}
                 >
                   {PRACTICE_AREAS.map((a) => (
-                    <option key={a.key} value={a.key}>
-                      {a.label}
-                    </option>
+                    <option key={a.key} value={a.key}>{a.label}</option>
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-3">
                 <label className={labelStyle}>Status</label>
                 <select
                   value={formData.status}
@@ -2558,13 +2574,11 @@ Regras:
                   className={inputStyle}
                 >
                   {STATUS_OPTIONS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
-                    </option>
+                    <option key={s.key} value={s.key}>{s.label}</option>
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-3">
                 <label className={labelStyle}>Distribuição</label>
                 <input
                   type="date"
@@ -2573,7 +2587,7 @@ Regras:
                   className={inputStyle}
                 />
               </div>
-              <div>
+              <div className="col-span-3">
                 <label className={labelStyle}>Vara / Comarca</label>
                 <input
                   value={formData.court}
@@ -2583,9 +2597,10 @@ Regras:
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div>
-                <label className={labelStyle}>Advogado</label>
+            {/* Linha 4 — Advogado | Audiência | Modo (quando sim) */}
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-5">
+                <label className={labelStyle}>Advogado do processo</label>
                 <select
                   value={formData.responsible_lawyer_id}
                   onChange={(e) => {
@@ -2597,13 +2612,11 @@ Regras:
                 >
                   <option value="">Selecione</option>
                   {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
+                    <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-3">
                 <label className={labelStyle}>Audiência</label>
                 <select
                   value={formData.hearing_scheduled}
@@ -2615,30 +2628,7 @@ Regras:
                 </select>
               </div>
               {formData.hearing_scheduled === 'sim' && (
-                <>
-                  <div>
-                    <label className={labelStyle}>Data</label>
-                    <input
-                      type="date"
-                      value={formData.hearing_date}
-                      onChange={(e) => handleFormChange('hearing_date', e.target.value)}
-                      className={inputStyle}
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelStyle}>Hora</label>
-                    <input
-                      type="time"
-                      value={formData.hearing_time}
-                      onChange={(e) => handleFormChange('hearing_time', e.target.value)}
-                      className={inputStyle}
-                    />
-                  </div>
-                </>
-              )}
-              {formData.hearing_scheduled === 'sim' && (
-                <div>
+                <div className="col-span-4">
                   <label className={labelStyle}>Modo</label>
                   <select
                     value={formData.hearing_mode}
@@ -2650,10 +2640,33 @@ Regras:
                   </select>
                 </div>
               )}
-              {formData.hearing_scheduled === 'sim' && (
-                <div className="md:col-span-2">
-                  <label className={`${labelStyle} mb-2`}>Responsável pela audiência *</label>
-                  <div className="flex flex-wrap gap-2">
+            </div>
+
+            {/* Linha 5 — Data | Hora | Responsável (só quando audiência = sim) */}
+            {formData.hearing_scheduled === 'sim' && (
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <label className={labelStyle}>Data</label>
+                  <input
+                    type="date"
+                    value={formData.hearing_date}
+                    onChange={(e) => handleFormChange('hearing_date', e.target.value)}
+                    className={inputStyle}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className={labelStyle}>Hora</label>
+                  <input
+                    type="time"
+                    value={formData.hearing_time}
+                    onChange={(e) => handleFormChange('hearing_time', e.target.value)}
+                    className={inputStyle}
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className={labelStyle}>Responsável pela audiência</label>
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-9">
                     {members.map((m) => (
                       <button
                         key={m.id}
@@ -2667,15 +2680,15 @@ Regras:
                         title={m.name || m.email || ''}
                       >
                         {m.avatar_url ? (
-                          <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                          <img src={m.avatar_url} className="w-8 h-8 rounded-full object-cover" alt={m.name || ''} />
                         ) : (
-                          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700">
                             {(m.name || m.email || '?')[0].toUpperCase()}
                           </div>
                         )}
                         {hearingResponsibleId === (m.user_id || m.id) && (
-                          <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
-                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center">
+                            <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M2 6l3 3 5-5"/>
                             </svg>
                           </span>
@@ -2684,85 +2697,82 @@ Regras:
                     ))}
                   </div>
                   {hearingResponsibleId && (
-                    <p className="text-xs text-amber-600 mt-1">
+                    <p className="text-xs text-amber-600 mt-0.5">
                       ✓ {members.find(m => (m.user_id || m.id) === hearingResponsibleId)?.name || 'Responsável selecionado'}
                     </p>
                   )}
                 </div>
-              )}
-            </div>
-
-            <div>
-              <label className={labelStyle}>Observações</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => handleFormChange('notes', e.target.value)}
-                className={`${inputStyle} h-16 resize-none`}
-                placeholder=""
-              />
-            </div>
-          </form>
-        </div>
-
-        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              disabled={saving}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              onClick={handleSubmit}
-              disabled={saving}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Salvar
-            </button>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  ) : null;
 
-  const detailsModal = viewMode === 'details' && selectedProcessForView ? (() => {
+          {/* Linha 5 — Observações */}
+          <div>
+            <label className={labelStyle}>Observações</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => handleFormChange('notes', e.target.value)}
+              className={`${inputStyle} h-14 resize-none`}
+              placeholder=""
+            />
+          </div>
+
+        </form>
+      </ModalBody>
+    </Modal>
+  );
+
+  const detailsModal = (() => {
+    if (!selectedProcessForView || viewMode !== 'details') return null;
     const client = clientMap.get(selectedProcessForView.client_id);
     const practiceAreaInfo = PRACTICE_AREAS.find((area) => area.key === selectedProcessForView.practice_area);
-    return createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-          onClick={handleBackToList}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="px-6 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-[#f97316] flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Processo</p>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums truncate">
-                  {selectedProcessForView.process_code || 'Sem número'}
-                </h2>
-              </div>
-            </div>
+    return (
+      <Modal
+        open
+        onClose={handleBackToList}
+        title={selectedProcessForView.process_code || 'Sem número'}
+        eyebrow="Processo"
+        icon={<FileText className="w-5 h-5" />}
+        size="xl"
+        zIndex={70}
+        footer={
+          <div className="flex flex-wrap gap-3">
+            {selectedProcessForView.process_code && (
+              <button
+                onClick={() => {
+                  const cl = clientMap.get(selectedProcessForView.client_id);
+                  setTimelineProcessCode(selectedProcessForView.process_code);
+                  setTimelineProcessId(selectedProcessForView.id);
+                  setTimelineClientName(cl?.full_name || null);
+                  setShowTimelineModal(true);
+                }}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-lg"
+              >
+                <Clock className="w-4 h-4" />
+                Linha do Tempo
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
-              type="button"
-              onClick={handleBackToList}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition flex-shrink-0"
-              aria-label="Fechar modal"
+              onClick={() => handleOpenModal(selectedProcessForView)}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
             >
-              <X className="w-5 h-5" />
+              <Edit2 className="w-4 h-4" />
+              Editar Processo
+            </button>
+            <button
+              onClick={() => {
+                handleDeleteProcess(selectedProcessForView.id);
+                handleBackToList();
+              }}
+              className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir Processo
             </button>
           </div>
+        }
+      >
 
           {/* Identity strip — cliente + status + sync (com integração) */}
           <div className="px-6 sm:px-8 py-4 border-b border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-x-5 gap-y-3 bg-white dark:bg-zinc-900">
@@ -2809,7 +2819,7 @@ Regras:
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 sm:p-8">
+          <div className="p-6 sm:p-8 bg-white dark:bg-zinc-900">
             {/* Grid de dados — card unificado com células divididas */}
             <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden mb-6">
               <div className="grid grid-cols-2 lg:grid-cols-3 divide-x divide-y divide-slate-100 dark:divide-zinc-800">
@@ -3191,74 +3201,52 @@ Regras:
               )}
             </div>
 
-            <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
-              {selectedProcessForView.process_code && (
-                <button
-                  onClick={() => {
-                    const client = clientMap.get(selectedProcessForView.client_id);
-                    setTimelineProcessCode(selectedProcessForView.process_code);
-                    setTimelineProcessId(selectedProcessForView.id);
-                    setTimelineClientName(client?.full_name || null);
-                    setShowTimelineModal(true);
-                  }}
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-lg"
-                >
-                  <Clock className="w-4 h-4" />
-                  Linha do Tempo
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <button
-                onClick={() => handleOpenModal(selectedProcessForView)}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Edit2 className="w-4 h-4" />
-                Editar Processo
-              </button>
-              <button
-                onClick={() => {
-                  handleDeleteProcess(selectedProcessForView.id);
-                  handleBackToList();
-                }}
-                className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Trash2 className="w-4 h-4" />
-                Excluir Processo
-              </button>
-            </div>
           </div>
-        </div>
-      </div>,
-      document.body
+      </Modal>
     );
-  })() : null;
+  })();
 
   // Modal de Exportação com Filtros Avançados
-  const exportModal = showExportModal ? (() => {
+  const exportModal = (() => {
+    if (!showExportModal) return null;
     const filteredCount = getFilteredExportProcesses().length;
-
-    return createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setShowExportModal(false)} aria-hidden="true" />
-        <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Exportação</p>
-              <h2 className="text-xl font-semibold text-slate-900">Exportar Processos</h2>
-              <p className="text-sm text-slate-500 mt-0.5">Configure os filtros para exportação</p>
-            </div>
+    return (
+      <Modal
+        open
+        onClose={() => setShowExportModal(false)}
+        title="Exportar Processos"
+        eyebrow="Exportação"
+        subtitle="Configure os filtros para exportação"
+        size="sm"
+        footer={
+          <div className="flex gap-3 w-full">
             <button
               type="button"
               onClick={() => setShowExportModal(false)}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-              aria-label="Fechar modal"
+              className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
             >
-              <X className="w-5 h-5" />
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={exportingExcel || filteredCount === 0}
+              className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              {exportingExcel ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  Exportando...
+                </>
+              ) : (
+                '📥 Exportar Excel'
+              )}
             </button>
           </div>
-          <div className="p-6 bg-white overflow-y-auto max-h-[calc(90vh-180px)]">
-            <div className="space-y-4">
+        }
+      >
+        <ModalBody>
+          <div className="space-y-4">
               {/* Filtro de Status */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -3363,38 +3351,11 @@ Regras:
                 </p>
               </div>
 
-              {/* Botões */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowExportModal(false)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportExcel}
-                  disabled={exportingExcel || filteredCount === 0}
-                  className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {exportingExcel ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                      Exportando...
-                    </>
-                  ) : (
-                    '📥 Exportar Excel'
-                  )}
-                </button>
-              </div>
-            </div>
           </div>
-        </div>
-      </div>,
-      document.body
+        </ModalBody>
+      </Modal>
     );
-  })() : null;
+  })();
 
   return (
     <div className="space-y-4">
@@ -3759,15 +3720,15 @@ Regras:
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-4 py-3 bg-slate-50/40 border-b border-slate-100 dark:bg-zinc-900/40 dark:border-zinc-800">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-              placeholder="Buscar processo..."
+              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
+              placeholder="Buscar por cliente, processo, vara…"
             />
           </div>
 
@@ -3775,7 +3736,7 @@ Regras:
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+              className="px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
             >
               <option value="todos">Todos os status</option>
               {STATUS_OPTIONS.map((status) => (
@@ -3790,13 +3751,124 @@ Regras:
         <div className="p-4">
 
           {loading ? (
-            <div className="py-16 flex flex-col items-center gap-4">
-              <Loader2 className="w-8 h-8 text-amber-600 animate-spin" />
-              <p className="text-slate-600">Carregando processos...</p>
-            </div>
+            kanbanMode ? (
+              /* ── Skeleton: Kanban ── */
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+                {[...Array(4)].map((_, colIdx) => (
+                  <div key={colIdx} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                      <div className="h-3 w-28 skeleton rounded-full" />
+                      <div className="h-3 w-5 skeleton opacity-60 rounded-full" />
+                    </div>
+                    <div className="p-3 space-y-3">
+                      {[...Array(colIdx === 0 ? 3 : colIdx === 1 ? 2 : 1)].map((_, cardIdx) => (
+                        <div key={cardIdx} className="bg-slate-50 dark:bg-zinc-800/60 border border-slate-100 dark:border-zinc-700/50 rounded-xl p-3 space-y-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full skeleton shrink-0" />
+                            <div className="flex-1 space-y-1.5">
+                              <div className="h-3 w-24 skeleton rounded-full" />
+                              <div className="h-2.5 w-32 skeleton opacity-60 rounded-full" />
+                            </div>
+                          </div>
+                          <div className="h-2.5 w-20 skeleton opacity-60 rounded-full" />
+                          <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-zinc-700/50">
+                            <div className="h-4 w-20 skeleton rounded" />
+                            <div className="flex gap-1.5">
+                              <div className="h-6 w-6 skeleton rounded-lg" />
+                              <div className="h-6 w-6 skeleton rounded-lg" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* ── Skeleton: Lista ── */
+              <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl">
+                {/* Mobile skeleton */}
+                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-zinc-800">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="p-4">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className="w-8 h-8 rounded-full skeleton shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className={`h-3 skeleton rounded-full ${i % 2 === 0 ? 'w-32' : 'w-40'}`} />
+                            <div className="h-2.5 w-36 skeleton opacity-60 rounded-full" />
+                          </div>
+                        </div>
+                        <div className="h-5 w-16 skeleton rounded-full" />
+                      </div>
+                      <div className="h-2.5 w-24 skeleton opacity-60 rounded-full mb-3" />
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-zinc-800">
+                        <div className="h-6 w-20 skeleton rounded" />
+                        <div className="flex gap-2">
+                          <div className="h-8 w-8 skeleton rounded-lg" />
+                          <div className="h-8 w-8 skeleton rounded-lg" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop skeleton */}
+                <div className="hidden lg:block overflow-x-auto w-full">
+                  <table className="min-w-full divide-y divide-slate-100 dark:divide-zinc-800">
+                    <thead className="bg-slate-50/60 dark:bg-zinc-800/40 border-b border-slate-200 dark:border-zinc-700">
+                      <tr>
+                        <th className="px-6 py-3.5 min-w-[180px]"><div className="h-2.5 w-12 skeleton rounded-full" /></th>
+                        <th className="px-6 py-3.5 min-w-[200px]"><div className="h-2.5 w-28 skeleton rounded-full" /></th>
+                        <th className="px-6 py-3.5 min-w-[100px]"><div className="h-2.5 w-16 skeleton rounded-full" /></th>
+                        <th className="px-6 py-3.5 min-w-[160px]"><div className="h-2.5 w-10 skeleton rounded-full" /></th>
+                        <th className="px-6 py-3.5 w-[140px]" />
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-zinc-900 divide-y divide-slate-100 dark:divide-zinc-800">
+                      {[...Array(7)].map((_, i) => (
+                        <tr key={i}>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full skeleton shrink-0" />
+                              <div className="space-y-2">
+                                <div className={`h-3.5 skeleton rounded-full ${i % 3 === 0 ? 'w-28' : i % 3 === 1 ? 'w-36' : 'w-32'}`} />
+                                <div className={`h-2.5 skeleton opacity-60 rounded-full ${i % 2 === 0 ? 'w-20' : 'w-24'}`} />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className={`h-3 skeleton rounded-full mb-2 ${i % 2 === 0 ? 'w-40' : 'w-48'}`} />
+                            <div className="h-2.5 w-24 skeleton opacity-60 rounded-full" />
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="h-3 w-16 skeleton rounded-full" />
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="h-6 w-28 skeleton rounded-full" />
+                          </td>
+                          <td className="px-4 py-4 w-[140px]">
+                            <div className="flex items-center justify-end gap-3">
+                              <div className="h-5 w-5 skeleton rounded" />
+                              <div className="h-5 w-5 skeleton rounded" />
+                              <div className="h-5 w-5 skeleton rounded" />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
           ) : filteredProcesses.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-slate-600">Nenhum processo encontrado.</p>
+            <div className="py-16 flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                <Search className="w-5 h-5 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Nenhum processo encontrado</p>
+                <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Tente ajustar os filtros ou o termo de busca</p>
+              </div>
             </div>
           ) : kanbanMode ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto">
@@ -3833,7 +3905,7 @@ Regras:
                         return (
                           <div
                             key={process.id}
-                            className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
+                            className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] active:shadow-sm transition-all duration-150 cursor-pointer"
                             onClick={() => {
                               if (isDragging) return;
                               handleViewProcess(process);
@@ -3917,7 +3989,7 @@ Regras:
               })}
             </div>
           ) : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-xl">
               <div className="block lg:hidden divide-y divide-gray-200">
                 {filteredProcesses.map((process) => {
                   const client = clientMap.get(process.client_id);
@@ -3944,19 +4016,19 @@ Regras:
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleViewProcess(process)}
-                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 active:scale-95 transition-all duration-150 text-sm font-medium"
                         >
                           <Eye className="w-4 h-4" />
                           Ver
                         </button>
                         <button
                           onClick={() => handleOpenModal(process)}
-                          className="px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
-                          title="Editar"
+                          className="px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 active:scale-95 transition-all duration-150"
+                          title="Editar processo"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDeleteProcess(process.id)} className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors" title="Excluir">
+                        <button onClick={() => handleDeleteProcess(process.id)} className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 active:scale-95 transition-all duration-150" title="Excluir processo">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -3981,15 +4053,15 @@ Regras:
                   );
                 })}
               </div>
-              <div className="hidden lg:block overflow-x-auto">
+              <div className="hidden lg:block overflow-x-auto w-full">
                 <table className="min-w-full divide-y divide-slate-100">
                   <thead className="bg-slate-50/60 border-b border-slate-200">
                     <tr>
-                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Código do Processo</th>
-                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Distribuído</th>
-                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
-                      <th className="px-6 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ações</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[180px]">Cliente</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[200px]">Código do Processo</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[100px]">Distribuído</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[160px]">Status</th>
+                      <th className="px-3 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest w-[150px]">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -3998,81 +4070,92 @@ Regras:
                       const isTimelineExpanded = expandedTimelineProcessId === process.id;
                       return (
                         <React.Fragment key={process.id}>
-                          <tr 
-                            className={`hover:bg-slate-50/70 transition-colors cursor-pointer ${isTimelineExpanded ? 'bg-slate-50' : ''}`}
+                          <tr
+                            className={`row-enter hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors duration-100 cursor-pointer group ${isTimelineExpanded ? 'bg-slate-50 dark:bg-zinc-800/30' : ''}`}
                             onClick={() => {
                               if (process.process_code) {
                                 setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id);
                               }
                             }}
                           >
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center gap-3">
-                                <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={40} />
-                                <div>
-                                  <div className="text-sm font-medium text-gray-900">{client?.full_name || 'Cliente removido'}</div>
-                                  <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
-                                    <span className="inline-flex items-center gap-1">
-                                      Área: <span className="font-medium">{PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}</span>
+                            <td className="px-6 py-3 max-w-[220px]">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={34} />
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 truncate leading-tight" title={client?.full_name || 'Cliente removido'}>
+                                    {client?.full_name || 'Cliente removido'}
+                                  </div>
+                                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                                    <span className="text-[11px] text-gray-400 shrink-0 truncate max-w-[80px]" title={PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area ?? ''}>
+                                      {PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
                                     </span>
                                     {process.responsible_lawyer && (
-                                      <span className="inline-flex items-center gap-1">
-                                        Advogado: <span className="font-medium">{process.responsible_lawyer}</span>
-                                      </span>
+                                      <>
+                                        <span className="text-gray-300 shrink-0">·</span>
+                                        <span className="text-[11px] text-gray-400 truncate min-w-0" title={process.responsible_lawyer}>
+                                          {process.responsible_lawyer}
+                                        </span>
+                                      </>
                                     )}
                                   </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                  <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
-                                  {/* #6 — Badge não lidas (desktop) */}
-                                  {processesWithUnread.has(process.id) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold" title="Intimações não lidas">
-                                      <Bell className="w-2.5 h-2.5" /> Nova
-                                    </span>
-                                  )}
-                                </div>
+                            <td className="px-5 py-3 max-w-[240px]">
+                              {/* Linha 1: número + badge nova intimação */}
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="text-[13px] font-mono text-gray-900 truncate min-w-0">{process.process_code}</div>
+                                {processesWithUnread.has(process.id) && (
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold" title="Intimações não lidas">
+                                    <Bell className="w-2.5 h-2.5" />Nova
+                                  </span>
+                                )}
+                              </div>
+                              {/* Linha 2: vara · DJEN · sync */}
+                              <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                                {process.court && (
+                                  <span className="text-[11px] text-gray-400 truncate min-w-0" title={process.court}>
+                                    {process.court}
+                                  </span>
+                                )}
                                 {process.djen_has_data && (
-                                  <div className="flex items-center gap-1">
-                                    <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
-                                      ✓ DJEN
+                                  <>
+                                    {process.court && <span className="text-gray-300 shrink-0">·</span>}
+                                    <span className="shrink-0 text-[10px] font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-100/80" title="Dados sincronizados com DJEN">
+                                      DJEN
                                     </span>
                                     {formatLastSync(process.djen_last_sync) && (
-                                      <span className="text-xs text-slate-500" title={`Última sincronização: ${process.djen_last_sync}`}>
+                                      <span className="shrink-0 text-[11px] text-slate-400" title={`Última sincronização: ${process.djen_last_sync}`}>
                                         {formatLastSync(process.djen_last_sync)}
                                       </span>
                                     )}
-                                  </div>
+                                  </>
                                 )}
                               </div>
-                              {process.court && <div className="text-xs text-gray-500 mt-1">{process.court}</div>}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(process.distributed_at)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                            <td className="px-6 py-3 whitespace-nowrap text-xs text-gray-500">{formatDate(process.distributed_at)}</td>
+                            <td className="px-6 py-3 whitespace-nowrap">
+                              <span className={`px-2.5 py-0.5 inline-flex text-[11px] leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-3 py-3 w-[150px] shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-0.5">
                                 {process.process_code && (
-                                  <button 
-                                    onClick={() => setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id)} 
-                                    className={`transition-colors ${isTimelineExpanded ? 'text-[#f97316]' : 'text-slate-400 hover:text-[#f97316]'}`}
+                                  <button
+                                    onClick={() => setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id)}
+                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-150 active:scale-90 focus-visible:ring-2 focus-visible:ring-amber-400/50 ${isTimelineExpanded ? 'text-orange-500 bg-orange-50' : 'text-slate-300 hover:text-orange-500 hover:bg-orange-50'}`}
                                     title={isTimelineExpanded ? 'Recolher Timeline' : 'Expandir Timeline'}
                                   >
-                                    {isTimelineExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                                    {isTimelineExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                   </button>
                                 )}
-                                <button onClick={() => handleViewProcess(process)} className="text-blue-600 hover:text-blue-900 transition-colors" title="Ver detalhes">
-                                  <Eye className="w-5 h-5" />
+                                <button onClick={() => handleViewProcess(process)} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all duration-150 active:scale-90 focus-visible:ring-2 focus-visible:ring-blue-400/50" title="Ver detalhes">
+                                  <Eye className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleOpenModal(process)} className="text-amber-600 hover:text-amber-900 transition-colors" title="Editar">
-                                  <Edit2 className="w-5 h-5" />
+                                <button onClick={() => handleOpenModal(process)} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all duration-150 active:scale-90 focus-visible:ring-2 focus-visible:ring-amber-400/50" title="Editar processo">
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleDeleteProcess(process.id)} className="text-red-600 hover:text-red-900 transition-colors" title="Excluir">
-                                  <Trash2 className="w-5 h-5" />
+                                <button onClick={() => handleDeleteProcess(process.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all duration-150 active:scale-90 focus-visible:ring-2 focus-visible:ring-red-400/50" title="Excluir processo">
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </td>
@@ -4106,32 +4189,15 @@ Regras:
       {detailsModal}
       {exportModal}
 
-      {showStageMapModal && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setShowStageMapModal(false)}
-          />
-          <div className="relative z-10 w-full max-w-5xl">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#f97316] flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Visão geral</div>
-                    <div className="text-base font-bold text-slate-900 leading-tight">Mapa de Fases</div>
-                    <div className="text-[11px] text-slate-500">Clique em uma fase para ver os processos</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowStageMapModal(false)}
-                  className="p-2 rounded-lg hover:bg-slate-200/60 text-slate-500 hover:text-slate-700 transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      <Modal
+        open={showStageMapModal}
+        onClose={() => setShowStageMapModal(false)}
+        title="Mapa de Fases"
+        eyebrow="Visão geral"
+        subtitle="Clique em uma fase para ver os processos"
+        icon={<Clock className="w-5 h-5" />}
+        size="xl"
+      >
 
               <div className="p-4 border-b border-slate-100 bg-white">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -4233,11 +4299,7 @@ Regras:
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      </Modal>
 
       {/* Timeline Modal */}
       {showTimelineModal && timelineProcessCode && createPortal(

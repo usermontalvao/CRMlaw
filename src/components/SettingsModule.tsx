@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal, ModalBody } from './ui';
 import {
   Settings,
   Building2,
@@ -1650,35 +1650,23 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
         </section>
       </div>
 
-      {userModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-          <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-            onClick={() => setUserModalOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                  Formulário
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                  {selectedUser ? 'Editar usuário' : 'Novo usuário'}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setUserModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-8 space-y-5">
+      <Modal
+        open={userModalOpen}
+        onClose={() => setUserModalOpen(false)}
+        title={selectedUser ? 'Editar usuário' : 'Novo usuário'}
+        eyebrow="Formulário"
+        size="lg"
+        zIndex={70}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setUserModalOpen(false)}>Cancelar</button>
+            <button onClick={handleUserSave} disabled={saving || !selectedUser} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar mudanças
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="p-8 space-y-5">
               <div className="flex items-center gap-4">
                 <div className="relative">
                   <img
@@ -1784,65 +1772,38 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                   />
                 </div>
               </div>
-            </div>
+        </ModalBody>
+      </Modal>
 
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
-              <div className="flex justify-end gap-3">
-                <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setUserModalOpen(false)}>
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleUserSave}
-                  disabled={saving || !selectedUser}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar mudanças
-                </button>
-              </div>
-            </div>
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Remover usuário"
+        size="sm"
+        zIndex={50}
+        footer={
+          <div className="flex justify-end gap-3">
+            <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setDeleteTarget(null)}>Cancelar</button>
+            <button onClick={confirmDeleteUser} disabled={deleteLoading} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+              {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Remover
+            </button>
           </div>
-        </div>
-      , document.body)}
-
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl">
-            <div className="px-6 py-5">
-              <div className="flex items-center gap-3 text-red-600">
-                <span className="rounded-full bg-red-50 p-2">
-                  <Trash2 className="w-5 h-5" />
-                </span>
-                <div>
-                  <h3 className="text-lg font-semibold">Remover usuário</h3>
-                  <p className="text-sm text-slate-500">
-                    Essa ação remove o perfil do CRM. A conta Supabase permanecerá ativa até ser removida pelo painel de autenticação.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-                <p>
-                  <strong>{deleteTarget.name}</strong>
-                </p>
+        }
+      >
+        <ModalBody>
+          {deleteTarget && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">
+                Essa ação remove o perfil do CRM. A conta Supabase permanecerá ativa até ser removida pelo painel de autenticação.
+              </p>
+              <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                <p><strong>{deleteTarget.name}</strong></p>
                 <p className="text-xs text-slate-400">{deleteTarget.email}</p>
               </div>
             </div>
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
-              <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setDeleteTarget(null)}>
-                Cancelar
-              </button>
-              <button
-                onClick={confirmDeleteUser}
-                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                disabled={deleteLoading}
-              >
-                {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                Remover
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 };

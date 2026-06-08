@@ -3,12 +3,12 @@ import { X, Save, Calendar } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import type { Client, CreateClientDTO, ClientType, MaritalStatus } from '../types/client.types';
 
-// Estilos compactos para página
 const inputClass =
-  'w-full px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-800 ' +
+  'w-full px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 ' +
+  'bg-white dark:bg-zinc-800 text-sm text-slate-800 dark:text-zinc-100 ' +
   'placeholder-slate-400 focus:outline-0 focus:ring-1 focus:ring-orange-500 focus:border-orange-500';
 
-const labelClass = 'block text-xs font-medium text-slate-500 mb-1';
+const labelClass = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5';
 
 interface ClientFormProps {
   client: Client | null;
@@ -302,26 +302,22 @@ const ClientForm: React.FC<ClientFormProps> = ({
       <form
         id="client-form"
         onSubmit={handleSubmit}
-        className={`flex flex-col ${isModalVariant ? 'h-full' : 'min-h-[calc(100vh-64px)]'}`}
+        className={`flex flex-col ${isModalVariant ? '' : 'min-h-[calc(100vh-64px)]'}`}
       >
-        {/* Body - compacto */}
-        <div
-          className={`px-4 py-4 space-y-4 ${
-            isModalVariant ? 'flex-1 overflow-y-auto max-h-[70vh]' : 'flex-1'
-          }`}
-        >
-          
-          {/* Client Type - inline */}
-          <div className="flex gap-4 items-center">
-            <span className="text-xs font-medium text-slate-500">Tipo:</span>
-            <div className="flex p-0.5 rounded-md bg-slate-100">
+        {/* Body */}
+        <div className="px-5 py-3 space-y-3 flex-1">
+
+          {/* Client Type toggle */}
+          <div className="flex gap-3 items-center">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tipo:</span>
+            <div className="flex p-0.5 rounded-md bg-slate-100 dark:bg-zinc-800">
               <button
                 type="button"
                 onClick={() => handleChange('client_type', 'pessoa_fisica' as ClientType)}
                 className={`px-3 py-1 text-xs font-medium rounded transition-all ${
                   isPessoaFisica
                     ? 'bg-orange-500 text-white'
-                    : 'text-slate-600 hover:bg-white/60'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10'
                 }`}
               >
                 Pessoa Física
@@ -332,7 +328,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 className={`px-3 py-1 text-xs font-medium rounded transition-all ${
                   !isPessoaFisica
                     ? 'bg-orange-500 text-white'
-                    : 'text-slate-600 hover:bg-white/60'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10'
                 }`}
               >
                 Pessoa Jurídica
@@ -340,17 +336,24 @@ const ClientForm: React.FC<ClientFormProps> = ({
             </div>
           </div>
 
-          {/* Personal Data Section */}
-          <div className="space-y-2">
-            <h2 className="text-xs font-bold tracking-wider uppercase text-slate-500">Dados Pessoais</h2>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-              {/* Linha 1: Nome | Nascimento | CPF | RG */}
-              <label className="flex flex-col col-span-2 md:col-span-3">
-                <span className={labelClass}>{isPessoaFisica ? 'Nome Completo' : 'Razão Social'}</span>
-                <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} placeholder="" />
-              </label>
-              {isPessoaFisica && (
-                <label className="flex flex-col">
+          {/* Dados Pessoais */}
+          <div className="space-y-1.5">
+            <h2 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Dados Pessoais</h2>
+            {isPessoaFisica ? (
+              <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+                <label className="flex flex-col col-span-6">
+                  <span className={labelClass}>Nome Completo</span>
+                  <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
+                </label>
+                <label className="flex flex-col col-span-2">
+                  <span className={labelClass}>CPF</span>
+                  <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', maskCpfInput(e.target.value))} maxLength={14} />
+                </label>
+                <label className="flex flex-col col-span-2">
+                  <span className={labelClass}>RG</span>
+                  <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} />
+                </label>
+                <label className="flex flex-col col-span-2">
                   <span className={labelClass}>Nascimento</span>
                   <input
                     type="date"
@@ -359,20 +362,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     onChange={(e) => handleChange('birth_date', e.target.value)}
                   />
                 </label>
-              )}
-              <label className="flex flex-col">
-                <span className={labelClass}>{isPessoaFisica ? 'CPF' : 'CNPJ'}</span>
-                <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', isPessoaFisica ? maskCpfInput(e.target.value) : applyCnpjMask(e.target.value))} placeholder="" maxLength={isPessoaFisica ? 14 : 18} />
-              </label>
-              {isPessoaFisica && (
-                <label className="flex flex-col">
-                  <span className={labelClass}>RG</span>
-                  <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} placeholder="" />
-                </label>
-              )}
-              {/* Linha 2: Estado Civil | Email | Telefone */}
-              {isPessoaFisica && (
-                <label className="flex flex-col">
+                <label className="flex flex-col col-span-3">
                   <span className={labelClass}>Estado Civil</span>
                   <select
                     className={`${inputClass} appearance-none`}
@@ -387,121 +377,125 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     <option value="uniao_estavel">União Estável</option>
                   </select>
                 </label>
-              )}
-              <label className="flex flex-col col-span-2">
-                <span className={labelClass}>Email</span>
-                <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="" />
-              </label>
-              <label className="flex flex-col">
-                <span className={labelClass}>Telefone</span>
-                <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} placeholder="" maxLength={16} />
-              </label>
-            </div>
+                <label className="flex flex-col col-span-6">
+                  <span className={labelClass}>Email</span>
+                  <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
+                </label>
+                <label className="flex flex-col col-span-3">
+                  <span className={labelClass}>Telefone</span>
+                  <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
+                </label>
+              </div>
+            ) : (
+              <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+                <label className="flex flex-col col-span-7">
+                  <span className={labelClass}>Razão Social</span>
+                  <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
+                </label>
+                <label className="flex flex-col col-span-5">
+                  <span className={labelClass}>CNPJ</span>
+                  <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', applyCnpjMask(e.target.value))} maxLength={18} />
+                </label>
+                <label className="flex flex-col col-span-8">
+                  <span className={labelClass}>Email</span>
+                  <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
+                </label>
+                <label className="flex flex-col col-span-4">
+                  <span className={labelClass}>Telefone</span>
+                  <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
+                </label>
+              </div>
+            )}
           </div>
 
-          {/* Address Section */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-500">Endereço</h3>
+          {/* Endereço */}
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Endereço</h3>
             {cepError && <span className="text-xs text-red-500 block">{cepError}</span>}
-            <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-              {/* Linha 1: CEP | Rua | Nº | Compl */}
-              <label className="flex flex-col">
+            <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+              <label className="flex flex-col col-span-2">
                 <span className={labelClass}>CEP</span>
-                <input type="text" className={inputClass} value={formData.address_zip_code} onChange={(e) => handleChange('address_zip_code', e.target.value)} placeholder="" />
+                <input type="text" className={inputClass} value={formData.address_zip_code} onChange={(e) => handleChange('address_zip_code', e.target.value)} />
               </label>
-              <label className="flex flex-col col-span-3 md:col-span-4">
+              <label className="flex flex-col col-span-6">
                 <span className={labelClass}>Rua</span>
-                <input type="text" className={inputClass} value={formData.address_street} onChange={(e) => handleChange('address_street', e.target.value)} placeholder="" />
+                <input type="text" className={inputClass} value={formData.address_street} onChange={(e) => handleChange('address_street', e.target.value)} />
               </label>
-              <label className="flex flex-col">
+              <label className="flex flex-col col-span-2">
                 <span className={labelClass}>Nº</span>
-                <input type="text" className={inputClass} value={formData.address_number} onChange={(e) => handleChange('address_number', e.target.value)} placeholder="" />
+                <input type="text" className={inputClass} value={formData.address_number} onChange={(e) => handleChange('address_number', e.target.value)} />
               </label>
               <label className="flex flex-col col-span-2">
                 <span className={labelClass}>Compl.</span>
-                <input type="text" className={inputClass} value={formData.address_complement} onChange={(e) => handleChange('address_complement', e.target.value)} placeholder="" />
+                <input type="text" className={inputClass} value={formData.address_complement} onChange={(e) => handleChange('address_complement', e.target.value)} />
+              </label>
+              <label className="flex flex-col col-span-4">
+                <span className={labelClass}>Bairro</span>
+                <input type="text" className={inputClass} value={formData.address_neighborhood} onChange={(e) => handleChange('address_neighborhood', e.target.value)} />
+              </label>
+              <label className="flex flex-col col-span-6">
+                <span className={labelClass}>Cidade</span>
+                <input type="text" className={inputClass} value={formData.address_city} onChange={(e) => handleChange('address_city', e.target.value)} />
               </label>
               <label className="flex flex-col col-span-2">
-                <span className={labelClass}>Bairro</span>
-                <input type="text" className={inputClass} value={formData.address_neighborhood} onChange={(e) => handleChange('address_neighborhood', e.target.value)} placeholder="" />
-              </label>
-              <label className="flex flex-col col-span-2 md:col-span-4">
-                <span className={labelClass}>Cidade</span>
-                <input type="text" className={inputClass} value={formData.address_city} onChange={(e) => handleChange('address_city', e.target.value)} placeholder="" />
-              </label>
-              <label className="flex flex-col">
                 <span className={labelClass}>UF</span>
-                <input type="text" className={`${inputClass} uppercase`} value={formData.address_state} onChange={(e) => handleChange('address_state', e.target.value)} maxLength={2} placeholder="" />
+                <input type="text" className={`${inputClass} uppercase`} value={formData.address_state} onChange={(e) => handleChange('address_state', e.target.value)} maxLength={2} />
               </label>
             </div>
           </div>
 
-          {/* Status & Observations - inline */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-500">Status e Observações</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="flex flex-col">
+          {/* Status e Observações */}
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Status e Observações</h3>
+            <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+              <div className="flex flex-col col-span-4">
                 <span className={labelClass}>Status</span>
-                <div className="flex p-0.5 rounded-md bg-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => handleChange('status', 'ativo')}
-                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
-                      formData.status === 'ativo'
-                        ? 'bg-orange-500 text-white'
-                        : 'text-slate-600 hover:bg-white/60'
-                    }`}
-                  >
-                    Ativo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChange('status', 'inativo')}
-                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
-                      formData.status === 'inativo'
-                        ? 'bg-orange-500 text-white'
-                        : 'text-slate-600 hover:bg-white/60'
-                    }`}
-                  >
-                    Inativo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChange('status', 'suspenso')}
-                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
-                      formData.status === 'suspenso'
-                        ? 'bg-orange-500 text-white'
-                        : 'text-slate-600 hover:bg-white/60'
-                    }`}
-                  >
-                    Suspenso
-                  </button>
+                <div className="flex p-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 h-[calc(1.75rem+2px)]">
+                  {(['ativo', 'inativo', 'suspenso'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleChange('status', s)}
+                      className={`flex-1 text-xs font-medium rounded transition-all capitalize ${
+                        formData.status === s
+                          ? 'bg-orange-500 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <label className="flex flex-col md:col-span-2">
+              <label className="flex flex-col col-span-8">
                 <span className={labelClass}>Observações</span>
-                <input type="text" className={inputClass} placeholder="" value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)} />
+                <textarea
+                  rows={2}
+                  className={`${inputClass} resize-none`}
+                  value={formData.notes}
+                  onChange={(e) => handleChange('notes', e.target.value)}
+                />
               </label>
             </div>
           </div>
         </div>
 
         <div
-          className={`w-full border-t border-slate-200 px-4 py-3 flex justify-end gap-2 bg-white ${
+          className={`w-full border-t border-slate-200 dark:border-zinc-800 px-5 py-3 flex justify-end gap-2 bg-white dark:bg-zinc-900 ${
             isModalVariant ? '' : 'sticky bottom-0 left-0'
           }`}
         >
           <button
             type="button"
             onClick={onBack}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+            className="px-4 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50"
+            className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50"
           >
             {loading ? 'Salvando...' : 'Salvar Cliente'}
           </button>

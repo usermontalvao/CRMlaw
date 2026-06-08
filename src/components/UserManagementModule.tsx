@@ -3,6 +3,7 @@ import { Users, Plus, Search, Mail, Briefcase, Shield, Trash2, Edit2, Loader2, E
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { Modal, ModalBody } from './ui';
 
 interface Profile {
   id: string;
@@ -353,7 +354,7 @@ export const UserManagementModule: React.FC = () => {
                           <button
                             onClick={() => handleEditUser(profile)}
                             disabled={profile.user_id === user?.id}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title={profile.user_id === user?.id ? 'Você não pode editar seu próprio cargo' : 'Editar cargo'}
                           >
                             <Edit2 className="w-4 h-4" />
@@ -388,200 +389,188 @@ export const UserManagementModule: React.FC = () => {
       </div>
 
       {/* Modal de Criação */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h2 className="text-xl font-semibold text-slate-900">Criar Novo Usuário</h2>
-              <button
-                onClick={() => setShowCreateModal(false)}
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Criar Novo Usuário"
+        size="sm"
+        zIndex={50}
+        footer={
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(false)}
+              disabled={creating}
+              className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="create-user-form"
+              disabled={creating}
+              className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  Criando...
+                </>
+              ) : (
+                'Criar Usuário'
+              )}
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+          <form id="create-user-form" onSubmit={handleCreateUser} className="space-y-4">
+            {/* Nome */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Nome Completo</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                placeholder="Nome do colaborador"
+                required
                 disabled={creating}
-                className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              />
             </div>
 
-            <form onSubmit={handleCreateUser} className="p-6 space-y-4">
-              {/* Nome */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Nome Completo</label>
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">E-mail</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                placeholder="email@exemplo.com"
+                required
+                disabled={creating}
+              />
+            </div>
+
+            {/* Cargo */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Cargo</label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                disabled={creating}
+              >
+                {ROLES.filter((role) => {
+                  // Administrador vê todos os cargos
+                  if (normalizedCurrentRole === 'administrador') {
+                    return true;
+                  }
+                  // Advogado vê todos exceto Administrador
+                  if (normalizedCurrentRole === 'advogado') {
+                    return normalizeRole(role.value) !== 'administrador';
+                  }
+                  // Outros cargos só veem não-restritos
+                  return !role.restricted;
+                }).map((role) => (
+                  <option key={role.value} value={role.value}>
+                    {role.icon} {role.label} - {role.description}
+                  </option>
+                ))}
+              </select>
+              {normalizedCurrentRole === 'advogado' && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Advogados podem criar Advogado, Auxiliar, Secretária, Financeiro e Estagiário. Apenas Administradores podem criar Administradores.
+                </p>
+              )}
+            </div>
+
+            {/* Senha */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Senha Temporária</label>
+              <div className="relative">
                 <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  placeholder="Nome do colaborador"
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  placeholder="Mínimo 6 caracteres"
                   required
                   disabled={creating}
                 />
-              </div>
-
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">E-mail</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  placeholder="email@exemplo.com"
-                  required
-                  disabled={creating}
-                />
-              </div>
-
-              {/* Cargo */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Cargo</label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  disabled={creating}
-                >
-                  {ROLES.filter((role) => {
-                    // Administrador vê todos os cargos
-                    if (normalizedCurrentRole === 'administrador') {
-                      return true;
-                    }
-                    // Advogado vê todos exceto Administrador
-                    if (normalizedCurrentRole === 'advogado') {
-                      return normalizeRole(role.value) !== 'administrador';
-                    }
-                    // Outros cargos só veem não-restritos
-                    return !role.restricted;
-                  }).map((role) => (
-                    <option key={role.value} value={role.value}>
-                      {role.icon} {role.label} - {role.description}
-                    </option>
-                  ))}
-                </select>
-                {normalizedCurrentRole === 'advogado' && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Advogados podem criar Advogado, Auxiliar, Secretária, Financeiro e Estagiário. Apenas Administradores podem criar Administradores.
-                  </p>
-                )}
-              </div>
-
-              {/* Senha */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Senha Temporária</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                    placeholder="Mínimo 6 caracteres"
-                    required
-                    disabled={creating}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Botões */}
-              <div className="flex gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  disabled={creating}
-                  className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
-                >
-                  {creating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                      Criando...
-                    </>
-                  ) : (
-                    'Criar Usuário'
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+          </form>
+        </ModalBody>
+      </Modal>
 
       {/* Modal de Edição de Cargo */}
-      {editingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-900">Editar Cargo</h3>
-              <button
-                onClick={() => setEditingUser(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
+      <Modal
+        open={!!editingUser}
+        onClose={() => setEditingUser(null)}
+        title="Editar Cargo"
+        size="sm"
+        footer={
+          <div className="flex gap-3 w-full">
+            <button
+              type="button"
+              onClick={() => setEditingUser(null)}
+              disabled={saving}
+              className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              disabled={saving || editRole === editingUser?.role}
+              className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </button>
+          </div>
+        }
+      >
+        <ModalBody>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Usuário</label>
+              <p className="text-slate-900 font-medium">{editingUser?.name}</p>
+              <p className="text-sm text-slate-500">{editingUser?.email}</p>
             </div>
 
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Usuário</label>
-                <p className="text-slate-900 font-medium">{editingUser.name}</p>
-                <p className="text-sm text-slate-500">{editingUser.email}</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Novo Cargo</label>
-                <select
-                  value={editRole}
-                  onChange={(e) => setEditRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  disabled={saving}
-                >
-                  {ROLES.map((role) => (
-                    <option key={role.value} value={role.value}>
-                      {role.icon} {role.label} - {role.description}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  disabled={saving}
-                  className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  disabled={saving || editRole === editingUser.role}
-                  className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                      Salvando...
-                    </>
-                  ) : (
-                    'Salvar'
-                  )}
-                </button>
-              </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Novo Cargo</label>
+              <select
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                disabled={saving}
+              >
+                {ROLES.map((role) => (
+                  <option key={role.value} value={role.value}>
+                    {role.icon} {role.label} - {role.description}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        </div>
-      )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 };
