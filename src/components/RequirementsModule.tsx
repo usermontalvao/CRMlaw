@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -60,10 +60,11 @@ import { clientService } from '../services/client.service';
 import { signatureService } from '../services/signature.service';
 import { requirementDocumentService } from '../services/requirementDocument.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
-import { settingsService } from '../services/settings.service';
+import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { profileService } from '../services/profile.service';
 import { deadlineService } from '../services/deadline.service';
@@ -79,7 +80,8 @@ import type { CreateCalendarEventDTO } from '../types/calendar.types';
 import type { Process, CreateProcessDTO, RequirementRole } from '../types/process.types';
 import type { RequirementDocument } from '../types/requirementDocument.types';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, ModalFooter } from './ui';
+import { useFormLayout } from '../hooks/useFormLayout';
 
 const STATUS_OPTIONS: {
   key: RequirementStatus;
@@ -566,7 +568,58 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const { user } = useAuth();
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
+  const { requirePin } = useSecurityPin();
   const { navigateTo } = useNavigation();
+  const [statusOptions, setStatusOptions] = useState(STATUS_OPTIONS);
+  const [benefitTypes, setBenefitTypes] = useState(BENEFIT_TYPES);
+  const [defaultRequirementStatus, setDefaultRequirementStatus] = useState<string>(emptyForm.status);
+  const [defaultRequirementBenefit, setDefaultRequirementBenefit] = useState<string>(emptyForm.benefit_type);
+  const fl = useFormLayout('requirements');
+
+  const makeEmptyForm = useCallback((): RequirementFormData => ({
+    ...emptyForm,
+    status: (statusOptions.some(s => s.key === defaultRequirementStatus)
+      ? defaultRequirementStatus
+      : statusOptions[0]?.key ?? emptyForm.status) as RequirementStatus,
+    benefit_type: (defaultRequirementBenefit === '' || benefitTypes.some(b => b.key === defaultRequirementBenefit))
+      ? (defaultRequirementBenefit as BenefitType | '')
+      : benefitTypes[0]?.key ?? emptyForm.benefit_type,
+  }), [statusOptions, benefitTypes, defaultRequirementStatus, defaultRequirementBenefit]);
+  const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
+
+  useEffect(() => {
+    settingsService.getResponsibilityConfig().then(cfgs => {
+      const cfg = cfgs.find(c => c.module === 'requirements');
+      if (cfg) setResponsibilityConfig(cfg);
+    }).catch(() => {});
+    settingsService.getRequirementModuleConfig().then(cfg => {
+      if (cfg.statuses.length > 0) {
+        const relabeled = STATUS_OPTIONS
+          .filter(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return !sv || sv.active !== false; })
+          .map(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return sv ? { ...local, label: sv.label, badge: sv.badge ?? local.badge } : local; });
+        const newItems = cfg.statuses.filter(s => !STATUS_OPTIONS.some(l => l.key === s.key) && s.active !== false);
+        const neutralized = newItems.map(s => ({
+          key: s.key as RequirementStatus,
+          label: s.label,
+          badge: s.badge ?? 'bg-gray-100 text-gray-700',
+          color: 'gray',
+        }));
+        setStatusOptions([...relabeled, ...neutralized]);
+        const defStatus = cfg.statuses.find(s => s.isDefault && s.active !== false);
+        if (defStatus) setDefaultRequirementStatus(defStatus.key);
+      }
+      if (cfg.benefit_types.length > 0) {
+        const activeBenefits = cfg.benefit_types.filter(bt => bt.active !== false);
+        setBenefitTypes(activeBenefits.map(bt => ({
+          key: bt.key as BenefitType,
+          label: bt.label,
+        })));
+        const defBenefit = activeBenefits.find(bt => bt.isDefault);
+        if (defBenefit) setDefaultRequirementBenefit(defBenefit.key);
+      }
+    }).catch(() => {});
+  }, []);
+
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -660,6 +713,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [selectedWATemplate, setSelectedWATemplate] = useState<{ label: string; text: string } | null>(null);
   const [copiedCpfId, setCopiedCpfId] = useState<string | null>(null);
   const [showDetailPassword, setShowDetailPassword] = useState(false);
+  const [decryptedInssPassword, setDecryptedInssPassword] = useState<string | null>(null);
   const [copiedDetailField, setCopiedDetailField] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
@@ -1119,7 +1173,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       </div>
       <div class="field">
         <div class="field-label">Senha INSS</div>
-        <div class="field-value">${req.inss_password ?? '&mdash;'}</div>
+        <div class="field-value">${req.inss_password ? '*** OCULTADO — consulte o sistema ***' : '&mdash;'}</div>
       </div>
       ${analysisRow}
       ${exigencyRow}
@@ -1177,12 +1231,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     if (!requirement) return;
     const beneficiaryName = requirement.beneficiary ?? 'Beneficiário';
 
+    const defaultResponsibleId = responsibilityConfig?.default_mode === 'creator'
+      ? (user?.id ?? '')
+      : responsibilityConfig?.default_mode === 'single' && responsibilityConfig.single_member_id
+        ? responsibilityConfig.single_member_id
+        : '';
     setExigencyForm({
       title: `Atender exigência - ${beneficiaryName}`,
       due_date: '',
       priority: 'alta',
       notify_days_before: '3',
-      responsible_id: '',
+      responsible_id: defaultResponsibleId,
     });
 
     setExigencyModal({
@@ -1895,7 +1954,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           setBeneficiarySearchTerm(prefillData.beneficiary);
         }
       } else {
-        setFormData(emptyForm);
+        setFormData(makeEmptyForm());
         setBeneficiarySearchTerm('');
         setSourceSignatureId(null);
       }
@@ -2141,12 +2200,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         protocol: requirement.protocol ?? '',
         beneficiary: requirement.beneficiary,
         cpf: requirement.cpf,
-        benefit_type: requirement.benefit_type,
-        status: requirement.status,
+        benefit_type: (benefitTypes.some(b => b.key === requirement.benefit_type) ? requirement.benefit_type : benefitTypes[0]?.key ?? requirement.benefit_type) as typeof emptyForm.benefit_type,
+        status: (statusOptions.some(s => s.key === requirement.status) ? requirement.status : statusOptions[0]?.key ?? requirement.status) as RequirementStatus,
         entry_date: toDateInputValue(requirement.entry_date),
         exigency_due_date: toDateInputValue(requirement.exigency_due_date),
         phone: requirement.phone || '',
-        inss_password: requirement.inss_password || '',
+        inss_password: '', // nunca pré-preencher: inss_password não vem da query de lista
         observations: requirement.observations || '',
         notes: '',
         client_id: requirement.client_id || '',
@@ -2154,7 +2213,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setBeneficiarySearchTerm(requirement.beneficiary);
     } else {
       setSelectedRequirement(null);
-      setFormData(emptyForm);
+      setFormData(makeEmptyForm());
       setBeneficiarySearchTerm('');
     }
 
@@ -2275,6 +2334,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setSaving(true);
       setError(null);
 
+      // Encriptar senha INSS antes de gravar (AES-GCM via edge function inss-crypto)
+      const rawPassword = formData.inss_password?.trim() || null;
+      let inssPasswordEnc: string | null = null;
+      let inssPasswordPlain: string | null = null;
+      if (rawPassword) {
+        inssPasswordEnc = await requirementService.encryptInssPassword(rawPassword);
+        if (!inssPasswordEnc) {
+          // Edge function indisponível — fallback: plain text (degradado mas sem perda de dado)
+          inssPasswordPlain = rawPassword;
+        }
+      }
+
       const payloadBase = {
         protocol: trimmedProtocol || null,
         beneficiary: formData.beneficiary.trim(),
@@ -2287,7 +2358,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             ? toUtcMidnightIso(formData.exigency_due_date)
             : null,
         phone: formData.phone?.trim() || null,
-        inss_password: formData.inss_password?.trim() || null,
+        // Só atualiza campos de senha quando o usuário digitou um novo valor.
+        // Omitir as chaves preserva os valores existentes no banco.
+        ...(rawPassword !== null ? { inss_password: inssPasswordPlain, inss_password_enc: inssPasswordEnc } : {}),
         observations: formData.observations?.trim() || null,
         client_id: formData.client_id?.trim() || null,
       };
@@ -2366,7 +2439,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       if (!updatedRequirement) {
         setSelectedRequirement(null);
       }
-      setFormData(emptyForm);
+      setFormData(makeEmptyForm());
       setSourceSignatureId(null);
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o requerimento.');
@@ -2425,6 +2498,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setNoteDraft('');
     setNoteError(null);
     setShowDetailPassword(false);
+    setDecryptedInssPassword(null);
     setCopiedDetailField(null);
   };
 
@@ -2445,10 +2519,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setNoteDraft('');
     setNoteError(null);
     setShowDetailPassword(false);
+    setDecryptedInssPassword(null);
     setCopiedDetailField(null);
   };
 
-  const getStatusConfig = (status: RequirementStatus) => STATUS_OPTIONS.find((s) => s.key === status);
+  const getStatusConfig = (status: RequirementStatus) => statusOptions.find((s) => s.key === status);
 
   const getStatusBadge = (status: RequirementStatus) => {
     const statusConfig = getStatusConfig(status);
@@ -2463,7 +2538,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const getBenefitTypeLabel = (type: BenefitType) => {
-    const typeConfig = BENEFIT_TYPES.find((item) => item.key === type);
+    const typeConfig = benefitTypes.find((item) => item.key === type);
     return typeConfig ? typeConfig.label : type;
   };
 
@@ -2715,6 +2790,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         pericia_medica_at: medicaAt,
         pericia_social_at: socialAt,
       } as any);
+
+      await calendarService.deleteEventsByRequirementId(requirement.id, 'pericia');
 
       const periciaEvents: Array<ReturnType<typeof calendarService.createEvent> | Promise<any>> = [];
 
@@ -2996,7 +3073,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         'Status': getStatusLabel(req.status),
         'Data de Entrada': formatDate(req.entry_date),
         'Telefone': req.phone || '',
-        'Senha INSS': req.inss_password || '',
+        'Senha INSS': req.inss_password ? '*** OCULTADO ***' : '',
         'Observações': req.observations || '',
         'Criado em': req.created_at ? new Date(req.created_at).toLocaleDateString('pt-BR') : '',
         'Atualizado em': req.updated_at ? new Date(req.updated_at).toLocaleDateString('pt-BR') : '',
@@ -3244,11 +3321,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       size="xl"
       zIndex={70}
       footer={
-        <div className="flex items-center justify-between gap-3 w-full">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={handleCloseModal} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition">Cancelar</button>
-            <button type="submit" form="requirement-form" disabled={saving} className="inline-flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <button type="button" onClick={handleCloseModal} disabled={saving} className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white sm:w-auto">Cancelar</button>
+            <button type="submit" form="requirement-form" disabled={saving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60 sm:w-auto">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {saving ? 'Salvando...' : 'Salvar'}
             </button>
@@ -3372,33 +3449,39 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <div>
               <div className="grid grid-cols-12 gap-4">
                 {/* Tipo de Benefício */}
+                {!fl.isHidden('benefit_type') && (
                 <label className="flex flex-col col-span-12 sm:col-span-5">
-                  <span className={labelClass}>Tipo de Benefício</span>
+                  <span className={labelClass}>{fl.fieldLabel('benefit_type', 'Tipo de Benefício')}</span>
                   <select
                     value={formData.benefit_type}
                     onChange={(e) => handleFormChange('benefit_type', e.target.value as BenefitType | '')}
                     className={selectClass}
+                    required={fl.isRequired('benefit_type')}
                   >
                     <option value="" disabled>Selecione...</option>
-                    {BENEFIT_TYPES.map((type) => (
+                    {benefitTypes.map((type) => (
                       <option key={type.key} value={type.key}>{type.label}</option>
                     ))}
                   </select>
                 </label>
+                )}
 
                 {/* Status */}
+                {!fl.isHidden('status') && (
                 <label className="flex flex-col col-span-12 sm:col-span-4">
-                  <span className={labelClass}>Status</span>
+                  <span className={labelClass}>{fl.fieldLabel('status', 'Status')}</span>
                   <select
                     value={formData.status}
                     onChange={(e) => handleFormChange('status', e.target.value as RequirementStatus)}
                     className={selectClass}
+                    required={fl.isRequired('status')}
                   >
-                    {STATUS_OPTIONS.map((s) => (
+                    {statusOptions.map((s) => (
                       <option key={s.key} value={s.key}>{s.label}</option>
                     ))}
                   </select>
                 </label>
+                )}
 
                 {/* Data de Entrada */}
                 <label className="flex flex-col col-span-12 sm:col-span-3">
@@ -3447,22 +3530,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     value={formData.inss_password}
                     onChange={(e) => handleFormChange('inss_password', e.target.value)}
                     className={inputClass}
-                    placeholder="Senha de acesso"
+                    placeholder={selectedRequirement?.inss_password_enc ? 'Senha já configurada — deixe vazio para manter' : 'Senha de acesso'}
                   />
                 </label>
               </div>
             </div>
 
             {/* ── Seção: Notas ── */}
+            {!fl.isHidden('notes') && (
             <div>
               <div className="grid grid-cols-12 gap-4">
                 <label className="flex flex-col col-span-12 sm:col-span-6">
-                  <span className={labelClass}>Observações</span>
+                  <span className={labelClass}>{fl.fieldLabel('notes', 'Observações')}</span>
                   <textarea
                     value={formData.observations}
                     onChange={(e) => handleFormChange('observations', e.target.value)}
                     className={textareaClass}
                     placeholder="Observações sobre o requerimento..."
+                    required={fl.isRequired('notes')}
                   />
                 </label>
                 <label className="flex flex-col col-span-12 sm:col-span-6">
@@ -3476,6 +3561,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
               </div>
             </div>
+            )}
 
         </form>
       </ModalBody>
@@ -3767,6 +3853,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </div>
           )}
       </ModalBody>
+      <ModalFooter>
+        <button
+          type="button"
+          onClick={handleClosePericiaModal}
+          disabled={periciaSaving}
+          className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={handleSavePericiaSchedule}
+          disabled={periciaSaving}
+          className="px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 transition flex items-center gap-2"
+        >
+          {periciaSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+          Salvar
+        </button>
+      </ModalFooter>
     </Modal>
   );
 
@@ -3815,7 +3920,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   className={`appearance-none text-xs font-bold pl-2.5 pr-6 py-1 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 disabled:opacity-60 transition-all ${getStatusBadge(selectedRequirementForView.status)}`}
                   style={detailStatusConfig?.animationStyle}
                 >
-                  {STATUS_OPTIONS.map((opt) => (
+                  {statusOptions.map((opt) => (
                     <option key={opt.key} value={opt.key}>{opt.label}</option>
                   ))}
                 </select>
@@ -4046,33 +4151,79 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Senha INSS</dt>
                         <dd className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900 dark:text-white font-mono tracking-widest select-none">
-                            {selectedRequirementForView.inss_password
-                              ? (showDetailPassword ? selectedRequirementForView.inss_password : '•'.repeat(Math.min(selectedRequirementForView.inss_password.length, 8)))
-                              : '—'}
-                          </span>
-                          {selectedRequirementForView.inss_password && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setShowDetailPassword((p) => !p)}
-                                title={showDetailPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
-                              >
-                                {showDetailPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
-                              {showDetailPassword && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyDetailField('senha', selectedRequirementForView.inss_password!)}
-                                  title="Copiar senha"
-                                  className="p-1 rounded text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
-                                >
-                                  {copiedDetailField === 'senha' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
-                                </button>
-                              )}
-                            </>
-                          )}
+                          {/* hasInssPassword: true se há senha plain (legado) ou encriptada */}
+                          {(() => {
+                            const hasPassword = !!(selectedRequirementForView.inss_password_enc || selectedRequirementForView.inss_password);
+                            const displayPassword = decryptedInssPassword ?? selectedRequirementForView.inss_password;
+                            return (
+                              <>
+                                <span className="text-sm font-semibold text-slate-900 dark:text-white font-mono tracking-widest select-none">
+                                  {hasPassword
+                                    ? (showDetailPassword && displayPassword
+                                        ? displayPassword
+                                        : '•'.repeat(8))
+                                    : '—'}
+                                </span>
+                                {hasPassword && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (showDetailPassword) {
+                                          setShowDetailPassword(false);
+                                          setDecryptedInssPassword(null);
+                                          return;
+                                        }
+                                        await requirePin({
+                                          action: 'reveal_inss_password',
+                                          resourceType: 'requirement',
+                                          resourceId: selectedRequirementForView.id,
+                                          sensitivity: 'high',
+                                          title: 'Ver senha INSS',
+                                          description: 'Informe o PIN de segurança para revelar a senha INSS deste beneficiário.',
+                                          actionLabel: 'Revelar senha',
+                                          onVerified: async () => {
+                                            if (selectedRequirementForView.inss_password_enc) {
+                                              const plain = await requirementService.decryptInssPassword(selectedRequirementForView.inss_password_enc);
+                                              setDecryptedInssPassword(plain);
+                                            }
+                                            setShowDetailPassword(true);
+                                          },
+                                        });
+                                      }}
+                                      title={showDetailPassword ? 'Ocultar senha' : 'Mostrar senha (requer PIN)'}
+                                      className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                                    >
+                                      {showDetailPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                    </button>
+                                    {showDetailPassword && (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          const passwordToCopy = decryptedInssPassword ?? selectedRequirementForView.inss_password;
+                                          if (!passwordToCopy) return;
+                                          await requirePin({
+                                            action: 'copy_inss_password',
+                                            resourceType: 'requirement',
+                                            resourceId: selectedRequirementForView.id,
+                                            sensitivity: 'high',
+                                            title: 'Copiar senha INSS',
+                                            description: 'Informe o PIN para copiar a senha INSS para a área de transferência.',
+                                            actionLabel: 'Copiar senha',
+                                            onVerified: () => handleCopyDetailField('senha', passwordToCopy),
+                                          });
+                                        }}
+                                        title="Copiar senha (requer PIN)"
+                                        className="p-1 rounded text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                                      >
+                                        {copiedDetailField === 'senha' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            );
+                          })()}
                         </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
@@ -4457,7 +4608,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     activeStatusTab === 'todos' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
                   }`}>{statusCounts.todos}</span>
                 </button>
-                {STATUS_OPTIONS.map((status) => (
+                {statusOptions.map((status) => (
                   <button
                     key={status.key}
                     onClick={() => setActiveStatusTab(status.key)}
@@ -4583,7 +4734,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
                   >
                     <option value="">Todos os tipos</option>
-                    {BENEFIT_TYPES.map((type) => (
+                    {benefitTypes.map((type) => (
                       <option key={type.key} value={type.key}>{type.label}</option>
                     ))}
                   </select>
@@ -4639,7 +4790,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               className="rounded-xl border border-orange-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 transition-all"
             >
               <option value="" disabled>Alterar status para…</option>
-              {STATUS_OPTIONS.map((opt) => (
+              {statusOptions.map((opt) => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
               ))}
             </select>
@@ -4694,7 +4845,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       ) : filteredRequirements.length === 0 ? (
         /* Empty state */
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-16 flex flex-col items-center gap-4 text-center">
+        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-4 text-center">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
             <ClipboardList className="w-8 h-8 text-slate-400" />
           </div>
@@ -4717,7 +4868,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       ) : (
         <React.Fragment>
         {/* ── Desktop: Tabela ─────────────────────────────────────────────── */}
-        <div className="hidden lg:block rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
+        <div className="hidden lg:block rounded-2xl border border-slate-200/80 bg-white overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] divide-y divide-slate-100">
               <thead>
@@ -4834,7 +4985,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                               statusConfig?.badge ?? 'bg-slate-200 text-slate-700'
                             }`}
                           >
-                            {STATUS_OPTIONS.map((opt) => (
+                            {statusOptions.map((opt) => (
                               <option key={opt.key} value={opt.key}>{opt.label}</option>
                             ))}
                           </select>
@@ -5190,7 +5341,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       disabled={isUpdating}
                       className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 transition-all"
                     >
-                      {STATUS_OPTIONS.map((opt) => (
+                      {statusOptions.map((opt) => (
                         <option key={opt.key} value={opt.key}>{opt.label}</option>
                       ))}
                     </select>
@@ -5228,7 +5379,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {filteredRequirements.length > pageSize && (
-        <div className="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+        <div className="flex items-center justify-between gap-3 bg-white rounded-2xl px-4 py-3 border border-slate-200 shadow-sm">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
@@ -5263,7 +5414,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       {/* ── Seção Arquivados ──────────────────────────────────────────────── */}
       {archivedRequirements.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
           <button
             type="button"
             onClick={() => setArchivedExpanded((prev) => !prev)}
@@ -5808,7 +5959,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             <div className="w-4 h-4 bg-[#DCF8C6] rotate-45 translate-x-1 -translate-y-1" />
                           </div>
                           {/* Bubble */}
-                          <div className="bg-[#DCF8C6] rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm">
+                          <div className="bg-[#DCF8C6] rounded-2xl rounded-tr-sm px-3.5 py-2.5">
                             <p className="text-[12.5px] text-slate-800 leading-[1.55] whitespace-pre-wrap break-words">
                               {previewText}
                             </p>

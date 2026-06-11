@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { DeadlineFormModal } from './DeadlineFormModal';
 import { Modal, ModalBody } from './ui';
 import {
   Plus,
@@ -47,7 +48,7 @@ import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
-import { settingsService } from '../services/settings.service';
+import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
@@ -72,7 +73,6 @@ const STATUS_OPTIONS: {
   { key: 'cancelado', label: 'Cancelados', badge: 'bg-slate-400 text-white', icon: XCircle },
 ];
 
-const STATUS_FILTER_OPTIONS = STATUS_OPTIONS.filter((status) => status.key !== 'cumprido');
 
 const PRIORITY_OPTIONS: {
   key: DeadlinePriority;
@@ -347,10 +347,93 @@ interface DeadlinesModuleProps {
 }
 
 const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData, calendarMonth: propCalendarMonth, calendarYear: propCalendarYear, onCalendarChange }) => {
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
   const { isAdmin, loading: permissionsLoading } = usePermissions();
+
+  const [statusOptions, setStatusOptions] = useState(STATUS_OPTIONS);
+  const [priorityOptions, setPriorityOptions] = useState(PRIORITY_OPTIONS);
+  const [typeOptions, setTypeOptions] = useState(TYPE_OPTIONS);
+  const [defaultDeadlineStatus, setDefaultDeadlineStatus] = useState<string | null>(null);
+  const [defaultDeadlinePriority, setDefaultDeadlinePriority] = useState<string | null>(null);
+  const statusFilterOptions = statusOptions.filter(s => s.key !== 'cumprido');
+  const [soonDaysThreshold, setSoonDaysThreshold] = useState(2);
+  const [weekDaysThreshold, setWeekDaysThreshold] = useState(7);
+  const [defaultNotifyDays, setDefaultNotifyDays] = useState(2);
+  const [defaultDeadlineDays, setDefaultDeadlineDays] = useState(0);
+
+  const resolvedBuckets = useMemo(() => MAP_BUCKETS.map(b => {
+    if (b.key === 'soon') return {
+      ...b,
+      label: `Próximos ${soonDaysThreshold} Dia${soonDaysThreshold === 1 ? '' : 's'}`,
+      predicate: (days: number) => days > 0 && days <= soonDaysThreshold,
+    };
+    if (b.key === 'week') return {
+      ...b,
+      label: `Próximos ${soonDaysThreshold + 1}-${weekDaysThreshold} Dias`,
+      predicate: (days: number) => days > soonDaysThreshold && days <= weekDaysThreshold,
+    };
+    return b;
+  }), [soonDaysThreshold, weekDaysThreshold]);
+
+  const checkIsDueSoon = useCallback((dueDate: string) => {
+    const days = getDaysUntilDue(dueDate);
+    return days >= 0 && days <= soonDaysThreshold;
+  }, [soonDaysThreshold]);
+
+  useEffect(() => {
+    settingsService.getResponsibilityConfig().then(cfgs => {
+      const cfg = cfgs.find(c => c.module === 'deadlines');
+      if (cfg) setResponsibilityConfig(cfg);
+    }).catch(() => {});
+    settingsService.getPreferences().then(prefs => {
+      if (prefs.default_deadline_days && prefs.default_deadline_days > 0) {
+        setDefaultDeadlineDays(prefs.default_deadline_days);
+      }
+    }).catch(() => {});
+    settingsService.getDeadlineModuleConfig().then(cfg => {
+      setSoonDaysThreshold(cfg.soon_days_threshold ?? 2);
+      setWeekDaysThreshold(cfg.week_days_threshold ?? 7);
+      setDefaultNotifyDays(cfg.default_notify_days ?? 2);
+      if (cfg.statuses.length > 0) {
+        const relabeled = STATUS_OPTIONS
+          .filter(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return !sv || sv.active !== false; })
+          .map(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return sv ? { ...local, label: sv.label, badge: sv.badge ?? local.badge } : local; });
+        const newItems = cfg.statuses.filter(s => !STATUS_OPTIONS.some(l => l.key === s.key) && s.active !== false);
+        const neutralized = newItems.map(s => ({
+          key: s.key as DeadlineStatus,
+          label: s.label,
+          badge: s.badge ?? 'bg-gray-100 text-gray-700',
+          icon: Clock,
+        }));
+        setStatusOptions([...relabeled, ...neutralized]);
+        const defStatus = cfg.statuses.find(s => s.isDefault && s.active !== false);
+        if (defStatus) setDefaultDeadlineStatus(defStatus.key);
+      }
+      if (cfg.priorities.length > 0) {
+        const relabeled = PRIORITY_OPTIONS
+          .filter(local => { const sv = cfg.priorities.find(p => p.key === (local.key as string)); return !sv || sv.active !== false; })
+          .map(local => { const sv = cfg.priorities.find(p => p.key === (local.key as string)); return sv ? { ...local, label: sv.label, badge: sv.badge ?? local.badge } : local; });
+        const newItems = cfg.priorities.filter(p => !PRIORITY_OPTIONS.some(l => l.key === p.key) && p.active !== false);
+        const neutralized = newItems.map(p => ({
+          key: p.key as DeadlinePriority,
+          label: p.label,
+          badge: p.badge ?? 'bg-gray-100 text-gray-700',
+          icon: Clock,
+        }));
+        setPriorityOptions([...relabeled, ...neutralized]);
+        const defPriority = cfg.priorities.find(p => p.isDefault && p.active !== false);
+        if (defPriority) setDefaultDeadlinePriority(defPriority.key);
+      }
+      if (cfg.types.length > 0) {
+        setTypeOptions(cfg.types.filter(t => t.active !== false).map(t => {
+          const local = TYPE_OPTIONS.find(to => to.key === (t.key as DeadlineType));
+          return local ? { ...local, label: t.label } : { key: t.key as DeadlineType, label: t.label, icon: TYPE_OPTIONS[0].icon };
+        }));
+      }
+    }).catch(() => {});
+  }, []);
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
@@ -385,6 +468,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<Profile[]>([]);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [internalCalendarMonth, setInternalCalendarMonth] = useState(propCalendarMonth || new Date().getMonth());
@@ -496,12 +580,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         confirmLabel: 'Remover',
       });
       if (!confirmed) return;
+      notifyDeleted(filter?.name || undefined);
       setSavedFilters((prev) => prev.filter((f) => f.id !== id));
       if (selectedSavedFilterId === id) {
         setSelectedSavedFilterId('');
       }
     },
-    [selectedSavedFilterId, savedFilters, confirmDelete],
+    [selectedSavedFilterId, savedFilters, confirmDelete, notifyDeleted],
   );
 
   // ── Operações em lote ─────────────────────────────────────────────────────
@@ -528,6 +613,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     setBulkActionLoading(true);
     try {
       await Promise.all([...selectedIds].map((id) => deadlineService.deleteDeadline(id)));
+      notifyDeleted();
       setDeadlines((prev) => prev.filter((d) => !selectedIds.has(d.id)));
       setSelectedIds(new Set());
     } catch (err: any) {
@@ -535,7 +621,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     } finally {
       setBulkActionLoading(false);
     }
-  }, [selectedIds, confirmDelete]);
+  }, [selectedIds, confirmDelete, notifyDeleted]);
 
   const handleBulkStatusChange = useCallback(async (status: DeadlineStatus) => {
     if (!selectedIds.size) return;
@@ -1075,25 +1161,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       return dueDate >= start && dueDate <= end;
     });
     
-    const byStatus = {
-      pendente: periodDeadlines.filter(d => d.status === 'pendente').length,
-      cumprido: periodDeadlines.filter(d => d.status === 'cumprido').length,
-      vencido: periodDeadlines.filter(d => d.status === 'vencido').length,
-      cancelado: periodDeadlines.filter(d => d.status === 'cancelado').length,
-    };
-    
-    const byPriority = {
-      urgente: periodDeadlines.filter(d => d.priority === 'urgente').length,
-      alta: periodDeadlines.filter(d => d.priority === 'alta').length,
-      media: periodDeadlines.filter(d => d.priority === 'media').length,
-      baixa: periodDeadlines.filter(d => d.priority === 'baixa').length,
-    };
-    
-    const byType = {
-      geral: periodDeadlines.filter(d => d.type === 'geral').length,
-      processo: periodDeadlines.filter(d => d.type === 'processo').length,
-      requerimento: periodDeadlines.filter(d => d.type === 'requerimento').length,
-    };
+    const byStatus: Record<string, number> = {};
+    statusOptions.forEach(s => { byStatus[s.key] = periodDeadlines.filter(d => d.status === s.key).length; });
+
+    const byPriority: Record<string, number> = {};
+    priorityOptions.forEach(p => { byPriority[p.key] = periodDeadlines.filter(d => d.priority === p.key).length; });
+
+    const byType: Record<string, number> = {};
+    typeOptions.forEach(t => { byType[t.key] = periodDeadlines.filter(d => d.type === t.key).length; });
     
     // Por responsável
     const byResponsible: Record<string, number> = {};
@@ -1111,7 +1186,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     
     // Taxa de cumprimento
     const total = periodDeadlines.length;
-    const completed = byStatus.cumprido;
+    const completed = byStatus['cumprido'] ?? 0;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     
     // Média de dias para cumprir (dos cumpridos)
@@ -1138,7 +1213,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       periodStart: start,
       periodEnd: end,
     };
-  }, [deadlines, reportPeriod, reportStartDate, reportEndDate, memberMap, clientMap]);
+  }, [deadlines, reportPeriod, reportStartDate, reportEndDate, memberMap, clientMap, statusOptions, priorityOptions, typeOptions]);
 
   useEffect(() => {
     const fetchDeadlines = async () => {
@@ -1318,6 +1393,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (prefillData) {
         setFormData({
           ...emptyForm,
+          status: (defaultDeadlineStatus && statusOptions.some(s => s.key === defaultDeadlineStatus)
+            ? defaultDeadlineStatus : emptyForm.status) as DeadlineStatus,
+          priority: (defaultDeadlinePriority && priorityOptions.some(p => p.key === defaultDeadlinePriority)
+            ? defaultDeadlinePriority : emptyForm.priority) as DeadlinePriority,
           title: prefillData.title || emptyForm.title,
           description: prefillData.description || emptyForm.description,
           client_id: prefillData.client_id || emptyForm.client_id,
@@ -1334,9 +1413,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           setProcessSearchTerm(prefillData.process_code);
         }
       } else {
-        setFormData(emptyForm);
+        const defaultDueDate = defaultDeadlineDays > 0
+          ? (() => { const d = new Date(); d.setDate(d.getDate() + defaultDeadlineDays); return d.toISOString().slice(0, 10); })()
+          : '';
+        setFormData({ ...emptyForm, notify_days_before: String(defaultNotifyDays), due_date: defaultDueDate });
       }
-      
+
       setIsModalOpen(true);
       if (onParamConsumed) {
         onParamConsumed();
@@ -1404,7 +1486,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         requirement_id: deadline.requirement_id || '',
         client_id: deadline.client_id || '',
         responsible_id: deadline.responsible_id || '',
-        notify_days_before: String(deadline.notify_days_before ?? 2),
+        notify_days_before: String(deadline.notify_days_before ?? defaultNotifyDays),
       });
 
       if (deadline.process_id) {
@@ -1425,7 +1507,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setTipoPrazoCalculadora((deadline.counting_type as TipoPrazo) || 'processual');
     } else {
       setSelectedDeadline(null);
-      setFormData(emptyForm);
+      let defaultResponsibleId = '';
+      if (responsibilityConfig?.default_mode === 'creator' && currentUser?.id) {
+        defaultResponsibleId = currentUser.id;
+      } else if (responsibilityConfig?.default_mode === 'single' && responsibilityConfig.single_member_id) {
+        defaultResponsibleId = responsibilityConfig.single_member_id;
+      }
+      const defaultDueDate = defaultDeadlineDays > 0
+        ? (() => { const d = new Date(); d.setDate(d.getDate() + defaultDeadlineDays); return d.toISOString().slice(0, 10); })()
+        : '';
+      setFormData({
+        ...emptyForm,
+        status: (defaultDeadlineStatus && statusOptions.some(s => s.key === defaultDeadlineStatus)
+          ? defaultDeadlineStatus : emptyForm.status) as DeadlineStatus,
+        priority: (defaultDeadlinePriority && priorityOptions.some(p => p.key === defaultDeadlinePriority)
+          ? defaultDeadlinePriority : emptyForm.priority) as DeadlinePriority,
+        responsible_id: defaultResponsibleId,
+        notify_days_before: String(defaultNotifyDays),
+        due_date: defaultDueDate,
+      });
       setProcessSearchTerm('');
       setRequirementSearchTerm('');
       setDataPublicacao('');
@@ -1491,7 +1591,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         requirement_id: formData.requirement_id || null,
         client_id: formData.client_id || null,
         responsible_id: formData.responsible_id || null,
-        notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : 2,
+        notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : defaultNotifyDays,
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,
         counting_type: tipoPrazoCalculadora || null,
@@ -1606,6 +1706,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
     try {
       await deadlineService.deleteDeadline(id);
+      notifyDeleted(deadline?.title || undefined);
       setDeadlines((prev) => prev.filter((item) => item.id !== id));
       if (selectedDeadlineForView?.id === id) {
         handleBackToList();
@@ -1685,9 +1786,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const getStatusConfig = (status: DeadlineStatus) => STATUS_OPTIONS.find((s) => s.key === status);
-  const getPriorityConfig = (priority: DeadlinePriority) => PRIORITY_OPTIONS.find((p) => p.key === priority);
-  const getTypeConfig = (type: DeadlineType) => TYPE_OPTIONS.find((t) => t.key === type);
+  const getStatusConfig = (status: DeadlineStatus) => statusOptions.find((s) => s.key === status);
+  const getPriorityConfig = (priority: DeadlinePriority) => priorityOptions.find((p) => p.key === priority);
+  const getTypeConfig = (type: DeadlineType) => typeOptions.find((t) => t.key === type);
   const getStatusBadge = (status: DeadlineStatus) => {
     const config = getStatusConfig(status);
     return config ? config.badge : 'bg-slate-100 text-slate-600';
@@ -1786,21 +1887,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       ['Média de Dias para Cumprir:', reportStats.avgDaysToComplete],
       [''],
       ['POR STATUS'],
-      ['Pendentes:', reportStats.byStatus.pendente],
-      ['Cumpridos:', reportStats.byStatus.cumprido],
-      ['Vencidos:', reportStats.byStatus.vencido],
-      ['Cancelados:', reportStats.byStatus.cancelado],
+      ...statusOptions.map(s => [s.label, reportStats.byStatus[s.key] ?? 0]),
       [''],
       ['POR PRIORIDADE'],
-      ['Urgente:', reportStats.byPriority.urgente],
-      ['Alta:', reportStats.byPriority.alta],
-      ['Média:', reportStats.byPriority.media],
-      ['Baixa:', reportStats.byPriority.baixa],
+      ...priorityOptions.map(p => [p.label, reportStats.byPriority[p.key] ?? 0]),
       [''],
       ['POR TIPO'],
-      ['Geral:', reportStats.byType.geral],
-      ['Processo:', reportStats.byType.processo],
-      ['Requerimento:', reportStats.byType.requerimento],
+      ...typeOptions.map(t => [t.label, reportStats.byType[t.key] ?? 0]),
     ];
     const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
     wsResumo['!cols'] = [{ wch: 30 }, { wch: 30 }];
@@ -2275,7 +2368,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <p className="text-xs text-amber-100">Média Dias p/ Cumprir</p>
             </div>
             <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
-              <p className="text-3xl font-bold">{reportStats.byStatus.vencido}</p>
+              <p className="text-3xl font-bold">{reportStats.byStatus['vencido'] ?? 0}</p>
               <p className="text-xs text-red-100">Vencidos no Período</p>
             </div>
           </div>
@@ -2283,90 +2376,80 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           {/* Gráficos em Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Por Status */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <PieChart className="w-4 h-4 text-slate-400" />
                 Por Status
               </h4>
               <div className="space-y-2">
-                {[
-                  { label: 'Pendentes', value: reportStats.byStatus.pendente, color: 'bg-blue-500' },
-                  { label: 'Cumpridos', value: reportStats.byStatus.cumprido, color: 'bg-emerald-500' },
-                  { label: 'Vencidos', value: reportStats.byStatus.vencido, color: 'bg-red-500' },
-                  { label: 'Cancelados', value: reportStats.byStatus.cancelado, color: 'bg-slate-400' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded ${item.color}`} />
-                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
-                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
-                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${item.color}`}
-                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
-                      />
+                {statusOptions.map((s) => {
+                  const value = reportStats.byStatus[s.key] ?? 0;
+                  const color = s.badge.split(' ')[0];
+                  return (
+                    <div key={s.key} className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded ${color}`} />
+                      <span className="text-xs text-slate-600 flex-1">{s.label}</span>
+                      <span className="text-sm font-semibold text-slate-800">{value}</span>
+                      <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${color}`} style={{ width: `${reportStats.total > 0 ? (value / reportStats.total) * 100 : 0}%` }} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Por Prioridade */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-slate-400" />
                 Por Prioridade
               </h4>
               <div className="space-y-2">
-                {[
-                  { label: 'Urgente', value: reportStats.byPriority.urgente, color: 'bg-red-500' },
-                  { label: 'Alta', value: reportStats.byPriority.alta, color: 'bg-orange-500' },
-                  { label: 'Média', value: reportStats.byPriority.media, color: 'bg-amber-500' },
-                  { label: 'Baixa', value: reportStats.byPriority.baixa, color: 'bg-slate-400' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded ${item.color}`} />
-                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
-                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
-                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${item.color}`}
-                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
-                      />
+                {priorityOptions.map((p) => {
+                  const value = reportStats.byPriority[p.key] ?? 0;
+                  const color = p.badge.split(' ')[0];
+                  return (
+                    <div key={p.key} className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded ${color}`} />
+                      <span className="text-xs text-slate-600 flex-1">{p.label}</span>
+                      <span className="text-sm font-semibold text-slate-800">{value}</span>
+                      <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${color}`} style={{ width: `${reportStats.total > 0 ? (value / reportStats.total) * 100 : 0}%` }} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Por Tipo */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-slate-400" />
                 Por Tipo
               </h4>
               <div className="space-y-2">
-                {[
-                  { label: 'Geral', value: reportStats.byType.geral, color: 'bg-slate-500' },
-                  { label: 'Processo', value: reportStats.byType.processo, color: 'bg-indigo-500' },
-                  { label: 'Requerimento', value: reportStats.byType.requerimento, color: 'bg-purple-500' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded ${item.color}`} />
-                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
-                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
-                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${item.color}`}
-                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
-                      />
+                {typeOptions.map((t, idx) => {
+                  const TYPE_COLORS = ['bg-slate-500', 'bg-indigo-500', 'bg-purple-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500'];
+                  const value = reportStats.byType[t.key] ?? 0;
+                  const color = TYPE_COLORS[idx % TYPE_COLORS.length];
+                  return (
+                    <div key={t.key} className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded ${color}`} />
+                      <span className="text-xs text-slate-600 flex-1">{t.label}</span>
+                      <span className="text-sm font-semibold text-slate-800">{value}</span>
+                      <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${color}`} style={{ width: `${reportStats.total > 0 ? (value / reportStats.total) * 100 : 0}%` }} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Por Responsável */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Users className="w-4 h-4 text-slate-400" />
                 Por Responsável (Top 5)
@@ -2394,7 +2477,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {/* Top Clientes */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-slate-400" />
               Clientes com Mais Prazos (Top 10)
@@ -2826,267 +2909,23 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const labelStyle = 'block text-xs font-semibold text-slate-500 mb-1.5';
 
   const deadlineModal = (
-    <Modal
+    <DeadlineFormModal
       open={isModalOpen}
       onClose={handleCloseModal}
-      title={selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
-      subtitle={`Preencha os dados abaixo para ${selectedDeadline ? 'atualizar o' : 'cadastrar um novo'} prazo`}
-      icon={<Clock className="w-5 h-5" />}
-      size="xl"
-      zIndex={80}
-      footer={
-        <div className="flex items-center justify-between gap-3 w-full">
-          <p className="text-xs text-slate-400"><span className="text-red-400">*</span> campos obrigatórios</p>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={handleCloseModal} disabled={saving} className="px-5 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition disabled:opacity-50">Cancelar</button>
-            <button type="button" onClick={handleSubmit} disabled={saving} className="inline-flex items-center gap-2 px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 shadow-sm">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {selectedDeadline ? 'Salvar Alterações' : 'Criar Prazo'}
-            </button>
-          </div>
-        </div>
-      }
-    >
-      <ModalBody className="bg-slate-50 px-6 py-4 space-y-4">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</div>
-          )}
-
-          {/* Identificação */}
-          <section>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Identificação</p>
-            <div className="grid grid-cols-12 gap-3">
-              <div className="col-span-12 lg:col-span-5">
-                <label className={labelStyle}>Título do Prazo <span className="text-red-400">*</span></label>
-                <input
-                  value={formData.title}
-                  onChange={(e) => handleFormChange('title', e.target.value)}
-                  className={inputStyle}
-                  placeholder="Ex: Contestação Processo 00123..."
-                  required
-                />
-              </div>
-              <div className="col-span-6 lg:col-span-2">
-                <label className={labelStyle}>Tipo</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => {
-                    const t = e.target.value as DeadlineType;
-                    handleFormChange('type', t);
-                    if (t === 'processo') { handleFormChange('requirement_id', ''); setRequirementSearchTerm(''); }
-                    else if (t === 'requerimento') { handleFormChange('process_id', ''); setProcessSearchTerm(''); }
-                    else { handleFormChange('process_id', ''); handleFormChange('requirement_id', ''); setProcessSearchTerm(''); setRequirementSearchTerm(''); }
-                  }}
-                  className={inputStyle}
-                >
-                  {TYPE_OPTIONS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-                </select>
-              </div>
-              <div className="col-span-12 lg:col-span-5">
-                <ClientSearchSelect
-                  value={formData.client_id}
-                  onChange={(clientId) => { handleFormChange('client_id', clientId); if (!clientId) { handleFormChange('process_id', ''); setProcessSearchTerm(''); } }}
-                  label="Cliente"
-                  placeholder="Buscar cliente..."
-                  required
-                  allowCreate={true}
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Calculadora */}
-          <section>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Calculadora de Prazo</p>
-              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">DJEN</span>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className={labelStyle}>Contagem</label>
-                <select
-                  value={tipoPrazoCalculadora}
-                  onChange={(e) => {
-                    const v = e.target.value as TipoPrazo;
-                    setTipoPrazoCalculadora(v);
-                    if (dataPublicacao && diasPrazo) {
-                      const dias = Number(diasPrazo);
-                      if (!Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, v));
-                    }
-                  }}
-                  className={inputStyle}
-                >
-                  <option value="processual">Dias úteis</option>
-                  <option value="material">Dias corridos</option>
-                </select>
-              </div>
-              <div>
-                <label className={labelStyle}>Data publicação</label>
-                <input
-                  type="date"
-                  value={dataPublicacao}
-                  onChange={(e) => {
-                    setDataPublicacao(e.target.value);
-                    if (e.target.value && diasPrazo) handleFormChange('due_date', calcularDataVencimento(e.target.value, parseInt(diasPrazo), tipoPrazoCalculadora));
-                  }}
-                  className={inputStyle}
-                />
-              </div>
-              <div>
-                <label className={labelStyle}>Nº de dias</label>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number" min={1} value={diasPrazo} placeholder="0"
-                    onChange={(e) => {
-                      setDiasPrazo(e.target.value);
-                      const dias = Number(e.target.value);
-                      if (dataPublicacao && !Number.isNaN(dias) && dias > 0) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora));
-                    }}
-                    className="w-14 h-10 px-2 rounded-lg text-sm text-center bg-white border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
-                  />
-                  {[5, 10, 15].map((d) => (
-                    <button key={d} type="button"
-                      onClick={() => { setDiasPrazo(String(d)); if (dataPublicacao) handleFormChange('due_date', calcularDataVencimento(dataPublicacao, d, tipoPrazoCalculadora)); }}
-                      className={`h-10 px-2.5 text-xs rounded-lg font-semibold transition-all ${diasPrazo === String(d) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >{d}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className={labelStyle}>Vencimento <span className="text-red-400">*</span></label>
-                <input
-                  type="date" value={formData.due_date} required
-                  onChange={(e) => {
-                    const d = new Date(e.target.value + 'T12:00:00');
-                    if (d.getDay() === 0 || d.getDay() === 6) { alert('⚠️ Não é permitido cadastrar prazos em finais de semana.'); return; }
-                    setDataPublicacao(''); setDiasPrazo('');
-                    handleFormChange('due_date', e.target.value);
-                  }}
-                  className={inputStyle}
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Configurações */}
-          <section>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Configurações</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className={labelStyle}>Prioridade</label>
-                <select value={formData.priority} onChange={(e) => handleFormChange('priority', e.target.value as DeadlinePriority)} className={inputStyle}>
-                  {PRIORITY_OPTIONS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={labelStyle}>Status</label>
-                <select value={formData.status} onChange={(e) => handleFormChange('status', e.target.value as DeadlineStatus)} className={inputStyle}>
-                  {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={labelStyle}>{formData.type === 'processo' ? 'Processo' : formData.type === 'requerimento' ? 'Requerimento' : 'Processo'}</label>
-                {formData.type === 'processo' ? (
-                  <select value={formData.process_id} onChange={(e) => handleFormChange('process_id', e.target.value)} disabled={!formData.client_id} className={`${inputStyle} disabled:opacity-40 disabled:bg-slate-50`}>
-                    <option value="">Selecione...</option>
-                    {filteredProcesses.map((p) => <option key={p.id} value={p.id}>{p.process_code}</option>)}
-                  </select>
-                ) : formData.type === 'requerimento' ? (
-                  <select value={formData.requirement_id} onChange={(e) => handleFormChange('requirement_id', e.target.value)} disabled={!formData.client_id} className={`${inputStyle} disabled:opacity-40 disabled:bg-slate-50`}>
-                    <option value="">{formData.client_id ? 'Selecione...' : 'Escolha o cliente primeiro'}</option>
-                    {filteredRequirements.map((r) => <option key={r.id} value={r.id}>{r.protocol}{r.beneficiary ? ` — ${r.beneficiary}` : ''}</option>)}
-                  </select>
-                ) : (
-                  <select disabled className={`${inputStyle} opacity-40 bg-slate-50`}><option>—</option></select>
-                )}
-              </div>
-              <div>
-                <label className={labelStyle}>Notificar (dias antes)</label>
-                <input type="number" min={0} max={30} value={formData.notify_days_before} onChange={(e) => handleFormChange('notify_days_before', e.target.value)} className={inputStyle} placeholder="2" />
-              </div>
-              <div className="col-span-2 lg:col-span-4">
-                <label className={labelStyle}>Descrição / Observações</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => handleFormChange('description', e.target.value)}
-                  placeholder="Detalhes adicionais sobre o prazo..."
-                  className={`${inputStyle} h-16 resize-none`}
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Responsável — faixa horizontal de fotos */}
-          <section>
-            <div className="flex items-baseline gap-3 mb-2">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Responsável <span className="text-red-400">*</span></p>
-              <p className="text-xs font-semibold truncate">
-                {formData.responsible_id
-                  ? <span className="text-orange-600">{members.find(m => m.id === formData.responsible_id)?.name || ''}</span>
-                  : <span className="text-slate-400 font-normal">Selecione um advogado</span>}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 bg-white rounded-xl border border-slate-200 p-3">
-              {[...members].sort((a, b) => {
-                const rank = (m: Profile) => {
-                  const r = (m.role || '').toLowerCase();
-                  if (r.includes('admin')) return 0;
-                  if (r.includes('advogad')) return 1;
-                  return 2;
-                };
-                return rank(a) - rank(b);
-              }).map((member) => {
-                const isSelected = formData.responsible_id === member.id;
-                const hue = getMemberHue(member.name || '');
-                const initials = getMemberInitials(member.name || '');
-                return (
-                  <button
-                    key={member.id}
-                    type="button"
-                    title={member.name}
-                    onClick={() => handleFormChange('responsible_id', member.id)}
-                    className="relative group transition-transform hover:z-10 hover:scale-110"
-                  >
-                    <div
-                      className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm overflow-hidden transition-all ${
-                        isSelected ? 'ring-[3px] ring-orange-500 ring-offset-1' : 'ring-1 ring-slate-200'
-                      }`}
-                      style={{
-                        background: `hsl(${hue}, 50%, ${isSelected ? '85%' : '92%'})`,
-                        color: `hsl(${hue}, 45%, 30%)`,
-                      }}
-                    >
-                      {initials}
-                      {(member as any).avatar_url && (
-                        <img
-                          src={(member as any).avatar_url}
-                          alt={member.name}
-                          loading="eager"
-                          decoding="async"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                          className={`absolute inset-0 w-full h-full rounded-full object-cover transition-all ${
-                            isSelected ? '' : 'grayscale-[35%] group-hover:grayscale-0'
-                          }`}
-                        />
-                      )}
-                    </div>
-                    {isSelected && (
-                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
-                        <Check className="w-2 h-2 text-white" strokeWidth={3} />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-              {members.length === 0 && (
-                <p className="text-sm text-slate-400 italic py-4">Nenhum membro encontrado.</p>
-              )}
-            </div>
-            <input type="text" required value={formData.responsible_id} onChange={() => {}} className="sr-only" tabIndex={-1} />
-          </section>
-
-      </ModalBody>
-    </Modal>
+      onSaved={async () => {
+        await handleReload();
+        setIsModalOpen(false);
+        setSelectedDeadline(null);
+      }}
+      selectedDeadline={selectedDeadline}
+      members={members}
+      processes={processes}
+      clients={clients}
+      requirements={requirements}
+      statusOptions={statusOptions.map(s => ({ key: s.key, label: s.label }))}
+      priorityOptions={priorityOptions.map(p => ({ key: p.key, label: p.label }))}
+      typeOptions={typeOptions.map(t => ({ key: t.key as DeadlineType, label: t.label }))}
+    />
   );
 
   if (viewMode === 'details' && selectedDeadlineForView) {
@@ -3109,7 +2948,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
     return (
       <div className="space-y-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">Detalhes do Prazo</h3>
@@ -3232,7 +3071,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             )}
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
+          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-slate-200">
             <button
               onClick={() => handleOpenModal(selectedDeadlineForView)}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
@@ -3271,7 +3110,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {/* ── Comentários ─────────────────────────────────────────────── */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
+          <div className="mt-8 pt-6 border-t border-slate-200">
             <button
               onClick={() => {
                 if (showCommentsFor === selectedDeadlineForView.id) {
@@ -3396,7 +3235,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             disabled={!onClick}
             className={`group relative flex flex-col gap-3 p-4 rounded-2xl border transition-all text-left overflow-hidden ${
               active
-                ? `${bg} border-transparent ring-2 ${ring} shadow-sm`
+                ? `${bg} border-transparent ring-2 ${ring}`
                 : onClick
                 ? 'bg-white border-slate-200 hover:shadow-md hover:border-slate-300'
                 : 'bg-white border-slate-200 cursor-default'
@@ -3731,7 +3570,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       {/* Conteúdo Principal baseado no viewMode */}
       {viewMode === 'kanban' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {STATUS_FILTER_OPTIONS.map((statusOption) => {
+          {statusFilterOptions.map((statusOption) => {
             const StatusIcon = statusOption.icon;
             const statusDeadlines = filteredDeadlines.filter((d) => d.status === statusOption.key);
             const columnColors: Record<string, { bg: string; border: string; headerBg: string }> = {
@@ -3758,7 +3597,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
                   {statusDeadlines.map((deadline) => {
                     const daysUntil = getDaysUntilDue(deadline.due_date);
-                    const dueSoon = isDueSoon(deadline.due_date);
+                    const dueSoon = checkIsDueSoon(deadline.due_date);
                     const priorityConfig = getPriorityConfig(deadline.priority);
                     const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
                     
@@ -3836,7 +3675,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           })}
         </div>
       ) : viewMode === 'map' ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Mapa de Prazos: plano de ação</h4>
@@ -3851,7 +3690,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {MAP_BUCKETS.map((bucket) => {
+            {resolvedBuckets.map((bucket) => {
               const BucketIcon = bucket.icon;
               const bucketDeadlines = pendingDeadlines
                 .map((deadline) => ({
@@ -3882,7 +3721,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 : bucketDeadlines.length;
 
               return (
-                <div key={bucket.key} className="border border-slate-200 rounded-xl p-5 shadow-sm bg-slate-50/60">
+                <div key={bucket.key} className="border border-slate-200 rounded-xl p-5 bg-slate-50/60">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
@@ -3960,7 +3799,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         const priorityConfig = getPriorityConfig(deadline.priority);
                         const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
                         const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
-                        const dueSoon = isDueSoon(deadline.due_date);
+                        const dueSoon = checkIsDueSoon(deadline.due_date);
 
                         return (
                           <div
@@ -4016,18 +3855,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload' && loading) ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-16 flex flex-col items-center gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-slate-600">Carregando prazos...</p>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length === 0) ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
           <p className="text-slate-600">Nenhum prazo encontrado.</p>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload') ? (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Mobile Cards */}
-          <div className="block lg:hidden divide-y divide-gray-200">
+          <div className="block lg:hidden divide-y divide-slate-200">
             {paginatedDeadlines.map((deadline) => {
               const priorityConfig = getPriorityConfig(deadline.priority);
               const typeConfig = getTypeConfig(deadline.type);
@@ -4131,7 +3970,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer"
                           >
                             <option value="" disabled>Alterar status...</option>
-                            {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                            {statusOptions.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                           </select>
                           <select
                             disabled={bulkActionLoading}
@@ -4279,7 +4118,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           disabled={isUpdating}
                           className="text-xs font-medium px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 cursor-pointer"
                         >
-                          {STATUS_OPTIONS.map((opt) => (
+                          {statusOptions.map((opt) => (
                             <option key={opt.key} value={opt.key}>{opt.label}</option>
                           ))}
                         </select>
@@ -4344,7 +4183,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {members.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
               <p className="text-sm text-slate-400">Nenhum membro encontrado.</p>
             </div>
           ) : (() => {
@@ -4407,7 +4246,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length > pageSize && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center justify-between">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
@@ -4433,7 +4272,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       {reportModal}
 
       {/* ── Histórico de Prazos Cumpridos ───────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
 
         {/* Header */}
         <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100">

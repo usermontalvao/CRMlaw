@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Modal, ModalBody } from './ui';
 import {
   Settings,
@@ -38,12 +40,28 @@ import {
   MessageCircle,
   User,
   Globe,
+  MapPin,
+  ChevronDown,
+  ChevronRight,
+  DollarSign,
+  Percent,
+  CreditCard,
+  ToggleLeft,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  CheckCircle,
+  Circle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
+import { supabase } from '../config/supabase';
+import ConfigurableList, { normalizeItems, type ConfigurableItem } from './ConfigurableList';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
 import { AccessRequestsAdmin } from './AccessRequestsAdmin';
 import { accessRequestService } from '../services/accessRequest.service';
+import { aiService } from '../services/ai.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import {
   settingsService,
@@ -56,7 +74,65 @@ import {
   type RolePermission,
   type SecurityConfig,
   type PortalModulesConfig,
+  type FinancialModuleConfig,
+  type EmailIntegrationConfig,
+  type NotificationRule,
+  type NotificationChannel,
+  type ProcessModuleConfig,
+  type DeadlineModuleConfig,
   PORTAL_MODULES_DEFAULT,
+  FINANCIAL_MODULE_DEFAULTS,
+  EMAIL_INTEGRATION_DEFAULTS,
+  PAYMENT_METHOD_LABELS,
+  NOTIFICATION_TRIGGERS,
+  DEFAULT_NOTIFICATION_RULES,
+  PROCESS_MODULE_DEFAULTS,
+  DEADLINE_MODULE_DEFAULTS,
+  type EmailTemplate,
+  EMAIL_TEMPLATE_VARIABLES,
+  DEFAULT_EMAIL_TEMPLATES,
+  type LeadModuleConfig,
+  type CalendarModuleConfig,
+  LEAD_MODULE_DEFAULTS,
+  CALENDAR_MODULE_DEFAULTS,
+  LEAD_COLORS,
+  type RequirementModuleConfig,
+  REQUIREMENT_MODULE_DEFAULTS,
+  type AiProviderConfig,
+  type AiTaskConfig,
+  type AiProviderId,
+  type AiPromptOverride,
+  AI_PROVIDER_DEFAULTS,
+  AI_PROVIDER_LABELS,
+  DEFAULT_AI_TASKS,
+  AI_PROMPT_KEYS,
+  type SignatureModuleConfig,
+  type TaskModuleConfig,
+  type ClientModuleConfig,
+  type PortalCustomizationConfig,
+  type PortalClientNotificationsConfig,
+  SIGNATURE_MODULE_DEFAULTS,
+  TASK_MODULE_DEFAULTS,
+  CLIENT_MODULE_DEFAULTS,
+  PORTAL_CUSTOMIZATION_DEFAULTS,
+  PORTAL_CLIENT_NOTIF_DEFAULTS,
+  type AutomationThresholds,
+  AUTOMATION_THRESHOLDS_DEFAULTS,
+  KNOWN_CRON_JOBS,
+  type CronJobLatest,
+  type Holiday,
+  type SecretEntry,
+  type ModuleResponsibilityConfig,
+  type ResponsibilityAllowed,
+  type ResponsibilityDefault,
+  type ResponsibilityNotify,
+  RESPONSIBILITY_DEFAULTS,
+  type FormLayoutModule,
+  type FormFieldConfig,
+  CANONICAL_FORM_FIELDS,
+  type NotifAudience,
+  type NotifChannelStatus,
+  type NotificationEventDef,
 } from '../services/settings.service';
 
 interface UserWithProfile extends Profile {
@@ -73,7 +149,125 @@ type SettingsSection =
   | 'security'
   | 'audit'
   | 'access_requests'
-  | 'portal';
+  | 'portal'
+  | 'modules_financial'
+  | 'modules_processes'
+  | 'modules_deadlines'
+  | 'integrations_email'
+  | 'notifications_rules'
+  | 'notifications_email_templates'
+  | 'modules_leads'
+  | 'modules_agenda'
+  | 'modules_requirements'
+  | 'ai_providers'
+  | 'ai_tasks'
+  | 'ai_prompts'
+  | 'modules_signature'
+  | 'modules_tasks'
+  | 'modules_clients'
+  | 'portal_customization'
+  | 'portal_notifications'
+  | 'automations'
+  | 'holidays'
+  | 'secrets'
+  | 'apps'
+  | 'responsibility'
+  | 'form_builder';
+
+type SettingsGroupKey = 'geral' | 'modulos' | 'notificacoes' | 'integracoes' | 'administracao';
+
+// Status de integração por seção — só marcamos as não-integradas para manter o sidebar limpo
+const SECTION_STATUS: Partial<Record<SettingsSection, 'parcial' | 'pendente'>> = {
+  preferences:                  'parcial',  // timezone/moeda/data salvos mas não aplicados globalmente
+  djen:                         'parcial',  // DataJud configurado; consumo real depende da chave ativa
+};
+
+const SETTINGS_GROUPS: {
+  key: SettingsGroupKey;
+  label: string;
+  icon: React.ComponentType<any>;
+  items: { key: SettingsSection; label: string; icon: React.ComponentType<any>; description: string }[];
+}[] = [
+  {
+    key: 'geral',
+    label: 'Geral',
+    icon: Settings,
+    items: [
+      { key: 'identity',    label: 'Identidade',   icon: Building2,   description: 'Dados do escritório' },
+      { key: 'preferences', label: 'Preferências', icon: Settings,    description: 'Operação e fuso horário' },
+      { key: 'security',    label: 'Segurança',    icon: ShieldCheck, description: 'Senhas e sessões' },
+      { key: 'audit',       label: 'Auditoria',    icon: History,     description: 'Registro de atividades' },
+    ],
+  },
+  {
+    key: 'modulos',
+    label: 'Módulos',
+    icon: PiggyBank,
+    items: [
+      { key: 'modules_clients',       label: 'Clientes',      icon: User,           description: 'Status e estado civil' },
+      { key: 'modules_processes',     label: 'Processos',     icon: Briefcase,      description: 'Status e áreas do direito' },
+      { key: 'modules_deadlines',     label: 'Prazos',        icon: Calendar,       description: 'Status, prioridades e thresholds' },
+      { key: 'modules_tasks',         label: 'Tarefas',       icon: FolderOpen,     description: 'Prioridades de tarefas' },
+      { key: 'modules_agenda',        label: 'Agenda',        icon: CalendarClock,  description: 'Tipos de compromisso e duração' },
+      { key: 'modules_leads',         label: 'Leads',         icon: User,           description: 'Estágios e origens do funil' },
+      { key: 'modules_financial',     label: 'Financeiro',    icon: PiggyBank,      description: 'Defaults e métodos de pagamento' },
+      { key: 'modules_requirements',  label: 'Requerimentos', icon: FileText,       description: 'Status e tipos de benefício INSS' },
+      { key: 'modules_signature',     label: 'Assinaturas',   icon: PenTool,        description: 'Papéis de signatário e autenticação' },
+      { key: 'form_builder',          label: 'Campos',        icon: FileText,       description: 'Renomear e reordenar campos por módulo' },
+      { key: 'responsibility',        label: 'Responsáveis',  icon: Users,          description: 'Quem pode ser responsável por módulo' },
+    ],
+  },
+  {
+    key: 'notificacoes',
+    label: 'Notificações',
+    icon: Bell,
+    items: [
+      { key: 'notifications',                 label: 'Canais & Digest',     icon: Bell,       description: 'Email, push e resumos' },
+      { key: 'notifications_rules',           label: 'Regras',              icon: ToggleLeft, description: 'Gatilhos e destinatários' },
+      { key: 'notifications_email_templates', label: 'Templates de E-mail', icon: Mail,       description: 'Modelos de e-mail transacionais' },
+    ],
+  },
+  {
+    key: 'integracoes',
+    label: 'Integrações',
+    icon: Globe,
+    items: [
+      { key: 'apps',                 label: 'Apps & Terceiros', icon: Globe,      description: 'Hub de todas as integrações' },
+      { key: 'integrations_email',   label: 'E-mail (Resend)',  icon: Mail,       description: 'Remetente e API key' },
+      { key: 'djen',                 label: 'DJEN & DataJud',   icon: FileText,   description: 'Monitoramento jurídico' },
+      { key: 'automations',          label: 'Jobs & Limiares',  icon: RefreshCw,  description: 'Painel de jobs agendados e limiares' },
+      { key: 'holidays',             label: 'Feriados',         icon: Calendar,   description: 'Calendário de feriados para dias úteis' },
+      { key: 'secrets',              label: 'Cofre de Chaves',  icon: Key,        description: 'Registro e status de chaves de API' },
+      { key: 'ai_providers',         label: 'Provedores IA',    icon: Globe,      description: 'OpenAI, Groq, Anthropic e fallback' },
+      { key: 'ai_tasks',             label: 'Params IA',        icon: Settings,   description: 'Modelo, temperatura e tokens por tarefa' },
+      { key: 'ai_prompts',           label: 'Prompts IA',       icon: PenTool,    description: 'Customizar prompts do sistema' },
+    ],
+  },
+  {
+    key: 'administracao',
+    label: 'Administração',
+    icon: Building2,
+    items: [
+      { key: 'users',               label: 'Equipe',                   icon: Users,      description: 'Usuários e perfis' },
+      { key: 'roles',               label: 'Permissões',               icon: Shield,     description: 'Papéis e módulos' },
+      { key: 'access_requests',     label: 'Solicitações',             icon: ShieldCheck, description: 'Pedidos de acesso' },
+      { key: 'portal',              label: 'Portal — Módulos',         icon: Smartphone, description: 'O que o cliente acessa' },
+      { key: 'portal_customization', label: 'Portal — Aparência',      icon: Globe,      description: 'Cor, mensagem e rodapé do portal' },
+      { key: 'portal_notifications', label: 'Portal — Notificações',   icon: Bell,       description: 'Eventos que alertam o cliente' },
+    ],
+  },
+];
+
+const ALL_AUTH_METHODS = [
+  'Só assinatura',
+  'Assinatura + Validação Facial',
+  'Assinatura + Facial + Documento',
+] as const;
+
+const GROUPS_STORAGE_KEY = 'crm_settings_expanded_groups_v3';
+const DEFAULT_EXPANDED: Record<SettingsGroupKey, boolean> = {
+  geral: true, modulos: false, notificacoes: false, integracoes: false, administracao: false,
+};
 
 const ROLES = [
   {
@@ -138,11 +332,14 @@ const MODULES = [
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
-const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsumed?: () => void }> = ({
+const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSection; onParamConsumed?: () => void; onClose?: () => void }> = ({
+  open = true,
   initialSection,
   onParamConsumed,
+  onClose,
 }) => {
   const { user } = useAuth();
+  const { requirePin } = useSecurityPin();
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'identity');
@@ -154,10 +351,60 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
       onParamConsumed?.();
     }
   }, [initialSection]);
+
+  // Fechar com Escape + travar scroll
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', handler);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handler);
+      document.body.style.overflow = '';
+    };
+  }, [open, onClose]);
+
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
+  const [navSearch, setNavSearch] = useState('');
+
+  // Sidebar grupos colapsáveis (estado salvo no localStorage)
+  const [expandedGroups, setExpandedGroupsState] = useState<Record<SettingsGroupKey, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem(GROUPS_STORAGE_KEY);
+      if (stored) return { ...DEFAULT_EXPANDED, ...JSON.parse(stored) };
+    } catch {}
+    return { ...DEFAULT_EXPANDED };
+  });
+
+  // Accordion: abre um grupo e fecha todos os outros
+  const toggleGroup = (key: SettingsGroupKey) => {
+    setExpandedGroupsState(prev => {
+      const opening = !prev[key];
+      const next = opening
+        ? Object.fromEntries(Object.keys(prev).map(k => [k, k === key])) as Record<SettingsGroupKey, boolean>
+        : { ...prev, [key]: false };
+      try { localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  // Auto-expandir grupo do item ativo e fechar os demais
+  useEffect(() => {
+    const group = SETTINGS_GROUPS.find(g => g.items.some(i => i.key === activeSection));
+    if (group) {
+      setExpandedGroupsState(prev => {
+        if (prev[group.key as SettingsGroupKey] && Object.entries(prev).every(([k, v]) => k === group.key ? v : !v)) return prev;
+        const next = Object.fromEntries(
+          Object.keys(prev).map(k => [k, k === group.key])
+        ) as Record<SettingsGroupKey, boolean>;
+        try { localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+  }, [activeSection]);
 
   // Identity
   const [identity, setIdentity] = useState<OfficeIdentity>({
@@ -165,10 +412,19 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     email: '',
     phone: '',
     address: '',
+    address_cep: '',
+    address_street: '',
+    address_number: '',
+    address_neighborhood: '',
+    address_city: '',
+    address_state: '',
     cnpj: '',
+    oab_state: '',
     oab_number: '',
     logo_url: '',
   });
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepError, setCepError] = useState('');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // DataJud API key
@@ -219,6 +475,100 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     password_min_length: 8,
     max_login_attempts: 5,
     audit_log_enabled: true,
+    pin_session_minutes: 5,
+    financial_view_hours: 2,
+  });
+
+  // Novas seções de configuração
+  const [financialConfig, setFinancialConfig] = useState<FinancialModuleConfig>({ ...FINANCIAL_MODULE_DEFAULTS });
+  const [emailIntConfig, setEmailIntConfig] = useState<EmailIntegrationConfig>({ ...EMAIL_INTEGRATION_DEFAULTS });
+  const [showEmailKey, setShowEmailKey] = useState(false);
+
+  // Regras de notificação
+  const [notifRules, setNotifRules] = useState<NotificationRule[]>([...DEFAULT_NOTIFICATION_RULES]);
+  const [ruleModal, setRuleModal] = useState<{ open: boolean; rule: NotificationRule | null }>({ open: false, rule: null });
+  const [ruleForm, setRuleForm] = useState<Partial<NotificationRule>>({});
+  const [notifAudFilter, setNotifAudFilter] = useState<NotifAudience | 'all'>('all');
+  const [notifDomFilter, setNotifDomFilter] = useState<string>('all');
+
+  // Módulo Processos
+  const [processConfig, setProcessConfig] = useState<ProcessModuleConfig>({ ...PROCESS_MODULE_DEFAULTS });
+
+  // Módulo Prazos
+  const [deadlineConfig, setDeadlineConfig] = useState<DeadlineModuleConfig>({ ...DEADLINE_MODULE_DEFAULTS });
+
+  // Templates de e-mail
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(DEFAULT_EMAIL_TEMPLATES.map(t => ({ ...t })));
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templatePreviewMode, setTemplatePreviewMode] = useState<'editor' | 'preview'>('editor');
+  const [testEmailTo, setTestEmailTo]   = useState('');
+  const [testEmailSending, setTestEmailSending] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  // Backfill INSS
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ processed: number; failed: number; remaining: number; message: string } | null>(null);
+
+  // Módulo Leads
+  const [leadConfig, setLeadConfig] = useState<LeadModuleConfig>({
+    ...LEAD_MODULE_DEFAULTS,
+    stages: LEAD_MODULE_DEFAULTS.stages.map(s => ({ ...s })),
+    sources: [...LEAD_MODULE_DEFAULTS.sources],
+  });
+  const [newSource, setNewSource] = useState('');
+
+  // Módulos restantes
+  const [signatureConfig, setSignatureConfig]  = useState<SignatureModuleConfig>({ ...SIGNATURE_MODULE_DEFAULTS, signer_roles: [...SIGNATURE_MODULE_DEFAULTS.signer_roles], auth_methods: [...SIGNATURE_MODULE_DEFAULTS.auth_methods] });
+  const [publicAuthSignConfig, setPublicAuthSignConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({ google: true, email: true, phone: true });
+  const [newSignerRole, setNewSignerRole]       = useState('');
+  const [taskModConfig, setTaskModConfig]       = useState<TaskModuleConfig>({ priorities: TASK_MODULE_DEFAULTS.priorities.map(p => ({ ...p })) });
+  const [clientConfig, setClientConfig]         = useState<ClientModuleConfig>({ statuses: CLIENT_MODULE_DEFAULTS.statuses.map(s => ({ ...s })), marital_statuses: CLIENT_MODULE_DEFAULTS.marital_statuses.map(m => ({ ...m })) });
+
+  // Portal personalização + notificações ao cliente
+  const [portalCustom, setPortalCustom] = useState<PortalCustomizationConfig>({ ...PORTAL_CUSTOMIZATION_DEFAULTS });
+  const [portalClientNotif, setPortalClientNotif] = useState<PortalClientNotificationsConfig>({ ...PORTAL_CLIENT_NOTIF_DEFAULTS });
+
+  // Construtor de formulários
+  const [formLayouts, setFormLayouts] = useState<FormLayoutModule[]>(CANONICAL_FORM_FIELDS.map(m => ({ ...m, fields: m.fields.map(f => ({ ...f })) })));
+  const [selectedFormModule, setSelectedFormModule] = useState<string | null>(null);
+
+  // Responsável por módulo
+  const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig[]>(RESPONSIBILITY_DEFAULTS.map(r => ({ ...r })));
+
+  // Automações & Cron
+  const [automationThresholds, setAutomationThresholds] = useState<AutomationThresholds>({ ...AUTOMATION_THRESHOLDS_DEFAULTS });
+  const [cronJobLatest, setCronJobLatest] = useState<CronJobLatest[]>([]);
+  const [cronJobsLoading, setCronJobsLoading] = useState(false);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(false);
+  const [holidayForm, setHolidayForm] = useState<{ date: string; name: string; type: Holiday['type']; state: string; city: string }>({ date: '', name: '', type: 'nacional', state: '', city: '' });
+  const [holidayFormOpen, setHolidayFormOpen] = useState(false);
+  const [secrets, setSecrets] = useState<SecretEntry[]>([]);
+  const [secretsLoading, setSecretsLoading] = useState(false);
+  const [verifyingSecrets, setVerifyingSecrets] = useState(false);
+
+  // Prompts de IA
+  const [aiPromptOverrides, setAiPromptOverrides] = useState<AiPromptOverride[]>([]);
+  const [selectedPromptKey, setSelectedPromptKey] = useState<string | null>(null);
+  const [promptDraft, setPromptDraft]             = useState('');
+
+  // Motor de IA
+  const [aiProviderConfig, setAiProviderConfig] = useState<AiProviderConfig>({
+    ...AI_PROVIDER_DEFAULTS,
+    enabled: { ...AI_PROVIDER_DEFAULTS.enabled },
+    fallback_order: [...AI_PROVIDER_DEFAULTS.fallback_order],
+  });
+  const [aiTaskConfigs, setAiTaskConfigs] = useState<AiTaskConfig[]>(DEFAULT_AI_TASKS.map(t => ({ ...t })));
+
+  // Módulo Requerimentos
+  const [requirementConfig, setRequirementConfig] = useState<RequirementModuleConfig>({
+    statuses:      REQUIREMENT_MODULE_DEFAULTS.statuses.map(s => ({ ...s })),
+    benefit_types: REQUIREMENT_MODULE_DEFAULTS.benefit_types.map(b => ({ ...b })),
+  });
+  // Módulo Agenda
+  const [calendarConfig, setCalendarConfig] = useState<CalendarModuleConfig>({
+    ...CALENDAR_MODULE_DEFAULTS,
+    event_types: CALENDAR_MODULE_DEFAULTS.event_types.map(t => ({ ...t })),
   });
 
   // Users
@@ -253,6 +603,16 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
   // Audit
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(0);
+  const AUDIT_PAGE_SIZE = 25;
+  const [auditDateFrom, setAuditDateFrom] = useState('');
+  const [auditDateTo, setAuditDateTo] = useState('');
+  const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditUserFilter, setAuditUserFilter] = useState('');
+  const [auditEntityFilter, setAuditEntityFilter] = useState('');
+  const [auditClientMap, setAuditClientMap] = useState<Map<string, string>>(new Map());
+  const [auditInstallmentMap, setAuditInstallmentMap] = useState<Map<string, { value: number; installment_number: number; due_date: string; client_name: string | null }>>(new Map());
 
   const normalizeRoleKey = (role?: string | null) => {
     if (!role) return '';
@@ -360,8 +720,54 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const portalData = await settingsService.getPortalModulesConfig();
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone] = await Promise.all([
+        settingsService.getPortalModulesConfig(),
+        settingsService.getFinancialModuleConfig(),
+        settingsService.getEmailIntegrationConfig(),
+        settingsService.getNotificationRules(),
+        settingsService.getProcessModuleConfig(),
+        settingsService.getDeadlineModuleConfig(),
+        settingsService.getEmailTemplates(),
+        settingsService.getLeadModuleConfig(),
+        settingsService.getCalendarModuleConfig(),
+        settingsService.getRequirementModuleConfig(),
+        settingsService.getAiProviderConfig(),
+        settingsService.getAiTaskConfigs(),
+        settingsService.getSignatureModuleConfig(),
+        settingsService.getTaskModuleConfig(),
+        settingsService.getClientModuleConfig(),
+        settingsService.getPortalCustomizationConfig(),
+        settingsService.getPortalClientNotificationsConfig(),
+        settingsService.getAiPromptOverrides(),
+        settingsService.getAutomationThresholds(),
+        settingsService.getResponsibilityConfig(),
+        settingsService.getFormLayouts(),
+        settingsService.getSetting<boolean>('public_signature_auth_google'),
+        settingsService.getSetting<boolean>('public_signature_auth_email'),
+        settingsService.getSetting<boolean>('public_signature_auth_phone'),
+      ]);
       setPortalModules(portalData);
+      setFinancialConfig(finData);
+      setEmailIntConfig(emailData);
+      setNotifRules(rulesData);
+      setProcessConfig(procData);
+      setDeadlineConfig(deadlineData);
+      setEmailTemplates(tmplData);
+      setLeadConfig(leadData);
+      setCalendarConfig(calData);
+      setRequirementConfig(reqData);
+      setAiProviderConfig(aiProv);
+      setAiTaskConfigs(aiTasks);
+      setSignatureConfig(sigData);
+      setPublicAuthSignConfig({ google: pubAuthGoogle ?? true, email: pubAuthEmail ?? true, phone: pubAuthPhone ?? true });
+      setTaskModConfig(taskData);
+      setClientConfig(clientData);
+      setPortalCustom(portalCustData);
+      setPortalClientNotif(portalNotifData);
+      setAiPromptOverrides(promptData);
+      setAutomationThresholds(autoThreshData);
+      setResponsibilityConfig(respData);
+      setFormLayouts(formLayoutData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -408,32 +814,165 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     if (activeSection === 'roles') loadPermissions();
   }, [activeSection, loadPermissions]);
 
-  const loadAudit = useCallback(async () => {
+  const loadAudit = useCallback(async (page = 0, dateFrom = auditDateFrom, dateTo = auditDateTo, action = auditActionFilter, userName = auditUserFilter, entity = auditEntityFilter) => {
     if (!hasConfigAccess) return;
     setAuditLoading(true);
     try {
-      const logs = await settingsService.getAuditLog({ limit: 50 });
-      setAuditLog(logs);
+      const filters = {
+        ...(action   ? { action }                    : {}),
+        ...(entity   ? { entity_type: entity }       : {}),
+        ...(userName ? { user_name: userName }       : {}),
+        ...(dateFrom ? { date_from: dateFrom }       : {}),
+        ...(dateTo   ? { date_to: dateTo }           : {}),
+      };
+      const [logs, total, sigLogs] = await Promise.all([
+        settingsService.getAuditLog({ ...filters, limit: AUDIT_PAGE_SIZE, offset: page * AUDIT_PAGE_SIZE }),
+        settingsService.getAuditLogCount(filters),
+        // Assinaturas: busca para o mesmo período (sem filtro de entity_type quando filtrando outro módulo)
+        (!entity || entity === 'signature_request')
+          ? settingsService.getSignatureAuditLog({ date_from: dateFrom || undefined, date_to: dateTo || undefined, limit: AUDIT_PAGE_SIZE })
+          : Promise.resolve([] as AuditLogEntry[]),
+      ]);
+
+      // Merge e ordena por data desc
+      const merged = [...logs, ...sigLogs].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ).slice(0, AUDIT_PAGE_SIZE);
+
+      // Enriquece installments com contexto (valor, cliente)
+      const installmentIds = merged
+        .filter(e => e.entity_type === 'installment' && e.entity_id)
+        .map(e => e.entity_id as string);
+      if (installmentIds.length > 0) {
+        settingsService.getInstallmentContext(installmentIds).then(setAuditInstallmentMap);
+      }
+
+      setAuditLog(merged);
+      setAuditTotal(total + sigLogs.length); // aproximado para paginação
+      setAuditPage(page);
     } catch (error) {
       setFeedback('error', 'Não foi possível carregar a auditoria.');
     } finally {
       setAuditLoading(false);
     }
-  }, [hasConfigAccess]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasConfigAccess, auditDateFrom, auditDateTo, auditActionFilter, auditUserFilter, auditEntityFilter]);
 
   useEffect(() => {
-    if (activeSection === 'audit') loadAudit();
+    if (activeSection === 'audit') {
+      loadAudit();
+      // Carrega mapa id→nome de clientes uma vez por visita à seção
+      supabase.from('clients').select('id, full_name').then(({ data }) => {
+        if (data) {
+          const map = new Map<string, string>();
+          (data as { id: string; full_name: string }[]).forEach(c => map.set(c.id, c.full_name));
+          setAuditClientMap(map);
+        }
+      });
+    }
   }, [activeSection, loadAudit]);
+
+  useEffect(() => {
+    if (activeSection !== 'automations') return;
+    setCronJobsLoading(true);
+    settingsService.getCronJobLatest().then(data => {
+      setCronJobLatest(data);
+      setCronJobsLoading(false);
+    }).catch(() => setCronJobsLoading(false));
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'holidays') return;
+    setHolidaysLoading(true);
+    settingsService.getHolidays().then(data => {
+      setHolidays(data);
+      setHolidaysLoading(false);
+    }).catch(() => setHolidaysLoading(false));
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'secrets') return;
+    setSecretsLoading(true);
+    settingsService.getSecretsRegistry().then(data => {
+      setSecrets(data);
+      setSecretsLoading(false);
+    }).catch(() => setSecretsLoading(false));
+  }, [activeSection]);
+
+  const handleVerifySecrets = async () => {
+    const envKeys = secrets.map(s => s.env_var_name).filter(Boolean) as string[];
+    if (envKeys.length === 0) return;
+    setVerifyingSecrets(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('check-env-keys', { body: { keys: envKeys } });
+      if (error || !data?.results) throw error ?? new Error('Sem resposta');
+      const results: Record<string, boolean> = data.results;
+      const updated: SecretEntry[] = [];
+      for (const s of secrets) {
+        if (!s.env_var_name) { updated.push(s); continue; }
+        const present = results[s.env_var_name];
+        const newStatus: SecretEntry['status'] = present ? 'configured' : s.status === 'revoked' ? 'revoked' : 'unconfigured';
+        if (newStatus !== s.status) {
+          await settingsService.updateSecretStatus(s.id, newStatus);
+          updated.push({ ...s, status: newStatus, last_tested_at: new Date().toISOString() });
+        } else {
+          updated.push(s);
+        }
+      }
+      setSecrets(updated);
+      setFeedback('success', `Verificação concluída — ${envKeys.length} chave(s) verificada(s).`);
+    } catch (err: any) {
+      setFeedback('error', err?.message || 'Erro ao verificar chaves.');
+    } finally {
+      setVerifyingSecrets(false);
+    }
+  };
 
   const saveIdentity = async () => {
     setSaving(true);
     try {
-      await settingsService.updateOfficeIdentity(identity, currentProfile?.name);
+      const parts = [
+        identity.address_street,
+        identity.address_number,
+        identity.address_neighborhood,
+        identity.address_city && identity.address_state
+          ? `${identity.address_city} - ${identity.address_state}`
+          : identity.address_city || identity.address_state,
+        identity.address_cep,
+      ].filter(Boolean);
+      const derived = { ...identity, address: parts.join(', ') };
+      await settingsService.updateOfficeIdentity(derived, currentProfile?.name);
       setFeedback('success', 'Identidade atualizada com sucesso.');
     } catch (error: any) {
       setFeedback('error', error.message || 'Erro ao salvar identidade.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const fetchCep = async (cep: string) => {
+    const clean = cep.replace(/\D/g, '');
+    if (clean.length !== 8) return;
+    setCepLoading(true);
+    setCepError('');
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const data = await res.json();
+      if (data.erro) {
+        setCepError('CEP não encontrado.');
+        return;
+      }
+      setIdentity(prev => ({
+        ...prev,
+        address_street: data.logradouro || prev.address_street,
+        address_neighborhood: data.bairro || prev.address_neighborhood,
+        address_city: data.localidade || prev.address_city,
+        address_state: data.uf || prev.address_state,
+      }));
+    } catch {
+      setCepError('Erro ao consultar o CEP.');
+    } finally {
+      setCepLoading(false);
     }
   };
 
@@ -548,6 +1087,15 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     field: 'can_view' | 'can_create' | 'can_edit' | 'can_delete',
     value: boolean,
   ) => {
+    const pinOk = await requirePin({
+      action: 'update_permission',
+      resourceType: 'permission',
+      resourceId: `${selectedRole}_${moduleKey}`,
+      sensitivity: 'high',
+      title: 'Alterar permissões',
+      description: 'Confirme com seu PIN para alterar as permissões de acesso.',
+    });
+    if (!pinOk) return;
     try {
       await settingsService.updatePermission(selectedRole, moduleKey, { [field]: value }, currentProfile?.name);
       setPermissions((prev) =>
@@ -588,367 +1136,1028 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
     );
   }
 
-  const sections = [
-    { key: 'identity', label: 'Identidade', icon: Building2, description: 'Dados do escritório' },
-    { key: 'access_requests', label: 'Solicitações', icon: ShieldCheck, description: 'Pedidos de acesso' },
-    { key: 'users', label: 'Usuários', icon: Users, description: 'Equipe e acessos' },
-    { key: 'roles', label: 'Permissões', icon: Shield, description: 'Papéis e módulos' },
-    { key: 'djen', label: 'DJEN', icon: FileText, description: 'Monitoramento' },
-    { key: 'notifications', label: 'Notificações', icon: Bell, description: 'Alertas inteligentes' },
-    { key: 'preferences', label: 'Preferências', icon: Settings, description: 'Operação' },
-    { key: 'security', label: 'Segurança', icon: ShieldCheck, description: 'Políticas' },
-    { key: 'audit', label: 'Auditoria', icon: History, description: 'Registro completo' },
-    { key: 'portal', label: 'Portal', icon: Smartphone, description: 'Módulos do cliente' },
-  ] satisfies { key: SettingsSection; label: string; icon: any; description: string }[];
+  // Busca flat de todas as seções para o header e para o filtro de busca
+  const allSectionItems = SETTINGS_GROUPS.flatMap(g => g.items);
 
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-              <Settings className="w-5 h-5" />
-            </span>
-            Configurações do Sistema
-          </h1>
-          <p className="text-sm text-slate-500">Integração total com Supabase e controle minucioso</p>
-        </div>
-        <span
-          className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold ${
-            ROLES.find((role) => role.key === (currentProfile?.role?.toLowerCase() || ''))?.tone ||
-            'bg-slate-100 text-slate-700'
-          }`}
+  // Grupos filtrados pela busca (mantendo estrutura de grupos)
+  const filteredGroups = navSearch.trim()
+    ? SETTINGS_GROUPS.map(g => ({
+        ...g,
+        items: g.items.filter(s => matchesNormalizedSearch(navSearch, [s.label, s.description])),
+      })).filter(g => g.items.length > 0)
+    : SETTINGS_GROUPS;
+
+  const activeItem = allSectionItems.find(s => s.key === activeSection);
+
+  const cssStyles = `
+  /* ── Scrollbar ── */
+  .settings-scroll::-webkit-scrollbar { width: 4px; }
+  .settings-scroll::-webkit-scrollbar-track { background: transparent; }
+  .settings-scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.10); border-radius: 10px; }
+  .settings-scroll::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,0.20); }
+  .settings-scroll { scrollbar-width: thin; scrollbar-color: rgba(15,23,42,0.10) transparent; }
+
+  /* ── Inputs ── */
+  .settings-input {
+    width: 100%; padding: 9px 13px; font-size: 13.5px; color: #191c1e;
+    background: #fff; border: 1px solid rgba(15,23,42,0.13); border-radius: 8px;
+    outline: none; transition: border-color .15s ease, box-shadow .15s ease;
+    box-sizing: border-box;
+  }
+  .settings-input:focus { border-color: #ff8a00; box-shadow: 0 0 0 3px rgba(255,138,0,0.09); }
+  .settings-input::placeholder { color: #b0b5bc; }
+
+  .settings-select {
+    width: 100%; padding: 9px 13px; font-size: 13.5px; color: #191c1e;
+    background: #fff; border: 1px solid rgba(15,23,42,0.13); border-radius: 8px;
+    outline: none; cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23747878' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 11px center;
+    padding-right: 32px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .settings-select:focus { border-color: #ff8a00; box-shadow: 0 0 0 3px rgba(255,138,0,0.09); }
+
+  /* ── Labels ── */
+  .settings-label {
+    display: block; font-size: 11.5px; font-weight: 600;
+    color: #6b7280; margin-bottom: 5px; letter-spacing: 0.01em;
+  }
+
+  /* ── Cards — mais leves, mais respiro ── */
+  .settings-card {
+    background: #fafafa; border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 12px; padding: 22px 24px;
+  }
+
+  .settings-card-title {
+    font-size: 11px; font-weight: 700; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 18px;
+  }
+
+  /* ── Sticky save footer ── */
+  .settings-save-bar {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end;
+    gap: 10px; padding: 14px 40px 18px;
+    border-top: 1px solid rgba(15,23,42,0.06);
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(8px);
+  }
+
+  /* ── Buttons ── */
+  .settings-btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 20px; font-size: 13px; font-weight: 600; color: #fff;
+    background: #ea6c00; border: none; border-radius: 9px; cursor: pointer;
+    transition: background .15s ease, box-shadow .15s ease;
+  }
+  .settings-btn-primary:hover { background: #d46000; box-shadow: 0 2px 10px rgba(234,108,0,0.28); }
+  .settings-btn-primary:disabled { opacity: 0.50; cursor: not-allowed; }
+
+  .settings-btn-ghost {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; font-size: 13px; font-weight: 500; color: #555f6e;
+    background: transparent; border: 1px solid rgba(15,23,42,0.11); border-radius: 9px; cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .settings-btn-ghost:hover { background: #f2f4f6; border-color: rgba(15,23,42,0.18); }
+
+  /* ── Toggle ── */
+  .settings-toggle {
+    position: relative; width: 44px; height: 24px; border: none;
+    background: #d1d5db; border-radius: 999px; cursor: pointer;
+    transition: background .2s ease; flex-shrink: 0; padding: 0;
+  }
+  .settings-toggle.on { background: #16a34a; }
+  .settings-toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 20px; height: 20px; background: #fff; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform .2s ease;
+  }
+  .settings-toggle.on::after { transform: translateX(20px); }
+
+  /* ── Row items ── */
+  .settings-row-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; background: #fff; border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 10px;
+  }
+
+  .settings-section-divider {
+    height: 1px; background: rgba(15,23,42,0.05); margin: 6px 0;
+  }
+
+  /* ── Sidebar nav item transition ── */
+  .settings-nav-item {
+    transition: background .13s ease, color .13s ease;
+  }
+`;
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+      <>
+      <style>{cssStyles}</style>
+      <div
+        className="fixed inset-0 z-[90] flex items-center justify-center"
+        style={{ padding: '24px', background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+        onClick={onClose}
+      >
+        {/* Modal card */}
+        <motion.div
+          className="relative flex overflow-hidden"
+          style={{
+            width: 'min(1180px, calc(100vw - 48px))',
+            height: 'min(860px, calc(100vh - 48px))',
+            minHeight: '560px',
+            background: '#ffffff',
+            border: '1px solid rgba(0,0,0,0.09)',
+            borderRadius: '16px',
+            boxShadow: '0 32px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.03)',
+          }}
+          initial={{ opacity: 0, scale: 0.97, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.97, y: 8 }}
+          transition={{ duration: 0.20, ease: [0.22, 0.68, 0, 1.2] }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <Crown className="w-4 h-4" />
-          {currentProfile?.role || 'Usuário'}
-        </span>
-      </header>
+          {/* X — canto superior direito */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, width: '30px', height: '30px',
+                borderRadius: '50%', border: '1px solid rgba(15,23,42,0.10)', background: 'transparent',
+                color: '#747878', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .12s ease, border-color .12s ease, color .12s ease' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.20)'; e.currentTarget.style.color = '#191c1e'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; e.currentTarget.style.color = '#747878'; }}
+            >
+              <X size={16} />
+            </button>
+          )}
 
-      {globalError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
-          {globalError}
-          <button type="button" className="ml-auto" onClick={() => setGlobalError(null)}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-      {globalSuccess && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-          <Check className="w-4 h-4" />
-          {globalSuccess}
-          <button type="button" className="ml-auto" onClick={() => setGlobalSuccess(null)}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+          {/* ── Left sidebar ── */}
+          <div style={{ width: '256px', flexShrink: 0, background: '#f9fafb', borderRight: '1px solid rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <aside className="lg:col-span-1">
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm sticky top-4">
-            <div className="px-4 py-3 border-b border-slate-100">
-              <p className="text-sm font-semibold text-slate-900">Seções</p>
-              <p className="text-xs text-slate-500">Integração total</p>
+            {/* Cabeçalho da sidebar */}
+            <div style={{ padding: '28px 20px 16px', flexShrink: 0 }}>
+              <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#b0b5bc', marginBottom: '3px' }}>Sistema</p>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>Configurações</h2>
             </div>
-            <nav className="p-2 space-y-1 max-h-[70vh] overflow-y-auto">
-              {sections.map((section) => {
-                const isActive = activeSection === section.key;
-                const showBadge = section.key === 'access_requests' && pendingAccessCount > 0;
+
+            {/* Busca */}
+            <div style={{ padding: '0 14px 14px', flexShrink: 0 }}>
+              <div style={{ position: 'relative' }}>
+                <Search style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '13px', height: '13px', color: '#b0b5bc', pointerEvents: 'none' }} />
+                <input
+                  type="text"
+                  value={navSearch}
+                  onChange={(e) => setNavSearch(e.target.value)}
+                  placeholder="Buscar seção…"
+                  style={{ width: '100%', paddingLeft: '30px', paddingRight: '10px', paddingTop: '7px', paddingBottom: '7px', fontSize: '12.5px', background: '#f0f1f3', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '8px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s, box-shadow .15s' }}
+                  onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(255,138,0,0.12)'; e.currentTarget.style.background = '#fff'; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.09)'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f0f1f3'; }}
+                />
+              </div>
+            </div>
+
+            {/* Nav grupos — accordion: apenas 1 aberto, itens mais altos */}
+            <nav className="settings-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px' }}>
+              {filteredGroups.length === 0 && (
+                <p style={{ padding: '20px 8px', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>Nenhuma seção encontrada</p>
+              )}
+              {filteredGroups.map((group) => {
+                const isExpanded = navSearch.trim() ? true : !!expandedGroups[group.key as SettingsGroupKey];
+                const groupHasActive = group.items.some(i => i.key === activeSection);
+                const groupHasBadge = group.items.some(i => i.key === 'access_requests') && pendingAccessCount > 0;
                 return (
-                  <button
-                    key={section.key}
-                    onClick={() => setActiveSection(section.key)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition ${
-                      isActive
-                        ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-sm'
-                        : showBadge
-                        ? 'text-slate-700 bg-amber-50/40 hover:bg-amber-50 border border-amber-100'
-                        : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <section.icon
-                      className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-amber-600' : showBadge ? 'text-amber-500' : 'text-slate-400'}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{section.label}</p>
-                      <p className="text-xs text-slate-400 truncate">{section.description}</p>
-                    </div>
-                    {showBadge && (
-                      <span className="flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">
-                        {pendingAccessCount}
-                      </span>
+                  <div key={group.key} style={{ marginBottom: '1px' }}>
+                    {/* Cabeçalho do grupo */}
+                    <button
+                      onClick={() => !navSearch.trim() && toggleGroup(group.key as SettingsGroupKey)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: '7px',
+                        padding: '7px 10px', borderRadius: '8px', border: 'none',
+                        textAlign: 'left', cursor: navSearch.trim() ? 'default' : 'pointer',
+                        fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                        background: 'transparent',
+                        color: groupHasActive ? '#c45c00' : '#9ca3af',
+                        transition: 'background .12s ease, color .12s ease',
+                      }}
+                      onMouseEnter={e => { if (!navSearch.trim()) (e.currentTarget as HTMLButtonElement).style.background = '#f0f1f3'; }}
+                      onMouseLeave={e => { if (!navSearch.trim()) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                    >
+                      <group.icon style={{ width: '12px', height: '12px', flexShrink: 0, opacity: 0.7 }} />
+                      <span style={{ flex: 1 }}>{group.label}</span>
+                      {groupHasBadge && !isExpanded && (
+                        <span style={{ minWidth: '16px', height: '16px', padding: '0 3px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px', background: '#ff8a00', color: '#fff', fontSize: '9px', fontWeight: 700 }}>
+                          {pendingAccessCount}
+                        </span>
+                      )}
+                      {!navSearch.trim() && (
+                        isExpanded
+                          ? <ChevronDown style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.5 }} />
+                          : <ChevronRight style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.4 }} />
+                      )}
+                    </button>
+                    {/* Itens do grupo */}
+                    {isExpanded && (
+                      <div style={{ paddingLeft: '0', marginBottom: '4px' }}>
+                        {group.items.map((section) => {
+                          const isActive = activeSection === section.key;
+                          const showCountBadge = section.key === 'access_requests' && pendingAccessCount > 0;
+                          const sectionStatus = SECTION_STATUS[section.key as SettingsSection];
+                          return (
+                            <button
+                              key={section.key}
+                              onClick={() => setActiveSection(section.key as SettingsSection)}
+                              className="settings-nav-item"
+                              style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: '9px',
+                                padding: '7px 12px 7px 10px', borderRadius: '8px', border: 'none',
+                                textAlign: 'left', cursor: 'pointer', fontSize: '13px', fontWeight: isActive ? 600 : 400,
+                                background: isActive ? 'rgba(255,138,0,0.09)' : 'transparent',
+                                color: isActive ? '#d46000' : '#4b5563',
+                                position: 'relative',
+                              }}
+                              onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = '#eef0f2'; (e.currentTarget as HTMLButtonElement).style.color = '#111827'; } }}
+                              onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#4b5563'; } }}
+                            >
+                              {isActive && (
+                                <span style={{ position: 'absolute', left: 0, top: '18%', bottom: '18%', width: '3px', borderRadius: '0 3px 3px 0', background: 'linear-gradient(180deg,#ff8a00,#f97316)' }} />
+                              )}
+                              <section.icon style={{ width: '14px', height: '14px', flexShrink: 0, color: isActive ? '#f97316' : '#9ca3af' }} />
+                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{section.label}</span>
+                              {showCountBadge && (
+                                <span style={{ minWidth: '18px', height: '18px', padding: '0 4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px', background: '#ff8a00', color: '#fff', fontSize: '10px', fontWeight: 700, flexShrink: 0 }}>
+                                  {pendingAccessCount}
+                                </span>
+                              )}
+                              {!showCountBadge && sectionStatus && (
+                                <span style={{
+                                  fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '8px', flexShrink: 0,
+                                  background: sectionStatus === 'parcial' ? '#fef9c3' : '#fee2e2',
+                                  color: sectionStatus === 'parcial' ? '#854d0e' : '#991b1b',
+                                }}>
+                                  {sectionStatus === 'parcial' ? 'Parcial' : 'Pendente'}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </nav>
-          </div>
-        </aside>
 
-        <section className="lg:col-span-3">
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            {/* User footer — fixo na base */}
+            <div style={{ padding: '14px 16px 18px', borderTop: '1px solid rgba(15,23,42,0.06)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '34px', height: '34px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #ff8a00, #ea6c00)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  fontSize: '13px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
+                  {currentProfile?.name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '1px' }}>
+                    {currentProfile?.name || 'Usuário'}
+                  </p>
+                  <p style={{ fontSize: '11px', color: '#9ca3af',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
+                    {currentProfile?.role || '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right content area ── */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#ffffff', overflow: 'hidden' }}>
+
+            {/* Header fixo da seção ativa */}
+            <div style={{ flexShrink: 0, padding: '28px 48px 20px 40px', borderBottom: '1px solid rgba(15,23,42,0.05)' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
+                {activeItem?.label ?? 'Configurações'}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '3px', lineHeight: 1.5 }}>
+                {activeItem?.description}
+              </p>
+            </div>
+
+            {/* Banners de feedback */}
+            {(globalError || globalSuccess) && (
+              <div style={{ flexShrink: 0, padding: '14px 40px 0' }}>
+                {globalError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    {globalError}
+                    <button type="button" className="ml-auto" onClick={() => setGlobalError(null)}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                {globalSuccess && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 mt-2">
+                    <Check className="w-4 h-4 flex-shrink-0" />
+                    {globalSuccess}
+                    <button type="button" className="ml-auto" onClick={() => setGlobalSuccess(null)}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Section content */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {!settingsLoaded && activeSection === 'identity' ? (
               <div className="p-12 text-center">
                 <Loader2 className="w-8 h-8 text-amber-600 animate-spin mx-auto" />
                 <p className="text-sm text-slate-500 mt-3">Carregando identidade...</p>
               </div>
             ) : (
-              <div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 {activeSection === 'identity' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-blue-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Identidade e Branding</h2>
-                        <p className="text-sm text-slate-500">Dados oficiais utilizados em documentos, integrações e DJEN.</p>
-                      </div>
-                    </header>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="text-sm font-medium text-slate-700">Nome do Escritório *</label>
-                        <input
-                          type="text"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.name}
-                          onChange={(e) => setIdentity({ ...identity, name: e.target.value })}
-                          placeholder="Ex: Montalvão Advocacia Integrada"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Email principal *</label>
-                        <input
-                          type="email"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.email}
-                          onChange={(e) => setIdentity({ ...identity, email: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Telefone</label>
-                        <input
-                          type="tel"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.phone}
-                          onChange={(e) => setIdentity({ ...identity, phone: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">CNPJ</label>
-                        <input
-                          type="text"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.cnpj}
-                          onChange={(e) => setIdentity({ ...identity, cnpj: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Registro OAB</label>
-                        <input
-                          type="text"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.oab_number}
-                          onChange={(e) => setIdentity({ ...identity, oab_number: e.target.value })}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="text-sm font-medium text-slate-700">Endereço completo</label>
-                        <textarea
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          rows={2}
-                          value={identity.address}
-                          onChange={(e) => setIdentity({ ...identity, address: e.target.value })}
-                          placeholder="Rua, número, bairro, cidade, UF"
-                        />
-                      </div>
-                      <div className="md:col-span-2 space-y-2">
-                        <label className="text-sm font-medium text-slate-700">URL do logo</label>
-                        <input
-                          type="url"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10"
-                          value={identity.logo_url}
-                          onChange={(e) => setIdentity({ ...identity, logo_url: e.target.value })}
-                          placeholder="https://"
-                        />
-                        {identity.logo_url && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 inline-flex items-center gap-3">
-                            <img src={identity.logo_url} alt="Logo" className="h-12 object-contain" />
-                            <span className="text-xs text-slate-500">Pré-visualização</span>
+                  <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ flex: 1, padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Card: Dados do escritório */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Dados do Escritório</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label className="settings-label">Nome do Escritório *</label>
+                            <input className="settings-input" type="text" value={identity.name}
+                              onChange={(e) => setIdentity({ ...identity, name: e.target.value })}
+                              placeholder="Ex: Montalvão Advocacia Integrada" />
                           </div>
-                        )}
+                          <div>
+                            <label className="settings-label">CPF / CNPJ</label>
+                            <input className="settings-input" type="text" value={identity.cnpj}
+                              onChange={(e) => {
+                                const digits = e.target.value.replace(/\D/g, '').slice(0, 14);
+                                let formatted = digits;
+                                if (digits.length <= 11) {
+                                  if (digits.length > 9) formatted = `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+                                  else if (digits.length > 6) formatted = `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6)}`;
+                                  else if (digits.length > 3) formatted = `${digits.slice(0,3)}.${digits.slice(3)}`;
+                                  else formatted = digits;
+                                } else {
+                                  if (digits.length > 12) formatted = `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5,8)}/${digits.slice(8,12)}-${digits.slice(12)}`;
+                                  else if (digits.length > 8) formatted = `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5,8)}/${digits.slice(8)}`;
+                                  else if (digits.length > 5) formatted = `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5)}`;
+                                  else if (digits.length > 2) formatted = `${digits.slice(0,2)}.${digits.slice(2)}`;
+                                  else formatted = digits;
+                                }
+                                setIdentity({ ...identity, cnpj: formatted });
+                              }}
+                              placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                              maxLength={18} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Registro OAB</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr', gap: '8px' }}>
+                              <input className="settings-input" type="text" value={identity.oab_state}
+                                onChange={(e) => setIdentity({ ...identity, oab_state: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2) })}
+                                placeholder="MT" maxLength={2}
+                                style={{ textAlign: 'center', fontWeight: 600 }} />
+                              <input className="settings-input" type="text" value={identity.oab_number}
+                                onChange={(e) => setIdentity({ ...identity, oab_number: e.target.value })}
+                                placeholder="000.000" />
+                            </div>
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Card: Endereço */}
+                      <div className="settings-card">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '14px' }}>
+                          <MapPin size={14} style={{ color: '#ea6c00' }} />
+                          <p className="settings-card-title" style={{ margin: 0 }}>Endereço</p>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          {/* CEP */}
+                          <div>
+                            <label className="settings-label">CEP</label>
+                            <div style={{ position: 'relative' }}>
+                              <input className="settings-input" type="text" value={identity.address_cep}
+                                style={{ paddingRight: cepLoading ? '32px' : undefined }}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                                  const formatted = v.length > 5 ? `${v.slice(0,5)}-${v.slice(5)}` : v;
+                                  setIdentity({ ...identity, address_cep: formatted });
+                                  setCepError('');
+                                }}
+                                onBlur={(e) => fetchCep(e.target.value)}
+                                placeholder="00000-000" />
+                              {cepLoading && (
+                                <Loader2 size={13} className="animate-spin" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#ea6c00' }} />
+                              )}
+                            </div>
+                            {cepError && <p style={{ fontSize: '11.5px', color: '#dc2626', marginTop: '4px' }}>{cepError}</p>}
+                          </div>
+                          {/* Número */}
+                          <div>
+                            <label className="settings-label">Número</label>
+                            <input className="settings-input" type="text" value={identity.address_number}
+                              onChange={(e) => setIdentity({ ...identity, address_number: e.target.value })}
+                              placeholder="Ex: 123 / S/N" />
+                          </div>
+                          {/* Logradouro */}
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label className="settings-label">Logradouro</label>
+                            <input className="settings-input" type="text" value={identity.address_street}
+                              onChange={(e) => setIdentity({ ...identity, address_street: e.target.value })}
+                              placeholder="Rua, Avenida, Travessa..." />
+                          </div>
+                          {/* Bairro */}
+                          <div>
+                            <label className="settings-label">Bairro</label>
+                            <input className="settings-input" type="text" value={identity.address_neighborhood}
+                              onChange={(e) => setIdentity({ ...identity, address_neighborhood: e.target.value })}
+                              placeholder="Bairro" />
+                          </div>
+                          {/* Cidade + UF */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '10px' }}>
+                            <div>
+                              <label className="settings-label">Cidade</label>
+                              <input className="settings-input" type="text" value={identity.address_city}
+                                onChange={(e) => setIdentity({ ...identity, address_city: e.target.value })}
+                                placeholder="Cidade" />
+                            </div>
+                            <div>
+                              <label className="settings-label">UF</label>
+                              <input className="settings-input" type="text" value={identity.address_state}
+                                onChange={(e) => setIdentity({ ...identity, address_state: e.target.value.toUpperCase().slice(0,2) })}
+                                placeholder="MT" maxLength={2} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card: Contato */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Contato</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Email principal *</label>
+                            <input className="settings-input" type="email" value={identity.email}
+                              onChange={(e) => setIdentity({ ...identity, email: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Telefone</label>
+                            <input className="settings-input" type="tel" value={identity.phone}
+                              onChange={(e) => setIdentity({ ...identity, phone: e.target.value })} />
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
-                    <div className="border-t border-slate-200 pt-4 flex justify-end">
-                      <button
-                        onClick={saveIdentity}
-                        disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
-                      >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar identidade
+
+                    {/* Sticky save bar */}
+                    <div className="settings-save-bar">
+                      <button className="settings-btn-primary" onClick={saveIdentity} disabled={saving}>
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar alterações
                       </button>
                     </div>
                   </div>
                 )}
+
+                {activeSection !== 'identity' && (
+                <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto' }}>
 
                 {activeSection === 'users' && <UserManagementModule />}
 
                 {activeSection === 'roles' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                        <Shield className="w-5 h-5 text-emerald-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Permissões e módulos</h2>
-                        <p className="text-sm text-slate-500">Configure o que cada papel pode visualizar ou alterar.</p>
-                      </div>
-                    </header>
-
-                    <div className="flex flex-wrap gap-2">
-                      {ROLES.map((role) => (
-                        <button
-                          key={role.key}
-                          onClick={() => setSelectedRole(role.key)}
-                          className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-                            selectedRole === role.key
-                              ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          {role.label}
-                        </button>
-                      ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    {/* Role selector bar */}
+                    <div style={{ flexShrink: 0, padding: '16px 40px 14px', borderBottom: '1px solid rgba(15,23,42,0.06)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      {ROLES.map((role) => {
+                        const RoleIcon = role.icon;
+                        const isSelected = selectedRole === role.key;
+                        return (
+                          <button
+                            key={role.key}
+                            onClick={() => setSelectedRole(role.key)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '6px',
+                              padding: '6px 13px', borderRadius: '999px', fontSize: '12.5px', fontWeight: 600,
+                              border: `1px solid ${isSelected ? 'rgba(255,138,0,0.35)' : 'rgba(15,23,42,0.10)'}`,
+                              background: isSelected ? 'rgba(255,138,0,0.08)' : '#fff',
+                              color: isSelected ? '#c45c00' : '#444748',
+                              cursor: 'pointer', transition: 'all .12s ease',
+                            }}
+                          >
+                            <RoleIcon size={12} />
+                            {role.label}
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    {permissionsLoading ? (
-                      <div className="py-8 text-center">
-                        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50">
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Módulo</th>
-                              <th className="px-3 py-2 text-center font-semibold text-slate-600">Ver</th>
-                              <th className="px-3 py-2 text-center font-semibold text-slate-600">Criar</th>
-                              <th className="px-3 py-2 text-center font-semibold text-slate-600">Editar</th>
-                              <th className="px-3 py-2 text-center font-semibold text-slate-600">Excluir</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {MODULES.map((module) => {
-                              const rolePerm = rolePermissions.find((perm) => perm.module === module.key);
-                              const disabled = selectedRole === 'administrador';
-                              return (
-                                <tr key={module.key} className="hover:bg-slate-50">
-                                  <td className="px-3 py-2 font-medium text-slate-700">{module.label}</td>
-                                  {(['can_view', 'can_create', 'can_edit', 'can_delete'] as const).map((field) => (
-                                    <td key={field} className="px-3 py-2 text-center">
-                                      <button
-                                        disabled={disabled}
-                                        onClick={() => updatePermission(module.key, field, !(rolePerm as any)?.[field])}
-                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-white transition ${
-                                          (rolePerm as any)?.[field] || disabled
-                                            ? 'bg-emerald-500'
-                                            : 'bg-slate-200 text-slate-400 hover:bg-slate-300'
-                                        } ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                      >
-                                        {(rolePerm as any)?.[field] || disabled ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                                      </button>
-                                    </td>
-                                  ))}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
+                    {/* Admin notice */}
                     {selectedRole === 'administrador' && (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                      <div style={{ flexShrink: 0, margin: '12px 24px 0', padding: '10px 14px',
+                        background: 'rgba(255,138,0,0.06)', border: '1px solid rgba(255,138,0,0.20)',
+                        borderRadius: '9px', fontSize: '12.5px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertTriangle size={13} style={{ color: '#ea6c00', flexShrink: 0 }} />
                         Administradores possuem todas as permissões e não podem ser limitados.
                       </div>
                     )}
-                  </div>
-                )}
 
-                {activeSection === 'audit' && (
-                  <div className="p-6 space-y-4">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
-                        <History className="w-5 h-5 text-slate-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Registro de auditoria</h2>
-                        <p className="text-sm text-slate-500">Todas as alterações são auditadas no Supabase.</p>
-                      </div>
-                    </header>
-
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-slate-400">Mostrando as 50 alterações mais recentes.</p>
-                      <button
-                        onClick={loadAudit}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-                      </button>
-                    </div>
-
-                    {auditLoading ? (
-                      <div className="py-10 text-center">
-                        <Loader2 className="w-8 h-8 text-slate-600 animate-spin mx-auto" />
-                      </div>
-                    ) : auditLog.length === 0 ? (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                        Nenhum registro encontrado.
-                      </div>
-                    ) : (
-                      <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                        {auditLog.map((entry) => (
-                          <div key={entry.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                            <div className="flex items-center justify-between text-xs text-slate-400">
-                              <span>{new Date(entry.created_at).toLocaleString('pt-BR')}</span>
-                              <span>{entry.user_name || 'Sistema'}</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900 mt-1">{entry.action}</p>
-                            <p className="text-xs text-slate-500">
-                              {entry.entity_type}
-                              {entry.entity_id && <span className="ml-1 text-slate-400">#{entry.entity_id}</span>}
-                            </p>
+                    {/* Module list */}
+                    <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto', padding: '16px 40px 20px' }}>
+                      {permissionsLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
+                          <Loader2 size={20} className="animate-spin" style={{ color: '#ea6c00' }} />
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {/* Header row */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px 64px 64px 64px', gap: '4px',
+                            padding: '6px 14px', borderRadius: '8px', background: '#f8f9fb',
+                            marginBottom: '2px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#747878', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Módulo</span>
+                            {['Ver', 'Criar', 'Editar', 'Excluir'].map(h => (
+                              <span key={h} style={{ fontSize: '11px', fontWeight: 700, color: '#747878', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>{h}</span>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          {MODULES.map((module) => {
+                            const rolePerm = rolePermissions.find((perm) => perm.module === module.key);
+                            const disabled = selectedRole === 'administrador';
+                            return (
+                              <div
+                                key={module.key}
+                                style={{ display: 'grid', gridTemplateColumns: '1fr 64px 64px 64px 64px', gap: '4px',
+                                  alignItems: 'center', padding: '9px 14px', borderRadius: '9px',
+                                  border: '1px solid rgba(15,23,42,0.06)', background: '#fff',
+                                  transition: 'background .12s ease, border-color .12s ease' }}
+                                onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.06)'; }}
+                              >
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: '#191c1e' }}>{module.label}</span>
+                                {(['can_view', 'can_create', 'can_edit', 'can_delete'] as const).map((field) => {
+                                  const active = (rolePerm as any)?.[field] || disabled;
+                                  return (
+                                    <div key={field} style={{ display: 'flex', justifyContent: 'center' }}>
+                                      <button
+                                        disabled={disabled}
+                                        onClick={() => updatePermission(module.key, field, !(rolePerm as any)?.[field])}
+                                        style={{ width: '28px', height: '28px', borderRadius: '7px', border: 'none',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          background: active ? '#ea6c00' : 'rgba(15,23,42,0.07)',
+                                          color: active ? '#fff' : '#9ca3af',
+                                          cursor: disabled ? 'not-allowed' : 'pointer',
+                                          opacity: disabled ? 0.75 : 1,
+                                          transition: 'background .12s ease' }}
+                                        onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = active ? '#d46000' : 'rgba(15,23,42,0.12)'; }}
+                                        onMouseLeave={e => { if (!disabled) e.currentTarget.style.background = active ? '#ea6c00' : 'rgba(15,23,42,0.07)'; }}
+                                      >
+                                        {active ? <Check size={13} /> : <X size={13} />}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
+
+                {activeSection === 'audit' && (() => {
+                  // ── Tabelas de tradução ──────────────────────────────────
+                  const AUDIT_ACTION_VERBS: Record<string, string> = {
+                    insert: 'criou', update: 'atualizou', delete: 'removeu',
+                    security_pin_verified: 'verificou PIN de segurança em',
+                    update_security_config: 'atualizou as configurações de segurança',
+                    update_djen_config: 'atualizou a configuração do DJEN',
+                    update_notification_config: 'atualizou as configurações de notificação',
+                    signed: 'assinou o documento',
+                    viewed: 'abriu o documento',
+                    cancelled: 'cancelou a assinatura de',
+                    rejected: 'recusou assinar',
+                    resent: 'reenviou link de assinatura de',
+                    expired: 'expirou a solicitação de',
+                    blocked: 'bloqueou a assinatura de',
+                  };
+                  const AUDIT_ENTITY_LABELS: Record<string, string> = {
+                    deadlines: 'prazo', clients: 'cliente', processes: 'processo',
+                    requirements: 'requerimento', calendar_events: 'compromisso',
+                    tasks: 'tarefa', leads: 'lead', audit_log: 'registro de auditoria',
+                    system_settings: 'configuração', profiles: 'usuário',
+                    role_permissions: 'permissão', user_module_overrides: 'permissão personalizada',
+                    installment: 'parcela', installments: 'parcelas',
+                    agreement: 'acordo', system: 'sistema',
+                    signature_request: 'documento',
+                    calendar_event: 'compromisso',
+                  };
+                  const SETTINGS_KEY_LABELS: Record<string, string> = {
+                    client_module_config: 'Clientes', process_module_config: 'Processos',
+                    deadline_module_config: 'Prazos', task_module_config: 'Tarefas',
+                    calendar_module_config: 'Agenda', lead_module_config: 'Leads',
+                    requirement_module_config: 'Requerimentos', signature_module_config: 'Assinaturas',
+                    financial_module_config: 'Financeiro', notification_rules: 'Regras de Notificação',
+                    email_templates: 'Templates de E-mail', notification_config: 'Notificações',
+                    security_config: 'Segurança', office_identity: 'Identidade do Escritório',
+                    preferences: 'Preferências Gerais', portal_modules_config: 'Módulos do Portal',
+                    portal_customization_config: 'Personalização do Portal',
+                    portal_client_notifications_config: 'Notificações do Portal',
+                    ai_provider_config: 'Provedores de IA', automation_thresholds: 'Limiares de Automação',
+                    email_integration_config: 'E-mail (integração)', djen_config: 'DJEN',
+                    form_layouts: 'Layouts de Formulário', role_permissions: 'Permissões',
+                    automation_secrets: 'Cofre de Chaves',
+                  };
+                  const AUDIT_ACTION_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
+                    insert:                 { bg: '#f0fdf4', color: '#166534', dot: '#22c55e' },
+                    delete:                 { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    security_pin_verified:  { bg: '#eff6ff', color: '#1e40af', dot: '#3b82f6' },
+                    signed:                 { bg: '#f0fdf4', color: '#166534', dot: '#22c55e' },
+                    viewed:                 { bg: '#f8fafc', color: '#475569', dot: '#94a3b8' },
+                    cancelled:              { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    rejected:               { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    blocked:                { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    resent:                 { bg: '#fffbeb', color: '#92400e', dot: '#f59e0b' },
+                  };
+                  const getColor = (action: string) =>
+                    AUDIT_ACTION_COLORS[action] ?? { bg: '#fffbeb', color: '#92400e', dot: '#f59e0b' };
+
+                  const SKIP_DIFF = new Set([
+                    'id', 'created_at', 'updated_at', 'notified_at', 'completed_at',
+                    'djen_last_sync', 'djen_synced', 'djen_has_data', 'datajud_synced_at',
+                    'datajud_cache', 'alarm_triggered', 'user_agent', 'ip_address',
+                  ]);
+                  const FIELD_LABELS: Record<string, string> = {
+                    title: 'Título', full_name: 'Nome', name: 'Nome', status: 'Status',
+                    priority: 'Prioridade', due_date: 'Vencimento', description: 'Descrição',
+                    type: 'Tipo', process_code: 'Número do processo', court: 'Vara',
+                    practice_area: 'Área', notes: 'Anotações', hearing_date: 'Audiência',
+                    deadline_days: 'Prazo (dias)', notify_days_before: 'Notificar antes (dias)',
+                    email: 'E-mail', phone: 'Telefone', document_number: 'CPF/CNPJ',
+                    responsible_id: 'Responsável', client_id: 'Cliente',
+                    stage: 'Estágio', origin: 'Origem', value: 'Valor',
+                    counting_type: 'Tipo de contagem', publication_date: 'Publicação',
+                    beneficiary: 'Beneficiário', protocol: 'Protocolo',
+                    start_at: 'Início', end_at: 'Fim', event_type: 'Tipo de evento',
+                    role: 'Papel', is_active: 'Ativo', audit_log_enabled: 'Log de auditoria',
+                    responsible_lawyer: 'Advogado responsável', amount: 'Valor',
+                    due_amount: 'Valor devido', paid_amount: 'Valor pago',
+                    hearing_scheduled: 'Audiência agendada', status_manual: 'Status manual',
+                  };
+                  const ENTITY_NAME_FIELDS: Record<string, string[]> = {
+                    clients:         ['full_name'],
+                    deadlines:       ['title'],
+                    processes:       ['process_code'],
+                    requirements:    ['beneficiary', 'protocol'],
+                    calendar_events: ['title'],
+                    tasks:           ['title'],
+                    leads:           ['name', 'full_name'],
+                    profiles:        ['name', 'full_name'],
+                    system_settings: [],
+                  };
+                  // Entidades que têm client_id e devem mostrar o cliente vinculado
+                  const HAS_CLIENT_ID = new Set(['deadlines','processes','requirements','calendar_events','tasks','leads']);
+
+                  // ── Funções auxiliares ───────────────────────────────────
+                  const formatVal = (v: any): string => {
+                    if (v === null || v === undefined) return '—';
+                    if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
+                    if (Array.isArray(v)) {
+                      if (v.length === 0) return '(lista vazia)';
+                      if (typeof v[0] === 'object' && v[0] !== null) {
+                        const labels = v.map((item: any) => item.label || item.name || item.title || item.value || '').filter(Boolean);
+                        if (labels.length > 0) {
+                          const preview = labels.slice(0, 3).join(', ');
+                          return labels.length > 3 ? `${preview} e mais ${labels.length - 3}` : preview;
+                        }
+                        return `${v.length} ${v.length === 1 ? 'item' : 'itens'}`;
+                      }
+                      const strs = v.slice(0, 5).map(String);
+                      return strs.join(', ') + (v.length > 5 ? ` +${v.length - 5}` : '');
+                    }
+                    if (typeof v === 'object') return JSON.stringify(v).slice(0, 50) + '…';
+                    const s = String(v);
+                    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+                      try { return new Date(s).toLocaleDateString('pt-BR'); } catch { return s; }
+                    }
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                      const [y, m, d] = s.split('-');
+                      return `${d}/${m}/${y}`;
+                    }
+                    // UUID → resolve cliente se disponível, senão curto
+                    if (/^[0-9a-f-]{36}$/i.test(s)) {
+                      return auditClientMap.get(s) ?? s.slice(0, 8) + '…';
+                    }
+                    if (s.length > 60) return s.slice(0, 57) + '…';
+                    return s;
+                  };
+
+                  const getEntityName = (e: AuditLogEntry): string | null => {
+                    // system_settings: usa chave legível
+                    if (e.entity_type === 'system_settings' && e.entity_id) {
+                      return SETTINGS_KEY_LABELS[e.entity_id] ?? e.entity_id.replace(/_/g, ' ');
+                    }
+                    const src = e.action === 'delete' ? e.old_value : (e.new_value ?? e.old_value);
+                    if (!src || typeof src !== 'object') return null;
+                    const fields = ENTITY_NAME_FIELDS[e.entity_type] ?? [];
+                    for (const f of fields) {
+                      if (src[f]) return String(src[f]);
+                    }
+                    return null;
+                  };
+
+                  const getClientName = (e: AuditLogEntry): string | null => {
+                    // Assinatura: client_name vem no new_value._source
+                    if (e.entity_type === 'signature_request' && e.new_value?._source === 'signature_audit_log') {
+                      return e.new_value.client_name ?? null;
+                    }
+                    // Installment: vem do mapa carregado pelo serviço
+                    if (e.entity_type === 'installment' && e.entity_id) {
+                      return auditInstallmentMap.get(e.entity_id)?.client_name ?? null;
+                    }
+                    if (!HAS_CLIENT_ID.has(e.entity_type)) return null;
+                    const src = e.new_value ?? e.old_value;
+                    if (!src || typeof src !== 'object') return null;
+                    const cid = src.client_id;
+                    if (!cid) return null;
+                    return auditClientMap.get(cid) ?? null;
+                  };
+
+                  const formatUserName = (name: string | null): string => {
+                    if (!name) return 'Sistema';
+                    // email sem nome → mostra a parte local
+                    if (name.includes('@') && !name.includes(' ')) return name.split('@')[0];
+                    return name;
+                  };
+
+                  type DiffItem = { field: string; label: string; oldVal: string; newVal: string };
+                  const getDiff = (e: AuditLogEntry): DiffItem[] => {
+                    if (e.action !== 'update') return [];
+                    const ov = e.old_value; const nv = e.new_value;
+                    if (!ov || !nv || typeof ov !== 'object' || typeof nv !== 'object') return [];
+                    const diffs: DiffItem[] = [];
+                    const allKeys = new Set([...Object.keys(ov), ...Object.keys(nv)]);
+                    for (const key of allKeys) {
+                      if (SKIP_DIFF.has(key)) continue;
+                      const o = ov[key]; const n = nv[key];
+                      if (JSON.stringify(o) === JSON.stringify(n)) continue;
+                      if ((o === null || o === undefined) && (n === null || n === undefined)) continue;
+                      // Campos UUID que têm resolução no cliente
+                      let oldVal = formatVal(o);
+                      let newVal = formatVal(n);
+                      diffs.push({ field: key, label: FIELD_LABELS[key] ?? key.replace(/_/g, ' '), oldVal, newVal });
+                    }
+                    return diffs.slice(0, 8);
+                  };
+
+                  const isSystemOnlyUpdate = (e: AuditLogEntry): boolean => {
+                    if (e.action !== 'update') return false;
+                    return getDiff(e).length === 0;
+                  };
+
+                  const totalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
+                  const firstItem  = auditTotal === 0 ? 0 : auditPage * AUDIT_PAGE_SIZE + 1;
+                  const lastItem   = Math.min((auditPage + 1) * AUDIT_PAGE_SIZE, auditTotal);
+
+                  return (
+                    <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                      {/* Barra de filtros */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>De</label>
+                          <input type="date" value={auditDateFrom}
+                            onChange={e => setAuditDateFrom(e.target.value)}
+                            style={{ fontSize: '13px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 10px', color: '#374151' }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Até</label>
+                          <input type="date" value={auditDateTo}
+                            onChange={e => setAuditDateTo(e.target.value)}
+                            style={{ fontSize: '13px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 10px', color: '#374151' }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Ação</label>
+                          <select value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)}
+                            style={{ fontSize: '13px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 10px', color: '#374151', background: '#fff' }}>
+                            <option value="">Todas</option>
+                            <option value="insert">Criação</option>
+                            <option value="update">Atualização</option>
+                            <option value="delete">Remoção</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Módulo</label>
+                          <select value={auditEntityFilter} onChange={e => setAuditEntityFilter(e.target.value)}
+                            style={{ fontSize: '13px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 10px', color: '#374151', background: '#fff' }}>
+                            <option value="">Todos</option>
+                            <option value="clients">Clientes</option>
+                            <option value="processes">Processos</option>
+                            <option value="deadlines">Prazos</option>
+                            <option value="tasks">Tarefas</option>
+                            <option value="calendar_events">Agenda</option>
+                            <option value="leads">Leads</option>
+                            <option value="requirements">Requerimentos</option>
+                            <option value="system_settings">Configurações</option>
+                            <option value="profiles">Usuários</option>
+                            <option value="role_permissions">Permissões</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexGrow: 1, minWidth: '160px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Usuário</label>
+                          <input type="text" placeholder="Nome do usuário..." value={auditUserFilter}
+                            onChange={e => setAuditUserFilter(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && loadAudit(0)}
+                            style={{ fontSize: '13px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 10px', color: '#374151' }} />
+                        </div>
+                        <button onClick={() => loadAudit(0)}
+                          style={{ height: '34px', padding: '0 16px', background: '#ff8a00', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <RefreshCw size={13} /> Buscar
+                        </button>
+                        {(auditDateFrom || auditDateTo || auditActionFilter || auditUserFilter || auditEntityFilter) && (
+                          <button onClick={() => { setAuditDateFrom(''); setAuditDateTo(''); setAuditActionFilter(''); setAuditUserFilter(''); setAuditEntityFilter(''); setTimeout(() => loadAudit(0, '', '', '', '', ''), 0); }}
+                            style={{ height: '34px', padding: '0 12px', background: 'transparent', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Totalizador */}
+                      {!auditLoading && (
+                        <p style={{ fontSize: '12px', color: '#9ca3af' }}>
+                          {auditTotal === 0 ? 'Nenhum registro encontrado.' : `${firstItem}–${lastItem} de ${auditTotal.toLocaleString('pt-BR')} registros`}
+                        </p>
+                      )}
+
+                      {/* Lista */}
+                      {auditLoading ? (
+                        <div style={{ padding: '40px 0', textAlign: 'center' }}>
+                          <Loader2 className="w-8 h-8 animate-spin mx-auto" style={{ color: '#9ca3af' }} />
+                        </div>
+                      ) : auditLog.length === 0 ? (
+                        <div style={{ borderRadius: '10px', border: '1px solid #f1f5f9', background: '#f8fafc', padding: '32px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
+                          Nenhum registro encontrado para os filtros aplicados.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {auditLog.map((entry) => {
+                            const col     = getColor(entry.action);
+                            const dt      = new Date(entry.created_at);
+                            const dateStr = dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                            const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            const sysOnly = isSystemOnlyUpdate(entry);
+
+                            // Ocultar atualizações automáticas de sistema sem autor e sem diff legível
+                            if (sysOnly && !entry.user_name) return null;
+
+                            // ── Assinatura: renderização especial ──────────────
+                            if (entry.entity_type === 'signature_request' && entry.new_value?._source === 'signature_audit_log') {
+                              const nv = entry.new_value;
+                              const signerName = formatUserName(entry.user_name) || 'Signatário';
+                              const verb = AUDIT_ACTION_VERBS[entry.action] ?? entry.action;
+                              return (
+                                <div key={entry.id} style={{ padding: '13px 16px', borderRadius: '10px', border: '1px solid rgba(15,23,42,0.06)', background: '#fff' }}>
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: col.dot, marginTop: '6px', flexShrink: 0 }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <p style={{ margin: 0, fontSize: '13.5px', color: '#111827', lineHeight: 1.6 }}>
+                                        <strong style={{ fontWeight: 700 }}>{signerName}</strong>{' '}
+                                        <span style={{ color: col.color, fontWeight: 500 }}>{verb}</span>
+                                        {nv.document_name && <span style={{ marginLeft: '4px', fontWeight: 700 }}>"{nv.document_name}"</span>}
+                                      </p>
+                                      {nv.client_name && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>👤 Cliente: <strong style={{ color: '#374151' }}>{nv.client_name}</strong></p>}
+                                      {nv.process_number && <p style={{ margin: '1px 0 0', fontSize: '12px', color: '#6b7280' }}>⚖️ Processo: <strong style={{ color: '#374151' }}>{nv.process_number}</strong></p>}
+                                      {nv.ip_address && <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#9ca3af' }}>IP: {nv.ip_address}</p>}
+                                      <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#9ca3af' }}>{dateStr} às {timeStr}</p>
+                                    </div>
+                                    <span style={{ fontSize: '10.5px', fontWeight: 700, color: col.color, background: col.bg, padding: '3px 9px', borderRadius: '99px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                      assinatura
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // ── Installment PIN: renderização especial ─────────
+                            const installCtx = entry.entity_type === 'installment' && entry.entity_id
+                              ? auditInstallmentMap.get(entry.entity_id) ?? null : null;
+
+                            const who        = formatUserName(entry.user_name);
+                            const verb       = AUDIT_ACTION_VERBS[entry.action] ?? entry.action.replace(/_/g, ' ');
+                            const what       = entry.entity_type ? (AUDIT_ENTITY_LABELS[entry.entity_type] ?? entry.entity_type.replace(/_/g, ' ')) : '';
+                            const entityName = getEntityName(entry);
+                            const clientName = getClientName(entry);
+                            const diff       = getDiff(entry);
+
+                            return (
+                              <div key={entry.id} style={{ padding: '13px 16px', borderRadius: '10px', border: '1px solid rgba(15,23,42,0.06)', background: '#fff' }}>
+                                {/* Cabeçalho */}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: col.dot, marginTop: '6px', flexShrink: 0 }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <p style={{ margin: 0, fontSize: '13.5px', color: '#111827', lineHeight: 1.6 }}>
+                                      <strong style={{ fontWeight: 700 }}>{who}</strong>{' '}
+                                      <span style={{ color: col.color, fontWeight: 500 }}>{verb}</span>
+                                      {what && !AUDIT_ACTION_VERBS[entry.action]?.includes('configurações') && (
+                                        <> um <span style={{ fontWeight: 500, color: '#374151' }}>{what}</span></>
+                                      )}
+                                      {entityName && <span style={{ marginLeft: '4px', fontWeight: 700 }}>"{entityName}"</span>}
+                                    </p>
+                                    {/* Contexto de installment */}
+                                    {installCtx && (
+                                      <>
+                                        <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                                          💰 Parcela {installCtx.installment_number} · <strong style={{ color: '#374151' }}>R$ {Number(installCtx.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                                          {installCtx.due_date && <> · venc. {(() => { const [y,m,d] = installCtx.due_date.split('-'); return `${d}/${m}/${y}`; })()}</>}
+                                        </p>
+                                        {installCtx.client_name && <p style={{ margin: '1px 0 0', fontSize: '12px', color: '#6b7280' }}>👤 Cliente: <strong style={{ color: '#374151' }}>{installCtx.client_name}</strong></p>}
+                                      </>
+                                    )}
+                                    {/* Cliente vinculado (outros módulos) */}
+                                    {!installCtx && clientName && (
+                                      <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                                        👤 Cliente: <strong style={{ color: '#374151' }}>{clientName}</strong>
+                                      </p>
+                                    )}
+                                    <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#9ca3af' }}>{dateStr} às {timeStr}</p>
+                                  </div>
+                                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: col.color, background: col.bg, padding: '3px 9px', borderRadius: '99px', flexShrink: 0, whiteSpace: 'nowrap', marginTop: '1px' }}>
+                                    {entry.action === 'insert' ? 'criação'
+                                      : entry.action === 'update' ? 'atualização'
+                                      : entry.action === 'delete' ? 'remoção'
+                                      : entry.action.replace(/_/g, ' ')}
+                                  </span>
+                                </div>
+
+                                {/* Diff de campos alterados */}
+                                {diff.length > 0 && (
+                                  <div style={{ marginTop: '10px', marginLeft: '18px', borderTop: '1px solid #f3f4f6', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    {diff.map(d => (
+                                      <div key={d.field} style={{ display: 'grid', gridTemplateColumns: '130px 1fr auto 1fr', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                                        <span style={{ color: '#6b7280', fontWeight: 600 }}>{d.label}</span>
+                                        <span style={{ color: '#b91c1c', background: '#fef2f2', padding: '1px 7px', borderRadius: '5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.oldVal}</span>
+                                        <span style={{ color: '#9ca3af', fontWeight: 700 }}>→</span>
+                                        <span style={{ color: '#15803d', background: '#f0fdf4', padding: '1px 7px', borderRadius: '5px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.newVal}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {entry.action === 'update' && diff.length === 0 && !sysOnly && (
+                                  <p style={{ margin: '6px 0 0 18px', fontSize: '11.5px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                    Atualização interna do sistema.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Paginação */}
+                      {auditTotal > AUDIT_PAGE_SIZE && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
+                          <button disabled={auditPage === 0 || auditLoading}
+                            onClick={() => loadAudit(auditPage - 1)}
+                            style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 500, border: '1px solid #e5e7eb', borderRadius: '8px', background: '#fff', color: auditPage === 0 ? '#d1d5db' : '#374151', cursor: auditPage === 0 ? 'default' : 'pointer' }}>
+                            ← Anterior
+                          </button>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                            Página {auditPage + 1} de {totalPages}
+                          </span>
+                          <button disabled={auditPage >= totalPages - 1 || auditLoading}
+                            onClick={() => loadAudit(auditPage + 1)}
+                            style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 500, border: '1px solid #e5e7eb', borderRadius: '8px', background: '#fff', color: auditPage >= totalPages - 1 ? '#d1d5db' : '#374151', cursor: auditPage >= totalPages - 1 ? 'default' : 'pointer' }}>
+                            Próxima →
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+                  );
+                })()}
 
                 {activeSection === 'djen' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-indigo-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Configurações do DJEN</h2>
-                        <p className="text-sm text-slate-500">Diário de Justiça Eletrônico Nacional</p>
-                      </div>
-                    </header>
-
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="px-8 py-6 space-y-6">
+                    <div className="settings-row-item">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">Sincronização Automática</p>
                         <p className="text-xs text-slate-500">Buscar intimações automaticamente</p>
                       </div>
                       <button
+                        className={`settings-toggle${djenConfig.auto_sync ? ' on' : ''}`}
                         onClick={() => setDjenConfig({ ...djenConfig, auto_sync: !djenConfig.auto_sync })}
-                        className={`w-12 h-7 rounded-full transition-colors ${djenConfig.auto_sync ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                      >
-                        <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${djenConfig.auto_sync ? 'translate-x-6' : 'translate-x-1'}`} />
-                      </button>
+                        aria-label="toggle"
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1067,8 +2276,25 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                       </div>
                     </div>
 
-                    {/* ── Chave pública DataJud (CNJ) ── */}
-                    <div className="border-t border-slate-200 pt-6">
+                    {/* ── DataJud (CNJ) ── separador visual explícito ── */}
+                    <div className="border-t-2 border-orange-100 pt-6 mt-2">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 border border-orange-200 text-xs font-bold text-orange-700 tracking-wide uppercase">
+                          DataJud — CNJ
+                        </span>
+                        {datajudKeyConfig.invalid && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                            Chave inválida
+                          </span>
+                        )}
+                        {!datajudKeyConfig.invalid && datajudKeyConfig.key && datajudKeyConfig.key !== settingsService.DATAJUD_DEFAULT_KEY && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            Chave configurada
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <h3 className="text-sm font-semibold text-slate-900">Chave de API DataJud (CNJ)</h3>
@@ -1077,12 +2303,6 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                             <a href="https://datajud-wiki.cnj.jus.br/api-publica/acesso" target="_blank" rel="noopener noreferrer" className="text-[#f97316] hover:underline">datajud-wiki.cnj.jus.br</a>.
                           </p>
                         </div>
-                        {datajudKeyConfig.invalid && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex-shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                            Chave inválida
-                          </span>
-                        )}
                       </div>
                       {datajudKeyConfig.invalid && datajudKeyConfig.invalid_since && (
                         <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
@@ -1170,8 +2390,8 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-4 flex justify-end">
-                      <button
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button className="settings-btn-primary"
                         onClick={async () => {
                           setSaving(true);
                           try {
@@ -1184,27 +2404,16 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           }
                         }}
                         disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
                       >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar DJEN
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
                       </button>
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'notifications' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
-                        <Bell className="w-5 h-5 text-amber-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Notificações</h2>
-                        <p className="text-sm text-slate-500">Configure alertas e lembretes</p>
-                      </div>
-                    </header>
-
+                  <div className="px-8 py-6 space-y-6">
                     {/* Toggles básicos */}
                     <div className="space-y-3">
                       {[
@@ -1212,7 +2421,7 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                         { key: 'push_enabled', label: 'Notificações Push', desc: 'Alertas no navegador', icon: Bell },
                         { key: 'new_intimation_alert', label: 'Alertas de Intimações', desc: 'Aviso imediato de novas intimações', icon: FileText },
                       ].map((item) => (
-                        <div key={item.key} className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <div key={item.key} className="settings-row-item">
                           <div className="flex items-center gap-3">
                             <item.icon className="w-5 h-5 text-slate-400" />
                             <div>
@@ -1221,11 +2430,10 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                             </div>
                           </div>
                           <button
+                            className={`settings-toggle${(notificationConfig as any)[item.key] ? ' on' : ''}`}
                             onClick={() => setNotificationConfig({ ...notificationConfig, [item.key]: !(notificationConfig as any)[item.key] })}
-                            className={`w-12 h-7 rounded-full transition-colors ${(notificationConfig as any)[item.key] ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                          >
-                            <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${(notificationConfig as any)[item.key] ? 'translate-x-6' : 'translate-x-1'}`} />
-                          </button>
+                            aria-label="toggle"
+                          />
                         </div>
                       ))}
                     </div>
@@ -1257,11 +2465,10 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           </div>
                         </div>
                         <button
+                          className={`settings-toggle${notificationConfig.weekly_digest ? ' on' : ''}`}
                           onClick={() => setNotificationConfig({ ...notificationConfig, weekly_digest: !notificationConfig.weekly_digest })}
-                          className={`w-12 h-7 rounded-full transition-colors shrink-0 ${notificationConfig.weekly_digest ? 'bg-amber-500' : 'bg-slate-300'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${notificationConfig.weekly_digest ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+                          aria-label="toggle"
+                        />
                       </div>
 
                       {/* Configurações — expandem quando ativo */}
@@ -1294,33 +2501,24 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                             </div>
                           </div>
 
-                          {/* Resend API Key */}
-                          <div>
-                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
-                              <Key className="w-3.5 h-3.5" /> Resend API Key
-                            </label>
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <input
-                                type={showResendKey ? 'text' : 'password'}
-                                placeholder="re_xxxxxxxxxxxxxxxxxxxx"
-                                className="flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                value={notificationConfig.weekly_digest_resend_key}
-                                onChange={(e) => setNotificationConfig({ ...notificationConfig, weekly_digest_resend_key: e.target.value })}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowResendKey(v => !v)}
-                                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white transition"
-                              >
-                                {showResendKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          {/* Aviso: chave movida para Integrações */}
+                          {!emailIntConfig.resend_key && (
+                            <div style={{ padding: '10px 12px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', fontSize: '12px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                              API key Resend não configurada.{' '}
+                              <button type="button" onClick={() => setActiveSection('integrations_email')}
+                                style={{ textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontWeight: 600 }}>
+                                Configure em Integrações → E-mail
                               </button>
                             </div>
-                            <p className="text-xs text-slate-400 mt-1">
-                              Obtenha em{' '}
-                              <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline font-medium">resend.com/api-keys</a>
-                              {' '}— plano gratuito: 3.000 emails/mês
-                            </p>
-                          </div>
+                          )}
+                          {emailIntConfig.resend_key && (
+                            <div style={{ padding: '10px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '12px', color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Check size={13} />
+                              API key configurada em <button type="button" onClick={() => setActiveSection('integrations_email')}
+                                style={{ textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontWeight: 600 }}>Integrações → E-mail</button>.
+                            </div>
+                          )}
 
                           {/* O que será enviado */}
                           <div className="rounded-xl bg-white border border-amber-200 p-4">
@@ -1348,8 +2546,8 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                       )}
                     </div>
 
-                    <div className="border-t border-slate-200 pt-4 flex justify-end">
-                      <button
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button className="settings-btn-primary"
                         onClick={async () => {
                           setSaving(true);
                           try {
@@ -1362,32 +2560,34 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           }
                         }}
                         disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
                       >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar Notificações
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
                       </button>
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'preferences' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
-                        <Settings className="w-5 h-5 text-slate-600" />
-                      </span>
+                  <div className="px-8 py-6 space-y-6">
+
+                    {/* Aviso de integração pendente */}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px', padding: '12px 16px' }}>
+                      <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
                       <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Preferências Operacionais</h2>
-                        <p className="text-sm text-slate-500">Configurações gerais do sistema</p>
+                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', margin: 0 }}>Configurações salvas mas ainda não aplicadas globalmente</p>
+                        <p style={{ fontSize: '12px', color: '#b45309', margin: '3px 0 0' }}>Fuso horário, formato de data, moeda e horário comercial são salvos, mas o sistema ainda usa valores padrão em todos os módulos. A integração global está prevista para versões futuras. O prazo padrão de prazos e o horário comercial já são consumidos parcialmente.</p>
                       </div>
-                    </header>
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Fuso Horário</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-medium text-slate-700">Fuso Horário</label>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
+                        </div>
                         <select
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           value={preferences.timezone}
                           onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
                         >
@@ -1398,9 +2598,12 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                         </select>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Formato de Data</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-medium text-slate-700">Formato de Data</label>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
+                        </div>
                         <select
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           value={preferences.date_format}
                           onChange={(e) => setPreferences({ ...preferences, date_format: e.target.value })}
                         >
@@ -1421,9 +2624,12 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Moeda</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-medium text-slate-700">Moeda</label>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
+                        </div>
                         <select
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           value={preferences.currency}
                           onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
                         >
@@ -1433,27 +2639,33 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                         </select>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Horário Comercial - Início</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-medium text-slate-700">Horário Comercial - Início</label>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fef9c3', color: '#854d0e' }}>Parcial</span>
+                        </div>
                         <input
                           type="time"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           value={preferences.business_hours_start}
                           onChange={(e) => setPreferences({ ...preferences, business_hours_start: e.target.value })}
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Horário Comercial - Fim</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-medium text-slate-700">Horário Comercial - Fim</label>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fef9c3', color: '#854d0e' }}>Parcial</span>
+                        </div>
                         <input
                           type="time"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           value={preferences.business_hours_end}
                           onChange={(e) => setPreferences({ ...preferences, business_hours_end: e.target.value })}
                         />
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-4 flex justify-end">
-                      <button
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button className="settings-btn-primary"
                         onClick={async () => {
                           setSaving(true);
                           try {
@@ -1466,33 +2678,22 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           }
                         }}
                         disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
                       >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar Preferências
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
                       </button>
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'access_requests' && (
-                  <div className="p-6">
+                  <div className="px-8 py-6">
                     <AccessRequestsAdmin />
                   </div>
                 )}
 
                 {activeSection === 'portal' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
-                        <Smartphone className="w-5 h-5 text-orange-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Portal do Cliente</h2>
-                        <p className="text-sm text-slate-500">Ative ou desative os módulos visíveis no portal. CPF e dados de login são sempre acessíveis.</p>
-                      </div>
-                    </header>
-
+                  <div className="px-8 py-6 space-y-6">
                     {/* Módulos */}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {([
@@ -1536,8 +2737,8 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                       O módulo <strong>Perfil</strong> exibe os dados cadastrais. Se desativado, o cliente não poderá solicitar atualizações via portal.
                     </div>
 
-                    <div className="flex justify-end">
-                      <button
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button className="settings-btn-primary"
                         disabled={portalSaving}
                         onClick={async () => {
                           setPortalSaving(true);
@@ -1550,81 +2751,77 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                             setPortalSaving(false);
                           }
                         }}
-                        className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-60"
                       >
-                        {portalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar configurações
+                        {portalSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
                       </button>
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'security' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex items-center gap-3">
-                      <span className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
-                        <ShieldCheck className="w-5 h-5 text-red-600" />
-                      </span>
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900">Segurança</h2>
-                        <p className="text-sm text-slate-500">Políticas de acesso e auditoria</p>
-                      </div>
-                    </header>
+                  <div className="px-8 py-6 space-y-6">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Timeout da Sessão (horas)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="24"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                          value={securityConfig.session_timeout_hours}
-                          onChange={(e) => setSecurityConfig({ ...securityConfig, session_timeout_hours: parseInt(e.target.value) || 6 })}
-                        />
+                    {/* TTLs do PIN — aplicados de verdade pelo SecurityPinContext */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <p className="text-sm font-semibold text-slate-800">Sessões de PIN</p>
+                        <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#dcfce7', color: '#166534' }}>Aplicado</span>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Tentativas Máximas de Login</label>
-                        <input
-                          type="number"
-                          min="3"
-                          max="10"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                          value={securityConfig.max_login_attempts}
-                          onChange={(e) => setSecurityConfig({ ...securityConfig, max_login_attempts: parseInt(e.target.value) || 5 })}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-700">Tamanho Mínimo da Senha</label>
-                        <input
-                          type="number"
-                          min="6"
-                          max="20"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                          value={securityConfig.password_min_length}
-                          onChange={(e) => setSecurityConfig({ ...securityConfig, password_min_length: parseInt(e.target.value) || 8 })}
-                        />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-slate-700 block mb-1">Duração da sessão PIN (minutos)</label>
+                          <p className="text-xs text-slate-400 mb-1">Após verificar o PIN, ações sensíveis não pedem PIN novamente por este período.</p>
+                          <input
+                            type="number"
+                            min="1"
+                            max="60"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            value={securityConfig.pin_session_minutes ?? 5}
+                            onChange={(e) => setSecurityConfig({ ...securityConfig, pin_session_minutes: Math.max(1, parseInt(e.target.value) || 5) })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-slate-700 block mb-1">Duração da sessão financeira (horas)</label>
+                          <p className="text-xs text-slate-400 mb-1">Após revelar valores financeiros, o módulo permanece desbloqueado por este período.</p>
+                          <input
+                            type="number"
+                            min="1"
+                            max="12"
+                            step="0.5"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            value={securityConfig.financial_view_hours ?? 2}
+                            onChange={(e) => setSecurityConfig({ ...securityConfig, financial_view_hours: Math.max(0.5, parseFloat(e.target.value) || 2) })}
+                          />
+                        </div>
                       </div>
                     </div>
 
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="settings-row-item">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">Log de Auditoria</p>
                           <p className="text-xs text-slate-500">Registrar todas as alterações no sistema</p>
                         </div>
                         <button
+                          className={`settings-toggle${securityConfig.audit_log_enabled ? ' on' : ''}`}
                           onClick={() => setSecurityConfig({ ...securityConfig, audit_log_enabled: !securityConfig.audit_log_enabled })}
-                          className={`w-12 h-7 rounded-full transition-colors ${securityConfig.audit_log_enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${securityConfig.audit_log_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+                          aria-label="toggle"
+                        />
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-4 flex justify-end">
-                      <button
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button className="settings-btn-primary"
                         onClick={async () => {
+                          const pinOk = await requirePin({
+                            action: 'update_security_config',
+                            resourceType: 'setting',
+                            sensitivity: 'high',
+                            title: 'Salvar configurações de segurança',
+                            description: 'Confirme com seu PIN para salvar as configurações de segurança.',
+                          });
+                          if (!pinOk) return;
                           setSaving(true);
                           try {
                             await settingsService.updateSecurityConfig(securityConfig, currentProfile?.name);
@@ -1636,19 +2833,2461 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
                           }
                         }}
                         disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
                       >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar Segurança
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
                       </button>
                     </div>
                   </div>
                 )}
+
+                {/* ── Integrações → E-mail (Resend) ── */}
+                {activeSection === 'integrations_email' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div className="settings-card">
+                        <p className="settings-card-title">Remetente Padrão</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Nome do remetente</label>
+                            <input className="settings-input" type="text"
+                              value={emailIntConfig.from_name}
+                              onChange={e => setEmailIntConfig({ ...emailIntConfig, from_name: e.target.value })}
+                              placeholder="Ex: Montalvão Advocacia" />
+                          </div>
+                          <div>
+                            <label className="settings-label">E-mail de origem</label>
+                            <input className="settings-input" type="email"
+                              value={emailIntConfig.from_email}
+                              onChange={e => setEmailIntConfig({ ...emailIntConfig, from_email: e.target.value })}
+                              placeholder="contato@escritorio.com.br" />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                              Deve ser um domínio verificado no Resend.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">API Key — Resend</p>
+                        <div>
+                          <label className="settings-label">Chave de API</label>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input className="settings-input" style={{ fontFamily: 'monospace' }}
+                              type={showEmailKey ? 'text' : 'password'}
+                              value={emailIntConfig.resend_key}
+                              onChange={e => setEmailIntConfig({ ...emailIntConfig, resend_key: e.target.value })}
+                              placeholder="re_xxxxxxxxxxxxxxxxxxxx" />
+                            <button type="button" onClick={() => setShowEmailKey(v => !v)}
+                              style={{ flexShrink: 0, padding: '0 12px', background: '#f2f4f6', border: '1px solid rgba(15,23,42,0.14)', borderRadius: '8px', cursor: 'pointer', color: '#555' }}>
+                              {showEmailKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                          <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                            Obtenha em <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: '#ff8a00' }}>resend.com/api-keys</a> — plano gratuito: 3.000 emails/mês.
+                          </p>
+                        </div>
+                        {emailIntConfig.resend_key && (
+                          <div style={{ marginTop: '12px', padding: '10px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#166534' }}>
+                            <Check size={14} />
+                            Chave configurada — usada pelo digest semanal e por todos os templates de e-mail.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary"
+                          onClick={async () => {
+                            const pinOk = await requirePin({
+                              action: 'update_email_integration',
+                              resourceType: 'setting',
+                              sensitivity: 'high',
+                              title: 'Salvar integração de e-mail',
+                              description: 'Confirme com seu PIN para salvar a chave de API.',
+                            });
+                            if (!pinOk) return;
+                            setSaving(true);
+                            try {
+                              await settingsService.updateEmailIntegrationConfig(emailIntConfig, currentProfile?.name);
+                              setFeedback('success', 'Integração de e-mail salva!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                          disabled={saving}
+                        >
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Financeiro ── */}
+                {activeSection === 'modules_financial' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Defaults de criação de acordo */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Defaults ao criar acordo</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">% Honorários padrão</label>
+                            <div style={{ position: 'relative' }}>
+                              <input className="settings-input" type="number" min={0} max={100} step={1}
+                                style={{ paddingRight: '32px' }}
+                                value={financialConfig.default_fee_percentage}
+                                onChange={e => setFinancialConfig({ ...financialConfig, default_fee_percentage: Number(e.target.value) || 0 })} />
+                              <Percent size={12} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' }} />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="settings-label">Parcelas padrão</label>
+                            <input className="settings-input" type="number" min={1} max={120}
+                              value={financialConfig.default_installments_count}
+                              onChange={e => setFinancialConfig({ ...financialConfig, default_installments_count: Number(e.target.value) || 1 })} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Tipo de cobrança padrão</label>
+                            <select className="settings-select"
+                              value={financialConfig.default_payment_type}
+                              onChange={e => setFinancialConfig({ ...financialConfig, default_payment_type: e.target.value as 'upfront' | 'installments' })}>
+                              <option value="installments">Parcelado</option>
+                              <option value="upfront">À vista</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Dias para marcar como vencido */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Inadimplência</p>
+                        <div style={{ maxWidth: '200px' }}>
+                          <label className="settings-label">Dias de tolerância para atraso</label>
+                          <input className="settings-input" type="number" min={0} max={30}
+                            value={financialConfig.overdue_check_days}
+                            onChange={e => setFinancialConfig({ ...financialConfig, overdue_check_days: Number(e.target.value) || 0 })} />
+                          <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                            Parcelas só são marcadas como vencidas após N dias da data de vencimento.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Métodos de pagamento aceitos */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Métodos de pagamento aceitos</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>
+                          Apenas os métodos marcados aparecem nas opções de recebimento.
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                          {Object.entries(PAYMENT_METHOD_LABELS).map(([key, label]) => {
+                            const enabled = financialConfig.payment_methods.includes(key);
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                  const next = enabled
+                                    ? financialConfig.payment_methods.filter(m => m !== key)
+                                    : [...financialConfig.payment_methods, key];
+                                  setFinancialConfig({ ...financialConfig, payment_methods: next });
+                                }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '8px',
+                                  padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                                  border: `1.5px solid ${enabled ? '#ff8a00' : 'rgba(15,23,42,0.12)'}`,
+                                  background: enabled ? 'rgba(255,138,0,0.06)' : '#fff',
+                                  fontSize: '12.5px', fontWeight: enabled ? 600 : 400,
+                                  color: enabled ? '#c45c00' : '#444748',
+                                  transition: 'all .12s ease',
+                                }}
+                              >
+                                <CreditCard size={13} style={{ color: enabled ? '#ff8a00' : '#b0b5bc' }} />
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary"
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateFinancialModuleConfig(financialConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações financeiras salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                          disabled={saving}
+                        >
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Notificações → Central de Notificações ── */}
+                {activeSection === 'notifications_rules' && (() => {
+                  // garantir que todos os eventos do catálogo têm uma regra correspondente
+                  const rulesMap = Object.fromEntries(notifRules.map(r => [r.trigger, r]));
+                  const fullRules: NotificationRule[] = NOTIFICATION_TRIGGERS.map((ev, i) =>
+                    rulesMap[ev.key] ?? {
+                      id: `default_${ev.key}`,
+                      name: ev.label,
+                      enabled: ev.default_enabled,
+                      trigger: ev.key,
+                      channels: ev.default_channels,
+                      recipients: ev.default_recipients,
+                      respect_business_hours: true,
+                    }
+                  );
+
+                  const allDomains = Array.from(new Set(NOTIFICATION_TRIGGERS.map(e => e.group)));
+                  const filtered = NOTIFICATION_TRIGGERS.filter(ev => {
+                    const audOk = notifAudFilter === 'all' || ev.audience.includes(notifAudFilter as NotifAudience);
+                    const domOk = notifDomFilter === 'all' || ev.group === notifDomFilter;
+                    return audOk && domOk;
+                  });
+
+                  // agrupar os filtrados por domain para renderizar sections
+                  const grouped = filtered.reduce<Record<string, NotificationEventDef[]>>((acc, ev) => {
+                    (acc[ev.group] ??= []).push(ev);
+                    return acc;
+                  }, {});
+
+                  const audLabels: Record<NotifAudience, string> = { admin: 'Admin', colaborador: 'Colaborador', cliente: 'Cliente' };
+                  const audStyles: Record<NotifAudience, React.CSSProperties> = {
+                    admin:       { background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' },
+                    colaborador: { background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' },
+                    cliente:     { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' },
+                  };
+
+                  const toggleRule = async (evKey: string, field: 'enabled' | 'web' | 'email') => {
+                    let updated: NotificationRule[];
+                    if (field === 'enabled') {
+                      const existing = rulesMap[evKey];
+                      const ev = NOTIFICATION_TRIGGERS.find(e => e.key === evKey)!;
+                      if (existing) {
+                        updated = notifRules.map(r => r.trigger === evKey ? { ...r, enabled: !r.enabled } : r);
+                      } else {
+                        const newRule: NotificationRule = {
+                          id: `custom_${evKey}`,
+                          name: ev.label,
+                          enabled: true,
+                          trigger: evKey,
+                          channels: ev.default_channels,
+                          recipients: ev.default_recipients,
+                          respect_business_hours: true,
+                        };
+                        updated = [...notifRules, newRule];
+                      }
+                    } else {
+                      const ch: NotificationChannel = field === 'web' ? 'push' : 'email';
+                      const existing = rulesMap[evKey];
+                      const ev = NOTIFICATION_TRIGGERS.find(e => e.key === evKey)!;
+                      const base: NotificationRule = existing ?? {
+                        id: `custom_${evKey}`, name: ev.label, enabled: ev.default_enabled,
+                        trigger: evKey, channels: ev.default_channels,
+                        recipients: ev.default_recipients, respect_business_hours: true,
+                      };
+                      const hasChannel = base.channels.includes(ch);
+                      const newChannels = hasChannel ? base.channels.filter(c => c !== ch) : [...base.channels, ch];
+                      if (existing) {
+                        updated = notifRules.map(r => r.trigger === evKey ? { ...r, channels: newChannels } : r);
+                      } else {
+                        updated = [...notifRules, { ...base, channels: newChannels }];
+                      }
+                    }
+                    setNotifRules(updated);
+                    await settingsService.updateNotificationRules(updated, currentProfile?.name);
+                  };
+
+                  return (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Header */}
+                      <div>
+                        <p style={{ fontSize: '12.5px', color: '#747878', marginBottom: '12px' }}>
+                          Central de notificações — configure por evento quais canais estão ativos e para qual público.
+                        </p>
+
+                        {/* Filtros */}
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginRight: '2px' }}>PÚBLICO</span>
+                          {(['all', 'admin', 'colaborador', 'cliente'] as const).map(a => (
+                            <button key={a}
+                              onClick={() => setNotifAudFilter(a)}
+                              style={{
+                                padding: '3px 10px', borderRadius: '20px', fontSize: '11.5px', cursor: 'pointer',
+                                fontWeight: notifAudFilter === a ? 700 : 500, transition: 'all .12s',
+                                background: notifAudFilter === a ? '#ff8a00' : '#f1f5f9',
+                                color: notifAudFilter === a ? '#fff' : '#475569',
+                                border: notifAudFilter === a ? '1px solid #ff8a00' : '1px solid #e2e8f0',
+                              }}>
+                              {a === 'all' ? 'Todos' : audLabels[a as NotifAudience]}
+                            </button>
+                          ))}
+                          <span style={{ width: '1px', height: '16px', background: '#e2e8f0', margin: '0 4px' }} />
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginRight: '2px' }}>MÓDULO</span>
+                          <button
+                            onClick={() => setNotifDomFilter('all')}
+                            style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11.5px', cursor: 'pointer', fontWeight: notifDomFilter === 'all' ? 700 : 500, transition: 'all .12s', background: notifDomFilter === 'all' ? '#ff8a00' : '#f1f5f9', color: notifDomFilter === 'all' ? '#fff' : '#475569', border: notifDomFilter === 'all' ? '1px solid #ff8a00' : '1px solid #e2e8f0' }}>
+                            Todos
+                          </button>
+                          {allDomains.map(d => (
+                            <button key={d}
+                              onClick={() => setNotifDomFilter(d === notifDomFilter ? 'all' : d)}
+                              style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11.5px', cursor: 'pointer', fontWeight: notifDomFilter === d ? 700 : 500, transition: 'all .12s', background: notifDomFilter === d ? '#ff8a00' : '#f1f5f9', color: notifDomFilter === d ? '#fff' : '#475569', border: notifDomFilter === d ? '1px solid #ff8a00' : '1px solid #e2e8f0' }}>
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Legenda de canais */}
+                      <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700 }}>Canais:</span>
+                        <span>🔔 Web/Sistema</span>
+                        <span>✉️ E-mail</span>
+                        <span style={{ color: '#94a3b8' }}>💬 SMS <em>(planejado)</em></span>
+                        <span style={{ color: '#94a3b8' }}>📱 WhatsApp <em>(planejado)</em></span>
+                        <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} /> ativo
+                          </span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e2e8f0', display: 'inline-block', border: '1px solid #cbd5e1' }} /> planejado
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* Tabela de eventos agrupada por domínio */}
+                      {Object.keys(grouped).length === 0 ? (
+                        <p style={{ textAlign: 'center', color: '#9ca3af', fontSize: '13px', padding: '32px 0' }}>Nenhum evento encontrado para os filtros selecionados.</p>
+                      ) : (
+                        Object.entries(grouped).map(([domain, events]) => (
+                          <div key={domain}>
+                            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: '6px' }}>{domain}</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {/* Cabeçalho */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: '8px', padding: '4px 12px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                                <span>Evento</span>
+                                <span style={{ textAlign: 'center' }}>Público</span>
+                                <span style={{ textAlign: 'center' }}>Web</span>
+                                <span style={{ textAlign: 'center' }}>E-mail</span>
+                                <span style={{ textAlign: 'center' }}>Ativo</span>
+                              </div>
+                              {events.map(ev => {
+                                const rule = rulesMap[ev.key];
+                                const isEnabled = rule ? rule.enabled : ev.default_enabled;
+                                const webOn = rule ? rule.channels.includes('push') : ev.default_channels.includes('push');
+                                const emailOn = rule ? rule.channels.includes('email') : ev.default_channels.includes('email');
+
+                                return (
+                                  <div key={ev.key} style={{
+                                    display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px',
+                                    gap: '8px', padding: '10px 12px',
+                                    background: isEnabled ? '#fff' : '#f8fafc',
+                                    border: `1px solid ${isEnabled ? 'rgba(255,138,0,0.18)' : 'rgba(15,23,42,0.07)'}`,
+                                    borderRadius: '8px', alignItems: 'center',
+                                    opacity: isEnabled ? 1 : 0.65,
+                                    transition: 'all .15s',
+                                  }}>
+                                    {/* Nome do evento */}
+                                    <span style={{ fontSize: '12.5px', fontWeight: 500, color: '#191c1e' }}>{ev.label}</span>
+
+                                    {/* Público */}
+                                    <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                      {ev.audience.map(a => (
+                                        <span key={a} style={{ fontSize: '9.5px', fontWeight: 700, padding: '1px 5px', borderRadius: '6px', ...audStyles[a] }}>
+                                          {audLabels[a]}
+                                        </span>
+                                      ))}
+                                    </div>
+
+                                    {/* Web */}
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                      {ev.web === 'no' ? (
+                                        <span style={{ fontSize: '11px', color: '#cbd5e1' }}>—</span>
+                                      ) : ev.web === 'planned' ? (
+                                        <span style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>plan.</span>
+                                      ) : (
+                                        <span
+                                          style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', background: webOn ? '#22c55e' : '#e2e8f0', border: webOn ? '1px solid #16a34a' : '1px solid #cbd5e1', cursor: 'pointer', transition: 'background .15s' }}
+                                          title={webOn ? 'Web ativo' : 'Web inativo'}
+                                          onClick={() => toggleRule(ev.key, 'web')}
+                                        />
+                                      )}
+                                    </div>
+
+                                    {/* E-mail */}
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                      {ev.email === 'no' ? (
+                                        <span style={{ fontSize: '11px', color: '#cbd5e1' }}>—</span>
+                                      ) : ev.email === 'planned' ? (
+                                        <span style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>plan.</span>
+                                      ) : (
+                                        <span
+                                          style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', background: emailOn ? '#22c55e' : '#e2e8f0', border: emailOn ? '1px solid #16a34a' : '1px solid #cbd5e1', cursor: 'pointer', transition: 'background .15s' }}
+                                          title={emailOn ? 'E-mail ativo' : 'E-mail inativo'}
+                                          onClick={() => toggleRule(ev.key, 'email')}
+                                        />
+                                      )}
+                                    </div>
+
+                                    {/* Toggle ativo */}
+                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                      <button
+                                        className={`settings-toggle${isEnabled ? ' on' : ''}`}
+                                        onClick={() => toggleRule(ev.key, 'enabled')}
+                                        aria-label="ativar/desativar evento"
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Notificações → Templates de E-mail ── */}
+                {activeSection === 'notifications_email_templates' && (() => {
+                  const selectedTemplate = emailTemplates.find(t => t.id === selectedTemplateId) ?? null;
+                  const allVars = [
+                    ...EMAIL_TEMPLATE_VARIABLES._default,
+                    ...(selectedTemplate ? (EMAIL_TEMPLATE_VARIABLES[selectedTemplate.trigger] ?? []) : []),
+                  ];
+
+                  // Compila o template com valores de exemplo para preview
+                  const compiledPreview = (() => {
+                    if (!selectedTemplate) return '';
+                    let html = selectedTemplate.html_body;
+                    for (const v of allVars) {
+                      html = html.split(v.key).join(v.example ?? v.key);
+                    }
+                    return html;
+                  })();
+
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <p style={{ fontSize: '12.5px', color: '#747878' }}>
+                          Personalize os modelos de e-mail transacionais. As variáveis entre chaves são substituídas automaticamente no envio.
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                          {/* Lista de templates — agrupada por categoria/domínio */}
+                          <div style={{ width: '216px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {(() => {
+                              const categoryOrder = ['Prazos','Intimações','Financeiro','Assinaturas','Portal','Comunicação','Sistema'];
+                              const grouped = emailTemplates.reduce<Record<string, typeof emailTemplates>>((acc, tmpl) => {
+                                const cat = tmpl.category ?? 'Outros';
+                                (acc[cat] ??= []).push(tmpl);
+                                return acc;
+                              }, {});
+                              const orderedCats = [
+                                ...categoryOrder.filter(c => grouped[c]),
+                                ...Object.keys(grouped).filter(c => !categoryOrder.includes(c)),
+                              ];
+                              return orderedCats.map(cat => (
+                                <div key={cat}>
+                                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#b0b5bc', padding: '8px 4px 4px', margin: 0 }}>{cat}</p>
+                                  {grouped[cat].map(tmpl => (
+                                    <div key={tmpl.id} style={{
+                                      display: 'flex', alignItems: 'center', gap: '8px',
+                                      padding: '8px 10px', marginBottom: '2px',
+                                      background: selectedTemplateId === tmpl.id ? 'rgba(255,138,0,0.07)' : '#fff',
+                                      border: `1px solid ${selectedTemplateId === tmpl.id ? 'rgba(255,138,0,0.45)' : 'rgba(15,23,42,0.09)'}`,
+                                      borderRadius: '8px', cursor: 'pointer', transition: 'border-color .15s',
+                                    }} onClick={() => { setSelectedTemplateId(tmpl.id); setTemplatePreviewMode('editor'); setTestEmailResult(null); }}>
+                                      <button
+                                        className={`settings-toggle${tmpl.enabled ? ' on' : ''}`}
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          const updated = emailTemplates.map(t => t.id === tmpl.id ? { ...t, enabled: !t.enabled } : t);
+                                          setEmailTemplates(updated);
+                                          settingsService.updateEmailTemplates(updated, currentProfile?.name);
+                                        }}
+                                        aria-label="ativar/desativar template"
+                                      />
+                                      <span style={{ flex: 1, fontSize: '12px', fontWeight: selectedTemplateId === tmpl.id ? 600 : 500, color: '#191c1e', lineHeight: 1.3 }}>{tmpl.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ));
+                            })()}
+                          </div>
+
+                          {/* Editor / Preview */}
+                          {selectedTemplate ? (
+                            <div className="settings-card" style={{ flex: 1 }}>
+                              {/* Header: título + tabs + restaurar */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <p className="settings-card-title" style={{ margin: 0 }}>{selectedTemplate.name}</p>
+                                  {/* Tabs Editor / Preview */}
+                                  <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '8px', padding: '2px', gap: '2px' }}>
+                                    {(['editor', 'preview'] as const).map(mode => (
+                                      <button key={mode}
+                                        onClick={() => setTemplatePreviewMode(mode)}
+                                        style={{
+                                          padding: '4px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                                          fontSize: '11.5px', fontWeight: 500, transition: 'all .15s',
+                                          background: templatePreviewMode === mode ? '#fff' : 'transparent',
+                                          color: templatePreviewMode === mode ? '#f97316' : '#64748b',
+                                          boxShadow: templatePreviewMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                        }}>
+                                        {mode === 'editor' ? 'Editor' : 'Preview'}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <button
+                                  style={{ fontSize: '11px', color: '#747878', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '6px', padding: '4px 10px', background: 'transparent', cursor: 'pointer' }}
+                                  onClick={() => {
+                                    const def = DEFAULT_EMAIL_TEMPLATES.find(t => t.id === selectedTemplate.id);
+                                    if (def) {
+                                      setEmailTemplates(prev => prev.map(t => t.id === def.id ? { ...def, enabled: t.enabled } : t));
+                                    }
+                                  }}>
+                                  Restaurar padrão
+                                </button>
+                              </div>
+
+                              {templatePreviewMode === 'editor' ? (
+                                <>
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <label className="settings-label">Assunto</label>
+                                    <input
+                                      className="settings-input"
+                                      value={selectedTemplate.subject}
+                                      onChange={e => setEmailTemplates(prev => prev.map(t => t.id === selectedTemplate.id ? { ...t, subject: e.target.value } : t))}
+                                    />
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1 }}>
+                                      <label className="settings-label">Corpo (HTML)</label>
+                                      <textarea
+                                        className="settings-input"
+                                        rows={12}
+                                        style={{ fontFamily: 'monospace', fontSize: '11.5px', resize: 'vertical', lineHeight: 1.5 }}
+                                        value={selectedTemplate.html_body}
+                                        onChange={e => setEmailTemplates(prev => prev.map(t => t.id === selectedTemplate.id ? { ...t, html_body: e.target.value } : t))}
+                                      />
+                                    </div>
+
+                                    <div style={{ width: '176px', flexShrink: 0 }}>
+                                      <label className="settings-label">Variáveis disponíveis</label>
+                                      <p style={{ fontSize: '10.5px', color: '#9ca3af', marginBottom: '6px' }}>Clique para copiar</p>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {allVars.map(v => (
+                                          <button
+                                            key={v.key}
+                                            title={`Exemplo: ${v.example}`}
+                                            onClick={() => { try { navigator.clipboard.writeText(v.key); } catch { /* clipboard indisponível */ } }}
+                                            style={{
+                                              padding: '5px 8px', background: '#f8fafc',
+                                              border: '1px solid rgba(15,23,42,0.08)', borderRadius: '6px',
+                                              cursor: 'pointer', textAlign: 'left',
+                                            }}>
+                                            <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#374151', display: 'block' }}>{v.key}</span>
+                                            <span style={{ fontSize: '10px', color: '#9ca3af' }}>{v.label}</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                /* ── Preview compilado ── */
+                                <div>
+                                  <div style={{ marginBottom: '8px', padding: '8px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid rgba(15,23,42,0.06)' }}>
+                                    <span style={{ fontSize: '11px', color: '#64748b' }}>Assunto: </span>
+                                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b' }}>{selectedTemplate.subject}</span>
+                                  </div>
+                                  <p style={{ fontSize: '10.5px', color: '#9ca3af', marginBottom: '6px' }}>Visualização com dados de exemplo — não reflete o e-mail real enviado.</p>
+                                  <iframe
+                                    srcDoc={compiledPreview}
+                                    sandbox="allow-same-origin"
+                                    style={{ width: '100%', minHeight: '380px', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '8px', background: '#fff' }}
+                                    title="Preview do template"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Barra inferior: salvar + enviar teste */}
+                              <div className="settings-save-bar" style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+                                <button
+                                  className="settings-btn-primary"
+                                  disabled={templateSaving}
+                                  onClick={async () => {
+                                    setTemplateSaving(true);
+                                    try {
+                                      await settingsService.updateEmailTemplates(emailTemplates, currentProfile?.name);
+                                      setFeedback('success', 'Template salvo com sucesso!');
+                                    } catch (err: any) {
+                                      setFeedback('error', err.message || 'Erro ao salvar.');
+                                    } finally { setTemplateSaving(false); }
+                                  }}>
+                                  {templateSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                                </button>
+
+                                {/* Enviar teste */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                                  <input
+                                    type="email"
+                                    placeholder="e-mail para teste"
+                                    value={testEmailTo}
+                                    onChange={e => { setTestEmailTo(e.target.value); setTestEmailResult(null); }}
+                                    className="settings-input"
+                                    style={{ width: '200px', fontSize: '12px', padding: '6px 10px' }}
+                                  />
+                                  <button
+                                    className="settings-btn-ghost"
+                                    style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                    disabled={testEmailSending || !testEmailTo.trim()}
+                                    onClick={async () => {
+                                      if (!testEmailTo.trim()) return;
+                                      setTestEmailSending(true);
+                                      setTestEmailResult(null);
+                                      try {
+                                        const { data, error } = await supabase.functions.invoke('email-send-test', {
+                                          body: {
+                                            to:        testEmailTo.trim(),
+                                            subject:   selectedTemplate.subject,
+                                            html_body: compiledPreview,
+                                          },
+                                        });
+                                        if (error || !data?.success) {
+                                          setTestEmailResult({ ok: false, msg: data?.error ?? error?.message ?? 'Erro desconhecido' });
+                                        } else {
+                                          setTestEmailResult({ ok: true, msg: `Enviado para ${testEmailTo.trim()}` });
+                                        }
+                                      } catch (e: any) {
+                                        setTestEmailResult({ ok: false, msg: e.message ?? 'Erro' });
+                                      } finally { setTestEmailSending(false); }
+                                    }}>
+                                    {testEmailSending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                    Enviar teste
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Feedback envio de teste */}
+                              {testEmailResult && (
+                                <div style={{
+                                  marginTop: '8px', padding: '8px 12px', borderRadius: '8px',
+                                  background: testEmailResult.ok ? '#f0fdf4' : '#fef2f2',
+                                  border: `1px solid ${testEmailResult.ok ? '#bbf7d0' : '#fecaca'}`,
+                                  display: 'flex', alignItems: 'center', gap: '6px',
+                                }}>
+                                  {testEmailResult.ok
+                                    ? <CheckCircle2 size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
+                                    : <XCircle size={13} style={{ color: '#dc2626', flexShrink: 0 }} />}
+                                  <span style={{ fontSize: '12px', color: testEmailResult.ok ? '#15803d' : '#dc2626' }}>
+                                    {testEmailResult.msg}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '13px', padding: '40px 0' }}>
+                              Selecione um template à esquerda para editar.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                  );
+                })()}
+
+                {/* ── Módulos → Processos ── */}
+                {activeSection === 'modules_processes' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Áreas do Direito</p>
+                        <ConfigurableList
+                          items={normalizeItems(processConfig.practice_areas)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={true}
+                          addLabel="Nova área"
+                          emptyMessage="Nenhuma área configurada"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_processes_by_practice_area', { p_area: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newAreas = items.map(item => ({
+                              key:         item.id,
+                              label:       item.label,
+                              description: item.description ?? '',
+                              active:      item.active,
+                              isDefault:   item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...processConfig, practice_areas: newAreas };
+                            setProcessConfig(newConfig);
+                            settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Status dos Processos</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>Reordene ou renomeie status. Remoção pode afetar processos existentes.</p>
+                        <ConfigurableList
+                          items={normalizeItems(processConfig.statuses)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          addLabel="Novo status"
+                          emptyMessage="Nenhum status configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_processes_by_status', { p_status: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newStatuses = items.map(item => ({
+                              key:       item.id,
+                              label:     item.label,
+                              badge:     processConfig.statuses.find(s => s.key === item.id)?.badge ?? 'bg-slate-100 text-slate-700',
+                              active:    item.active,
+                              isDefault: item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...processConfig, statuses: newStatuses };
+                            setProcessConfig(newConfig);
+                            settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      {/* Parâmetros de IA */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Parâmetros de IA & Timeline</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Limite de eventos na timeline</label>
+                            <input className="settings-input" type="number" min={10} max={200}
+                              value={processConfig.timeline_event_limit}
+                              onChange={e => setProcessConfig(prev => ({ ...prev, timeline_event_limit: Number(e.target.value) || 30 }))} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Máx. tokens no resumo por IA</label>
+                            <input className="settings-input" type="number" min={200} max={5000} step={100}
+                              value={processConfig.ai_summary_max_tokens}
+                              onChange={e => setProcessConfig(prev => ({ ...prev, ai_summary_max_tokens: Number(e.target.value) || 1000 }))} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary"
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateProcessModuleConfig(processConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Processos salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}
+                          disabled={saving}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Prazos ── */}
+                {activeSection === 'modules_deadlines' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Thresholds de urgência */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Faixas de urgência (dias)</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Aviso padrão (dias antes)</label>
+                            <input className="settings-input" type="number" min={1} max={30}
+                              value={deadlineConfig.default_notify_days}
+                              onChange={e => setDeadlineConfig(prev => ({ ...prev, default_notify_days: Number(e.target.value) || 2 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Notificação enviada X dias antes.</p>
+                          </div>
+                          <div>
+                            <label className="settings-label">"Próximos N dias" (faixa laranja)</label>
+                            <input className="settings-input" type="number" min={1} max={14}
+                              value={deadlineConfig.soon_days_threshold}
+                              onChange={e => setDeadlineConfig(prev => ({ ...prev, soon_days_threshold: Number(e.target.value) || 2 }))} />
+                          </div>
+                          <div>
+                            <label className="settings-label">"Próxima semana" (faixa amarela)</label>
+                            <input className="settings-input" type="number" min={3} max={30}
+                              value={deadlineConfig.week_days_threshold}
+                              onChange={e => setDeadlineConfig(prev => ({ ...prev, week_days_threshold: Number(e.target.value) || 7 }))} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Status dos Prazos</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '8px' }}>
+                          Renomeie livremente. Os 4 status canônicos (<strong>pendente · cumprido · vencido · cancelado</strong>) são usados em ordenação, filtros e notificações automáticas — desativá-los ou excluí-los pode afetar o comportamento do módulo.
+                        </p>
+                        <ConfigurableList
+                          items={normalizeItems(deadlineConfig.statuses)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          addLabel="Novo status"
+                          emptyMessage="Nenhum status configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_deadlines_by_status', { p_status: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newStatuses = items.map(item => ({
+                              key:       item.id,
+                              label:     item.label,
+                              badge:     deadlineConfig.statuses.find(s => s.key === item.id)?.badge ?? 'bg-slate-400 text-white',
+                              active:    item.active,
+                              isDefault: item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...deadlineConfig, statuses: newStatuses };
+                            setDeadlineConfig(newConfig);
+                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Status salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Prioridades</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>
+                          Renomeie ou reordene livremente. As chaves canônicas (<strong>urgente · alta · media · baixa</strong>) são usadas na ordenação automática e nos filtros do módulo — excluir pode alterar a classificação de prazos existentes.
+                        </p>
+                        <ConfigurableList
+                          items={normalizeItems(deadlineConfig.priorities)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          emptyMessage="Nenhuma prioridade configurada"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_deadlines_by_priority', { p_priority: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newPriorities = items.map(item => ({
+                              key:    item.id,
+                              label:  item.label,
+                              badge:     deadlineConfig.priorities.find(p => p.key === item.id)?.badge ?? 'bg-slate-400 text-white',
+                              active:    item.active,
+                              isDefault: item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...deadlineConfig, priorities: newPriorities };
+                            setDeadlineConfig(newConfig);
+                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Tipos de Prazo</p>
+                        <p style={{ fontSize: '11.5px', color: '#747878', marginBottom: '10px' }}>
+                          Os 3 tipos canônicos (<strong>processo · requerimento · geral</strong>) são usados para vincular prazos a outros módulos e nos filtros do painel. Renomeie livremente — excluir pode afetar prazos já existentes e remover o vínculo com processos e requerimentos.
+                        </p>
+                        <ConfigurableList
+                          items={normalizeItems(deadlineConfig.types)}
+                          showColor={false}
+                          showDefault={false}
+                          showDescription={false}
+                          addLabel="Novo tipo"
+                          emptyMessage="Nenhum tipo configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_deadlines_by_type', { p_type: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newTypes = items.map(item => ({ key: item.id, label: item.label, active: item.active }));
+                            const newConfig = { ...deadlineConfig, types: newTypes };
+                            setDeadlineConfig(newConfig);
+                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary"
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateDeadlineModuleConfig(deadlineConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Prazos salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}
+                          disabled={saving}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Leads ── */}
+                {activeSection === 'modules_leads' && (() => {
+                  const LEAD_COLOR_HEX: Record<string, string> = {
+                    slate: '#64748b', blue: '#3b82f6', emerald: '#10b981',
+                    amber: '#f59e0b', red: '#ef4444', violet: '#8b5cf6',
+                    orange: '#f97316', cyan: '#06b6d4',
+                  };
+                  const HEX_TO_LEAD_COLOR: Record<string, string> = Object.fromEntries(
+                    Object.entries(LEAD_COLOR_HEX).map(([k, v]) => [v, k])
+                  );
+                  const stageItems = normalizeItems(leadConfig.stages.map(s => ({
+                    ...s,
+                    color: LEAD_COLOR_HEX[s.color] ?? '#64748b',
+                  })));
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                        <div className="settings-card">
+                          <p className="settings-card-title">Estágios do Funil</p>
+                          <ConfigurableList
+                            items={stageItems}
+                            showColor={true}
+                            showDefault={true}
+                            showDescription={true}
+                            addLabel="Novo estágio"
+                            emptyMessage="Nenhum estágio configurado"
+                            countRef={async (item) => {
+                              const { data } = await supabase.rpc('count_leads_by_stage', { p_stage: item.id });
+                              return Number(data ?? 0);
+                            }}
+                            onChange={items => {
+                              const newStages = items.map(item => ({
+                                key:         item.id,
+                                label:       item.label,
+                                description: item.description ?? '',
+                                color:       (HEX_TO_LEAD_COLOR[item.color ?? ''] ?? leadConfig.stages.find(s => s.key === item.id)?.color ?? 'slate') as any,
+                                active:      item.active,
+                                isDefault:   item.isDefault ?? false,
+                              }));
+                              const newConfig = { ...leadConfig, stages: newStages };
+                              setLeadConfig(newConfig);
+                              settingsService.updateLeadModuleConfig(newConfig, currentProfile?.name)
+                                .then(() => setFeedback('success', 'Salvo!'))
+                                .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                            }}
+                          />
+                        </div>
+
+                        {/* Origens */}
+                        <div className="settings-card">
+                          <p className="settings-card-title">Origens de Lead</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                            {leadConfig.sources.map((src, idx) => (
+                              <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: '#f8fafc', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '20px', fontSize: '12px', color: '#374151' }}>
+                                {src}
+                                <button onClick={() => setLeadConfig(prev => ({ ...prev, sources: prev.sources.filter((_, i) => i !== idx) }))}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#9ca3af', lineHeight: 1 }}>
+                                  <X size={11} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input className="settings-input" style={{ flex: 1, fontSize: '12.5px' }}
+                              placeholder="Nova origem..."
+                              value={newSource}
+                              onChange={e => setNewSource(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && newSource.trim()) {
+                                  setLeadConfig(prev => ({ ...prev, sources: [...prev.sources, newSource.trim()] }));
+                                  setNewSource('');
+                                }
+                              }} />
+                            <button className="settings-btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }}
+                              onClick={() => {
+                                if (newSource.trim()) {
+                                  setLeadConfig(prev => ({ ...prev, sources: [...prev.sources, newSource.trim()] }));
+                                  setNewSource('');
+                                }
+                              }}>
+                              <Plus size={12} /> Adicionar
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                          <button className="settings-btn-primary" disabled={saving}
+                            onClick={async () => {
+                              setSaving(true);
+                              try {
+                                await settingsService.updateLeadModuleConfig(leadConfig, currentProfile?.name);
+                                setFeedback('success', 'Configurações de Leads salvas!');
+                              } catch (err: any) {
+                                setFeedback('error', err.message || 'Erro ao salvar.');
+                              } finally { setSaving(false); }
+                            }}>
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                          </button>
+                        </div>
+                      </div>
+                  );
+                })()}
+
+                {/* ── Módulos → Agenda ── */}
+                {activeSection === 'modules_agenda' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Buffer entre compromissos */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Parâmetros gerais</p>
+                        <div style={{ maxWidth: '240px' }}>
+                          <label className="settings-label">Buffer entre compromissos (minutos)</label>
+                          <input className="settings-input" type="number" min={0} max={60} step={5}
+                            value={calendarConfig.buffer_min}
+                            onChange={e => setCalendarConfig(prev => ({ ...prev, buffer_min: Number(e.target.value) || 0 }))} />
+                          <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Tempo de folga após cada compromisso.</p>
+                        </div>
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Tipos de Compromisso</p>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: '#92400e' }}>
+                          <strong>O que é configurável:</strong> rótulo, cor, duração padrão e visibilidade de cada tipo.<br/>
+                          <strong>O que não muda:</strong> os 7 tipos canônicos (<em>deadline · hearing · requirement · payment · pericia · meeting · personal</em>) têm lógica interna estrutural — filtros de permissão, navegação entre módulos e dedup de audiências dependem das chaves exatas. Renomeie à vontade, mas excluí-los ou desativá-los pode esconder eventos já existentes.<br/>
+                          Novos tipos adicionados aqui ficam disponíveis como <em>compromisso personalizado</em>, sem navegação automática para outros módulos.
+                        </div>
+                        <ConfigurableList
+                          items={normalizeItems(calendarConfig.event_types.map(et => ({
+                            ...et,
+                            metadata: { duration_min: et.duration_min },
+                          })))}
+                          showColor={true}
+                          showDefault={false}
+                          showDescription={false}
+                          addLabel="Novo tipo de compromisso"
+                          emptyMessage="Nenhum tipo configurado"
+                          noDeleteIds={new Set(['deadline','hearing','requirement','payment','pericia','meeting','personal'])}
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_calendar_events_by_type', { p_type: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          extraFields={(draft, patch) => (
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-600 mb-1">Duração padrão (min)</label>
+                              <input
+                                type="number" min={15} max={480} step={15}
+                                value={(draft.metadata?.duration_min as number) ?? 60}
+                                onChange={e => patch({ metadata: { ...draft.metadata, duration_min: Number(e.target.value) || 60 } })}
+                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 bg-white"
+                              />
+                            </div>
+                          )}
+                          onChange={items => {
+                            const newTypes = items.map(item => ({
+                              key:          item.id,
+                              label:        item.label,
+                              color:        item.color ?? '#64748b',
+                              duration_min: (item.metadata?.duration_min as number) ?? 60,
+                              active:       item.active,
+                            }));
+                            const newConfig = { ...calendarConfig, event_types: newTypes };
+                            setCalendarConfig(newConfig);
+                            settingsService.updateCalendarModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateCalendarModuleConfig(calendarConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Agenda salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Motor de IA → Provedores ── */}
+                {activeSection === 'ai_providers' && (() => {
+                  const AI_IDS: AiProviderId[] = ['openai', 'groq', 'anthropic', 'grok', 'gemini'];
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <p style={{ fontSize: '12.5px', color: '#747878' }}>
+                          Configure quais provedores de IA estão ativos e a ordem de fallback. As chaves de API devem ser configuradas como variáveis de ambiente (<code>VITE_OPENAI_API_KEY</code>, <code>VITE_GROQ_API_KEY</code>).
+                        </p>
+
+                        {/* Provedores */}
+                        <div className="settings-card">
+                          <p className="settings-card-title">Provedores disponíveis</p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {AI_IDS.map(pid => {
+                              const isEnabled = aiProviderConfig.enabled[pid] ?? false;
+                              const isPrimary = aiProviderConfig.primary === pid;
+                              return (
+                                <div key={pid} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: '#fff', border: `1px solid ${isEnabled ? 'rgba(255,138,0,0.2)' : 'rgba(15,23,42,0.09)'}`, borderRadius: '10px' }}>
+                                  <button
+                                    className={`settings-toggle${isEnabled ? ' on' : ''}`}
+                                    onClick={() => setAiProviderConfig(prev => ({ ...prev, enabled: { ...prev.enabled, [pid]: !isEnabled } }))}
+                                    aria-label="toggle"
+                                  />
+                                  <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#191c1e' }}>{AI_PROVIDER_LABELS[pid]}</span>
+                                  {isPrimary && <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#ff8a00', background: 'rgba(255,138,0,0.1)', padding: '2px 8px', borderRadius: '12px' }}>PRIMÁRIO</span>}
+                                  {isEnabled && !isPrimary && (
+                                    <button style={{ fontSize: '11px', color: '#747878', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '6px', padding: '3px 9px', background: 'transparent', cursor: 'pointer' }}
+                                      onClick={() => setAiProviderConfig(prev => ({ ...prev, primary: pid }))}>
+                                      Definir como primário
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Ordem de fallback */}
+                        <div className="settings-card">
+                          <p className="settings-card-title">Ordem de fallback</p>
+                          <p style={{ fontSize: '11.5px', color: '#747878', marginBottom: '10px' }}>Sequência de provedores tentados quando o primário falha.</p>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {AI_IDS.filter(pid => aiProviderConfig.enabled[pid] && pid !== aiProviderConfig.primary).map(pid => {
+                              const inFallback = aiProviderConfig.fallback_order.includes(pid);
+                              return (
+                                <button key={pid}
+                                  onClick={() => {
+                                    const cur = aiProviderConfig.fallback_order;
+                                    const next = inFallback ? cur.filter(p => p !== pid) : [...cur, pid];
+                                    setAiProviderConfig(prev => ({ ...prev, fallback_order: next }));
+                                  }}
+                                  style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: `1px solid ${inFallback ? 'rgba(255,138,0,0.4)' : 'rgba(15,23,42,0.12)'}`, background: inFallback ? 'rgba(255,138,0,0.08)' : 'transparent', color: inFallback ? '#ff8a00' : '#747878' }}>
+                                  {AI_PROVIDER_LABELS[pid]}
+                                </button>
+                              );
+                            })}
+                            {AI_IDS.filter(pid => aiProviderConfig.enabled[pid] && pid !== aiProviderConfig.primary).length === 0 && (
+                              <p style={{ fontSize: '12px', color: '#9ca3af' }}>Habilite outros provedores para configurar o fallback.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Cooldown */}
+                        <div className="settings-card">
+                          <p className="settings-card-title">Cooldown após erro de rate-limit</p>
+                          <div style={{ maxWidth: '240px' }}>
+                            <label className="settings-label">Tempo de espera (ms)</label>
+                            <input className="settings-input" type="number" min={1000} max={300000} step={1000}
+                              value={aiProviderConfig.cooldown_ms}
+                              onChange={e => setAiProviderConfig(prev => ({ ...prev, cooldown_ms: Number(e.target.value) || 60000 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Padrão: 60 000 ms (60s)</p>
+                          </div>
+                        </div>
+
+                        <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                          <button className="settings-btn-primary" disabled={saving}
+                            onClick={async () => {
+                              setSaving(true);
+                              try {
+                                await settingsService.updateAiProviderConfig(aiProviderConfig, currentProfile?.name);
+                                aiService.invalidateSettings();
+                                setFeedback('success', 'Configuração de provedores de IA salva!');
+                              } catch (err: any) {
+                                setFeedback('error', err.message || 'Erro ao salvar.');
+                              } finally { setSaving(false); }
+                            }}>
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                          </button>
+                        </div>
+                      </div>
+                  );
+                })()}
+
+                {/* ── Motor de IA → Parâmetros por tarefa ── */}
+                {activeSection === 'ai_tasks' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <p style={{ fontSize: '12.5px', color: '#747878' }}>
+                        Ajuste o modelo, temperatura e limite de tokens para cada tarefa de IA. Alterações afetam chamadas futuras.
+                      </p>
+
+                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid rgba(15,23,42,0.08)' }}>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: '#374151', fontSize: '11.5px' }}>Tarefa</th>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: '#374151', fontSize: '11.5px' }}>Modelo</th>
+                              <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 600, color: '#374151', fontSize: '11.5px' }}>Temperatura</th>
+                              <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 600, color: '#374151', fontSize: '11.5px' }}>Max tokens</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {aiTaskConfigs.map((task, idx) => (
+                              <tr key={task.task_key} style={{ borderBottom: idx < aiTaskConfigs.length - 1 ? '1px solid rgba(15,23,42,0.06)' : 'none' }}>
+                                <td style={{ padding: '10px 14px', color: '#191c1e', fontWeight: 500 }}>{task.label}</td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <input className="settings-input" style={{ fontSize: '12px', padding: '4px 8px' }}
+                                    value={task.model}
+                                    onChange={e => setAiTaskConfigs(prev => prev.map((t, i) => i === idx ? { ...t, model: e.target.value } : t))} />
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                  <input className="settings-input" type="number" min={0} max={2} step={0.1} style={{ width: '70px', fontSize: '12px', padding: '4px 8px', textAlign: 'center' }}
+                                    value={task.temperature}
+                                    onChange={e => setAiTaskConfigs(prev => prev.map((t, i) => i === idx ? { ...t, temperature: Number(e.target.value) } : t))} />
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                  <input className="settings-input" type="number" min={10} max={8000} step={50} style={{ width: '85px', fontSize: '12px', padding: '4px 8px', textAlign: 'center' }}
+                                    value={task.max_tokens}
+                                    onChange={e => setAiTaskConfigs(prev => prev.map((t, i) => i === idx ? { ...t, max_tokens: Number(e.target.value) || 200 } : t))} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateAiTaskConfigs(aiTaskConfigs, currentProfile?.name);
+                              setFeedback('success', 'Parâmetros de IA salvos!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Requerimentos ── */}
+                {activeSection === 'modules_requirements' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Status dos Requerimentos</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>Reordene, renomeie ou desative status. Remoção pode afetar requerimentos existentes.</p>
+                        <ConfigurableList
+                          items={normalizeItems(requirementConfig.statuses)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          addLabel="Novo status"
+                          emptyMessage="Nenhum status configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_requirements_by_status', { p_status: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newStatuses = items.map(item => ({
+                              key:       item.id,
+                              label:     item.label,
+                              badge:     requirementConfig.statuses.find(s => s.key === item.id)?.badge ?? 'bg-slate-100 text-slate-700',
+                              active:    item.active,
+                              isDefault: item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...requirementConfig, statuses: newStatuses };
+                            setRequirementConfig(newConfig);
+                            settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Tipos de Benefício INSS</p>
+                        <ConfigurableList
+                          items={normalizeItems(requirementConfig.benefit_types)}
+                          showColor={false}
+                          showDefault={false}
+                          showDescription={false}
+                          addLabel="Novo tipo de benefício"
+                          emptyMessage="Nenhum tipo de benefício"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_requirements_by_benefit_type', { p_benefit_type: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newTypes = items.map(item => ({ key: item.id, label: item.label, active: item.active }));
+                            const newConfig = { ...requirementConfig, benefit_types: newTypes };
+                            setRequirementConfig(newConfig);
+                            settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      {/* ── Backfill Senha INSS ── */}
+                      <div className="settings-card" style={{ borderColor: 'rgba(234,88,12,0.2)', background: 'rgba(255,237,213,0.18)' }}>
+                        <p className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Key size={14} style={{ color: '#ea580c' }} />
+                          Migração de Senha INSS (Backfill)
+                        </p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px', lineHeight: 1.5 }}>
+                          Registros antigos armazenam a senha INSS em texto simples. Este processo encripta cada senha em lote (AES-GCM) e zera o campo original. Execute uma vez; registros já migrados são ignorados automaticamente.
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <button
+                            className="settings-btn-primary"
+                            style={{ background: backfillRunning ? undefined : '#ea580c' }}
+                            disabled={backfillRunning}
+                            onClick={async () => {
+                              setBackfillRunning(true);
+                              setBackfillResult(null);
+                              try {
+                                const { data, error } = await supabase.functions.invoke('inss-backfill', { body: { batch_size: 200 } });
+                                if (error) {
+                                  setFeedback('error', error.message || 'Erro ao executar backfill.');
+                                } else {
+                                  setBackfillResult({
+                                    processed: data.processed ?? 0,
+                                    failed:    data.failed    ?? 0,
+                                    remaining: data.remaining ?? 0,
+                                    message:   data.message   ?? '',
+                                  });
+                                }
+                              } catch (e: any) {
+                                setFeedback('error', e.message || 'Erro');
+                              } finally { setBackfillRunning(false); }
+                            }}>
+                            {backfillRunning ? <Loader2 size={13} className="animate-spin" /> : <Key size={13} />}
+                            {backfillRunning ? 'Migrando…' : 'Iniciar Backfill'}
+                          </button>
+                          {backfillResult && (
+                            <div style={{
+                              padding: '7px 12px', borderRadius: '8px',
+                              background: backfillResult.failed === 0 ? '#f0fdf4' : '#fef9c3',
+                              border: `1px solid ${backfillResult.failed === 0 ? '#bbf7d0' : '#fde68a'}`,
+                              fontSize: '12px', color: backfillResult.failed === 0 ? '#15803d' : '#92400e',
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                            }}>
+                              {backfillResult.failed === 0
+                                ? <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+                                : <AlertTriangle size={13} style={{ flexShrink: 0 }} />}
+                              {backfillResult.message}
+                              {backfillResult.remaining > 0 && (
+                                <span style={{ marginLeft: '4px', opacity: 0.8 }}>— execute novamente para continuar.</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateRequirementModuleConfig(requirementConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Requerimentos salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Assinaturas ── */}
+                {activeSection === 'modules_signature' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Papéis do signatário */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Papéis do Signatário</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                          {signatureConfig.signer_roles.map((role, idx) => (
+                            <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: '#f8fafc', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '20px', fontSize: '12px', color: '#374151' }}>
+                              {role}
+                              <button onClick={() => setSignatureConfig(prev => ({ ...prev, signer_roles: prev.signer_roles.filter((_, i) => i !== idx) }))}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#9ca3af' }}><X size={11} /></button>
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input className="settings-input" style={{ flex: 1, fontSize: '12.5px' }}
+                            placeholder="Novo papel..."
+                            value={newSignerRole}
+                            onChange={e => setNewSignerRole(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && newSignerRole.trim()) {
+                                setSignatureConfig(prev => ({ ...prev, signer_roles: [...prev.signer_roles, newSignerRole.trim()] }));
+                                setNewSignerRole('');
+                              }
+                            }} />
+                          <button className="settings-btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }}
+                            onClick={() => {
+                              if (newSignerRole.trim()) {
+                                setSignatureConfig(prev => ({ ...prev, signer_roles: [...prev.signer_roles, newSignerRole.trim()] }));
+                                setNewSignerRole('');
+                              }
+                            }}>
+                            <Plus size={12} /> Adicionar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Autenticação pública (portal) */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Autenticação Pública</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>Métodos de login disponíveis para o cliente acessar a página de assinatura.</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {(
+                            [
+                              { key: 'google' as const, label: 'Google' },
+                              { key: 'email' as const, label: 'E-mail' },
+                              { key: 'phone' as const, label: 'Telefone' },
+                            ]
+                          ).map((item) => (
+                            <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', color: '#374151' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = { ...publicAuthSignConfig, [item.key]: !publicAuthSignConfig[item.key] };
+                                  if (!next.google && !next.email && !next.phone) return;
+                                  setPublicAuthSignConfig(next);
+                                }}
+                                className={`relative w-8 h-5 rounded-full transition ${publicAuthSignConfig[item.key] ? 'bg-orange-500' : 'bg-slate-300'}`}
+                              >
+                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${publicAuthSignConfig[item.key] ? 'translate-x-3' : 'translate-x-0'}`} />
+                              </button>
+                              {item.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Métodos de autenticação disponíveis */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Métodos de Autenticação Disponíveis</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>
+                          Habilite os métodos que podem ser selecionados ao criar uma solicitação. O padrão (⭕) é pré-selecionado automaticamente.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {ALL_AUTH_METHODS.map(method => {
+                            const enabled = signatureConfig.auth_methods.includes(method);
+                            const isDefault = signatureConfig.default_auth_method === method;
+                            const enabledCount = signatureConfig.auth_methods.length;
+                            return (
+                              <div key={method} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: enabled ? '#fef9f0' : '#f8fafc', border: `1px solid ${enabled ? 'rgba(255,138,0,0.2)' : 'rgba(15,23,42,0.08)'}`, borderRadius: '8px' }}>
+                                <button
+                                  onClick={() => {
+                                    if (enabled && enabledCount <= 1) return;
+                                    const next = enabled
+                                      ? signatureConfig.auth_methods.filter(m => m !== method)
+                                      : [...signatureConfig.auth_methods, method];
+                                    const newDefault = (enabled && isDefault)
+                                      ? next[0] ?? ''
+                                      : signatureConfig.default_auth_method;
+                                    setSignatureConfig(prev => ({ ...prev, auth_methods: next, default_auth_method: newDefault }));
+                                  }}
+                                  title={enabled && enabledCount <= 1 ? 'Pelo menos um método deve estar habilitado' : enabled ? 'Desabilitar' : 'Habilitar'}
+                                  style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${enabled ? '#ff8a00' : '#d1d5db'}`, background: enabled ? '#ff8a00' : 'white', cursor: enabled && enabledCount <= 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                >
+                                  {enabled && <Check size={11} color="white" strokeWidth={3} />}
+                                </button>
+                                <span style={{ flex: 1, fontSize: '13px', color: enabled ? '#374151' : '#9ca3af' }}>{method}</span>
+                                {enabled && (
+                                  <button
+                                    onClick={() => setSignatureConfig(prev => ({ ...prev, default_auth_method: method }))}
+                                    title={isDefault ? 'Método padrão' : 'Definir como padrão'}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: isDefault ? '#ff8a00' : '#d1d5db' }}
+                                  >
+                                    {isDefault ? <CheckCircle size={15} /> : <Circle size={15} />}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await Promise.all([
+                                settingsService.updateSignatureModuleConfig(signatureConfig, currentProfile?.name),
+                                settingsService.updateSetting('public_signature_auth_google', publicAuthSignConfig.google, currentProfile?.name),
+                                settingsService.updateSetting('public_signature_auth_email', publicAuthSignConfig.email, currentProfile?.name),
+                                settingsService.updateSetting('public_signature_auth_phone', publicAuthSignConfig.phone, currentProfile?.name),
+                              ]);
+                              setFeedback('success', 'Configurações de Assinaturas salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Tarefas ── */}
+                {activeSection === 'modules_tasks' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div className="settings-card">
+                        <p className="settings-card-title">Prioridades</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>Reordene ou renomeie prioridades. As chaves são usadas internamente.</p>
+                        <ConfigurableList
+                          items={normalizeItems(taskModConfig.priorities)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          emptyMessage="Nenhuma prioridade configurada"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_tasks_by_priority', { p_priority: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newPriorities = items.map(item => ({
+                              key:       item.id,
+                              label:     item.label,
+                              badge:     taskModConfig.priorities.find(p => p.key === item.id)?.badge ?? 'bg-slate-400 text-white',
+                              active:    item.active,
+                              isDefault: item.isDefault ?? false,
+                            }));
+                            const newConfig = { ...taskModConfig, priorities: newPriorities };
+                            setTaskModConfig(newConfig);
+                            settingsService.updateTaskModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateTaskModuleConfig(taskModConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Tarefas salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Módulos → Clientes ── */}
+                {activeSection === 'modules_clients' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Status de Clientes</p>
+                        <ConfigurableList
+                          items={normalizeItems(clientConfig.statuses)}
+                          showColor={false}
+                          showDefault={false}
+                          showDescription={false}
+                          addLabel="Novo status"
+                          emptyMessage="Nenhum status configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_clients_by_status', { p_status: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newStatuses = items.map(item => ({
+                              key:    item.id,
+                              label:  item.label,
+                              badge:  clientConfig.statuses.find(s => s.key === item.id)?.badge ?? 'bg-slate-100 text-slate-700',
+                              active: item.active,
+                            }));
+                            const newConfig = { ...clientConfig, statuses: newStatuses };
+                            setClientConfig(newConfig);
+                            settingsService.updateClientModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-card">
+                        <p className="settings-card-title">Estado Civil</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px' }}>Estado civil é definido legalmente — renomeie rótulos sem alterar as chaves internas. Entradas incorretas podem ser excluídas.</p>
+                        <ConfigurableList
+                          items={normalizeItems(clientConfig.marital_statuses)}
+                          showColor={false}
+                          showDefault={true}
+                          showDescription={false}
+                          emptyMessage="Nenhum estado civil configurado"
+                          countRef={async (item) => {
+                            const { data } = await supabase.rpc('count_clients_by_marital_status', { p_marital: item.id });
+                            return Number(data ?? 0);
+                          }}
+                          onChange={items => {
+                            const newMarital = items.map(item => ({ key: item.id, label: item.label, active: item.active, isDefault: item.isDefault ?? false }));
+                            const newConfig = { ...clientConfig, marital_statuses: newMarital };
+                            setClientConfig(newConfig);
+                            settingsService.updateClientModuleConfig(newConfig, currentProfile?.name)
+                              .then(() => setFeedback('success', 'Salvo!'))
+                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                          }}
+                        />
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateClientModuleConfig(clientConfig, currentProfile?.name);
+                              setFeedback('success', 'Configurações de Clientes salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Portal → Personalização ── */}
+                {activeSection === 'portal_customization' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div className="settings-card">
+                        <p className="settings-card-title">Aparência do Portal</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Cor de destaque</label>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input type="color" style={{ width: '40px', height: '32px', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '6px', padding: '2px', cursor: 'pointer' }}
+                                value={portalCustom.accent_color}
+                                onChange={e => setPortalCustom(prev => ({ ...prev, accent_color: e.target.value }))} />
+                              <input className="settings-input" style={{ flex: 1, fontSize: '12.5px', fontFamily: 'monospace' }}
+                                value={portalCustom.accent_color}
+                                onChange={e => setPortalCustom(prev => ({ ...prev, accent_color: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="settings-label">Contato de suporte</label>
+                            <input className="settings-input"
+                              value={portalCustom.support_contact}
+                              placeholder="ex: (11) 9999-9999 ou suporte@escritorio.com"
+                              onChange={e => setPortalCustom(prev => ({ ...prev, support_contact: e.target.value }))} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="settings-card">
+                        <p className="settings-card-title">Textos</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label className="settings-label">Mensagem de boas-vindas</label>
+                            <input className="settings-input"
+                              value={portalCustom.welcome_message}
+                              onChange={e => setPortalCustom(prev => ({ ...prev, welcome_message: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Texto do rodapé</label>
+                            <input className="settings-input"
+                              value={portalCustom.footer_text}
+                              placeholder="ex: © 2026 Silva & Advogados Associados"
+                              onChange={e => setPortalCustom(prev => ({ ...prev, footer_text: e.target.value }))} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updatePortalCustomizationConfig(portalCustom, currentProfile?.name);
+                              setFeedback('success', 'Personalização do Portal salva!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Portal → Notificações ao cliente ── */}
+                {activeSection === 'portal_notifications' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <p style={{ fontSize: '12.5px', color: '#747878' }}>
+                        Defina quais eventos disparam alertas automáticos para o cliente no Portal.
+                      </p>
+                      <div className="settings-card">
+                        <p className="settings-card-title">Eventos que notificam o cliente</p>
+                        {(
+                          [
+                            { key: 'new_document',         label: 'Novo documento disponível' },
+                            { key: 'document_request',     label: 'Solicitação de documento (escritório pediu algo)' },
+                            { key: 'deadline_approaching', label: 'Prazo importante se aproximando' },
+                            { key: 'process_update',       label: 'Atualização em processo (novo andamento)' },
+                            { key: 'payment_confirmed',    label: 'Pagamento / parcela confirmado' },
+                            { key: 'new_message',          label: 'Nova mensagem do escritório' },
+                          ] as { key: keyof PortalClientNotificationsConfig; label: string }[]
+                        ).map(({ key, label }) => (
+                          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 0', borderBottom: '1px solid rgba(15,23,42,0.05)', cursor: 'pointer', fontSize: '13px', color: '#374151' }}>
+                            <button
+                              className={`settings-toggle${portalClientNotif[key] ? ' on' : ''}`}
+                              onClick={() => setPortalClientNotif(prev => ({ ...prev, [key]: !prev[key] }))}
+                              aria-label={label} />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updatePortalClientNotificationsConfig(portalClientNotif, currentProfile?.name);
+                              setFeedback('success', 'Notificações ao cliente salvas!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Motor de IA → Editor de Prompts ── */}
+                {activeSection === 'ai_prompts' && (() => {
+                  const override = aiPromptOverrides.find(o => o.key === selectedPromptKey);
+                  const metaEntry = AI_PROMPT_KEYS.find(k => k.key === selectedPromptKey);
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <p style={{ fontSize: '12.5px', color: '#747878' }}>
+                          Customize os prompts do sistema de IA. Os padrões estão em <code>ai.service.ts</code> — salve aqui para sobrescrever. Após salvar, atualize <code>ai.service.ts</code> para ler de <code>settingsService.getAiPromptOverrides()</code>.
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                          {/* Lista */}
+                          <div style={{ width: '210px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {AI_PROMPT_KEYS.map(pk => {
+                              const hasOverride = aiPromptOverrides.some(o => o.key === pk.key);
+                              return (
+                                <div key={pk.key}
+                                  onClick={() => {
+                                    setSelectedPromptKey(pk.key);
+                                    setPromptDraft(aiPromptOverrides.find(o => o.key === pk.key)?.system_prompt ?? '');
+                                  }}
+                                  style={{ padding: '9px 12px', background: selectedPromptKey === pk.key ? 'rgba(255,138,0,0.05)' : '#fff', border: `1px solid ${selectedPromptKey === pk.key ? 'rgba(255,138,0,0.45)' : 'rgba(15,23,42,0.09)'}`, borderRadius: '10px', cursor: 'pointer', transition: 'border-color .15s' }}>
+                                  <p style={{ fontSize: '12.5px', fontWeight: selectedPromptKey === pk.key ? 600 : 500, color: '#191c1e', margin: 0 }}>{pk.label}</p>
+                                  <p style={{ fontSize: '10.5px', color: hasOverride ? '#ff8a00' : '#9ca3af', marginTop: '2px' }}>{hasOverride ? '● Customizado' : '○ Padrão'}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Editor */}
+                          {metaEntry ? (
+                            <div className="settings-card" style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                <div>
+                                  <p className="settings-card-title" style={{ margin: 0 }}>{metaEntry.label}</p>
+                                  <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{metaEntry.description}</p>
+                                </div>
+                                {override && (
+                                  <button style={{ fontSize: '11px', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '6px', padding: '4px 10px', background: 'transparent', cursor: 'pointer' }}
+                                    onClick={() => {
+                                      const updated = aiPromptOverrides.filter(o => o.key !== selectedPromptKey);
+                                      setAiPromptOverrides(updated);
+                                      setPromptDraft('');
+                                      settingsService.updateAiPromptOverrides(updated, currentProfile?.name);
+                                    }}>
+                                    Remover customização
+                                  </button>
+                                )}
+                              </div>
+                              <label className="settings-label">Prompt customizado (system prompt)</label>
+                              <textarea
+                                className="settings-input"
+                                rows={14}
+                                style={{ fontFamily: 'monospace', fontSize: '11.5px', resize: 'vertical', lineHeight: 1.5 }}
+                                placeholder={`Cole aqui o prompt customizado para "${metaEntry.label}". Deixe em branco para usar o padrão de ai.service.ts.`}
+                                value={promptDraft}
+                                onChange={e => setPromptDraft(e.target.value)}
+                              />
+                              <div className="settings-save-bar" style={{ marginTop: '10px' }}>
+                                <button className="settings-btn-primary" disabled={saving}
+                                  onClick={async () => {
+                                    if (!selectedPromptKey) return;
+                                    setSaving(true);
+                                    try {
+                                      const filtered = aiPromptOverrides.filter(o => o.key !== selectedPromptKey);
+                                      const updated = promptDraft.trim()
+                                        ? [...filtered, { key: selectedPromptKey, system_prompt: promptDraft.trim(), updated_at: new Date().toISOString() }]
+                                        : filtered;
+                                      setAiPromptOverrides(updated);
+                                      await settingsService.updateAiPromptOverrides(updated, currentProfile?.name);
+                                      aiService.invalidateSettings();
+                                      setFeedback('success', promptDraft.trim() ? 'Prompt salvo!' : 'Customização removida (usando padrão).');
+                                    } catch (err: any) {
+                                      setFeedback('error', err.message || 'Erro ao salvar.');
+                                    } finally { setSaving(false); }
+                                  }}>
+                                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '13px', padding: '40px 0' }}>
+                              Selecione um prompt à esquerda para editar.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                  );
+                })()}
+
+                {/* ── Construtor de Formulários ── */}
+                {activeSection === 'form_builder' && (() => {
+                  const selectedLayout = formLayouts.find(m => m.module_key === selectedFormModule) ?? null;
+                  const updateField = (module_key: string, field_key: string, patch: Partial<FormFieldConfig>) => {
+                    setFormLayouts(prev => prev.map(m =>
+                      m.module_key === module_key
+                        ? { ...m, fields: m.fields.map(f => f.field_key === field_key ? { ...f, ...patch } : f) }
+                        : m
+                    ));
+                  };
+                  const moveField = (module_key: string, field_key: string, dir: -1 | 1) => {
+                    setFormLayouts(prev => prev.map(m => {
+                      if (m.module_key !== module_key) return m;
+                      const sorted = [...m.fields].sort((a, b) => a.order - b.order);
+                      const idx = sorted.findIndex(f => f.field_key === field_key);
+                      if (idx === -1) return m;
+                      const next = idx + dir;
+                      if (next < 0 || next >= sorted.length) return m;
+                      const fields = sorted.map((f, i) => {
+                        if (i === idx) return { ...f, order: sorted[next].order };
+                        if (i === next) return { ...f, order: sorted[idx].order };
+                        return f;
+                      });
+                      return { ...m, fields };
+                    }));
+                  };
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px', padding: '12px 16px' }}>
+                          <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+                          <div>
+                            <p style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', margin: 0 }}>Renomeação e ordem salvos — ocultar/obrigatório ainda não consumidos</p>
+                            <p style={{ fontSize: '12px', color: '#b45309', margin: '3px 0 0' }}>Alterações de rótulo e ordem são persistidas e poderão ser consumidas por módulos futuramente. As flags "Ocultar" e "Obrigatório" são salvas mas os formulários ainda não as leem.</p>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                          {/* Module list */}
+                          <div style={{ width: '180px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {formLayouts.map(m => (
+                              <div key={m.module_key}
+                                onClick={() => setSelectedFormModule(m.module_key)}
+                                style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, background: selectedFormModule === m.module_key ? '#ff8a00' : '#fff', color: selectedFormModule === m.module_key ? '#fff' : '#374151', border: `1px solid ${selectedFormModule === m.module_key ? '#ff8a00' : 'rgba(15,23,42,0.10)'}` }}>
+                                {m.label}
+                              </div>
+                            ))}
+                          </div>
+                          {/* Field editor */}
+                          {selectedLayout ? (
+                            <div style={{ flex: 1 }}>
+                              <div className="settings-card">
+                                <p className="settings-card-title" style={{ marginBottom: '12px' }}>Campos — {selectedLayout.label}</p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {[...selectedLayout.fields].sort((a, b) => a.order - b.order).map((field, idx, arr) => (
+                                    <div key={field.field_key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: field.hidden ? '#f9fafb' : '#fff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '8px', opacity: field.hidden ? 0.6 : 1 }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <button style={{ padding: '1px 4px', border: '1px solid rgba(15,23,42,0.10)', borderRadius: '4px', background: 'transparent', cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.3 : 1 }} onClick={() => moveField(selectedLayout.module_key, field.field_key, -1)} disabled={idx === 0}>▲</button>
+                                        <button style={{ padding: '1px 4px', border: '1px solid rgba(15,23,42,0.10)', borderRadius: '4px', background: 'transparent', cursor: idx === arr.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === arr.length - 1 ? 0.3 : 1 }} onClick={() => moveField(selectedLayout.module_key, field.field_key, 1)} disabled={idx === arr.length - 1}>▼</button>
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <input className="settings-input" style={{ fontSize: '12.5px', padding: '5px 8px' }}
+                                          value={field.label}
+                                          onChange={e => updateField(selectedLayout.module_key, field.field_key, { label: e.target.value })} />
+                                        <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '2px' }}>chave: {field.field_key}{field.system ? ' · campo do sistema' : ''}</p>
+                                      </div>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', color: '#374151', cursor: 'pointer', flexShrink: 0 }}>
+                                        <input type="checkbox" checked={field.required} disabled={field.system}
+                                          onChange={e => updateField(selectedLayout.module_key, field.field_key, { required: e.target.checked })} />
+                                        Obrigatório
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', color: '#374151', cursor: field.system ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: field.system ? 0.4 : 1 }}>
+                                        <input type="checkbox" checked={field.hidden} disabled={field.system}
+                                          onChange={e => updateField(selectedLayout.module_key, field.field_key, { hidden: e.target.checked })} />
+                                        Ocultar
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="settings-save-bar">
+                                <button className="settings-btn-primary" disabled={saving}
+                                  onClick={async () => {
+                                    setSaving(true);
+                                    try {
+                                      await settingsService.updateFormLayouts(formLayouts, currentProfile?.name);
+                                      setFeedback('success', 'Layout de formulário salvo!');
+                                    } catch (err: any) {
+                                      setFeedback('error', err.message || 'Erro ao salvar.');
+                                    } finally { setSaving(false); }
+                                  }}>
+                                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '13px', padding: '40px 0' }}>
+                              Selecione um módulo à esquerda.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                  );
+                })()}
+
+                {/* ── Responsável por módulo ── */}
+                {activeSection === 'responsibility' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <p style={{ fontSize: '12.5px', color: '#747878', margin: 0 }}>
+                        Configure quem pode ser responsável em cada módulo e qual é o padrão ao criar um novo item.
+                      </p>
+                      {responsibilityConfig.map((rc, idx) => (
+                        <div key={rc.module} className="settings-card">
+                          <p className="settings-card-title" style={{ marginBottom: '12px' }}>{rc.label}</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                            <div>
+                              <label className="settings-label">Quem pode ser responsável</label>
+                              <select className="settings-input"
+                                value={rc.allowed}
+                                onChange={e => setResponsibilityConfig(prev => prev.map((r, i) => i === idx ? { ...r, allowed: e.target.value as ResponsibilityAllowed } : r))}>
+                                <option value="all">Todos os membros</option>
+                                <option value="lawyers">Apenas advogados</option>
+                                <option value="single">Membro fixo</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="settings-label">Responsável padrão ao criar</label>
+                              <select className="settings-input"
+                                value={rc.default_mode}
+                                onChange={e => setResponsibilityConfig(prev => prev.map((r, i) => i === idx ? { ...r, default_mode: e.target.value as ResponsibilityDefault } : r))}>
+                                <option value="none">Nenhum (deixar em branco)</option>
+                                <option value="creator">Quem criou</option>
+                                <option value="single">Membro fixo</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="settings-label">Quem recebe notificação</label>
+                              <select className="settings-input"
+                                value={rc.notify}
+                                onChange={e => setResponsibilityConfig(prev => prev.map((r, i) => i === idx ? { ...r, notify: e.target.value as ResponsibilityNotify } : r))}>
+                                <option value="responsible">O responsável</option>
+                                <option value="admin">Apenas admins</option>
+                                <option value="all">Todos</option>
+                              </select>
+                            </div>
+                          </div>
+                          {(rc.allowed === 'single' || rc.default_mode === 'single') && (
+                            <div style={{ marginTop: '10px' }}>
+                              <label className="settings-label">Membro fixo (ID)</label>
+                              <select className="settings-input"
+                                value={rc.single_member_id ?? ''}
+                                onChange={e => setResponsibilityConfig(prev => prev.map((r, i) => i === idx ? { ...r, single_member_id: e.target.value || null } : r))}>
+                                <option value="">Selecionar…</option>
+                                {users.map(u => (
+                                  <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateResponsibilityConfig(responsibilityConfig, currentProfile?.name);
+                              setFeedback('success', 'Responsáveis por módulo salvos!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                )}
+
+                {/* ── Apps & Terceiros ── */}
+                {activeSection === 'apps' && (() => {
+                  type AppCard = { key: SettingsSection | null; label: string; description: string; category: string; status: 'active' | 'configured' | 'coming_soon' | 'unconfigured'; };
+                  const APP_CARDS: AppCard[] = [
+                    { key: 'integrations_email',   label: 'E-mail (Resend)',         description: 'Envio de e-mails transacionais e digest.',            category: 'Comunicação',  status: emailIntConfig.from_email ? 'configured' : 'unconfigured' },
+                    { key: 'djen',                 label: 'DJEN & DataJud',          description: 'Monitoramento de intimações e atualização de processos.', category: 'Jurídico', status: 'active' },
+                    { key: null,                   label: 'WhatsApp Business',       description: 'Envio de notificações e templates via WhatsApp.',       category: 'Comunicação', status: 'coming_soon' },
+                    { key: null,                   label: 'Google Calendar',         description: 'Sincronização bidirecional de agenda.',                 category: 'Produtividade', status: 'coming_soon' },
+                    { key: null,                   label: 'Google Drive / Dropbox',  description: 'Backup automático de documentos.',                      category: 'Armazenamento', status: 'coming_soon' },
+                    { key: null,                   label: 'Zapier / Make',           description: 'Automações no-code com centenas de apps.',              category: 'Automação', status: 'coming_soon' },
+                    { key: null,                   label: 'ClickSign / DocuSign',    description: 'Assinatura eletrônica externa (complementa fluxo nativo).', category: 'Jurídico', status: 'coming_soon' },
+                    { key: null,                   label: 'PJe',                     description: 'Integração direta com o sistema PJe.',                  category: 'Jurídico', status: 'coming_soon' },
+                  ];
+                  const STATUS_INFO = {
+                    active:       { label: 'Ativo',           color: '#059669', bg: '#d1fae5' },
+                    configured:   { label: 'Configurado',     color: '#d97706', bg: '#fef3c7' },
+                    coming_soon:  { label: 'Em breve',        color: '#6b7280', bg: '#f3f4f6' },
+                    unconfigured: { label: 'Não configurado', color: '#dc2626', bg: '#fee2e2' },
+                  };
+                  const categories = [...new Set(APP_CARDS.map(c => c.category))];
+                  return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {categories.map(cat => (
+                          <div key={cat}>
+                            <p style={{ fontSize: '11px', fontWeight: 700, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '10px' }}>{cat}</p>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                              {APP_CARDS.filter(c => c.category === cat).map(card => {
+                                const si = STATUS_INFO[card.status];
+                                return (
+                                  <div key={card.label}
+                                    onClick={() => card.key && setActiveSection(card.key)}
+                                    style={{ padding: '14px 16px', background: '#fff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '10px', cursor: card.key ? 'pointer' : 'default', opacity: card.status === 'coming_soon' ? 0.72 : 1, transition: 'box-shadow 0.15s' }}
+                                    onMouseEnter={e => { if (card.key) (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.10)'; }}
+                                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                                      <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827', margin: 0 }}>{card.label}</p>
+                                      <span style={{ fontSize: '10.5px', fontWeight: 600, color: si.color, background: si.bg, padding: '2px 7px', borderRadius: '99px', flexShrink: 0 }}>{si.label}</span>
+                                    </div>
+                                    <p style={{ fontSize: '11.5px', color: '#6b7280', margin: 0 }}>{card.description}</p>
+                                    {card.key && <p style={{ fontSize: '11px', color: '#ff8a00', marginTop: '8px', fontWeight: 500 }}>Configurar →</p>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                  );
+                })()}
+
+                {/* ── Automações & Cron ── */}
+                {activeSection === 'automations' && (
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                      {/* Limiares configuráveis */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Limiares de Automação</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div>
+                            <label className="settings-label">Requerimentos INSS — "Alta urgência" (dias após DER)</label>
+                            <input className="settings-input" type="number" min={1} max={365}
+                              value={automationThresholds.requirement_alert_days}
+                              onChange={e => setAutomationThresholds(prev => ({ ...prev, requirement_alert_days: Number(e.target.value) || 90 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Hoje fixo em 90 dias no <code>notification-scheduler</code>.</p>
+                          </div>
+                          <div>
+                            <label className="settings-label">Requerimentos INSS — "Urgência crítica" (dias após DER)</label>
+                            <input className="settings-input" type="number" min={1} max={365}
+                              value={automationThresholds.requirement_critical_days}
+                              onChange={e => setAutomationThresholds(prev => ({ ...prev, requirement_critical_days: Number(e.target.value) || 120 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Hoje fixo em 120 dias no <code>notification-scheduler</code>.</p>
+                          </div>
+                          <div>
+                            <label className="settings-label">Lembretes de compromisso — antecedência (minutos)</label>
+                            <input className="settings-input" type="number" min={5} max={1440}
+                              value={automationThresholds.appointment_remind_minutes}
+                              onChange={e => setAutomationThresholds(prev => ({ ...prev, appointment_remind_minutes: Number(e.target.value) || 60 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Hoje fixo em 60 min. O cron lê de <code>deadline_module_config</code>.</p>
+                          </div>
+                          <div>
+                            <label className="settings-label">Requerimentos — tamanho do lote (registros por execução)</label>
+                            <input className="settings-input" type="number" min={10} max={1000}
+                              value={automationThresholds.requirement_batch_size}
+                              onChange={e => setAutomationThresholds(prev => ({ ...prev, requirement_batch_size: Number(e.target.value) || 200 }))} />
+                            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Hoje fixo em 200 no <code>notification-scheduler</code>.</p>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: '11.5px', color: '#b45309', marginTop: '10px', padding: '8px 10px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fde68a' }}>
+                          ⚠️ Esses valores são salvos aqui, mas as edge functions ainda leem valores fixos no código. Para ativá-los, atualize cada edge function para ler de <code>automation_thresholds</code> via <code>system_settings</code>.
+                        </p>
+                      </div>
+
+                      <div className="settings-save-bar" style={{ marginTop: 0 }}>
+                        <button className="settings-btn-primary" disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await settingsService.updateAutomationThresholds(automationThresholds, currentProfile?.name);
+                              setFeedback('success', 'Limiares de automação salvos!');
+                            } catch (err: any) {
+                              setFeedback('error', err.message || 'Erro ao salvar.');
+                            } finally { setSaving(false); }
+                          }}>
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                        </button>
+                      </div>
+
+                      {/* Painel de Jobs */}
+                      <div className="settings-card">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                          <p className="settings-card-title" style={{ margin: 0 }}>Jobs Agendados</p>
+                          <button
+                            onClick={() => {
+                              setCronJobsLoading(true);
+                              settingsService.getCronJobLatest().then(d => { setCronJobLatest(d); setCronJobsLoading(false); }).catch(() => setCronJobsLoading(false));
+                            }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', color: '#ea6c00' }}
+                          >
+                            {cronJobsLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                            Atualizar
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>
+                          Última execução de cada edge function agendada. Horário/frequência gerenciados no painel do Supabase.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {KNOWN_CRON_JOBS.map(job => {
+                            const log = cronJobLatest.find(l => l.job_name === job.key);
+                            const statusIcon = !log ? null
+                              : log.status === 'success' ? <CheckCircle2 size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
+                              : log.status === 'failed'  ? <XCircle      size={14} style={{ color: '#dc2626', flexShrink: 0 }} />
+                              : log.status === 'running' ? <Loader2      size={14} className="animate-spin" style={{ color: '#ea6c00', flexShrink: 0 }} />
+                              : <Clock size={14} style={{ color: '#9ca3af', flexShrink: 0 }} />;
+                            const lastRunLabel = log?.last_run_at
+                              ? new Date(log.last_run_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                              : 'Nunca executado';
+                            return (
+                              <div key={job.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 12px', background: '#fff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '8px' }}>
+                                <RefreshCw size={15} style={{ color: '#ff8a00', flexShrink: 0, marginTop: '2px' }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827', margin: 0 }}>{job.label}</p>
+                                  <p style={{ fontSize: '11.5px', color: '#6b7280', margin: '2px 0 0' }}>{job.description}</p>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                    {statusIcon}
+                                    <span style={{ fontSize: '10.5px', color: log?.status === 'failed' ? '#dc2626' : '#9ca3af' }}>
+                                      {lastRunLabel}
+                                      {log?.duration_ms != null && ` · ${log.duration_ms}ms`}
+                                    </span>
+                                  </div>
+                                  {log?.error && (
+                                    <p style={{ fontSize: '10.5px', color: '#dc2626', margin: '2px 0 0', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.error}>
+                                      {log.error}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                    </div>
+                )}
+
+                {/* ─── Cofre de Chaves ─── */}
+                {activeSection === 'secrets' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    <div className="settings-card">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <p className="settings-card-title" style={{ margin: 0 }}>Cofre de Chaves & Segredos</p>
+                        <button
+                          className="settings-btn-ghost"
+                          style={{ fontSize: '11.5px', padding: '4px 12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                          onClick={handleVerifySecrets}
+                          disabled={verifyingSecrets || secretsLoading || secrets.length === 0}
+                          title="Verifica se as variáveis de ambiente estão configuradas no servidor"
+                        >
+                          {verifyingSecrets ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                          Verificar tudo
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>
+                        Registro de chaves de API e segredos do sistema. As chaves reais ficam nas variáveis de ambiente; aqui é apenas o inventário de status.
+                      </p>
+                      {secretsLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
+                          <Loader2 size={20} className="animate-spin" style={{ color: '#ea6c00' }} />
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {secrets.map(s => {
+                            const statusColor = s.status === 'configured' ? '#16a34a'
+                              : s.status === 'error' ? '#dc2626'
+                              : s.status === 'revoked' ? '#6b7280'
+                              : '#d97706';
+                            const statusLabel = s.status === 'configured' ? 'Configurado'
+                              : s.status === 'error' ? 'Erro'
+                              : s.status === 'revoked' ? 'Revogado'
+                              : 'Não configurado';
+                            return (
+                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: '#fff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '8px' }}>
+                                <Key size={14} style={{ color: '#ea6c00', flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827', margin: 0 }}>{s.key_name}</p>
+                                  {s.description && <p style={{ fontSize: '11.5px', color: '#6b7280', margin: '1px 0 0' }}>{s.description}</p>}
+                                  {s.env_var_name && <p style={{ fontSize: '10.5px', color: '#9ca3af', margin: '1px 0 0', fontFamily: 'monospace' }}>{s.env_var_name}</p>}
+                                </div>
+                                <span style={{ fontSize: '10px', fontWeight: 600, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}44`, borderRadius: '4px', padding: '2px 8px', flexShrink: 0 }}>{statusLabel}</span>
+                                <select
+                                  style={{ fontSize: '11.5px', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '3px 6px', color: '#374151', background: '#fff' }}
+                                  value={s.status}
+                                  onChange={async e => {
+                                    const newStatus = e.target.value as SecretEntry['status'];
+                                    await settingsService.updateSecretStatus(s.id, newStatus);
+                                    setSecrets(prev => prev.map(x => x.id === s.id ? { ...x, status: newStatus } : x));
+                                  }}
+                                >
+                                  <option value="configured">Configurado</option>
+                                  <option value="unconfigured">Não configurado</option>
+                                  <option value="error">Erro</option>
+                                  <option value="revoked">Revogado</option>
+                                </select>
+                              </div>
+                            );
+                          })}
+                          {secrets.length === 0 && <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>Nenhum segredo registrado.</p>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── Feriados ─── */}
+                {activeSection === 'holidays' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    <div className="settings-card">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <p className="settings-card-title" style={{ margin: 0 }}>Calendário de Feriados</p>
+                        <button
+                          className="settings-btn-primary"
+                          style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                          onClick={() => { setHolidayForm({ date: '', name: '', type: 'nacional', state: '', city: '' }); setHolidayFormOpen(true); }}
+                        >
+                          <Plus size={13} /> Adicionar
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>
+                        Feriados são usados para cálculo de dias úteis em prazos e na IA. Feriados nacionais 2025–2027 pré-carregados.
+                      </p>
+                      {holidaysLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
+                          <Loader2 size={20} className="animate-spin" style={{ color: '#ea6c00' }} />
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {holidays.length === 0 && <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>Nenhum feriado cadastrado.</p>}
+                          {holidays.map(h => (
+                            <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', background: '#fff', border: '1px solid rgba(15,23,42,0.07)', borderRadius: '7px' }}>
+                              <Calendar size={13} style={{ color: '#ea6c00', flexShrink: 0 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{h.name}</span>
+                                <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px' }}>{new Date(h.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                {h.state && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '6px' }}>· {h.state}{h.city ? `/${h.city}` : ''}</span>}
+                              </div>
+                              <span style={{ fontSize: '10px', color: '#ea6c00', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '1px 6px', flexShrink: 0 }}>{h.type}</span>
+                              <button
+                                onClick={async () => {
+                                  await settingsService.deleteHoliday(h.id);
+                                  setHolidays(prev => prev.filter(x => x.id !== h.id));
+                                }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#dc2626', flexShrink: 0 }}
+                                title="Remover"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Formulário inline de novo feriado */}
+                    {holidayFormOpen && (
+                      <div className="settings-card" style={{ border: '1px solid #fed7aa' }}>
+                        <p className="settings-card-title" style={{ marginBottom: '12px' }}>Novo Feriado</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div>
+                            <label className="settings-label">Data *</label>
+                            <input type="date" className="settings-input" value={holidayForm.date} onChange={e => setHolidayForm(p => ({ ...p, date: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Nome *</label>
+                            <input className="settings-input" placeholder="Ex: Carnaval" value={holidayForm.name} onChange={e => setHolidayForm(p => ({ ...p, name: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="settings-label">Tipo</label>
+                            <select className="settings-select" value={holidayForm.type} onChange={e => setHolidayForm(p => ({ ...p, type: e.target.value as Holiday['type'] }))}>
+                              <option value="nacional">Nacional</option>
+                              <option value="estadual">Estadual</option>
+                              <option value="municipal">Municipal</option>
+                              <option value="facultativo">Facultativo</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="settings-label">Estado (UF)</label>
+                            <input className="settings-input" placeholder="Ex: MT" maxLength={2} value={holidayForm.state} onChange={e => setHolidayForm(p => ({ ...p, state: e.target.value.toUpperCase() }))} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                          <button className="settings-btn-ghost" onClick={() => setHolidayFormOpen(false)}>Cancelar</button>
+                          <button className="settings-btn-primary" onClick={async () => {
+                            if (!holidayForm.date || !holidayForm.name.trim()) {
+                              setFeedback('error', 'Data e nome são obrigatórios.'); return;
+                            }
+                            await settingsService.upsertHoliday({
+                              date: holidayForm.date,
+                              name: holidayForm.name.trim(),
+                              type: holidayForm.type,
+                              state: holidayForm.state.trim() || null,
+                              city: holidayForm.city?.trim() || null,
+                              is_active: true,
+                            });
+                            const updated = await settingsService.getHolidays();
+                            setHolidays(updated);
+                            setHolidayFormOpen(false);
+                            setFeedback('success', 'Feriado adicionado!');
+                          }}>
+                            <Save size={13} /> Salvar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                </div>
+                )}
+
               </div>
             )}
+          </div>{/* /flex-1 section content */}
+          </div>{/* /right content area */}
+        </motion.div>{/* /modal card */}
+      </div>{/* /fixed overlay */}
+      {/* Modal de regra de notificação */}
+      <Modal
+        open={ruleModal.open}
+        onClose={() => setRuleModal({ open: false, rule: null })}
+        title={ruleModal.rule ? 'Editar Regra' : 'Nova Regra'}
+        eyebrow="Notificações"
+        size="md"
+        zIndex={100}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '12px 24px' }}>
+            <button className="settings-btn-ghost" onClick={() => setRuleModal({ open: false, rule: null })}>Cancelar</button>
+            <button className="settings-btn-primary" onClick={async () => {
+              if (!ruleForm.name?.trim() || !ruleForm.trigger || !ruleForm.channels?.length) {
+                setFeedback('error', 'Preencha nome, gatilho e ao menos um canal.'); return;
+              }
+              const rule = ruleForm as NotificationRule;
+              const updated = ruleModal.rule
+                ? notifRules.map(r => r.id === rule.id ? rule : r)
+                : [...notifRules, { ...rule, id: Date.now().toString() }];
+              setNotifRules(updated);
+              await settingsService.updateNotificationRules(updated, currentProfile?.name);
+              setRuleModal({ open: false, rule: null });
+              setFeedback('success', 'Regra salva!');
+            }}>
+              <Save size={13} /> Salvar
+            </button>
           </div>
-        </section>
-      </div>
+        }
+      >
+        <ModalBody>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '4px 0' }}>
+            <div>
+              <label className="settings-label">Nome da regra *</label>
+              <input className="settings-input" placeholder="Ex: Prazo vencendo"
+                value={ruleForm.name || ''}
+                onChange={e => setRuleForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="settings-label">Gatilho *</label>
+              <select className="settings-select"
+                value={ruleForm.trigger || 'deadline_due'}
+                onChange={e => setRuleForm(p => ({ ...p, trigger: e.target.value }))}>
+                {NOTIFICATION_TRIGGERS.map(t => (
+                  <option key={t.key} value={t.key}>{t.group} — {t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="settings-label">Canais de envio *</label>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                {(['email', 'push', 'whatsapp'] as NotificationChannel[]).map(ch => {
+                  const labels: Record<NotificationChannel, string> = { email: '✉️ E-mail', push: '🔔 Push', whatsapp: '💬 WhatsApp' };
+                  const active = (ruleForm.channels || []).includes(ch);
+                  return (
+                    <button key={ch} type="button"
+                      onClick={() => {
+                        const cur = ruleForm.channels || [];
+                        setRuleForm(p => ({ ...p, channels: active ? cur.filter(c => c !== ch) : [...cur, ch] }));
+                      }}
+                      style={{
+                        padding: '6px 12px', borderRadius: '8px', border: `1.5px solid ${active ? '#ff8a00' : 'rgba(15,23,42,0.12)'}`,
+                        background: active ? 'rgba(255,138,0,0.07)' : '#fff', cursor: 'pointer',
+                        fontSize: '12.5px', fontWeight: active ? 600 : 400, color: active ? '#c45c00' : '#555',
+                      }}>{labels[ch]}</button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="settings-label">Destinatários</label>
+              <select className="settings-select"
+                value={ruleForm.recipients || 'responsible'}
+                onChange={e => setRuleForm(p => ({ ...p, recipients: e.target.value as any }))}>
+                <option value="responsible">Responsável pelo item</option>
+                <option value="admin">Administrador</option>
+                <option value="all_lawyers">Todos os advogados</option>
+                <option value="specific_role">Papel específico</option>
+              </select>
+            </div>
+            <div className="settings-row-item">
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: '#191c1e' }}>Respeitar horário comercial</p>
+                <p style={{ fontSize: '11.5px', color: '#747878' }}>Não enviar fora do horário definido nas Preferências.</p>
+              </div>
+              <button
+                className={`settings-toggle${ruleForm.respect_business_hours ? ' on' : ''}`}
+                onClick={() => setRuleForm(p => ({ ...p, respect_business_hours: !p.respect_business_hours }))}
+                aria-label="toggle" />
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
 
       <Modal
         open={userModalOpen}
@@ -1656,7 +5295,7 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
         title={selectedUser ? 'Editar usuário' : 'Novo usuário'}
         eyebrow="Formulário"
         size="lg"
-        zIndex={70}
+        zIndex={100}
         footer={
           <div className="flex justify-end gap-3">
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setUserModalOpen(false)}>Cancelar</button>
@@ -1780,7 +5419,7 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
         onClose={() => setDeleteTarget(null)}
         title="Remover usuário"
         size="sm"
-        zIndex={50}
+        zIndex={100}
         footer={
           <div className="flex justify-end gap-3">
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setDeleteTarget(null)}>Cancelar</button>
@@ -1804,7 +5443,10 @@ const SettingsModule: React.FC<{ initialSection?: SettingsSection; onParamConsum
           )}
         </ModalBody>
       </Modal>
-    </div>
+      </>
+      )}
+    </AnimatePresence>,
+    document.body,
   );
 };
 

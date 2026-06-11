@@ -30,7 +30,7 @@ import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 import type { ChatRoom } from '../types/chat.types';
 
-type Tab = 'data' | 'processes' | 'financial' | 'deadlines' | 'requirements' | 'documents' | 'assinaturas' | 'overview' | 'agenda' | 'atendimento' | 'portal';
+type Tab = 'data' | 'casos' | 'financial' | 'deadlines' | 'documents' | 'assinaturas' | 'overview' | 'agenda' | 'atendimento' | 'portal';
 
 interface ClientDetailsProps {
   client: Client;
@@ -616,32 +616,62 @@ const ModuleItem = ({
   badge,
   urgent,
   muted,
+  leading,
+  dense,
 }: {
   children: React.ReactNode;
   onOpen: () => void;
   badge?: { label: string; color: string };
   urgent?: boolean;
   muted?: boolean;
+  accentClass?: string;
+  leading?: React.ReactNode;
+  dense?: boolean;
 }) => (
-  <div className={`rounded-xl border p-4 flex items-start justify-between gap-3 transition group ${
-    urgent ? 'border-rose-200 bg-rose-50' : muted ? 'border-slate-100 bg-slate-50 opacity-70' : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30'
+  <div className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md ${
+    urgent
+      ? 'border-rose-200 bg-rose-50/40'
+      : muted
+      ? 'border-slate-100 hover:border-slate-200'
+      : 'border-slate-200 hover:border-slate-300'
   }`}>
-    <div className="min-w-0 flex-1">{children}</div>
-    <div className="flex items-center gap-2 flex-shrink-0">
-      {badge && (
-        <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${badge.color}`}>{badge.label}</span>
-      )}
-      <button
-        onClick={onOpen}
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-orange-600 hover:bg-orange-50 border border-transparent hover:border-orange-200 transition opacity-60 group-hover:opacity-100"
-        title="Abrir no módulo"
-      >
-        <ExternalLink className="w-3.5 h-3.5" />
-        <span className="hidden sm:inline">Abrir</span>
-      </button>
+    <div className={`px-3.5 flex items-center gap-3 ${dense ? 'py-2' : 'py-2.5'}`}>
+      {leading && <div className="flex-shrink-0">{leading}</div>}
+      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-shrink-0 flex items-center gap-2.5">
+        {badge && (
+          <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md whitespace-nowrap ${badge.color}`}>{badge.label}</span>
+        )}
+        <button
+          onClick={onOpen}
+          className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors duration-100 ${
+            urgent
+              ? 'text-rose-400 hover:text-rose-600'
+              : 'text-slate-400 hover:text-orange-600'
+          }`}
+          title="Abrir no módulo"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Abrir</span>
+          <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
+        </button>
+      </div>
     </div>
   </div>
 );
+
+// Ícone de status redondo para linhas de módulo
+const StatusIcon = ({ tone, children }: { tone: 'rose' | 'amber' | 'emerald' | 'slate'; children: React.ReactNode }) => {
+  const map = {
+    rose: 'bg-rose-50 text-rose-500',
+    amber: 'bg-amber-50 text-amber-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    slate: 'bg-slate-100 text-slate-400',
+  } as const;
+  return (
+    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${map[tone]}`}>{children}</div>
+  );
+};
 
 const InfoItem = ({ label, value }: { label: string; value?: React.ReactNode }) => (
   <div>
@@ -672,7 +702,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   missingFields = [],
   isOutdated = false,
 }) => {
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const { navigateTo } = useNavigation();
   const [activeTab, setActiveTab] = useState<Tab>('data');
   const [historySearch, setHistorySearch] = useState('');
@@ -841,9 +871,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     return () => { active = false; };
   }, [client.id]);
 
-  // ── Load installments lazily when Financial tab is opened
+  // ── Load installments eagerly so Honorários KPI is accurate from the start
   useEffect(() => {
-    if (activeTab !== 'financial' || installmentsLoaded || agreements.length === 0) return;
+    if (installmentsLoaded || agreements.length === 0) return;
     let active = true;
     setInstallmentsLoading(true);
     Promise.all(agreements.map((a) => financialService.listInstallments(a.id).then((inst) => ({ id: a.id, inst }))))
@@ -1406,10 +1436,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
   const TABS: { id: Tab; label: string; count?: number }[] = [
     { id: 'data', label: 'Dados' },
-    { id: 'processes', label: 'Processos', count: processes.length },
+    { id: 'casos', label: 'Casos', count: processes.length + requirements.length },
     { id: 'financial', label: 'Financeiro', count: agreements.length },
     { id: 'deadlines', label: 'Prazos', count: deadlines.length },
-    { id: 'requirements', label: 'Requerimentos', count: requirements.length },
     { id: 'agenda', label: 'Compromissos', count: calendarEvents.length },
     { id: 'assinaturas', label: 'Assinaturas', count: signatureRequests.length },
     { id: 'documents', label: 'Documentos', count: pendingUploadsCount > 0 ? pendingUploadsCount : undefined },
@@ -1419,133 +1448,163 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   ];
 
   return (
-    <div className="w-full space-y-4 text-xs sm:text-sm">
+    <div className="w-full text-xs sm:text-sm rounded-xl bg-white border border-slate-200 shadow-sm">
 
       {/* ══════════════════════════════════════════════════════════════════
-          IDENTITY CARD — Foto + Nome + Meta + KPIs integrados
+          HERO — Identidade + Stats (seção, superfície única)
       ══════════════════════════════════════════════════════════════════ */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-slate-100">
 
-        {/* Identidade compacta: avatar + info + KPIs numa linha só */}
-        <div className="flex items-center gap-4 px-5 py-4">
+        {/* ── Linha + identidade (esq.) + stats 4-col (dir.) ── */}
+        <div className="flex items-start justify-between gap-5 px-5 py-4">
 
-          {/* Avatar compacto */}
-          {selfies.length > 0 ? (() => {
-            const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
-            return (
-              <button
-                type="button"
-                onClick={() => setPreviewSelfie(profileSelfie)}
-                className="group relative w-10 h-[52px] rounded overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm flex-shrink-0 transition focus:outline-none"
-                title="Ampliar foto"
-              >
-                <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
-                <span className="absolute bottom-0 left-0 right-0 bg-emerald-500 text-white text-[7px] font-bold text-center leading-none py-[3px] tracking-wider">ID</span>
-              </button>
-            );
-          })() : (() => {
-            const isPj = client.client_type === 'pessoa_juridica';
-            const stringHue = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i); return Math.abs(h) % 360; };
-            const initials = (() => { const parts = client.full_name.trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; if (parts.length === 1) return (parts[0][0] || '?').toUpperCase(); return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(); })();
-            const hue = stringHue(client.full_name);
-            return (
-              <div
-                className="flex-shrink-0 w-10 h-[52px] rounded flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
-                style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
-              >
-                {isPj ? <Building2 className="w-5 h-5" strokeWidth={1.5} /> : initials}
-              </div>
-            );
-          })()}
+          {/* ─── Esquerda: avatar + identidade ─── */}
+          <div className="flex items-start gap-3 flex-1 min-w-0">
 
-          {/* Info principal */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => { if (formattedDoc) { void navigator.clipboard.writeText(formattedDoc); } }}
-                className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 transition rounded-md px-2 py-1"
-                title="Clique para copiar"
-              >
-                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
-                <span className="font-semibold text-slate-800 tabular-nums text-xs">{formattedDoc || '—'}</span>
-              </button>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' :
-                client.status === 'inativo' ? 'bg-slate-100 text-slate-500 ring-1 ring-slate-200' :
-                'bg-red-50 text-red-700 ring-1 ring-red-200'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-red-500'}`} />
-                {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
-              </span>
-              <span className="text-[11px] text-slate-400">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
+            {/* Avatar */}
+            <div className="flex-shrink-0 flex flex-col items-center gap-1">
+              {selfies.length > 0 ? (() => {
+                const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewSelfie(profileSelfie)}
+                      className="group relative w-14 h-14 rounded-xl overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm transition focus:outline-none"
+                      title="Ampliar foto"
+                    >
+                      <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
+                      <span className="absolute bottom-0 left-0 right-0 bg-emerald-500 text-white text-[7px] font-bold text-center leading-none py-[3px] tracking-wider">ID</span>
+                    </button>
+                    {selfies.length > 1 && (
+                      <button type="button" onClick={() => setSelfiePickerOpen(true)}
+                        className="text-[9px] font-semibold text-slate-400 hover:text-orange-500 transition leading-none mt-0.5">
+                        {selfies.length} fotos
+                      </button>
+                    )}
+                  </>
+                );
+              })() : (() => {
+                const isPj = client.client_type === 'pessoa_juridica';
+                const stringHue = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i); return Math.abs(h) % 360; };
+                const initials = (() => { const parts = client.full_name.trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; if (parts.length === 1) return (parts[0][0] || '?').toUpperCase(); return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(); })();
+                const hue = stringHue(client.full_name);
+                return (
+                  <div
+                    className="flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
+                    style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
+                  >
+                    {isPj ? <Building2 className="w-6 h-6" strokeWidth={1.5} /> : initials}
+                  </div>
+                );
+              })()}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
-              {client.created_at && (
-                <span className="inline-flex items-center gap-1"><CalendarIcon className="w-3 h-3 text-slate-400" />Cliente desde <strong className="text-slate-600 font-medium">{formatDate(client.created_at)}</strong></span>
-              )}
-              {client.email && (
-                <><span className="text-slate-300">·</span>
-                <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 hover:text-orange-500 transition truncate max-w-[180px]">
-                  <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />{client.email}
-                </a></>
-              )}
-              {primaryPhone && (
-                <><span className="text-slate-300">·</span>
-                <span className="inline-flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-slate-400" />
-                  <a href={`tel:${primaryPhone}`} className="hover:text-orange-500 transition">{primaryPhone}</a>
-                  <a href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition" title="WhatsApp">
-                    <MessageCircle className="w-2.5 h-2.5" />
+
+            {/* Identidade */}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[17px] font-bold text-slate-800 leading-tight truncate">{client.full_name}</h2>
+
+              {/* CPF + status + tipo + desde */}
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { if (formattedDoc) { void navigator.clipboard.writeText(formattedDoc); } }}
+                  className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 transition rounded px-2 py-0.5"
+                  title="Clique para copiar"
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
+                  <span className="font-semibold text-slate-700 tabular-nums text-xs">{formattedDoc || '—'}</span>
+                </button>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' :
+                  client.status === 'inativo' ? 'bg-slate-100 text-slate-500 ring-1 ring-slate-200' :
+                  'bg-red-50 text-red-700 ring-1 ring-red-200'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-red-500'}`} />
+                  {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
+                </span>
+                <span className="text-[11px] text-slate-400">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
+                {client.created_at && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                    <CalendarIcon className="w-3 h-3" />desde {formatDate(client.created_at)}
+                  </span>
+                )}
+              </div>
+
+              {/* Contatos */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                {client.email && (
+                  <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-orange-500 transition truncate max-w-[240px]">
+                    <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />{client.email}
                   </a>
-                </span></>
-              )}
+                )}
+                {primaryPhone && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                    <Phone className="w-3 h-3 text-slate-400" />
+                    <a href={`tel:${primaryPhone}`} className="hover:text-orange-500 transition">{formattedPhone}</a>
+                    <a href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition" title="WhatsApp">
+                      <MessageCircle className="w-2.5 h-2.5" />
+                    </a>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* KPIs compactos — lado direito */}
+          {/* ─── Direita: stats 4-col com divisor ─── */}
           {(() => {
             const hearingDateObj = nextHearing ? new Date(nextHearing.date) : null;
             const hearingDateStr = hearingDateObj && !isNaN(hearingDateObj.getTime())
-              ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
               : null;
             return (
-              <div className="flex items-stretch divide-x divide-slate-100 flex-shrink-0 border-l border-slate-100">
-                <div className="px-5 flex flex-col justify-center min-w-[72px]">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Casos</p>
-                  <p className="text-xl font-bold text-slate-900 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
-                  <p className="text-[9px] text-slate-400 mt-1">{activeProcesses.length}p · {activeRequirements.length}r</p>
+              <div className="flex-shrink-0 grid grid-cols-4 gap-x-6 border-l border-slate-100 pl-6 py-1">
+                {/* Casos */}
+                <div className="flex flex-col gap-0.5 cursor-default">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Casos</span>
+                  <p className="text-xl font-extrabold text-slate-800 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
+                  <p className="text-[10px] text-slate-400">{activeProcesses.length}p · {activeRequirements.length}r</p>
                 </div>
-                <div className="px-5 flex flex-col justify-center min-w-[100px]">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Honorários</p>
-                  <p className={`text-sm font-bold tabular-nums leading-none ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{financialLoading ? '…' : formatCurrency(totalRevenue)}</p>
-                  <p className="text-[9px] text-slate-400 mt-1">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
+
+                {/* Honorários */}
+                <div className="flex flex-col gap-0.5 cursor-default">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Honorários</span>
+                  <p className={`text-sm font-extrabold tabular-nums leading-tight mt-0.5 ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                    {financialLoading ? '…' : formatCurrency(totalRevenue)}
+                  </p>
+                  <p className="text-[10px] text-slate-400 italic">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
                 </div>
-                <div className="px-5 flex flex-col justify-center min-w-[72px]">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Prazos</p>
-                  <p className={`text-xl font-bold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}</p>
-                  <p className="text-[9px] mt-1">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-semibold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-slate-400">Em dia</span>}</p>
+
+                {/* Prazos */}
+                <div className="flex flex-col gap-0.5 cursor-default">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prazos</span>
+                  <p className={`text-xl font-extrabold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                    {deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}
+                  </p>
+                  <p className="text-[10px]">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-bold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-emerald-500 font-bold uppercase tracking-wide">Em dia</span>}</p>
                 </div>
-                <div className="px-5 flex flex-col justify-center min-w-[130px]">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Próx. Compromisso</p>
+
+                {/* Próx. */}
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Próx.</span>
                   {nextHearing ? (
                     <button
                       type="button"
                       onClick={() => navigateTo('agenda', { entityId: nextHearing.id } as any)}
-                      className="text-left group mt-0.5"
+                      className="text-left"
                       title="Abrir na Agenda"
                     >
-                      <p className="text-sm font-bold text-slate-900 leading-tight tabular-nums group-hover:text-orange-600 transition-colors">
+                      <p className="text-sm font-extrabold text-slate-800 tabular-nums hover:text-orange-600 transition-colors leading-tight">
                         {hearingDateStr}
                       </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {nextHearing.time && <span className="font-semibold text-slate-600">{nextHearing.time} · </span>}
+                      <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                        {nextHearing.time && <span className="font-semibold">{nextHearing.time} · </span>}
                         {nextHearing.label}
                       </p>
                     </button>
                   ) : (
-                    <p className="text-sm text-slate-300">—</p>
+                    <p className="text-xl font-extrabold text-slate-300 leading-none">—</p>
                   )}
                 </div>
               </div>
@@ -1553,47 +1612,49 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           })()}
         </div>
 
-        {/* ── Portal activity strip (visível só se portal ativo) ── */}
+        {/* ── Status badges do portal ── */}
         {portalUser && !portalDataLoading && (
-          <div className="border-t border-slate-100 px-5 py-2 flex items-center gap-4 flex-wrap bg-slate-50/60">
+          <div className="px-5 pb-4 pt-1 flex flex-wrap gap-2">
             <button
               onClick={() => setActiveTab('portal')}
-              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition group"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-emerald-100 bg-emerald-50 text-emerald-700 text-[10px] font-semibold hover:bg-emerald-100 transition"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 group-hover:text-orange-500 transition" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
               Portal ativo
               {portalUser.last_login_at && (
-                <span className="font-normal text-slate-400">
-                  · último acesso {new Date(portalUser.last_login_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                <span className="font-normal text-emerald-600/80">
+                  · {new Date(portalUser.last_login_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
                 </span>
               )}
             </button>
             {clientChatRooms.length > 0 && (() => {
               const room = clientChatRooms[0];
-              const isWaiting = !room.accepted_by && !!room.last_message_at;
+              const isWaiting = !room.accepted_by && !!room.last_message_at && room.last_is_system !== true;
               return (
                 <button
                   onClick={() => setActiveTab('atendimento')}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-orange-600 transition group"
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-semibold transition ${
+                    isWaiting
+                      ? 'border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-slate-400 group-hover:text-orange-500 transition" />
-                  {isWaiting
-                    ? <span className="text-amber-600 font-bold">Atendimento aguardando</span>
-                    : room.accepted_by ? 'Em atendimento' : 'Chat portal'}
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isWaiting ? 'bg-amber-400' : 'bg-slate-400'}`} />
+                  {isWaiting ? 'Atendimento aguardando' : room.accepted_by ? 'Em atendimento' : 'Chat portal'}
                 </button>
               );
             })()}
             {pushActive && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-sky-600 font-semibold">
-                <Bell className="w-3.5 h-3.5" /> Push ativo
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-sky-100 bg-sky-50 text-sky-700 text-[10px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" /> Push ativo
               </span>
             )}
             {pendingUploadsCount > 0 && (
               <button
                 onClick={() => setActiveTab('documents')}
-                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-600 hover:text-amber-800 transition"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-rose-100 bg-rose-50 text-rose-700 text-[10px] font-semibold hover:bg-rose-100 transition"
               >
-                <FileText className="w-3.5 h-3.5" />
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 flex-shrink-0" />
                 {pendingUploadsCount} doc{pendingUploadsCount !== 1 ? 's' : ''} aguardando revisão
               </button>
             )}
@@ -1938,90 +1999,85 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         , document.body);
       })()}
 
-      {/* ── Quick Actions ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
+      {/* ── Ações rápidas (toolbar integrada) ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/60 border-b border-slate-100 px-4 py-2.5">
+        {/* Criação */}
         <div className="flex flex-wrap items-center gap-1.5">
           {onCreateProcess && (
             <button onClick={onCreateProcess}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
-              <Plus className="w-3.5 h-3.5 text-orange-500" /> Processo
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              <Plus className="w-3 h-3" /> Processo
             </button>
           )}
           {onCreateRequirement && (
             <button onClick={onCreateRequirement}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
-              <Plus className="w-3.5 h-3.5 text-orange-500" /> Requerimento
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              <Plus className="w-3 h-3" /> Requerimento
             </button>
           )}
           {onCreateDeadline && (
             <button onClick={onCreateDeadline}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-orange-50 hover:border-orange-200 transition">
-              <Plus className="w-3.5 h-3.5 text-orange-500" /> Prazo
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              <Plus className="w-3 h-3" /> Prazo
             </button>
           )}
-          <span className="h-6 w-px bg-slate-200 mx-1" />
           <button
             onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
           >
             <PenTool className="w-3 h-3" /> Petição
           </button>
           <button
             onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
           >
             <CalendarPlus className="w-3 h-3" /> Compromisso
           </button>
-          <span className="flex-1" />
+        </div>
+        {/* Registro */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-500 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
             title="Exportar ficha"
           >
             <Printer className="w-3 h-3" /> Exportar
           </button>
           <button
             onClick={onEdit}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition"
+            className="inline-flex items-center gap-1 px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-[11px] font-bold shadow-sm active:scale-95 transition whitespace-nowrap"
           >
             <Edit className="w-3 h-3" /> Editar
           </button>
         </div>
       </div>
 
-      {/* ── Tabs card ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap border-b border-slate-200 bg-slate-50/40">
-          {TABS.map((tab, index) => (
-            <React.Fragment key={tab.id}>
-              {index > 0 && (
-                <span className="self-center text-slate-300 text-xs select-none leading-none">/</span>
-              )}
-              <button
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-2.5 py-2 text-[11px] font-semibold transition relative whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'text-orange-600'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  {tab.label}
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <span className={`px-1 py-0.5 rounded text-[9px] font-bold tabular-nums ${
-                      activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
-                    }`}>{tab.count}</span>
-                  )}
-                </span>
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-orange-500 rounded-t-full" />
+      {/* ── Tabs ── */}
+      <div className="bg-white">
+        <div className="flex overflow-x-auto border-b border-slate-200/70 px-4 scrollbar-none sticky top-0 bg-white/80 backdrop-blur-md z-10">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3.5 py-2.5 text-[11px] font-semibold transition whitespace-nowrap border-b-2 -mb-px ${
+                activeTab === tab.id
+                  ? 'border-orange-500 text-orange-600 font-bold'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className={`min-w-[16px] h-[15px] px-1 rounded-full text-[9px] font-bold tabular-nums flex items-center justify-center ${
+                    activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
+                  }`}>{tab.count}</span>
                 )}
-              </button>
-            </React.Fragment>
+              </span>
+            </button>
           ))}
         </div>
 
-        <div className="p-5 space-y-4 min-h-[320px]">
+        <div className="p-4 space-y-4">
 
           {/* ════════════════════════════════��══════════════════════════════════
               TAB: DADOS (padrão)
@@ -2118,37 +2174,51 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 );
               })}
 
-              {/* Layout 2 colunas: esquerda dados pessoais+contato / direita endereço+alertas */}
-              <div className="grid grid-cols-2 gap-x-8 gap-y-0">
+              {/* Grid 2×2 de seções */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
 
-                {/* ── Col esquerda ── */}
-                <div className="space-y-0 divide-y divide-slate-100">
-                  {/* Status + tipo */}
-                  <div className="pb-3 flex items-center gap-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                      client.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
-                      client.status === 'inativo' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-amber-500'}`} />
-                      {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
-                    </span>
-                    <span className="text-xs text-slate-500">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
-                    <span className="text-xs text-slate-400">· desde {formatDate(client.created_at)}</span>
-                  </div>
-
-                  {/* Documentos */}
-                  <div className="py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                {/* Identificação */}
+                <div className="space-y-3">
+                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Identificação</h3>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                     <MiniField label={client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'} value={formattedDoc || '—'} />
                     {client.client_type === 'pessoa_fisica' && <MiniField label="RG" value={client.rg} />}
                     {client.client_type === 'pessoa_fisica' && <MiniField label="Nascimento" value={formatDate(client.birth_date)} />}
                     {client.client_type === 'pessoa_fisica' && <MiniField label="Estado civil" value={client.marital_status} />}
                     <MiniField label="Nacionalidade" value={client.nationality} />
                     <MiniField label="Profissão" value={client.profession} />
-                  </div>
-
-                  {/* Contato */}
-                  <div className="py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
                     <div>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Status</p>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        client.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
+                        client.status === 'inativo' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-amber-500'}`} />
+                        {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
+                      </span>
+                    </div>
+                    <MiniField label="Tipo" value={client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'} />
+                  </div>
+                </div>
+
+                {/* Endereço */}
+                <div className="space-y-3">
+                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Endereço</h3>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div className="col-span-2"><MiniField label="Rua" value={client.address_street} /></div>
+                    <MiniField label="Número" value={client.address_number} />
+                    <MiniField label="Bairro" value={client.address_neighborhood} />
+                    <MiniField label="Cidade" value={client.address_city} />
+                    <MiniField label="UF" value={client.address_state} />
+                    <MiniField label="CEP" value={client.address_zip_code} />
+                  </div>
+                </div>
+
+                {/* Contato */}
+                <div className="space-y-3">
+                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Contato</h3>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div className="col-span-2">
                       <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">E-mail</p>
                       {client.email
                         ? <a href={`mailto:${client.email}`} className="text-xs font-medium text-orange-500 hover:underline truncate block">{client.email}</a>
@@ -2157,28 +2227,31 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     <div>
                       <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Telefone</p>
                       <p className="text-xs font-medium text-slate-800">{formattedPhone || '—'}</p>
-                      {whatsappLink && (
-                        <a href={whatsappLink} target="_blank" rel="noopener noreferrer"
-                          className="text-[10px] font-semibold text-emerald-600 hover:underline">WhatsApp →</a>
-                      )}
                     </div>
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">WhatsApp</p>
+                      {whatsappLink
+                        ? <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline">Abrir →</a>
+                        : <span className="text-xs text-slate-400">—</span>}
+                    </div>
+                    <MiniField label="Celular" value={client.mobile ? formatPhone(client.mobile) : undefined} />
                   </div>
                 </div>
 
-                {/* ── Col direita ── */}
-                <div className="space-y-0 divide-y divide-slate-100">
-                  {/* Endereço */}
-                  <div className="pb-3 grid grid-cols-3 gap-x-3 gap-y-2.5">
-                    <div className="col-span-2"><MiniField label="Rua" value={client.address_street} /></div>
-                    <MiniField label="Número" value={client.address_number} />
-                    <MiniField label="Bairro" value={client.address_neighborhood} />
-                    <MiniField label="Cidade" value={client.address_city} />
-                    <MiniField label="UF" value={client.address_state} />
-                    <MiniField label="CEP" value={client.address_zip_code} />
+                {/* Sistema */}
+                <div className="space-y-3">
+                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Sistema</h3>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">ID</p>
+                      <p className="text-xs font-mono text-slate-500">{client.id.slice(0, 8).toUpperCase()}</p>
+                    </div>
+                    <MiniField label="Cliente desde" value={formatDate(client.created_at)} />
+                    <MiniField label="Atualizado em" value={formatDate(client.updated_at)} />
                   </div>
 
-                  {/* Alertas + notas + próximos eventos (compacto) */}
-                  <div className="pt-3 space-y-2">
+                  {/* Alertas + notas + próximos eventos */}
+                  <div className="space-y-1.5">
                     {installmentsLoaded && overdueAmount > 0 && (
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200">
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
@@ -2209,12 +2282,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         }
                       </button>
                     )}
-                    {/* Info sistema (discreto) */}
-                    <p className="text-[9px] text-slate-300 pt-1">
-                      ID {client.id.slice(0, 8).toUpperCase()} · Atualizado {formatDate(client.updated_at)}
-                    </p>
                   </div>
                 </div>
+
               </div>
             </div>
           )}
@@ -2379,71 +2449,199 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           )}
 
           {/* ═══════════════════════════════════════════════════════════════════
-              TAB: PROCESSOS
+              TAB: CASOS (Processos + Requerimentos)
           ═══════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'processes' && (
-            <div className="space-y-2">
+          {activeTab === 'casos' && (
+            <div className="space-y-5">
               {relationsLoading ? (
                 <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
-              ) : processes.length === 0 ? (
-                <SectionEmpty text="Nenhum processo vinculado a este cliente." />
               ) : (
-                processes.map((p) => {
-                  const statusColor = PROCESS_STATUS_COLOR[p.status] ?? 'bg-slate-100 text-slate-600';
-                  const statusLabel = PROCESS_STATUS_LABEL[p.status] ?? p.status;
-                  const practiceLabel = PRACTICE_AREA_LABEL[p.practice_area] ?? p.practice_area;
-                  const accentColor: Record<string, string> = {
-                    andamento: 'border-l-emerald-400', distribuido: 'border-l-amber-400',
-                    recurso: 'border-l-yellow-400', sentenca: 'border-l-purple-400',
-                    arquivado: 'border-l-slate-300', cumprimento: 'border-l-lime-400',
-                    conciliacao: 'border-l-teal-400', contestacao: 'border-l-orange-400',
-                    instrucao: 'border-l-indigo-400', citacao: 'border-l-cyan-400',
-                    nao_protocolado: 'border-l-slate-300', aguardando_confeccao: 'border-l-blue-400',
-                  };
-                  const accent = accentColor[p.status] ?? 'border-l-slate-300';
-                  const isMuted = p.status === 'arquivado';
-                  const hearingFuture = p.hearing_date ? new Date(p.hearing_date) >= new Date() : false;
-                  return (
-                    <div
-                      key={p.id}
-                      className={`rounded-xl border border-l-4 bg-white px-4 py-3.5 flex items-start gap-4 group transition hover:shadow-sm ${accent} ${isMuted ? 'border-slate-100 opacity-60' : 'border-slate-200 hover:border-orange-200'}`}
-                    >
-                      {/* Conteúdo principal */}
-                      <div className="flex-1 min-w-0">
-                        {/* Número */}
-                        <p className={`text-sm font-bold font-mono tracking-tight leading-snug ${isMuted ? 'text-slate-500' : 'text-slate-900'}`}>
-                          {p.process_code || <span className="text-slate-400 font-sans font-normal italic">Sem número</span>}
-                        </p>
-                        {/* Badges + meta inline */}
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${statusColor}`}>{statusLabel}</span>
-                          {practiceLabel && <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-100 text-slate-500">{practiceLabel}</span>}
-                          {p.court && <span className="text-[11px] text-slate-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{p.court}</span>}
-                          {p.responsible_lawyer && <span className="text-[11px] text-slate-400 flex items-center gap-1"><User className="w-3 h-3" />{p.responsible_lawyer}</span>}
-                        </div>
-                        {/* Audiência — linha discreta abaixo */}
-                        {p.hearing_date && (
-                          <p className={`mt-2 text-[11px] flex items-center gap-1.5 ${hearingFuture ? 'text-violet-600 font-semibold' : 'text-slate-400'}`}>
-                            <CalendarIcon className="w-3 h-3 flex-shrink-0" />
-                            Audiência · {formatDate(p.hearing_date)}
-                            {p.hearing_time && ` · ${p.hearing_time.slice(0, 5)}`}
-                            {p.hearing_mode === 'online' ? ' · Online' : p.hearing_mode === 'presencial' ? ' · Presencial' : ''}
-                            {!hearingFuture && <span className="text-[10px] font-normal text-slate-300">(passada)</span>}
-                          </p>
-                        )}
-                      </div>
-                      {/* Abrir */}
-                      <button
-                        onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: p.id } })}
-                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition"
-                        title="Abrir processo"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Abrir
-                      </button>
+                <>
+                  {/* ── Processos ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Scale className="w-3.5 h-3.5 text-slate-400" />
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Processos · {processes.length}</p>
                     </div>
-                  );
-                })
+                    {processes.length === 0 ? (
+                      <SectionEmpty text="Nenhum processo vinculado." />
+                    ) : (
+                      processes.map((p) => {
+                        const statusColor = PROCESS_STATUS_COLOR[p.status] ?? 'bg-slate-100 text-slate-600';
+                        const statusLabel = PROCESS_STATUS_LABEL[p.status] ?? p.status;
+                        const practiceLabel = PRACTICE_AREA_LABEL[p.practice_area] ?? p.practice_area;
+                        const isMuted = p.status === 'arquivado';
+                        const hearingFuture = p.hearing_date ? new Date(p.hearing_date) >= new Date() : false;
+                        return (
+                          <div
+                            key={p.id}
+                            className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${isMuted ? 'border-slate-100 opacity-60' : 'border-slate-200 hover:border-slate-300'}`}
+                          >
+                            <div className="px-4 py-3 flex items-start gap-3">
+                              <div className="flex-shrink-0 mt-0.5">
+                                <StatusIcon tone={isMuted ? 'slate' : 'amber'}><Scale className="w-4 h-4" /></StatusIcon>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                              {/* Row 1 — number + open action */}
+                              <div className="flex items-start justify-between gap-3">
+                                <p className={`text-[13px] font-bold font-mono tracking-tight leading-snug truncate flex-1 min-w-0 ${isMuted ? 'text-slate-400' : 'text-slate-900'}`}>
+                                  {p.process_code || <span className="font-sans font-normal italic text-slate-400">Sem número</span>}
+                                </p>
+                                <button
+                                  onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: p.id } })}
+                                  className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100 mt-0.5"
+                                  title="Abrir processo"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Abrir</span>
+                                  <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
+                                </button>
+                              </div>
+
+                              {/* Row 2 — status badge + área chip */}
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${statusColor}`}>{statusLabel}</span>
+                                {practiceLabel && (
+                                  <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-100 text-slate-500">{practiceLabel}</span>
+                                )}
+                              </div>
+
+                              {/* Row 3 — vara/comarca + advogado */}
+                              {(p.court || p.responsible_lawyer) && (
+                                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                                  {p.court && (
+                                    <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                                      <Building2 className="w-3 h-3 flex-shrink-0 text-slate-300" />
+                                      {p.court}
+                                    </span>
+                                  )}
+                                  {p.responsible_lawyer && (
+                                    <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                                      <User className="w-3 h-3 flex-shrink-0 text-slate-300" />
+                                      {p.responsible_lawyer}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Row 4 — audiência (conditional) */}
+                              {p.hearing_date && (
+                                <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-medium ${hearingFuture ? 'text-violet-600' : 'text-slate-400'}`}>
+                                  <CalendarIcon className="w-3 h-3 flex-shrink-0" />
+                                  <span>Audiência · {formatDate(p.hearing_date)}{p.hearing_time ? ` · ${p.hearing_time.slice(0, 5)}` : ''}</span>
+                                  {!hearingFuture && <span className="text-[10px] text-slate-300 font-normal">(passada)</span>}
+                                </div>
+                              )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* ── Requerimentos ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ClipboardList className="w-3.5 h-3.5 text-slate-400" />
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Requerimentos · {requirements.length}</p>
+                    </div>
+                    {requirements.length === 0 ? (
+                      <SectionEmpty text="Nenhum requerimento administrativo vinculado." />
+                    ) : (
+                      requirements.map((r) => {
+                        const linkedEvents = calendarEvents.filter((e) => e.requirement_id === r.id);
+                        const nextPericia = linkedEvents
+                          .filter((e) => e.event_type === 'pericia' && e.status === 'pendente' && new Date(e.start_at) >= new Date())
+                          .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0];
+                        const badgeColor = r.status === 'deferido' ? 'bg-emerald-100 text-emerald-700' : r.status === 'indeferido' ? 'bg-rose-100 text-rose-700' : r.status === 'ajuizado' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700';
+                        const hasAlert = r.status === 'em_exigencia' && r.exigency_due_date;
+                        return (
+                          <div
+                            key={r.id}
+                            className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${hasAlert ? 'border-rose-200' : 'border-slate-200 hover:border-slate-300'}`}
+                          >
+                            <div className="px-4 py-3 flex items-start gap-3">
+                              <div className="flex-shrink-0 mt-0.5">
+                                <StatusIcon tone={hasAlert ? 'rose' : 'amber'}><ClipboardList className="w-4 h-4" /></StatusIcon>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                              {/* Row 1 — protocolo + open action */}
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="text-[13px] font-bold text-slate-900 leading-snug truncate flex-1 min-w-0">
+                                  {r.protocol ?? <span className="font-normal italic text-slate-400">Sem protocolo</span>}
+                                </p>
+                                <button
+                                  onClick={() => navigateTo('requerimentos', { entityId: r.id })}
+                                  className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100 mt-0.5"
+                                  title="Abrir requerimento"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Abrir</span>
+                                  <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
+                                </button>
+                              </div>
+
+                              {/* Row 2 — status + benefício */}
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${badgeColor}`}>
+                                  {r.status ? r.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Pendente'}
+                                </span>
+                                {r.benefit_type && (
+                                  <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-100 text-slate-500">
+                                    {r.benefit_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Row 3 — beneficiário */}
+                              {r.beneficiary && (
+                                <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
+                                  <User className="w-3 h-3 flex-shrink-0 text-slate-300" />
+                                  {r.beneficiary}
+                                </div>
+                              )}
+
+                              {/* Row 4 — datas periciais + alertas */}
+                              {(r.pericia_medica_at || r.pericia_social_at || nextPericia || hasAlert) && (
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                                  {r.pericia_medica_at && (
+                                    <span className="text-[11px] font-medium text-sky-600 flex items-center gap-1">
+                                      <CalendarIcon className="w-3 h-3 flex-shrink-0" />
+                                      Perícia médica · {formatDate(r.pericia_medica_at)}
+                                    </span>
+                                  )}
+                                  {r.pericia_social_at && (
+                                    <span className="text-[11px] font-medium text-sky-600 flex items-center gap-1">
+                                      <CalendarIcon className="w-3 h-3 flex-shrink-0" />
+                                      Perícia social · {formatDate(r.pericia_social_at)}
+                                    </span>
+                                  )}
+                                  {nextPericia && (
+                                    <button
+                                      onClick={(ev) => { ev.stopPropagation(); navigateTo('agenda', { entityId: nextPericia.id }); }}
+                                      className="text-[11px] font-semibold text-violet-600 hover:underline flex items-center gap-1"
+                                    >
+                                      <Gavel className="w-3 h-3" />
+                                      {nextPericia.title} · {formatDate(nextPericia.start_at)}
+                                    </button>
+                                  )}
+                                  {hasAlert && (
+                                    <span className="text-[11px] font-medium text-rose-600 flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                      Exigência vence · {formatDate(r.exigency_due_date)}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -2495,27 +2693,28 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     const overdue = insts.filter((i) => i.status === 'vencido').length;
 
                     return (
-                      <div key={a.id} className="rounded-xl border border-slate-200 overflow-hidden group hover:border-orange-200 transition">
-                        <div className="p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div key={a.id} className="rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                        <div className="px-4 pt-3.5 pb-3">
+                          <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-bold text-slate-900">{a.title}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">
+                              <p className="text-[13px] font-bold text-slate-900 leading-snug">{a.title}</p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
                                 {formatDate(a.agreement_date)} · {formatCurrency(a.total_value)}
                                 {a.fee_type === 'percentage' && a.fee_percentage ? ` · ${a.fee_percentage}% honorários` : ''}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className={`px-2.5 py-1 text-[11px] font-semibold rounded-full ${AGREEMENT_STATUS_COLOR[a.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                              <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${AGREEMENT_STATUS_COLOR[a.status] ?? 'bg-slate-100 text-slate-600'}`}>
                                 {AGREEMENT_STATUS_LABEL[a.status] ?? a.status}
                               </span>
                               <button
                                 onClick={() => navigateTo('financeiro', { entityId: a.id })}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-orange-600 hover:bg-orange-50 border border-transparent hover:border-orange-200 transition opacity-60 group-hover:opacity-100"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100"
                                 title="Abrir no módulo Financeiro"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Abrir</span>
+                                <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
                               </button>
                             </div>
                           </div>
@@ -2672,17 +2871,23 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 <>
                   {overdueDeadlines.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-rose-500">Vencidos ({overdueDeadlines.length})</p>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-rose-500">Vencidos · {overdueDeadlines.length}</p>
+                      </div>
                       {overdueDeadlines.map((d) => (
                         <ModuleItem
                           key={d.id}
                           urgent
                           onOpen={() => navigateTo('prazos', { entityId: d.id })}
                           badge={{ label: 'Vencido', color: 'bg-rose-100 text-rose-700' }}
+                          leading={<StatusIcon tone="rose"><AlertTriangle className="w-4 h-4" /></StatusIcon>}
                         >
-                          <p className="text-sm font-bold text-rose-800">{d.title}</p>
-                          <p className="text-xs text-rose-600 mt-0.5">Venceu em {formatDate(d.due_date)}</p>
-                          {d.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{d.description}</p>}
+                          <p className="text-[13px] font-semibold text-rose-800 leading-snug truncate">{d.title}</p>
+                          <p className="text-[11px] text-rose-500 mt-0.5 font-medium">
+                            Venceu em {formatDate(d.due_date)}
+                            {d.description && <span className="text-rose-400/80"> · {d.description}</span>}
+                          </p>
                         </ModuleItem>
                       ))}
                     </div>
@@ -2690,22 +2895,28 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
                   {upcomingDeadlines.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Pendentes ({upcomingDeadlines.length})</p>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Pendentes · {upcomingDeadlines.length}</p>
+                      </div>
                       {upcomingDeadlines.map((d) => {
                         const daysLeft = Math.ceil((new Date(d.due_date).getTime() - Date.now()) / 86400000);
                         const isUrgent = daysLeft <= 7;
+                        const priorityAccent = d.priority === 'urgente' || d.priority === 'alta' ? 'border-l-rose-400' : d.priority === 'media' ? 'border-l-amber-400' : 'border-l-slate-300';
                         return (
                           <ModuleItem
                             key={d.id}
                             onOpen={() => navigateTo('prazos', { entityId: d.id })}
+                            accentClass={priorityAccent}
+                            leading={<StatusIcon tone={isUrgent ? 'amber' : 'slate'}><Clock className="w-4 h-4" /></StatusIcon>}
                             badge={{
                               label: d.priority === 'urgente' ? 'Urgente' : d.priority === 'alta' ? 'Alta' : d.priority === 'media' ? 'Média' : 'Baixa',
                               color: d.priority === 'urgente' || d.priority === 'alta' ? 'bg-rose-100 text-rose-700' : d.priority === 'media' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600',
                             }}
                           >
-                            <p className="text-sm font-semibold text-slate-900">{d.title}</p>
-                            <p className={`text-xs mt-0.5 font-medium ${isUrgent ? 'text-amber-600' : 'text-slate-500'}`}>
-                              {isUrgent ? `⚠ ${daysLeft}d restantes — ` : ''}{formatDate(d.due_date)}
+                            <p className="text-[13px] font-semibold text-slate-900 leading-snug truncate">{d.title}</p>
+                            <p className={`text-[11px] mt-0.5 font-medium ${isUrgent ? 'text-amber-600' : 'text-slate-500'}`}>
+                              {isUrgent ? <span className="font-bold">{daysLeft}d restantes · </span> : ''}{formatDate(d.due_date)}
                             </p>
                           </ModuleItem>
                         );
@@ -2715,16 +2926,23 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
                   {deadlines.filter((d) => d.status === 'cumprido').length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Cumpridos</p>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Cumpridos · {deadlines.filter((d) => d.status === 'cumprido').length}</p>
+                      </div>
                       {deadlines.filter((d) => d.status === 'cumprido').map((d) => (
                         <ModuleItem
                           key={d.id}
                           muted
+                          dense
                           onOpen={() => navigateTo('prazos', { entityId: d.id })}
-                          badge={{ label: 'Cumprido', color: 'bg-emerald-100 text-emerald-700' }}
+                          badge={{ label: 'Cumprido', color: 'bg-emerald-50 text-emerald-600' }}
+                          leading={<StatusIcon tone="emerald"><Check className="w-4 h-4" /></StatusIcon>}
                         >
-                          <p className="text-sm font-semibold text-slate-500 line-through">{d.title}</p>
-                          <p className="text-xs text-slate-400">{formatDate(d.due_date)}</p>
+                          <div className="flex items-baseline gap-2 min-w-0">
+                            <p className="text-[13px] font-medium text-slate-500 truncate">{d.title}</p>
+                            <span className="text-[11px] text-slate-400 flex-shrink-0 tabular-nums">{formatDate(d.due_date)}</span>
+                          </div>
                         </ModuleItem>
                       ))}
                     </div>
@@ -2734,73 +2952,6 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             </div>
           )}
 
-          {/* ═══════════════════════════════════════════════════════════════════
-              TAB: REQUERIMENTOS ADMINISTRATIVOS
-          ═══════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'requirements' && (
-            <div className="space-y-3">
-              {relationsLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
-              ) : requirements.length === 0 ? (
-                <SectionEmpty text="Nenhum requerimento administrativo vinculado a este cliente." />
-              ) : (
-                requirements.map((r) => {
-                  const linkedEvents = calendarEvents.filter((e) => e.requirement_id === r.id);
-                  const nextPericia = linkedEvents
-                    .filter((e) => e.event_type === 'pericia' && e.status === 'pendente' && new Date(e.start_at) >= new Date())
-                    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0];
-
-                  return (
-                    <ModuleItem
-                      key={r.id}
-                      onOpen={() => navigateTo('requerimentos', { entityId: r.id })}
-                      badge={{
-                        label: r.status ? r.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Pendente',
-                        color: r.status === 'deferido' ? 'bg-emerald-100 text-emerald-700' :
-                               r.status === 'indeferido' ? 'bg-rose-100 text-rose-700' :
-                               r.status === 'ajuizado' ? 'bg-blue-100 text-blue-700' :
-                               'bg-amber-100 text-amber-700',
-                      }}
-                    >
-                      <p className="text-sm font-bold text-slate-900">{r.protocol ?? 'Sem protocolo'}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {r.beneficiary} · {r.benefit_type?.replace(/_/g, ' ')}
-                      </p>
-                      {/* Perícias do tipo do requerimento */}
-                      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-                        {r.pericia_medica_at && (
-                          <p className="text-xs font-medium text-blue-700">
-                            Perícia médica: {formatDate(r.pericia_medica_at)}
-                          </p>
-                        )}
-                        {r.pericia_social_at && (
-                          <p className="text-xs font-medium text-blue-700">
-                            Perícia social: {formatDate(r.pericia_social_at)}
-                          </p>
-                        )}
-                        {/* Próxima perícia agendada na agenda */}
-                        {nextPericia && (
-                          <button
-                            onClick={(ev) => { ev.stopPropagation(); navigateTo('agenda', { entityId: nextPericia.id }); }}
-                            className="text-xs font-semibold text-violet-600 hover:underline flex items-center gap-0.5"
-                          >
-                            <Gavel className="w-3 h-3" />
-                            {nextPericia.title}: {formatDate(nextPericia.start_at)}
-                          </button>
-                        )}
-                        {/* Exigência */}
-                        {r.exigency_due_date && r.status === 'em_exigencia' && (
-                          <p className="text-xs font-medium text-rose-600">
-                            Exigência vence: {formatDate(r.exigency_due_date)}
-                          </p>
-                        )}
-                      </div>
-                    </ModuleItem>
-                  );
-                })
-              )}
-            </div>
-          )}
 
           {/* ═══════════════════════════════════════════════════════════════════
               TAB: COMPROMISSOS (AGENDA)
@@ -2920,25 +3071,25 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 <button
                   type="button"
                   onClick={onClick}
-                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 transition group ${tc.accent} ${
+                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150 group ${
                     isFuture
-                      ? 'bg-white border border-slate-200 hover:border-orange-200 hover:shadow-sm'
-                      : 'bg-slate-50 border border-slate-100 opacity-60 hover:opacity-80'
+                      ? 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-md'
+                      : 'bg-slate-50 border-slate-100 opacity-60 hover:opacity-80'
                   }`}
                 >
                   {/* Tipo */}
-                  <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-md ${tc.bg} ${tc.text} whitespace-nowrap`}>{label}</span>
+                  <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-md ${tc.bg} ${tc.text} whitespace-nowrap`}>{label}</span>
 
                   {/* Título + subtítulo */}
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold truncate group-hover:text-orange-600 transition-colors ${isFuture ? 'text-slate-900' : 'text-slate-500'}`}>{title}</p>
+                    <p className={`text-[13px] font-semibold truncate transition-colors ${isFuture ? 'text-slate-900 group-hover:text-orange-600' : 'text-slate-500'}`}>{title}</p>
                     {subtitle && <p className="text-[11px] text-slate-400 truncate mt-0.5">{subtitle}</p>}
                   </div>
 
                   {/* Data + hora + status */}
                   <div className="flex-shrink-0 text-right space-y-0.5">
                     {statusCls && (
-                      <p><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusCls.cls}`}>{statusCls.label}</span></p>
+                      <p><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${statusCls.cls}`}>{statusCls.label}</span></p>
                     )}
                     <p className={`text-xs font-semibold tabular-nums ${isFuture ? 'text-slate-700' : 'text-slate-400'}`}>
                       {u.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
@@ -3020,54 +3171,75 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     const sc = SIG_STATUS[r.status] ?? SIG_STATUS.pending;
                     const signers = r.signers ?? [];
                     const signersSigned = signers.filter(s => s.status === 'signed').length;
+                    const allSigned = signers.length > 0 && signersSigned === signers.length;
+                    const accentBorder = r.status === 'signed' ? 'border-l-emerald-400' : r.status === 'pending' ? 'border-l-amber-400' : r.status === 'expired' ? 'border-l-red-400' : 'border-l-slate-300';
                     return (
-                      <div key={r.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-violet-200 hover:shadow-md transition-all duration-200 group">
-                        <div className={`h-[3px] w-full ${sc.strip}`} />
-                        <div className="p-4">
+                      <div key={r.id} className="rounded-xl bg-white border border-slate-200 shadow-sm transition-all duration-150 hover:shadow-md hover:border-slate-300">
+                        <div className="px-4 pt-3.5 pb-3">
+                          {/* Row 1 — nome + status + abrir */}
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
-                              {r.process_number && (
-                                <p className="text-[11px] text-slate-400 mt-0.5 font-mono">{r.process_number}</p>
-                              )}
-                              <p className="text-[11px] text-slate-400 mt-0.5">{formatDate(r.created_at)}</p>
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {allSigned
+                                ? <FileCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                : <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                              }
+                              <p className="text-[13px] font-bold text-slate-900 leading-snug truncate">{r.document_name ?? 'Documento'}</p>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full ${sc.cls}`}>{sc.label}</span>
+                              <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md whitespace-nowrap ${sc.cls}`}>{sc.label}</span>
                               <button
                                 onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { mode: 'details', requestId: r.id } })}
-                                className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold text-slate-500 hover:text-violet-600 hover:bg-violet-50 border border-transparent hover:border-violet-200 transition"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                                 Abrir
+                                <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
                               </button>
                             </div>
                           </div>
-                          {/* Progresso de signatários */}
+
+                          {/* Row 2 — número processo + data */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            {r.process_number && (
+                              <span className="text-[11px] font-mono text-slate-400">{r.process_number}</span>
+                            )}
+                            <span className="text-[11px] text-slate-400">
+                              {r.status === 'signed' && r.signed_at
+                                ? `Assinado em ${formatDate(r.signed_at)}`
+                                : `Criado em ${formatDate(r.created_at)}`}
+                            </span>
+                          </div>
+
+                          {/* Row 3 — signatários */}
                           {signers.length > 0 && (
-                            <div className="mt-3">
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
-                                <span className="flex items-center gap-1"><User className="w-3 h-3" /> Signatários</span>
-                                <span className="font-semibold tabular-nums">{signersSigned}/{signers.length}</span>
+                            <div className="mt-2.5">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <div className="flex gap-0.5 flex-1">
+                                  {signers.map(s => (
+                                    <div
+                                      key={s.id}
+                                      title={`${s.name ?? 'Signatário'}: ${s.status}`}
+                                      className={`h-1.5 flex-1 rounded-full ${
+                                        s.status === 'signed' ? 'bg-emerald-400' : s.status === 'cancelled' ? 'bg-slate-200' : 'bg-amber-200'
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 tabular-nums flex-shrink-0">{signersSigned}/{signers.length}</span>
                               </div>
-                              <div className="flex gap-0.5">
+                              <div className="flex flex-wrap gap-1.5">
                                 {signers.map(s => (
-                                  <div
-                                    key={s.id}
-                                    title={`${s.name ?? 'Signatário'}: ${s.status}`}
-                                    className={`h-1.5 flex-1 rounded-full transition-colors ${
-                                      s.status === 'signed' ? 'bg-emerald-400' : s.status === 'cancelled' ? 'bg-slate-200' : 'bg-amber-200'
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                              {/* Nomes dos signatários */}
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {signers.map(s => (
-                                  <span key={s.id} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                    s.status === 'signed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-500 border border-slate-200'
+                                  <span key={s.id} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    s.status === 'signed'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : s.status === 'cancelled'
+                                      ? 'bg-slate-50 text-slate-400 border-slate-200 line-through'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
                                   }`}>
-                                    {s.status === 'signed' && <Check className="w-2.5 h-2.5" />}
+                                    {s.status === 'signed'
+                                      ? <Check className="w-2.5 h-2.5 flex-shrink-0" />
+                                      : <Clock className="w-2.5 h-2.5 flex-shrink-0" />
+                                    }
                                     {s.name ?? 'Signatário'}
                                   </span>
                                 ))}
@@ -3114,7 +3286,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           const signer = (r.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
                           const signedAt = r.signed_at ?? signer?.signed_at ?? null;
                           return (
-                            <div key={r.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-3.5 flex items-center justify-between gap-3">
+                            <div key={r.id} className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all duration-150">
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
                                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -3156,7 +3328,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             tabIndex={0}
                             onClick={() => { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); }}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); } }}
-                            className="rounded-xl border border-amber-100 bg-amber-50 p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-amber-100 hover:border-amber-200 transition-colors"
+                            className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
                           >
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
@@ -3187,7 +3359,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     ) : (
                       <div className="space-y-2">
                         {clientPetitions.map((p) => (
-                          <div key={p.id} className="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3 group">
+                          <div key={p.id} className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 group hover:border-slate-300 hover:shadow-md transition-all duration-150">
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 truncate">{p.title ?? 'Sem título'}</p>
                               <p className="text-xs text-slate-400 mt-0.5">Atualizada em {formatDateTime(p.updated_at)}</p>
@@ -3204,6 +3376,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                   const ok = await confirmDelete({ title: 'Excluir petição', entityName: p.title ?? '', message: `Deseja excluir "${p.title}"?`, confirmLabel: 'Excluir' });
                                   if (!ok) return;
                                   await petitionEditorService.deletePetition(p.id);
+                                  notifyDeleted(p.title ?? undefined);
                                   setClientPetitions((prev) => prev.filter((x) => x.id !== p.id));
                                 }}
                                 className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100 transition-all"
@@ -3239,7 +3412,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             tabIndex={0}
                             onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('cloud', { folderId: f.id } as any); } }}
-                            className="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
                           >
                             <div className="min-w-0 flex items-center gap-2.5">
                               <FolderPlus className="w-4 h-4 text-amber-500 flex-shrink-0" />
@@ -3298,9 +3471,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     href={u.signedUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition"
+                                    className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-indigo-600 transition-colors duration-100"
                                   >
                                     <ExternalLink className="w-3.5 h-3.5" /> Ver
+                                    <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
                                   </a>
                                 )}
                               </div>
@@ -3348,7 +3522,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 </div>
               ) : (() => {
                 const room = clientChatRooms[0];
-                const isWaiting = !room.accepted_by && !!room.last_message_at;
+                const isWaiting = !room.accepted_by && !!room.last_message_at && room.last_is_system !== true;
                 const isOpen = !!room.accepted_by;
                 const statusLabel = isWaiting ? 'Aguardando atendimento' : isOpen ? 'Em atendimento' : 'Sem conversas';
                 const statusCls = isWaiting
@@ -3359,41 +3533,36 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 const stripCls = isWaiting ? 'bg-amber-400' : isOpen ? 'bg-emerald-400' : 'bg-slate-300';
 
                 return (
-                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-orange-200 hover:shadow-md transition-all duration-200">
-                    <div className={`h-[3px] w-full ${stripCls}`} />
-                    <div className="p-4 space-y-3">
+                  <div className="rounded-xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                    <div className="px-4 pt-3.5 pb-3">
+                      {/* Row 1 — nome + status */}
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <MessageCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                          <p className="text-sm font-semibold text-slate-900 truncate">
+                          <p className="text-[13px] font-bold text-slate-900 truncate">
                             {room.name || 'Atendimento portal'}
                           </p>
                         </div>
-                        <span className={`flex-shrink-0 px-2.5 py-1 text-[10px] font-bold rounded-full ${statusCls}`}>
+                        <span className={`flex-shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-md ${statusCls}`}>
                           {statusLabel}
                         </span>
                       </div>
 
+                      {/* Row 2 — última atividade */}
                       {room.last_message_at && (
-                        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                          <p className="text-[11px] text-slate-500 font-medium mb-0.5">Última atividade</p>
-                          <p className="text-[10px] text-slate-400 tabular-nums">
-                            {new Date(room.last_message_at).toLocaleString('pt-BR', {
-                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                            })}
-                          </p>
+                        <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
+                          <Clock className="w-3 h-3 flex-shrink-0 text-slate-300" />
+                          {new Date(room.last_message_at).toLocaleString('pt-BR', {
+                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                          })}
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <div className="text-[11px] text-slate-400">
-                          {room.last_message_at
-                            ? `Última atividade: ${new Date(room.last_message_at).toLocaleDateString('pt-BR')}`
-                            : 'Sem mensagens ainda'}
-                        </div>
+                      {/* Row 3 — ação */}
+                      <div className="mt-3 flex justify-end">
                         <button
                           onClick={() => navigateTo('chat', { roomId: room.id } as any)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition shadow-sm"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition"
                         >
                           <MessageCircle className="w-3.5 h-3.5" /> Abrir conversa
                         </button>
@@ -3473,7 +3642,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           const msgs = roomMessages[room.id];
                           const isLoadingMsgs = loadingRoomIds.has(room.id);
                           const isActive = idx === 0;
-                          const isWaiting = !room.accepted_by && !!room.last_message_at;
+                          const isWaiting = !room.accepted_by && !!room.last_message_at && room.last_is_system !== true;
                           const isAttended = !!room.accepted_by;
                           const statusLabel = isWaiting ? 'Aguardando' : isAttended ? 'Atendido' : 'Encerrado';
                           const statusCls = isActive && isWaiting
@@ -3483,9 +3652,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               : 'bg-slate-100 text-slate-500';
                           return (
                             <div key={room.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                              <button
+                              <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => toggleRoom(room.id)}
-                                className="w-full px-3 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-50 transition"
+                                onKeyDown={(e) => e.key === 'Enter' && toggleRoom(room.id)}
+                                className="w-full px-3 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-50 transition cursor-pointer"
                               >
                                 <div className="flex items-center gap-2 min-w-0">
                                   <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusCls}`}>
@@ -3510,7 +3682,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                                   </svg>
                                 </div>
-                              </button>
+                              </div>
                               {isExpanded && (
                                 <div className="border-t border-slate-100 px-3 py-2 max-h-64 overflow-y-auto space-y-1.5 bg-slate-50/50">
                                   {isLoadingMsgs ? (

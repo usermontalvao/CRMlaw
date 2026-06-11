@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Mail, Briefcase, Shield, Trash2, Edit2, Loader2, Eye, EyeOff, CheckCircle2, X, UserLock } from 'lucide-react';
+import { Users, Plus, Search, Shield, Trash2, Edit2, Loader2, Eye, EyeOff, CheckCircle2, X, UserLock, UserX, UserCheck, KeyRound } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { securityPinService, type PinMeta } from '../services/securityPin.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { Modal, ModalBody } from './ui';
 
@@ -40,6 +41,9 @@ export const UserManagementModule: React.FC = () => {
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [editRole, setEditRole] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [editingUserPinMeta, setEditingUserPinMeta] = useState<PinMeta | null>(null);
+  const [resettingPin, setResettingPin] = useState(false);
 
   // Form de criação
   const [formData, setFormData] = useState({
@@ -97,7 +101,7 @@ export const UserManagementModule: React.FC = () => {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('is_active', true)
+        .order('is_active', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -193,6 +197,29 @@ export const UserManagementModule: React.FC = () => {
   const handleEditUser = (profile: Profile) => {
     setEditingUser(profile);
     setEditRole(profile.role);
+    setEditingUserPinMeta(null);
+    if (profile.user_id) {
+      securityPinService.getPinMeta(profile.user_id)
+        .then(setEditingUserPinMeta)
+        .catch(() => {});
+    }
+  };
+
+  const handleAdminResetPin = async () => {
+    if (!editingUser?.user_id) return;
+    const name = editingUser.name;
+    if (!confirm(`Resetar PIN de ${name}?\n\nO PIN atual será removido. O usuário precisará criar um novo PIN na próxima ação sensível.`)) return;
+
+    setResettingPin(true);
+    try {
+      await securityPinService.adminResetSecurityPin(editingUser.user_id);
+      setSuccess(`PIN de "${name}" removido. O usuário precisará criar um novo PIN.`);
+      setEditingUserPinMeta({ has_pin: false, pin_required_setup: true });
+    } catch (err: any) {
+      setError(err.message || 'Erro ao resetar PIN.');
+    } finally {
+      setResettingPin(false);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -220,6 +247,34 @@ export const UserManagementModule: React.FC = () => {
     }
   };
 
+  const handleToggleStatus = async (profile: Profile) => {
+    const activate = !profile.is_active;
+    const action = activate ? 'reativar' : 'desativar';
+    if (!confirm(`Tem certeza que deseja ${action} o acesso de "${profile.name}"?`)) return;
+
+    if (!profile.user_id) {
+      setError('Usuário sem vínculo (user_id) no perfil.');
+      return;
+    }
+
+    setToggling(profile.user_id);
+    try {
+      const { error: fnError } = await supabase.functions.invoke('toggle-user-status', {
+        body: { user_id: profile.user_id, activate },
+      });
+
+      if (fnError) throw new Error(fnError.message);
+
+      setSuccess(`Acesso de "${profile.name}" ${activate ? 'reativado' : 'desativado'} com sucesso!`);
+      loadProfiles();
+    } catch (err: any) {
+      console.error('Erro ao alterar status:', err);
+      setError(err.message || 'Erro ao alterar status do usuário.');
+    } finally {
+      setToggling(null);
+    }
+  };
+
   const filteredProfiles = profiles.filter((profile) =>
     matchesNormalizedSearch(searchTerm, [profile.name, profile.email, profile.role])
   );
@@ -241,149 +296,209 @@ export const UserManagementModule: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <Users className="w-6 h-6 text-orange-500" />
-              Gestão de Usuários
-            </h1>
-            <p className="text-slate-600 mt-1">
-              Cadastre e gerencie colaboradores do escritório
-            </p>
-          </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Usuário
-          </button>
-        </div>
-
-        {/* Busca */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header bar */}
+      <div style={{ flexShrink: 0, padding: '16px 24px 12px', borderBottom: '1px solid rgba(15,23,42,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Search */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: '#9ca3af' }} />
           <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome, e-mail ou cargo..."
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+            style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px',
+              fontSize: '13px', background: '#f8f9fb', border: '1px solid rgba(15,23,42,0.10)', borderRadius: '8px',
+              color: '#191c1e', outline: 'none', boxSizing: 'border-box' }}
+            onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,138,0,0.10)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; e.currentTarget.style.background = '#f8f9fb'; e.currentTarget.style.boxShadow = 'none'; }}
           />
         </div>
+        {/* Novo usuário */}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px',
+            fontSize: '13px', fontWeight: 600, color: '#fff', background: '#ea6c00',
+            border: 'none', borderRadius: '8px', cursor: 'pointer', flexShrink: 0,
+            transition: 'background .15s ease' }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#d46000')}
+          onMouseLeave={e => (e.currentTarget.style.background = '#ea6c00')}
+        >
+          <Plus size={14} />
+          Novo usuário
+        </button>
       </div>
 
       {/* Alertas */}
-      {success && (
-        <div className="mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          <p className="text-emerald-700">{success}</p>
+      {(success || error) && (
+        <div style={{ flexShrink: 0, padding: '8px 24px 0' }}>
+          {success && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+              background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px',
+              fontSize: '13px', color: '#15803d' }}>
+              <CheckCircle2 size={14} />
+              {success}
+            </div>
+          )}
+          {error && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+              background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px',
+              fontSize: '13px', color: '#dc2626', marginTop: success ? '6px' : 0 }}>
+              <X size={14} />
+              {error}
+            </div>
+          )}
         </div>
       )}
 
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-100 rounded-lg flex items-center gap-3">
-          <X className="w-5 h-5 text-red-600" />
-          <p className="text-red-700">{error}</p>
-        </div>
-      )}
-
-      {/* Lista de Usuários */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* User list */}
+      <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto', padding: '12px 24px 16px' }}>
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
+            <Loader2 size={20} className="animate-spin" style={{ color: '#ea6c00' }} />
           </div>
         ) : filteredProfiles.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500">
-              {searchTerm ? 'Nenhum usuário encontrado.' : 'Nenhum usuário cadastrado.'}
-            </p>
+          <div style={{ textAlign: 'center', padding: '48px 24px', color: '#747878' }}>
+            <Users size={32} style={{ margin: '0 auto 10px', color: '#d1d5db' }} />
+            <p style={{ fontSize: '14px' }}>{searchTerm ? 'Nenhum usuário encontrado.' : 'Nenhum usuário cadastrado.'}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="text-left p-4 font-semibold text-slate-700">Usuário</th>
-                  <th className="text-left p-4 font-semibold text-slate-700">Cargo</th>
-                  <th className="text-left p-4 font-semibold text-slate-700">Criado em</th>
-                  <th className="text-left p-4 font-semibold text-slate-700">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProfiles.map((profile) => {
-                  const roleInfo = ROLES.find(r => r.value === profile.role);
-                  return (
-                    <tr key={profile.user_id ?? profile.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                            {profile.avatar_url ? (
-                              <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                            ) : (
-                              <span className="text-slate-600 font-semibold">
-                                {profile.name.charAt(0).toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-slate-900">{profile.name}</p>
-                            <p className="text-sm text-slate-500">{profile.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span>{roleInfo?.icon}</span>
-                          <div>
-                            <p className="font-medium text-slate-900">{profile.role}</p>
-                            <p className="text-xs text-slate-500">{roleInfo?.description}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4 text-slate-600">
-                        {new Date(profile.created_at).toLocaleDateString('pt-BR')}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleEditUser(profile)}
-                            disabled={profile.user_id === user?.id}
-                            className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={profile.user_id === user?.id ? 'Você não pode editar seu próprio cargo' : 'Editar cargo'}
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (!profile.user_id) {
-                                setError('Usuário sem vínculo (user_id) no perfil.');
-                                return;
-                              }
-                              handleDeleteUser(profile.user_id, profile.name);
-                            }}
-                            disabled={deleting === profile.user_id || profile.user_id === user?.id}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={profile.user_id === user?.id ? 'Você não pode excluir seu próprio usuário' : 'Excluir usuário'}
-                          >
-                            {deleting === profile.user_id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {filteredProfiles.map((profile) => {
+              const roleInfo = ROLES.find(r => r.value === profile.role);
+              const isActive = profile.is_active !== false;
+              const isSelf = profile.user_id === user?.id;
+              const initial = profile.name.charAt(0).toUpperCase();
+
+              // Role badge colors
+              const roleColors: Record<string, { bg: string; text: string }> = {
+                'Administrador': { bg: '#fef3c7', text: '#92400e' },
+                'Advogado': { bg: '#eff6ff', text: '#1d4ed8' },
+                'Auxiliar': { bg: '#f0fdf4', text: '#15803d' },
+                'Secretária': { bg: '#faf5ff', text: '#7e22ce' },
+                'Financeiro': { bg: '#fff7ed', text: '#c2410c' },
+                'Estagiário': { bg: '#f8fafc', text: '#475569' },
+              };
+              const rc = roleColors[profile.role] || { bg: '#f8fafc', text: '#475569' };
+
+              return (
+                <div
+                  key={profile.user_id ?? profile.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '10px 14px', borderRadius: '9px',
+                    border: '1px solid rgba(15,23,42,0.06)', background: '#fff',
+                    opacity: isActive ? 1 : 0.55,
+                    transition: 'background .12s ease, border-color .12s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.06)'; }}
+                >
+                  {/* Avatar */}
+                  <div style={{ width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+                    background: 'linear-gradient(135deg, #ff8a00, #ea6c00)', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {profile.avatar_url ? (
+                      <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{initial}</span>
+                    )}
+                  </div>
+
+                  {/* Name + email */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <p style={{ fontSize: '13.5px', fontWeight: 600, color: '#191c1e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {profile.name}
+                      </p>
+                      {isSelf && (
+                        <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '999px', background: 'rgba(255,138,0,0.10)', color: '#c45c00', flexShrink: 0 }}>
+                          você
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#747878', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {profile.email}
+                    </p>
+                  </div>
+
+                  {/* Role badge */}
+                  <span style={{ fontSize: '11.5px', fontWeight: 600, padding: '3px 9px', borderRadius: '999px',
+                    background: rc.bg, color: rc.text, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    {profile.role}
+                  </span>
+
+                  {/* Status badge */}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', fontWeight: 600,
+                    padding: '3px 9px', borderRadius: '999px', flexShrink: 0,
+                    background: isActive ? '#f0fdf4' : '#f8fafc',
+                    color: isActive ? '#15803d' : '#94a3b8',
+                    border: `1px solid ${isActive ? '#bbf7d0' : '#e2e8f0'}` }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isActive ? '#16a34a' : '#94a3b8' }} />
+                    {isActive ? 'Ativo' : 'Inativo'}
+                  </span>
+
+                  {/* Date */}
+                  <span style={{ fontSize: '12px', color: '#9ca3af', flexShrink: 0, minWidth: '80px', textAlign: 'right' }}>
+                    {new Date(profile.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                    {/* Edit role button */}
+                    <button
+                      onClick={() => handleEditUser(profile)}
+                      disabled={isSelf || !isActive}
+                      title={isSelf ? 'Você não pode editar seu próprio cargo' : !isActive ? 'Reative o usuário para editar' : 'Editar cargo'}
+                      style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid rgba(15,23,42,0.09)',
+                        background: 'transparent', color: '#747878', cursor: 'pointer', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', transition: 'background .12s ease, color .12s ease',
+                        opacity: (isSelf || !isActive) ? 0.4 : 1 }}
+                      onMouseEnter={e => { if (!isSelf && isActive) { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.color = '#191c1e'; } }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#747878'; }}
+                    >
+                      <Edit2 size={12} />
+                    </button>
+
+                    {/* Toggle status */}
+                    {!isSelf && (
+                      <button
+                        onClick={() => handleToggleStatus(profile)}
+                        disabled={toggling === profile.user_id}
+                        title={isActive ? 'Desativar acesso' : 'Reativar acesso'}
+                        style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid rgba(15,23,42,0.09)',
+                          background: 'transparent', color: '#747878', cursor: 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', transition: 'background .12s ease' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = isActive ? '#fef2f2' : '#f0fdf4'; e.currentTarget.style.color = isActive ? '#dc2626' : '#16a34a'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#747878'; }}
+                      >
+                        {toggling === profile.user_id ? <Loader2 size={12} className="animate-spin" /> : isActive ? <UserX size={12} /> : <UserCheck size={12} />}
+                      </button>
+                    )}
+
+                    {/* Delete */}
+                    {canManageUsers && !isSelf && (
+                      <button
+                        onClick={() => {
+                          if (!profile.user_id) {
+                            setError('Usuário sem vínculo (user_id) no perfil.');
+                            return;
+                          }
+                          handleDeleteUser(profile.user_id, profile.name);
+                        }}
+                        disabled={!!deleting}
+                        title="Remover usuário"
+                        style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid rgba(15,23,42,0.09)',
+                          background: 'transparent', color: '#747878', cursor: 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', transition: 'background .12s ease' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#747878'; }}
+                      >
+                        {deleting === (profile.user_id ?? profile.id) ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -512,65 +627,92 @@ export const UserManagementModule: React.FC = () => {
         </ModalBody>
       </Modal>
 
-      {/* Modal de Edição de Cargo */}
-      <Modal
-        open={!!editingUser}
-        onClose={() => setEditingUser(null)}
-        title="Editar Cargo"
-        size="sm"
-        footer={
-          <div className="flex gap-3 w-full">
-            <button
-              type="button"
-              onClick={() => setEditingUser(null)}
-              disabled={saving}
-              className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSaveEdit}
-              disabled={saving || editRole === editingUser?.role}
-              className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar'
-              )}
-            </button>
-          </div>
-        }
-      >
-        <ModalBody>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Usuário</label>
-              <p className="text-slate-900 font-medium">{editingUser?.name}</p>
-              <p className="text-sm text-slate-500">{editingUser?.email}</p>
+      {/* Edit role modal inline */}
+      {editingUser && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setEditingUser(null)}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '360px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(15,23,42,0.10)' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#191c1e', marginBottom: '4px' }}>Editar cargo</h3>
+            <p style={{ fontSize: '13px', color: '#747878', marginBottom: '16px' }}>{editingUser.name}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+              {ROLES.map(role => (
+                <button key={role.value} onClick={() => setEditRole(role.value)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
+                    borderRadius: '8px', border: `1px solid ${editRole === role.value ? 'rgba(255,138,0,0.4)' : 'rgba(15,23,42,0.10)'}`,
+                    background: editRole === role.value ? 'rgba(255,138,0,0.06)' : '#fff',
+                    cursor: 'pointer', textAlign: 'left', transition: 'all .12s ease', width: '100%' }}>
+                  <span style={{ fontSize: '16px' }}>{role.icon}</span>
+                  <div>
+                    <p style={{ fontSize: '13px', fontWeight: 600, color: editRole === role.value ? '#c45c00' : '#191c1e' }}>{role.label}</p>
+                    <p style={{ fontSize: '11.5px', color: '#747878' }}>{role.description}</p>
+                  </div>
+                  {editRole === role.value && <span style={{ marginLeft: 'auto', color: '#ff8a00' }}>✓</span>}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditingUser(null)}
+                style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 500, color: '#444748',
+                  background: 'transparent', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '8px', cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving || editRole === editingUser.role}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                  fontSize: '13px', fontWeight: 600, color: '#fff', background: '#ea6c00',
+                  border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: (saving || editRole === editingUser.role) ? 0.6 : 1 }}>
+                {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+                Salvar
+              </button>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Novo Cargo</label>
-              <select
-                value={editRole}
-                onChange={(e) => setEditRole(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                disabled={saving}
-              >
-                {ROLES.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.icon} {role.label} - {role.description}
-                  </option>
-                ))}
-              </select>
+            {/* ── PIN de Segurança (admin) ───────────────────────────────── */}
+            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(15,23,42,0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: '#191c1e' }}>PIN de Segurança</p>
+                {editingUserPinMeta !== null && (
+                  <span style={{
+                    fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '999px',
+                    background: editingUserPinMeta.has_pin ? '#f0fdf4' : '#fffbeb',
+                    color: editingUserPinMeta.has_pin ? '#15803d' : '#92400e',
+                    border: `1px solid ${editingUserPinMeta.has_pin ? '#bbf7d0' : '#fde68a'}`,
+                  }}>
+                    {editingUserPinMeta.has_pin ? 'Configurado' : editingUserPinMeta.pin_required_setup ? 'Aguarda configuração' : 'Não configurado'}
+                  </span>
+                )}
+              </div>
+              {editingUserPinMeta?.locked_until && new Date(editingUserPinMeta.locked_until) > new Date() && (
+                <p style={{ fontSize: '12px', color: '#dc2626', marginBottom: '8px' }}>
+                  ⚠ Bloqueado até {new Date(editingUserPinMeta.locked_until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+              {editingUserPinMeta?.pin_set_at && editingUserPinMeta.has_pin && (
+                <p style={{ fontSize: '12px', color: '#747878', marginBottom: '10px' }}>
+                  Configurado em {new Date(editingUserPinMeta.pin_set_at).toLocaleDateString('pt-BR')}
+                </p>
+              )}
+              <button
+                onClick={handleAdminResetPin}
+                disabled={resettingPin || !editingUserPinMeta?.has_pin}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px',
+                  fontSize: '12.5px', fontWeight: 600, color: '#dc2626',
+                  background: 'transparent', border: '1px solid #fecaca', borderRadius: '8px',
+                  cursor: (!editingUserPinMeta?.has_pin || resettingPin) ? 'not-allowed' : 'pointer',
+                  opacity: (!editingUserPinMeta?.has_pin || resettingPin) ? 0.5 : 1 }}>
+                {resettingPin ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                Resetar PIN
+              </button>
+              {!editingUserPinMeta?.has_pin && (
+                <p style={{ fontSize: '11.5px', color: '#9ca3af', marginTop: '6px' }}>
+                  {editingUserPinMeta === null ? 'Carregando...' : 'Usuário não possui PIN configurado.'}
+                </p>
+              )}
             </div>
           </div>
-        </ModalBody>
-      </Modal>
+        </div>
+      )}
     </div>
   );
 };

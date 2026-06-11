@@ -879,7 +879,7 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.10.218',
+    version: '1.10.219',
     date: '11/06/2026',
     summary: 'Segurança com PIN, modo sidebar configurável, criptografia INSS, novas edge functions e expansão das configurações do sistema.',
     modules: [

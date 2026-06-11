@@ -567,6 +567,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   const [newLabelName, setNewLabelName] = useState('');
   const [newLabelColor, setNewLabelColor] = useState('#f97316');
   const realtimeRefreshTimerRef = useRef<number | null>(null);
+  const loadDataRef = useRef<typeof loadData | null>(null);
   const [selectedImageFileIds, setSelectedImageFileIds] = useState<string[]>([]);
   const [imagePdfModalOpen, setImagePdfModalOpen] = useState(false);
   const [imagePdfName, setImagePdfName] = useState('imagens-convertidas');
@@ -821,8 +822,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       return [{ id: CLOUD_TRASH_FOLDER_ID, name: 'Lixeira' } as CloudFolder];
     }
     const items: CloudFolder[] = [];
+    const visited = new Set<string>();
     let cursor = currentFolder;
     while (cursor) {
+      if (visited.has(cursor.id)) break;
+      visited.add(cursor.id);
       items.unshift(cursor);
       cursor = cursor.parent_id ? allFolders.find((item) => item.id === cursor?.parent_id) ?? null : null;
     }
@@ -1108,6 +1112,23 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     return cache;
   }, [allFiles, allFolders, folderChildrenMap]);
 
+  const folderDirectFileCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const file of allFiles) {
+      map.set(file.folder_id, (map.get(file.folder_id) ?? 0) + 1);
+    }
+    return map;
+  }, [allFiles]);
+
+  const folderDirectDocumentCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const file of allFiles) {
+      if (!isPdfFile(file.mime_type, file.original_name) && !isWordFile(file.mime_type, file.original_name)) continue;
+      map.set(file.folder_id, (map.get(file.folder_id) ?? 0) + 1);
+    }
+    return map;
+  }, [allFiles]);
+
   const quickAccessFolders = useMemo(() => {
     return [...allFolders]
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -1299,12 +1320,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
         setLoading(true);
       }
       const viewingArchivedFolder = currentFolderArchived;
-      const archivedAllFiles = await cloudService.listAllFiles(true);
       const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData, trashedFoldersData, trashedFilesData] = await Promise.all([
         isTrashView || isArchivedView ? Promise.resolve([]) : cloudService.listFolders(currentFolderId, viewingArchivedFolder),
         isTrashView || isArchivedView ? Promise.resolve([]) : currentFolderId ? cloudService.listFiles(currentFolderId, viewingArchivedFolder) : Promise.resolve([]),
         cloudService.listAllFolders(true),
-        Promise.resolve(archivedAllFiles),
+        cloudService.listAllFiles(true),
         clientService.listClients(),
         cloudService.listArchivedFiles(),
         cloudService.listTrashedFolders(),
@@ -1329,7 +1349,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       } else if (isArchivedView) {
         const archivedFoldersData = allFoldersData.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
         const archivedFolderIds = new Set(archivedFoldersData.map((item) => item.id));
-        const archivedVisibleFiles = archivedAllFiles.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        const archivedVisibleFiles = allFilesData.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
         setFolders(archivedFoldersData.filter((item) => !item.parent_id || !archivedFolderIds.has(item.parent_id)));
         setFiles(archivedVisibleFiles.filter((item) => !archivedFolderIds.has(item.folder_id)));
       } else {
@@ -1344,6 +1364,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       }
     }
   }, [currentFolderArchived, currentFolderId, isArchivedView, isTrashView, toast]);
+
+  loadDataRef.current = loadData;
 
   useEffect(() => {
     void loadData({ showLoading: true });
@@ -1416,7 +1438,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       }
 
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
-        void loadData({ showLoading: false });
+        void loadDataRef.current?.({ showLoading: false });
       }, 200);
     };
 
@@ -1457,7 +1479,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       unsubscribeCloudChanged();
       supabase.removeChannel(channel);
     };
-  }, [loadData]);
+  }, []);
 
   useEffect(() => {
     if (!previewFile) {
@@ -1581,7 +1603,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       }
       return false;
     }));
-  }, [files]);
+  }, [files, folders, allFolders]);
 
   useEffect(() => {
     setSelectedImageFileIds([]);
@@ -1870,9 +1892,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       const parentFolder = allFolders.find((folder) => folder.id === item.folder_id) ?? null;
       const folderPath = parentFolder ? [parentFolder.name] : [];
       let cursor = parentFolder;
+      const visited = new Set<string>(cursor ? [cursor.id] : []);
       while (cursor?.parent_id) {
-        cursor = allFolders.find((folder) => folder.id === cursor?.parent_id) ?? null;
-        if (cursor) folderPath.unshift(cursor.name);
+        const next = allFolders.find((folder) => folder.id === cursor?.parent_id) ?? null;
+        if (!next || visited.has(next.id)) break;
+        visited.add(next.id);
+        cursor = next;
+        folderPath.unshift(cursor.name);
       }
 
       const matchesTerm = !term || [item.original_name, parentFolder?.name || '', folderPath.join(' / ')]
@@ -3788,11 +3814,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     }
   };
 
-  const isFolderDescendant = useCallback((parentId: string, childId: string): boolean => {
+  const isFolderDescendant = useCallback((parentId: string, childId: string, visited = new Set<string>()): boolean => {
+    if (visited.has(parentId)) return false;
+    visited.add(parentId);
     const children = folderChildrenMap.get(parentId) ?? [];
     for (const child of children) {
       if (child.id === childId) return true;
-      if (isFolderDescendant(child.id, childId)) return true;
+      if (isFolderDescendant(child.id, childId, visited)) return true;
     }
     return false;
   }, [folderChildrenMap]);
@@ -4681,28 +4709,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   return (
-    <div className="w-full overflow-visible rounded-[28px] border border-slate-200 bg-white shadow-sm flex flex-col sm:rounded-[30px]">
+    <div className="relative flex w-full flex-col overflow-visible rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#fffaf5_0%,#ffffff_32%,#f6f4ef_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
 
       {/* Filtros avançados - colapsados por padrão em mobile */}
       {showAdvancedFilters ? (
-        <div className="border-b border-slate-200 bg-slate-50 px-3 py-3 lg:px-4 lg:py-4">
+        <div className="border-b border-[#ece8df] bg-[#fbfaf7] px-3 py-3 lg:px-4 lg:py-4">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-            <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+            <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100">
               <option value="">Todos os clientes</option>
               {clients.map((client) => <option key={client.id} value={client.id}>{client.full_name}</option>)}
             </select>
-            <select value={searchFilters.labelId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, labelId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+            <select value={searchFilters.labelId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, labelId: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100">
               <option value="">Todas as etiquetas</option>
               {folderLabels.map((label) => <option key={label.id} value={label.id}>{label.name}</option>)}
             </select>
-            <select value={searchFilters.extension} onChange={(e) => setSearchFilters((prev) => ({ ...prev, extension: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+            <select value={searchFilters.extension} onChange={(e) => setSearchFilters((prev) => ({ ...prev, extension: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100">
               <option value="">Todas as extensões</option>
               {availableExtensions.map((extension) => <option key={extension} value={extension}>{extension.toUpperCase()}</option>)}
             </select>
             <div className="grid grid-cols-2 gap-3">
-              <input type="date" value={searchFilters.dateFrom} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-              <input type="date" value={searchFilters.dateTo} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+              <input type="date" value={searchFilters.dateFrom} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100" />
+              <input type="date" value={searchFilters.dateTo} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100" />
             </div>
             <input type="number" min="0" value={searchFilters.sizeMinKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMinKb: e.target.value }))} placeholder="Tamanho mín. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
             <input type="number" min="0" value={searchFilters.sizeMaxKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMaxKb: e.target.value }))} placeholder="Tamanho máx. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
@@ -4723,17 +4751,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       ) : null}
 
       {/* Barra de breadcrumb/busca - apenas desktop */}
-      <div className="hidden lg:flex border-b border-slate-200/80 bg-white px-4 py-2.5 flex-col gap-2 xl:flex-row xl:items-center xl:gap-3">
+      <div className="hidden flex-col gap-2 border-b border-[#ece8df] bg-white/90 px-4 py-3 backdrop-blur lg:flex xl:flex-row xl:items-center xl:gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors flex-shrink-0">
+          <button onClick={() => setCurrentFolderId(null)} className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-[#f3f1ec] hover:text-slate-700">
             <Home className="w-3.5 h-3.5" />
           </button>
           {breadcrumb.map((item, idx) => (
             <React.Fragment key={item.id}>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-[#c7c2b7]" />
               <button
                 onClick={() => setCurrentFolderId(item.id)}
-                className={`min-w-0 max-w-[200px] rounded-lg px-2.5 py-1 truncate text-sm transition-colors sm:max-w-[280px] ${idx === breadcrumb.length - 1 ? 'text-slate-900 font-semibold hover:bg-slate-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                className={`min-w-0 max-w-[200px] truncate rounded-full px-3 py-1.5 text-sm transition-colors sm:max-w-[280px] ${idx === breadcrumb.length - 1 ? 'bg-[#f4f4f1] font-semibold text-slate-900 hover:bg-[#efede7]' : 'text-slate-500 hover:bg-[#f4f4f1] hover:text-slate-700'}`}
               >
                 {item.name}
               </button>
@@ -4741,24 +4769,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           ))}
           {(isArchivedView || isTrashView) && (
             <>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
-              <span className="px-2.5 py-1 text-sm font-semibold text-slate-900">{isArchivedView ? 'Arquivado' : 'Lixeira'}</span>
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-[#c7c2b7]" />
+              <span className="rounded-full bg-[#f4f4f1] px-3 py-1.5 text-sm font-semibold text-slate-900">{isArchivedView ? 'Arquivado' : 'Lixeira'}</span>
             </>
           )}
         </div>
-        <div className="w-full xl:w-[420px] xl:shrink-0 xl:px-1">
-          <div className="relative flex w-full min-w-0 items-center gap-1.5">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="w-full xl:w-[560px] xl:shrink-0 xl:px-1">
+          <div className="relative flex w-full min-w-0 items-center gap-2">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
-              className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-4 py-2.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="min-w-0 flex-1 rounded-[10px] border border-[#ebe6dc] bg-[#f4f4f1] py-2.5 pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-100"
             />
             <div className="hidden max-w-[170px] shrink-0 items-center gap-1 md:flex">
-              <span className="max-w-[88px] truncate whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
+              <span className="max-w-[88px] truncate whitespace-nowrap rounded-[9px] border border-[#ebe6dc] bg-white px-2.5 py-1.5 text-[10px] font-medium text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
               {headerClientPhone ? (
-                <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
+                <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-[9px] border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
                   <Phone className="h-3 w-3 shrink-0" />
                   <span className="truncate">{headerClientPhone}</span>
                   {headerClientWhatsappLink ? (
@@ -4774,9 +4802,66 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </span>
               ) : null}
             </div>
+            <div className="hidden items-center gap-1 rounded-[10px] border border-[#ebe6dc] bg-white p-0.5 xl:inline-flex">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[12.5px] font-medium transition ${viewMode === 'list' ? 'bg-[#18181a] text-white' : 'text-slate-500 hover:bg-[#f4f4f1] hover:text-slate-800'}`}
+              >
+                <List className="h-3.5 w-3.5" />
+                Lista
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[12.5px] font-medium transition ${viewMode === 'cards' ? 'bg-orange-500 text-white' : 'text-slate-500 hover:bg-[#f4f4f1] hover:text-slate-800'}`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Cards
+              </button>
+              {viewMode === 'cards' ? (
+                <>
+                  <div className="mx-0.5 h-4 w-px bg-[#ece8df]" />
+                  {(['small', 'medium', 'large'] as const).map((size, index) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setCardSize(size)}
+                      className={`h-7 w-7 rounded-[8px] text-[11px] font-bold transition ${cardSize === size ? 'bg-[#fef2e8] text-orange-600' : 'text-slate-400 hover:bg-[#f4f4f1] hover:text-slate-600'}`}
+                    >
+                      {['P', 'M', 'G'][index]}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12.5px] font-medium transition ${showAdvancedFilters ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-[#ebe6dc] bg-white text-slate-600 hover:bg-[#f4f4f1]'}`}
+          >
+            <Filter className="h-3.5 w-3.5" />
+            Filtros
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenCreateFolder}
+            className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#ebe6dc] bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-[#f4f4f1]"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            Nova pasta
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-[8px] bg-orange-500 px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-orange-600"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Enviar
+          </button>
           {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
           {uploadQueueSummary.totalItems > 0 ? (
             <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-orange-700 font-medium">
@@ -4817,11 +4902,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,280px)] flex-col border-r border-slate-100 bg-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[256px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
-          <div className="flex items-center justify-between border-b border-orange-100/80 px-4 py-3 lg:hidden">
+        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,280px)] flex-col border-r border-[#ece8df] bg-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[226px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
+          <div className="flex items-center justify-between border-b border-[#f0e5d7] px-4 py-3 lg:hidden">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 shadow-lg shadow-orange-200/70">
-                <Cloud className="w-5 h-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fef2e8] shadow-[inset_0_0_0_1px_rgba(242,122,35,0.06)]">
+                <Cloud className="w-5 h-5 text-orange-500" />
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-900">Cloud</p>
@@ -4831,14 +4916,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#ece8df] bg-white text-slate-600 shadow-sm"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="flex flex-col flex-1 overflow-y-auto pb-24 lg:pb-4">
             {/* ── Header do Sidebar ── */}
-            <div className="hidden lg:block px-4 py-4 border-b border-slate-100">
+            <div className="hidden border-b border-[#ece8df] px-4 py-4 lg:block">
               {(() => {
                 const totalBytes = allFiles.reduce((s, f) => s + (f.file_size ?? 0), 0);
                 const quotaBytes = 5 * 1024 * 1024 * 1024;
@@ -4847,8 +4932,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 return (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-md shadow-orange-200/60 flex-shrink-0">
-                        <Cloud className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[11px] bg-[#fef2e8]">
+                        <Cloud className="h-[18px] w-[18px] text-orange-500" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] font-bold text-slate-900 leading-tight">Cloud</p>
@@ -4857,12 +4942,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400 font-medium">Armazenamento</span>
-                        <span className="text-[10px] text-slate-400 tabular-nums">{usedLabel} / 5 GB</span>
+                        <span className="text-[11px] text-[#8b8b80]">Armazenamento</span>
+                        <span className="text-[11px] font-medium text-[#8b8b80] tabular-nums">{usedLabel} / 5 GB</span>
                       </div>
-                      <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-[3px] w-full overflow-hidden rounded-full bg-[#f4f4f1]">
                         <motion.div
-                          className={`h-full rounded-full ${pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-orange-500 to-amber-400'}`}
+                          className={`h-full rounded-full ${pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-orange-500'}`}
                           initial={{ width: 0 }}
                           animate={{ width: `${pct}%` }}
                           transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
@@ -4875,37 +4960,37 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             </div>
 
             {/* ── Navegação principal ── */}
-            <div className="px-2 py-2 space-y-0.5">
+            <div className="space-y-3 px-3 py-3">
               {/* Caixa de Entrada */}
               <div
-                className={`rounded-xl transition-all duration-150 ${
+                className={`rounded-[10px] transition-all duration-150 ${
                   dropTargetFolderId === '__root__' ? 'ring-2 ring-orange-400 ring-offset-1' : ''
                 }`}
                 onDragOver={(e) => { e.preventDefault(); if (draggingItemKey) setDropTargetFolderId('__root__'); }}
                 onDragLeave={() => setDropTargetFolderId(null)}
                 onDrop={(e) => { e.preventDefault(); void handleDropOnFolder(null); }}
               >
-                <div className={`flex items-center rounded-xl transition-all duration-150 ${
+                <div className={`flex items-center rounded-[10px] transition-all duration-150 ${
                   currentFolderId === null
-                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-300/40'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-orange-500 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-[#f4f4f1]'
                 }`}>
                   <button
                     type="button"
                     onClick={() => { setCurrentFolderId(null); setSelectedItemKey('root'); }}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-semibold"
                   >
-                    <HardDrive className="w-4 h-4 shrink-0" />
-                    <span className="min-w-0 truncate flex-1 text-sm font-medium">Caixa de entrada</span>
+                    <HardDrive className="h-[15px] w-[15px] shrink-0" />
+                    <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
                     {currentFolderId === null && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-white/70" />
                     )}
                   </button>
                   <button
                     type="button"
                     onClick={() => setClientsSectionExpanded((prev) => !prev)}
-                    className={`h-9 w-9 shrink-0 flex items-center justify-center rounded-xl transition-colors ${
-                      currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-slate-200'
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition-colors ${
+                      currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-[#efede7]'
                     }`}
                   >
                     <motion.div animate={{ rotate: clientsSectionExpanded ? 90 : 0 }} transition={{ duration: 0.18 }}>
@@ -5072,7 +5157,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           </div>
         </aside>
 
-        <section ref={cloudCenterDropRef} className="flex-1 min-w-0 flex flex-col bg-white overflow-visible pt-0 lg:pt-0 rounded-b-[28px]">
+        <section ref={cloudCenterDropRef} className="flex-1 min-w-0 flex flex-col overflow-x-hidden rounded-b-[28px] bg-[#f4f4f1] pt-0 lg:pt-0">
           <div
             onDragOver={(e) => {
               if (!hasFileDragPayload(e.dataTransfer)) return;
@@ -5098,7 +5183,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2.5 border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 select-none">
+              <div className="hidden gap-3 border-b border-[#e7e2d8] bg-white/90 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b8b80] select-none lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px]">
                 {/* Select all checkbox */}
                 <button
                   type="button"
@@ -5179,7 +5264,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut', repeatDelay: 0.3 }}
                   />
                   {/* Header row */}
-                  <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-3 border-b border-slate-100">
+                  <div className="hidden lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] gap-3 px-4 py-3 border-b border-slate-100">
                     <div className="h-2.5 w-3 rounded bg-slate-100/90" />
                     <div className="h-2.5 w-20 rounded-full bg-slate-100/90" />
                     <div className="h-2.5 w-16 rounded-full bg-slate-100/90" />
@@ -5262,7 +5347,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         ...(totalOther > 0 ? [{ key: 'other' as const, label: 'Outros', count: totalOther, color: 'text-slate-500 hover:bg-slate-100', activeColor: 'bg-slate-600 text-white' }] : []),
                       ];
                       return (
-                        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100/80 bg-white overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-[#e7e2d8] bg-white/90 px-4 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {chips.map(chip => (
                               <button
@@ -5338,7 +5423,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 transition-colors ${
+                        className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] lg:items-center lg:gap-3 lg:py-2.5 transition-colors ${
                           isDropTarget
                             ? 'bg-orange-100/80 border-b-orange-300 shadow-[inset_3px_0_0_#f97316]'
                             : isSelected
@@ -5498,7 +5583,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       draggable
                       onDragStart={(event) => handleItemDragStart(event, itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.4fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 transition-colors ${
+                      className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer lg:grid lg:grid-cols-[36px_minmax(200px,2.4fr)_150px_150px_120px_200px] lg:items-center lg:gap-3 lg:py-2.5 transition-colors ${
                         isSelected
                           ? 'bg-orange-50/90 border-b-orange-100 shadow-[inset_3px_0_0_#f97316]'
                           : 'border-b-slate-100 hover:bg-slate-50/70'
@@ -5641,8 +5726,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
                       // folder accent colors
                       const folderAccent = folder.color || '#d97706';
-                      const folderBg = folder.color ? `${folder.color}18` : '#fef9ee';
-                      const folderBorder = folder.color ? `${folder.color}30` : 'rgba(251,191,36,0.25)';
+                      const folderBg = folder.color ? `${folder.color}18` : '#fef2e8';
+                      const folderBorder = folder.color ? `${folder.color}30` : 'rgba(242,122,35,0.16)';
+                      const directFileCount = folderDirectFileCountMap.get(folder.id) ?? 0;
+                      const directDocumentCount = folderDirectDocumentCountMap.get(folder.id) ?? 0;
 
                       return (
                         <div
@@ -5667,7 +5754,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`group rounded-[20px] overflow-hidden flex flex-col cursor-pointer transition-all duration-200 border ${isDropTarget ? 'border-orange-400 shadow-[0_0_0_3px_rgba(251,146,60,0.22)]' : isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.16),0_12px_32px_-8px_rgba(249,115,22,0.22)] -translate-y-0.5' : 'border-slate-200/80 shadow-[0_2px_12px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:shadow-[0_8px_28px_-4px_rgba(15,23,42,0.12)] hover:border-slate-300/80'}`}
+                          className={`group rounded-[18px] overflow-hidden flex flex-col cursor-pointer transition-all duration-200 border ${isDropTarget ? 'border-orange-400 shadow-[0_0_0_3px_rgba(251,146,60,0.18)]' : isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.14),0_10px_24px_-12px_rgba(15,23,42,0.18)] -translate-y-0.5' : 'border-[#e7e2d8] shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.18)] hover:border-[#ddd6ca]'}`}
                           style={{ height: 'fit-content', borderColor: isSelected ? undefined : folderBorder }}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -5697,25 +5784,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         >
                           {/* ── Banner colorido ── */}
                           <div
-                            className="relative flex items-end justify-between px-4 pt-4 pb-3"
+                            className="relative flex items-end justify-between px-4 pt-4 pb-2.5"
                             style={{ backgroundColor: isDropTarget ? '#fff7ed' : folderBg }}
                           >
                             {/* Seleção */}
                             <div
                               onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
-                              className={`absolute top-3 left-3 w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center transition-all duration-150 z-10 cursor-pointer shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.45)]' : 'bg-white/70 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                              className={`absolute top-3 left-3 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-white/80 transition-all duration-150 shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.35)]' : 'bg-white/70 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
                             >
                               {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                             </div>
 
                             {/* Ícone da pasta */}
-                            <div className="flex-1 flex items-center justify-center py-3">
+                            <div className="flex flex-1 items-center justify-center py-2.5">
                               <div className="relative">
                                 <div
-                                  className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-[0_4px_16px_rgba(0,0,0,0.10)]"
+                                  className="flex h-12 w-12 items-center justify-center rounded-[12px] shadow-[0_4px_14px_rgba(0,0,0,0.08)]"
                                   style={{ backgroundColor: folderAccent }}
                                 >
-                                  <Folder className="w-7 h-7 text-white drop-shadow-sm" />
+                                  <Folder className="h-6 w-6 text-white drop-shadow-sm" />
                                 </div>
                                 {isFavorite && (
                                   <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center">
@@ -5759,7 +5846,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           </div>
 
                           {/* ── Corpo ── */}
-                          <div className="bg-white px-4 pt-3 pb-4 flex-1 flex flex-col">
+                          <div className="flex flex-1 flex-col bg-white px-4 pt-3 pb-4">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                               <input
                                 value={inlineRenameValue}
@@ -5770,25 +5857,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   if (e.key === 'Escape') { e.preventDefault(); cancelInlineRename(); }
                                 }}
                                 onBlur={() => { void commitInlineRename(); }}
-                                className="w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 mb-2"
+                                className="mb-2 w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
                                 autoFocus
                               />
                             ) : (
-                              <h3 className="text-[13px] font-bold text-slate-900 leading-snug truncate mb-0.5 group-hover:text-amber-700 transition-colors">
+                              <h3 className="mb-0.5 truncate text-[13px] font-bold leading-snug text-slate-900 transition-colors group-hover:text-orange-600">
                                 {folder.name}
                               </h3>
                             )}
                             {client?.full_name ? (
-                              <p className="text-[11px] text-slate-400 truncate mb-3">{client.full_name}</p>
+                              <p className="mb-3 truncate text-[11px] text-[#8b8b80]">{client.full_name}</p>
                             ) : (
-                              <p className="text-[11px] text-slate-400 truncate mb-3">Pasta compartilhada</p>
+                              <p className="mb-3 truncate text-[11px] text-[#8b8b80]">Pasta compartilhada</p>
                             )}
                             {folderIssueReason ? (
-                              <p className="text-[10px] text-red-500 font-medium line-clamp-1 mb-2">{folderIssueReason}</p>
+                              <p className="mb-2 line-clamp-1 text-[10px] font-medium text-red-500">{folderIssueReason}</p>
                             ) : null}
                             {/* Rodapé */}
-                            <div className="mt-auto pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium min-w-0">
+                            <div className="mt-auto flex items-center justify-between gap-2 border-t border-[#efede7] pt-2.5">
+                              <div className="flex min-w-0 items-center gap-2 text-[10px] font-medium text-[#8b8b80]">
                                 {folder.has_pending_issue ? (
                                   <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-600 shrink-0">
                                     {folder.alert_level === 'alerta' ? 'Alerta' : 'Pendência'}
@@ -5798,16 +5885,22 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   <Calendar className="w-3 h-3 shrink-0" />
                                   {formatCompactDate(folder.updated_at)}
                                 </span>
-                                <span className="flex items-center gap-1 whitespace-nowrap text-slate-300">
+                                <span className="flex items-center gap-1 whitespace-nowrap text-[#b8b4ab]">
                                   <Clock className="w-3 h-3 shrink-0" />
                                   {formatCompactTime(folder.updated_at)}
                                 </span>
                               </div>
-                              {showClientLinkBadge && hasClientLink ? (
-                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 border border-emerald-200" title="Vinculada">
-                                  <CheckCircle2 className="h-3 h-3 text-emerald-500" />
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f1] px-2 py-1 text-[10px] font-medium text-[#8b8b80]">
+                                  <FileText className="h-3 w-3 text-[#b0b0a8]" />
+                                  {directFileCount} arqs · {directDocumentCount} docs
                                 </span>
-                              ) : null}
+                                {showClientLinkBadge && hasClientLink ? (
+                                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50" title="Vinculada">
+                                    <CheckCircle2 className="h-3 h-3 text-emerald-500" />
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -5817,6 +5910,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     const file = row.file;
                     const itemKey = `file:${file.id}`;
                     const isSelected = selectedItemKeys.includes(itemKey);
+                    const client = clients.find((item) => item.id === file.client_id);
+                    const parentFolder = allFolders.find((folder) => folder.id === file.folder_id) ?? null;
                     const previewUrl = cardPreviewUrls[file.id] || null;
                     const pdfThumbnailUrl = cardPdfThumbnailUrls[file.id] || null;
                     const canQuickRotate = isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name);
@@ -5860,7 +5955,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         draggable
                         onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
-                        className={`group rounded-[20px] overflow-hidden border bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.16),0_12px_32px_-8px_rgba(249,115,22,0.22)] -translate-y-0.5' : 'border-slate-200/80 shadow-[0_2px_12px_rgba(15,23,42,0.06)] hover:border-slate-300/80 hover:shadow-[0_8px_28px_-4px_rgba(15,23,42,0.12)] hover:-translate-y-0.5'}`}
+                        className={`group overflow-hidden rounded-[18px] border bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.14),0_10px_24px_-12px_rgba(15,23,42,0.18)] -translate-y-0.5' : 'border-[#e7e2d8] shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:border-[#ddd6ca] hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.18)] hover:-translate-y-0.5'}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
@@ -5909,7 +6004,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           </div>
 
                           {/* Type badge */}
-                          <div className={`absolute top-2.5 right-2.5 z-20 px-1.5 py-0.5 rounded-md text-[10px] font-bold tracking-wide backdrop-blur-sm shadow-sm ${fileBadgeStyle}`}>
+                          <div className={`absolute top-2.5 right-2.5 z-20 rounded-full px-2 py-1 text-[10px] font-bold tracking-wide backdrop-blur-sm shadow-sm ${fileBadgeStyle}`}>
                             {fileTypeLabel}
                           </div>
 
@@ -5964,7 +6059,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         </div>
 
                         {/* ── Footer ── */}
-                        <div className="px-3 py-2.5 bg-white border-t border-slate-100/80">
+                        <div className="border-t border-[#efede7] bg-white px-3 py-3">
                           {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
                             splitFileNameAndExtension(file.original_name).extension ? (
                               <div className="flex overflow-hidden rounded-lg border border-orange-300 bg-white shadow-sm">
@@ -6003,7 +6098,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                 />
                             )
                           ) : (
-                            <p className="truncate text-[13px] font-semibold text-slate-800 leading-tight">{file.original_name}</p>
+                            <div className="space-y-1">
+                              <p className="truncate text-[13px] font-semibold leading-tight text-slate-800">{file.original_name}</p>
+                              <div className="flex items-center justify-between gap-2 text-[10px] text-[#8b8b80]">
+                                <span className="truncate">{hasGlobalSearch ? `${parentFolder?.name || '—'} · ${client?.full_name || '—'}` : client?.full_name || 'Sem cliente'}</span>
+                                <span className="shrink-0 rounded-full bg-[#f4f4f1] px-2 py-1 font-medium">{formatFileSize(file.file_size)}</span>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -8150,7 +8251,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             {/* Right: preview hint */}
             <div className="hidden lg:flex flex-1 items-center justify-center bg-[#f8f9fb] p-10">
               <div className="text-center max-w-[200px]">
-                <div className="w-16 h-20 mx-auto bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center mb-4">
+                <div className="w-16 h-20 mx-auto bg-white rounded-xl border border-slate-200 shadow-sm shadow-md flex items-center justify-center mb-4">
                   <FileText className="w-7 h-7 text-slate-300" />
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">O resultado será gerado e baixado automaticamente.</p>
@@ -8459,7 +8560,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   </div>
                   {/* Live preview */}
                   <div className="rounded-xl bg-slate-100 h-36 flex items-center justify-center overflow-hidden relative border border-slate-200">
-                    <div className="absolute inset-3 border border-slate-200 rounded-lg bg-white shadow-sm" />
+                    <div className="absolute inset-3 border border-slate-200 rounded-lg bg-white" />
                     <span className="relative font-black pointer-events-none select-none text-slate-400"
                       style={{ opacity: pdfWatermarkOpacity * 3, transform: pdfWatermarkDiagonal ? 'rotate(-35deg)' : 'none', fontSize: 22, whiteSpace: 'nowrap', letterSpacing: '0.08em' }}>
                       {pdfWatermarkText || 'CONFIDENCIAL'}
