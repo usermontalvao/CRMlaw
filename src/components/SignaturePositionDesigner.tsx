@@ -447,8 +447,8 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex-1 flex flex-col bg-white dark:bg-zinc-900 max-h-screen overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-zinc-800 bg-slate-900 text-white flex-shrink-0">
+      <div className="flex-1 flex flex-col bg-[#f8f7f5] dark:bg-zinc-900 max-h-screen overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#e7e5df] dark:border-zinc-800 bg-slate-900 text-white flex-shrink-0">
           <div className="flex items-center gap-3">
             <button onClick={onClose} disabled={saving} className="p-2 hover:bg-slate-800 rounded-lg transition"><X className="w-5 h-5" /></button>
             <div><p className="text-sm font-medium">{template.name}</p><p className="text-xs text-slate-400">Clique no documento para adicionar campos</p></div>
@@ -485,7 +485,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
           </div>
         </div>
         <div className="flex-1 flex overflow-hidden">
-          <aside className="w-72 border-r border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 p-4 overflow-y-auto flex-shrink-0">
+          <aside className="w-72 border-r border-[#e7e5df] dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 p-4 overflow-y-auto flex-shrink-0">
             {/* Lista de documentos anexos */}
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
@@ -503,7 +503,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
                       className={`w-full text-left rounded-lg border px-3 py-2 transition ${
                         activeDocIndex === idx
                           ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
-                          : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-blue-300'
+                          : 'border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 hover:border-blue-300'
                       }`}
                     >
                       <div className="flex items-center gap-2">
@@ -535,7 +535,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4"><p className="text-xs text-amber-700 dark:text-amber-300">Nenhum campo.</p></div>
             ) : (
               <div className="space-y-2">{sortedFields.map((f, idx) => (
-                <div key={f._id} className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2">
+                <div key={f._id} className="rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0"><p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">Campo #{idx + 1} (Pag. {f.page})</p><p className="text-[11px] text-slate-500 dark:text-slate-400">{Math.round(f.x_percent)}% x {Math.round(f.y_percent)}%</p></div>
                     <button onClick={() => removeField(f._id)} className="p-1.5 rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remover" type="button"><Trash2 className="w-4 h-4" /></button>
@@ -550,7 +550,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
             <div ref={containerRef} className="py-6" style={{ transform: 'scale(' + scale + ')', transformOrigin: 'top center' }}>
               <div className="flex justify-center">
                 <div className="relative">
-                  <div ref={docxContainerCallback} className="bg-white shadow-2xl cursor-crosshair" onClick={addFieldAtClick} style={{ minWidth: '210mm', minHeight: '297mm' }} />
+                  <div ref={docxContainerCallback} className="bg-[#f8f7f5] shadow-2xl cursor-crosshair" onClick={addFieldAtClick} style={{ minWidth: '210mm', minHeight: '297mm' }} />
                   {!loading && (
                     <div className="absolute inset-0 pointer-events-none">
                       {renderSignatureFields()}

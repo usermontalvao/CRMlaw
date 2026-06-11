@@ -127,7 +127,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
         <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-amber-400 flex-shrink-0" />
 
         {/* Header branco */}
-        <div className="flex items-center gap-3 bg-white border-b border-slate-100 px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-3 bg-[#f8f7f5] border-b border-slate-100 px-4 py-3 flex-shrink-0">
           <div className="w-8 h-8 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0">
             <FileText className="h-4 w-4 text-orange-500" />
           </div>
@@ -141,7 +141,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
             {url && (
               <>
                 <a href={url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
                   title="Abrir em nova aba">
                   <ExternalLink className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Nova aba</span>
@@ -176,7 +176,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
         {/* Área do PDF */}
         <div className="flex-1 bg-[#f4f4f4] relative min-h-0">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white">
+            <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]">
               <div className="flex flex-col items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
@@ -187,7 +187,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
           )}
 
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white">
+            <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]">
               <div className="flex flex-col items-center gap-3 text-center px-8">
                 <div className="w-12 h-12 rounded-2xl bg-rose-100 flex items-center justify-center">
                   <AlertCircle className="h-6 w-6 text-rose-500" />
@@ -220,7 +220,7 @@ const ModalShell: React.FC<{ onClose: () => void; children: React.ReactNode }> =
   createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto px-3 py-8">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
+      <div className="relative w-full max-w-lg bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
         <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
         {children}
       </div>
@@ -312,7 +312,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
             <input autoFocus type="text" value={clientQuery} onChange={e => setClientQuery(e.target.value)}
               placeholder="Digite o nome do cliente..."
-              className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+              className="w-full rounded-xl border border-[#e7e5df] pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
             {clientLoading && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />}
           </div>
           {clientResults.length > 0 && (
@@ -348,17 +348,17 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Título *</label>
               <input autoFocus type="text" value={title} onChange={e => setTitle(e.target.value)}
                 placeholder="Ex: Documentos para audiência trabalhista"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Instruções (opcional)</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Instruções gerais para o cliente..." rows={2}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Prazo (opcional)</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
             </div>
             <div>
               <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Documentos *</label>
@@ -368,7 +368,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
                     <input type="text" value={item.label}
                       onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, label: e.target.value } : it))}
                       placeholder="Nome do documento"
-                      className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                      className="flex-1 rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
                     <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer whitespace-nowrap">
                       <input type="checkbox" checked={item.required}
                         onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, required: e.target.checked } : it))}
@@ -384,7 +384,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
               <div className="mb-2.5 flex flex-wrap gap-1.5">
                 {QUICK_ITEMS.filter(q => !items.some(i => i.label === q)).slice(0, 6).map(q => (
                   <button key={q} onClick={() => addItem(q)}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition">
+                    className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition">
                     <Plus className="h-3 w-3" /> {q}
                   </button>
                 ))}
@@ -397,7 +397,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
           </div>
           <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
             <button onClick={onClose} disabled={saving}
-              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               Cancelar
             </button>
             <button onClick={handleSave} disabled={saving}
@@ -468,17 +468,17 @@ const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Título *</label>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Instruções</label>
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
-            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Prazo</label>
           <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
         </div>
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Lista de documentos *</label>
@@ -488,7 +488,7 @@ const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved
                 <input type="text" value={item.label}
                   onChange={e => { const label = e.target.value; setItems(prev => prev.map(it => it.id === item.id ? { ...it, label } : it)); }}
                   placeholder="Nome do documento"
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                  className="flex-1 rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
                 <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer whitespace-nowrap">
                   <input type="checkbox" checked={item.required}
                     onChange={e => { const required = e.target.checked; setItems(prev => prev.map(it => it.id === item.id ? { ...it, required } : it)); }}
@@ -505,7 +505,7 @@ const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved
           <div className="mb-2.5 flex flex-wrap gap-1.5">
             {QUICK_ITEMS.filter(q => !visibleItems.some(i => i.label === q)).slice(0, 6).map(q => (
               <button key={q} onClick={() => addItem(q)}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition">
+                className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition">
                 <Plus className="h-3 w-3" /> {q}
               </button>
             ))}
@@ -518,7 +518,7 @@ const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved
       </div>
       <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
         <button onClick={onClose} disabled={saving}
-          className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
           Cancelar
         </button>
         <button onClick={handleSave} disabled={saving}
@@ -575,7 +575,7 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, actionLoading, isReviewed, onCh
       hasFile && isReady ? 'border-blue-200 bg-blue-50/30' :
       hasFile && isProcessing ? 'border-amber-200 bg-amber-50/20' :
       hasFile && hasError ? 'border-rose-200 bg-rose-50/20' :
-      'border-slate-200 bg-slate-50/60'
+      'border-[#e7e5df] bg-slate-50/60'
     }`}>
       {/* Linha principal: label + check */}
       <button
@@ -629,7 +629,7 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, actionLoading, isReviewed, onCh
                   {renameLoading ? '...' : 'OK'}
                 </button>
                 <button onClick={() => setRenaming(false)}
-                  className="shrink-0 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50">
+                  className="shrink-0 rounded border border-[#e7e5df] px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50">
                   ✕
                 </button>
               </div>
@@ -761,7 +761,7 @@ const RequestCard: React.FC<CardProps> = ({
 
   return (
     <div className={`rounded-2xl border overflow-hidden transition-all ${
-      isReviewed ? 'border-slate-100 bg-slate-50/50' : 'border-slate-200 bg-white shadow-sm'
+      isReviewed ? 'border-slate-100 bg-slate-50/50' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-sm'
     }`}>
       {/* Cabeçalho */}
       <button onClick={onToggle}
@@ -844,7 +844,7 @@ const RequestCard: React.FC<CardProps> = ({
                     {deadlineLoading ? '...' : 'OK'}
                   </button>
                   <button onClick={onCancelDeadlineEdit}
-                    className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50">✕</button>
+                    className="rounded-lg border border-[#e7e5df] px-2 py-1 text-xs text-slate-500 hover:bg-slate-50">✕</button>
                 </div>
               ) : (
                 <button onClick={onStartEditDeadline}
@@ -862,7 +862,7 @@ const RequestCard: React.FC<CardProps> = ({
           {!isReviewed && (
             <div className="flex items-center gap-2 pt-1">
               <button onClick={onEditList}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                className="flex items-center gap-1.5 rounded-lg border border-[#e7e5df] px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
                 <Edit2 className="h-3 w-3" /> Editar lista
               </button>
               {(req.status === 'complete' || doneCount === totalCount) && totalCount > 0 && (
@@ -1000,7 +1000,7 @@ export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadg
   return createPortal(
     <>
       <div className="fixed inset-0 z-[150] bg-slate-900/30 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-[151] flex flex-col w-full max-w-sm bg-white shadow-2xl border-l border-slate-200"
+      <div className="fixed right-0 top-0 bottom-0 z-[151] flex flex-col w-full max-w-sm bg-white shadow-2xl border-l border-[#e7e5df]"
         style={{ animation: 'slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)' }}>
 
         {/* Header */}

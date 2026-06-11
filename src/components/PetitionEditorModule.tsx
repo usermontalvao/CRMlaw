@@ -577,7 +577,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   onRequestMinimize,
 }) => {
   const { user } = useAuth();
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
 
   const formatUserDisplayName = (raw: string) => {
     const trimmed = raw.trim();
@@ -3868,9 +3868,9 @@ Regras:
   // Tela de início (quando showStartScreen === true)
   if (showStartScreen) {
     return (
-      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-white`}>
+      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-[#f8f7f5]`}>
         {/* Top bar (estilo Word) */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-slate-200">
+        <div className="h-12 flex items-center justify-between px-4 border-b border-[#e7e5df]">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center">
               <FileText className="w-4 h-4 text-white" />
@@ -3913,10 +3913,10 @@ Regras:
               <div className="flex gap-4 flex-wrap">
                 <button
                   onClick={() => { newPetition(); setShowStartScreen(false); }}
-                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left"
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-[#f8f7f5] transition text-left"
                 >
                   <div className="h-[110px] bg-slate-100 flex items-center justify-center">
-                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm" />
+                    <div className="w-[78px] h-[96px] bg-[#f8f7f5] border border-slate-300 shadow-sm" />
                   </div>
                   <div className="px-3 py-2">
                     <div className="text-xs font-medium text-slate-800">Documento em branco</div>
@@ -3939,11 +3939,11 @@ Regras:
                     }, 200);
                   }}
                   disabled={!hasDefaultTemplate}
-                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left disabled:opacity-60 disabled:hover:border-slate-300"
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-[#f8f7f5] transition text-left disabled:opacity-60 disabled:hover:border-slate-300"
                   title={hasDefaultTemplate ? `Carregar documento padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrão definido'}
                 >
                   <div className="h-[110px] bg-slate-100 flex items-center justify-center">
-                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm flex items-center justify-center">
+                    <div className="w-[78px] h-[96px] bg-[#f8f7f5] border border-slate-300 shadow-sm flex items-center justify-center">
                       <FileText className="w-8 h-8 text-slate-400" />
                     </div>
                   </div>
@@ -3959,10 +3959,10 @@ Regras:
                       fileInputRef.current?.click();
                     }, 150);
                   }}
-                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left"
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-[#f8f7f5] transition text-left"
                 >
                   <div className="h-[110px] bg-slate-100 flex items-center justify-center">
-                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm flex items-center justify-center">
+                    <div className="w-[78px] h-[96px] bg-[#f8f7f5] border border-slate-300 shadow-sm flex items-center justify-center">
                       <FileUp className="w-8 h-8 text-slate-400" />
                     </div>
                   </div>
@@ -3974,13 +3974,13 @@ Regras:
             </div>
 
             {/* Recentes */}
-            <div className="border-t border-slate-200 pt-4">
+            <div className="border-t border-[#e7e5df] pt-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-slate-700">Recentes</div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded">
-                <div className="grid grid-cols-12 px-3 py-2 text-[11px] text-slate-500 border-b border-slate-200">
+              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded">
+                <div className="grid grid-cols-12 px-3 py-2 text-[11px] text-slate-500 border-b border-[#e7e5df]">
                   <div className="col-span-5">Arquivo</div>
                   <div className="col-span-3">Cliente</div>
                   <div className="col-span-3 text-right">Modificado</div>
@@ -4060,6 +4060,7 @@ Regras:
                                 if (!confirmed) return;
                                 try {
                                   await petitionEditorService.deletePetition(p.id);
+                                  notifyDeleted(p.title || undefined);
                                   setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
                                 } catch (err) {
                                   console.error('Erro ao excluir petição:', err);
@@ -4093,7 +4094,7 @@ Regras:
       <div className="h-2 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
 
       {/* Toolbar Superior */}
-      <div className="relative z-[20] bg-white border-b border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
+      <div className="relative z-[20] bg-[#f8f7f5] border-b border-[#e7e5df] px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
         {/* Toggle Sidebar */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -4103,13 +4104,13 @@ Regras:
           {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
         </button>
 
-        <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+        <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
           <button
             type="button"
             onClick={() => setActiveWorkspace('editor')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               activeWorkspace === 'editor'
-                ? 'bg-white text-amber-700 shadow-sm'
+                ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
@@ -4120,7 +4121,7 @@ Regras:
             onClick={() => setActiveWorkspace('blocks')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               activeWorkspace === 'blocks'
-                ? 'bg-white text-amber-700 shadow-sm'
+                ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
@@ -4158,7 +4159,7 @@ Deseja voltar para a tela inicial mesmo assim?`;
           type="text"
           value={petitionTitle}
           onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-          className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-slate-200 focus:border-amber-400 rounded focus:outline-none"
+          className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none"
           placeholder="Título da petição..."
         />
 
@@ -4221,7 +4222,7 @@ Deseja voltar para a tela inicial mesmo assim?`;
                   setPetitionTitle(`Nova Petição ${area.name}`);
                 }
               }}
-              className="px-2 py-1 text-xs border border-slate-200 rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+              className="px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
               style={{ 
                 borderLeftColor: selectedLegalArea?.color || '#e2e8f0',
                 borderLeftWidth: '3px'
@@ -4408,7 +4409,7 @@ Deseja fechar mesmo assim?`;
 
       {documentImportLoading && (
         <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
-          <div className="w-full max-w-md mx-4 rounded-3xl border border-orange-200/70 bg-white/95 shadow-[0_30px_90px_rgba(15,23,42,0.28)] p-6">
+          <div className="w-full max-w-md mx-4 rounded-3xl border border-orange-200/70 bg-[#f8f7f5]/95 shadow-[0_30px_90px_rgba(15,23,42,0.28)] p-6">
             <div className="flex items-center gap-4">
               <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg">
                 <Loader2 className="w-7 h-7 animate-spin" />
@@ -4439,10 +4440,10 @@ Deseja fechar mesmo assim?`;
       {/* Modal: Visualizar Conteúdo do Bloco */}
       {showBlockViewModal && viewingBlock && (
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="block-editor-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="block-editor-modal" className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1.5 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
-            <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 leading-none">Visualizar Bloco</div>
                 <div className="mt-1 flex items-center gap-2">
@@ -4481,7 +4482,7 @@ Deseja fechar mesmo assim?`;
                     type="text"
                     value={viewingBlock.title}
                     readOnly
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-600"
+                    className="w-full px-3 py-2.5 text-sm border border-[#e7e5df] rounded-lg bg-slate-50 font-medium text-slate-600"
                   />
                 </div>
 
@@ -4490,7 +4491,7 @@ Deseja fechar mesmo assim?`;
                   <select
                     value={viewingBlock.category}
                     disabled
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
+                    className="w-full px-3 py-2.5 text-sm border border-[#e7e5df] rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
                   >
                     <option value={viewingBlock.category}>{getCategoryLabel(String(viewingBlock.category || 'outros'))}</option>
                   </select>
@@ -4499,8 +4500,8 @@ Deseja fechar mesmo assim?`;
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Conteúdo SFDT *</label>
-                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-inner">
-                  <div className="relative w-full h-[620px] overflow-auto bg-white petition-block-docx-preview">
+                <div className="border border-[#e7e5df] rounded-2xl overflow-hidden bg-[#f8f7f5] shadow-inner">
+                  <div className="relative w-full h-[620px] overflow-auto bg-[#f8f7f5] petition-block-docx-preview">
                     <div className="min-h-[620px] p-4">
                       <div
                         ref={(node) => {
@@ -4510,7 +4511,7 @@ Deseja fechar mesmo assim?`;
                     </div>
 
                     {blockViewDocxLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80">
                         <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           <span>Carregando...</span>
@@ -4519,13 +4520,13 @@ Deseja fechar mesmo assim?`;
                     )}
 
                     {!blockViewDocxLoading && blockViewDocxError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80">
                         <div className="text-slate-500 text-sm font-medium">{blockViewDocxError}</div>
                       </div>
                     )}
 
                     {!blockViewDocxLoading && !blockViewDocxError && blockViewUseFallback && (
-                      <div className="absolute inset-0 bg-white">
+                      <div className="absolute inset-0 bg-[#f8f7f5]">
                         <div className="h-full w-full p-4 overflow-y-auto">
                           <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                             {(() => {
@@ -4648,7 +4649,7 @@ Deseja fechar mesmo assim?`;
                   setBlockViewDocxLoading(false);
                   if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
                 }}
-                className="px-8 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-white border border-slate-200 rounded-xl transition-all duration-200 shadow-sm"
+                className="px-8 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-white rounded-xl transition-all duration-200 shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]"
               >
                 Fechar
               </button>
@@ -4822,7 +4823,7 @@ Deseja fechar mesmo assim?`;
           const tagsRow = (maxTags: number) => tags.length > 0 ? (
             <div className="flex flex-wrap gap-1 mt-2">
               {tags.slice(0, maxTags).map((tag) => (
-                <span key={tag} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-medium text-slate-600 border border-slate-200/60">
+                <span key={tag} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-medium text-slate-600 border border-[#e7e5df]/60">
                   <Hash className="w-2.5 h-2.5 text-slate-400" />{tag}
                 </span>
               ))}
@@ -4840,14 +4841,14 @@ Deseja fechar mesmo assim?`;
                   window.setTimeout(() => bmQueuePreview(block.id), 30);
                 }
               }}
-              className="bm-docx-preview-container overflow-auto bg-white rounded-lg border border-slate-200 shadow-inner"
+              className="bm-docx-preview-container overflow-auto bg-[#f8f7f5] rounded-lg border border-[#e7e5df] shadow-inner"
               style={{ maxHeight: 500, minHeight: 80 }}
             />
           );
 
           if (bmViewMode === 'grid') {
             return (
-              <div key={block.id} className="group bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:border-amber-200 transition-all duration-200 flex flex-col overflow-hidden">
+              <div key={block.id} className="group bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:shadow-md hover:border-amber-200 transition-all duration-200 flex flex-col overflow-hidden">
                 <div className="p-4 flex-1 flex flex-col">
                   {headerRow(true)}
 
@@ -4882,7 +4883,7 @@ Deseja fechar mesmo assim?`;
                   <button type="button" onClick={() => openBlockModal(block)} className="flex-1 px-2 py-1.5 text-[11px] font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors flex items-center justify-center gap-1">
                     <Edit3 className="w-3 h-3" /> Editar
                   </button>
-                  <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-2 py-1.5 text-[11px] font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors" title="Copiar texto">
+                  <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-2 py-1.5 text-[11px] font-semibold rounded-lg border border-[#e7e5df] text-slate-600 hover:bg-white transition-colors" title="Copiar texto">
                     <Copy className="w-3 h-3" />
                   </button>
                   <button type="button" onClick={() => { void deleteBlock(block.id); }} className="px-2 py-1.5 text-[11px] font-semibold rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors" title="Excluir">
@@ -4894,7 +4895,7 @@ Deseja fechar mesmo assim?`;
           }
 
           return (
-            <div key={block.id} className="group bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:border-amber-200 transition-all duration-200 overflow-hidden">
+            <div key={block.id} className="group bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:shadow-md hover:border-amber-200 transition-all duration-200 overflow-hidden">
               <div className="px-5 py-4">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
@@ -4903,8 +4904,8 @@ Deseja fechar mesmo assim?`;
                     {/* Preview area */}
                     <div className="mt-3">
                       {isExpanded ? (
-                        <div className="rounded-xl overflow-hidden border border-slate-200">
-                          <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between">
+                        <div className="rounded-xl overflow-hidden border border-[#e7e5df]">
+                          <div className="bg-slate-50 px-3 py-2 border-b border-[#e7e5df] flex items-center justify-between">
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                               <FileText className="w-3.5 h-3.5" /> Preview formatado
                             </span>
@@ -4916,7 +4917,7 @@ Deseja fechar mesmo assim?`;
                           {docxPreviewContainer}
                         </div>
                       ) : (
-                        <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
+                        <div className="p-3.5 bg-slate-50 border border-[#e7e5df]/80 rounded-xl">
                           <div className="text-[13px] text-slate-600 leading-relaxed line-clamp-3">
                             {summaryText || <span className="italic text-slate-400">Sem conteúdo</span>}
                           </div>
@@ -4935,10 +4936,10 @@ Deseja fechar mesmo assim?`;
                   </div>
 
                   <div className="flex flex-col gap-1.5 shrink-0">
-                    <button type="button" onClick={() => openBlockModal(block)} className="px-3 py-2 text-[11px] font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors flex items-center gap-1.5 shadow-sm" title="Editar">
+                    <button type="button" onClick={() => openBlockModal(block)} className="px-3 py-2 text-[11px] font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors flex items-center gap-1.5" title="Editar">
                       <Edit3 className="w-3.5 h-3.5" /> Editar
                     </button>
-                    <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-3 py-2 text-[11px] font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Copiar texto">
+                    <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-3 py-2 text-[11px] font-bold rounded-xl border border-[#e7e5df] text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Copiar texto">
                       <Copy className="w-3.5 h-3.5" /> Copiar
                     </button>
                     <button type="button" onClick={() => { void deleteBlock(block.id); }} className="px-3 py-2 text-[11px] font-bold rounded-xl border border-red-200 text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1.5" title="Excluir">
@@ -4958,7 +4959,7 @@ Deseja fechar mesmo assim?`;
 
               {/* Stats Bar */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+                <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
                     <Layers className="w-5 h-5 text-amber-600" />
                   </div>
@@ -4967,7 +4968,7 @@ Deseja fechar mesmo assim?`;
                     <div className="text-[11px] text-slate-500 font-medium">Blocos visíveis</div>
                   </div>
                 </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+                <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
                     <BarChart3 className="w-5 h-5 text-blue-600" />
                   </div>
@@ -4976,7 +4977,7 @@ Deseja fechar mesmo assim?`;
                     <div className="text-[11px] text-slate-500 font-medium">Categorias</div>
                   </div>
                 </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+                <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
                     <Star className="w-5 h-5 text-emerald-600" />
                   </div>
@@ -4985,8 +4986,8 @@ Deseja fechar mesmo assim?`;
                     <div className="text-[11px] text-slate-500 font-medium">Padrões</div>
                   </div>
                 </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
+                <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-slate-100 border border-[#e7e5df]">
                     <Hash className="w-5 h-5 text-slate-500" />
                   </div>
                   <div>
@@ -4997,7 +4998,7 @@ Deseja fechar mesmo assim?`;
               </div>
 
               {/* Filters + Actions Bar */}
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
                 <div className="p-4 flex flex-col xl:flex-row xl:items-center gap-3">
                   {/* Search */}
                   <div className="relative flex-1 min-w-0 max-w-md">
@@ -5007,7 +5008,7 @@ Deseja fechar mesmo assim?`;
                       placeholder="Buscar por título, tags ou conteúdo..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full pl-9 pr-8 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 focus:bg-white transition-colors"
+                      className="w-full pl-9 pr-8 py-2.5 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 focus:bg-white transition-colors"
                     />
                     {blockSearch && (
                       <button type="button" onClick={() => setBlockSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600">
@@ -5021,7 +5022,7 @@ Deseja fechar mesmo assim?`;
                     <select
                       value={selectedDocumentType}
                       onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                      className="px-3 py-2 text-xs font-medium border border-slate-200 rounded-xl bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+                      className="px-3 py-2 text-xs font-medium border border-[#e7e5df] rounded-xl bg-[#f8f7f5] hover:border-slate-300 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
                     >
                       <option value="petition">Petição</option>
                       <option value="contestation">Contestação</option>
@@ -5029,10 +5030,10 @@ Deseja fechar mesmo assim?`;
                       <option value="appeal">Recurso</option>
                     </select>
 
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                    <div className="flex items-center rounded-xl border border-[#e7e5df] bg-slate-50 p-0.5">
                       {selectedStandardTypeId && (
                         <button type="button" onClick={() => setBlockFilterScope('type')}
-                          className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'type' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+                          className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'type' ? 'bg-blue-500 text-white' : 'text-slate-600 hover:bg-white'}`}>
                           Petição
                         </button>
                       )}
@@ -5051,7 +5052,7 @@ Deseja fechar mesmo assim?`;
                     <select
                       value={bmSortBy}
                       onChange={(e) => setBmSortBy(e.target.value as any)}
-                      className="px-3 py-2 text-xs font-medium border border-slate-200 rounded-xl bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+                      className="px-3 py-2 text-xs font-medium border border-[#e7e5df] rounded-xl bg-[#f8f7f5] hover:border-slate-300 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
                       title="Ordenar por"
                     >
                       <option value="category">Por categoria</option>
@@ -5059,13 +5060,13 @@ Deseja fechar mesmo assim?`;
                       <option value="updated">Mais recentes</option>
                     </select>
 
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                    <div className="flex items-center rounded-xl border border-[#e7e5df] bg-slate-50 p-0.5">
                       <button type="button" onClick={() => setBmViewMode('list')} title="Lista"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'list' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'list' ? 'bg-[#f8f7f5] text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <List className="w-4 h-4" />
                       </button>
                       <button type="button" onClick={() => setBmViewMode('grid')} title="Grade"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'grid' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'grid' ? 'bg-[#f8f7f5] text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <LayoutGrid className="w-4 h-4" />
                       </button>
                     </div>
@@ -5073,15 +5074,15 @@ Deseja fechar mesmo assim?`;
 
                   <div className="flex items-center gap-2 ml-auto">
                     <button type="button" onClick={bmExpandAll}
-                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1" title="Expandir todos">
+                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-[#e7e5df] text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1" title="Expandir todos">
                       <ChevronsUpDown className="w-3.5 h-3.5" /> Expandir
                     </button>
                     <button type="button" onClick={bmCollapseAll}
-                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1" title="Recolher todos">
+                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-[#e7e5df] text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1" title="Recolher todos">
                       <ChevronUp className="w-3.5 h-3.5" /> Recolher
                     </button>
                     <button type="button" onClick={() => { ensureDraftFromCategories(blockCategories); setShowCategoryModal(true); }}
-                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1">
+                      className="px-3 py-2 text-[11px] font-semibold rounded-xl border border-[#e7e5df] text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1">
                       <Settings className="w-3.5 h-3.5" /> Categorias
                     </button>
                     <button type="button" onClick={() => openBlockModal()}
@@ -5097,13 +5098,13 @@ Deseja fechar mesmo assim?`;
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Modelo:</span>
                       <button type="button" onClick={() => { setSelectedStandardTypeId(null); setBlockFilterScope('area'); }}
-                        className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-slate-50'}`}>
                         {selectedLegalArea?.name || 'Área'}
                       </button>
                       {standardTypes.map((t) => (
                         <button key={t.id} type="button"
                           onClick={() => { setSelectedStandardTypeId(t.id); setBlockFilterScope('type'); if (t.default_document && editorRef.current) { editorRef.current.loadSfdt(t.default_document); if (t.default_document_name) setPetitionTitle(t.default_document_name); } }}
-                          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50/40'}`}>
+                          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-blue-50/40'}`}>
                           {t.name}
                         </button>
                       ))}
@@ -5124,7 +5125,7 @@ Deseja fechar mesmo assim?`;
                     </span>
                   )}
                   {blockFilterScope === 'global' && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-medium">Global</span>
+                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 border border-[#e7e5df] text-slate-600 font-medium">Global</span>
                   )}
                   {blockFilterScope === 'type' && selectedStandardTypeId && (
                     <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
@@ -5141,14 +5142,14 @@ Deseja fechar mesmo assim?`;
 
               {/* Block List / Grid */}
               {filteredBlocks.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-16 text-center">
+                <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-16 text-center">
                   <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
                     <FileText className="w-8 h-8 text-slate-400" />
                   </div>
                   <div className="text-lg font-bold text-slate-700">Nenhum bloco encontrado</div>
                   <div className="text-sm text-slate-500 mt-2 max-w-md mx-auto">Tente ajustar os filtros, alterar o escopo ou o tipo de documento.</div>
                   <button type="button" onClick={() => openBlockModal()}
-                    className="mt-5 px-5 py-2.5 text-sm font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors inline-flex items-center gap-2">
+                    className="mt-5 px-5 py-2.5 text-sm font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors inline-flex items-center gap-2">
                     <Plus className="w-4 h-4" /> Criar primeiro bloco
                   </button>
                 </div>
@@ -5169,7 +5170,7 @@ Deseja fechar mesmo assim?`;
                     if (items.length === 0) return null;
                     const isCatCollapsed = bmCollapsedCategories.has(category);
                     return (
-                      <section key={category} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                      <section key={category} className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
                         <button
                           type="button"
                           onClick={() => bmToggleCategory(category)}
@@ -5212,9 +5213,9 @@ Deseja fechar mesmo assim?`;
       <div className="flex-1 flex min-w-0 max-w-full overflow-hidden">
         {/* Sidebar */}
         {sidebarOpen && (
-          <div className="relative z-[20] bg-white border-r border-slate-200 flex flex-col flex-shrink-0" style={{ width: sidebarWidth }}>
+          <div className="relative z-[20] bg-[#f8f7f5] border-r border-[#e7e5df] flex flex-col flex-shrink-0" style={{ width: sidebarWidth }}>
             {/* Tabs */}
-            <div className="flex border-b border-slate-200">
+            <div className="flex border-b border-[#e7e5df]">
               <button
                 onClick={() => setSidebarTab('blocks')}
                 className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
@@ -5244,13 +5245,13 @@ Deseja fechar mesmo assim?`;
                       placeholder="Buscar bloco..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
                     />
                   </div>
                   <select
                     value={selectedDocumentType}
                     onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                    className="px-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400 bg-white"
+                    className="px-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400 bg-white"
                     title="Tipo de documento"
                   >
                     <option value="petition">Petição</option>
@@ -5264,7 +5265,7 @@ Deseja fechar mesmo assim?`;
                       ensureDraftFromCategories(blockCategories);
                       setShowCategoryModal(true);
                     }}
-                    className="p-1.5 border border-slate-200 text-slate-500 rounded hover:bg-slate-50"
+                    className="p-1.5 border border-[#e7e5df] text-slate-500 rounded hover:bg-slate-50"
                     title="Configurar categorias"
                   >
                     <Settings className="w-4 h-4" />
@@ -5288,7 +5289,7 @@ Deseja fechar mesmo assim?`;
                         className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
                           blockFilterScope === 'type'
                             ? 'bg-blue-500 text-white'
-                            : 'bg-white text-slate-600 hover:bg-blue-50 border border-slate-200'
+                            : 'bg-[#f8f7f5] text-slate-600 hover:bg-blue-50 border border-[#e7e5df]'
                         }`}
                         title="Blocos vinculados à petição padrão selecionada"
                       >
@@ -5300,7 +5301,7 @@ Deseja fechar mesmo assim?`;
                       className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
                         blockFilterScope === 'area'
                           ? 'bg-amber-500 text-white'
-                          : 'bg-white text-slate-600 hover:bg-amber-50 border border-slate-200'
+                          : 'bg-[#f8f7f5] text-slate-600 hover:bg-amber-50 border border-[#e7e5df]'
                       }`}
                       title="Blocos da área jurídica selecionada"
                     >
@@ -5311,7 +5312,7 @@ Deseja fechar mesmo assim?`;
                       className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
                         blockFilterScope === 'global'
                           ? 'bg-slate-600 text-white'
-                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                          : 'bg-[#f8f7f5] text-slate-600 hover:bg-slate-100 border border-[#e7e5df]'
                       }`}
                       title="Todos os blocos (consulta global)"
                     >
@@ -5330,7 +5331,7 @@ Deseja fechar mesmo assim?`;
                       <button
                         type="button"
                         onClick={() => openStandardTypeModal()}
-                        className="p-1 border border-slate-200 text-slate-500 rounded hover:bg-slate-50"
+                        className="p-1 border border-[#e7e5df] text-slate-500 rounded hover:bg-slate-50"
                         title="Gerenciar modelos"
                       >
                         <Settings className="w-3.5 h-3.5" />
@@ -5347,7 +5348,7 @@ Deseja fechar mesmo assim?`;
                         className={`w-full px-2 py-1.5 text-left text-xs rounded border transition-colors ${
                           !selectedStandardTypeId
                             ? 'bg-amber-50 border-amber-200 text-amber-800'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-700 hover:bg-slate-50'
                         }`}
                         title="Ver todos os blocos da área"
                       >
@@ -5373,7 +5374,7 @@ Deseja fechar mesmo assim?`;
                               className={`w-full px-2 py-1.5 mt-1 text-left text-xs rounded border transition-colors ${
                                 active
                                   ? 'bg-blue-50 border-blue-200 text-blue-800'
-                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50/40'
+                                  : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-700 hover:bg-blue-50/40'
                               }`}
                               title={t.description ? t.description : t.name}
                             >
@@ -5483,7 +5484,7 @@ Deseja fechar mesmo assim?`;
                       placeholder="Buscar cliente..."
                       value={clientSearch}
                       onChange={(e) => setClientSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
                     />
                   </div>
                 </div>
@@ -5543,7 +5544,7 @@ Deseja fechar mesmo assim?`;
           {/* Overlay de formatação com IA */}
           {formattingWithAI && (
             <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-8 max-w-xs w-full mx-4">
+              <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-2xl p-8 max-w-xs w-full mx-4">
                 <div className="flex flex-col items-center text-center space-y-4">
                   {/* Ícone animado */}
                   <div className="relative">
@@ -5605,7 +5606,7 @@ Deseja fechar mesmo assim?`;
 
           {!isOnline && (
             <div className="absolute inset-0 z-[50] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-              <div className="w-full max-w-md mx-4 bg-white rounded-2xl border border-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.25)] overflow-hidden">
+              <div className="w-full max-w-md mx-4 bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-[0_24px_60px_rgba(15,23,42,0.25)] overflow-hidden">
                 <div className="h-2 w-full bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
                 <div className="p-5">
                   <div className="flex items-start gap-3">
@@ -5668,10 +5669,10 @@ Deseja fechar mesmo assim?`;
       {/* Modal de Busca de Empresa (CNPJ) */}
       {showCompanyLookupModal && (
         <aside id="petition-lookup-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="company-lookup-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="company-lookup-modal" className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Qualificação Jurídica</div>
                 <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">Buscar Empresa (CNPJ)</h3>
@@ -5693,7 +5694,7 @@ Deseja fechar mesmo assim?`;
                   value={companyCnpjInput}
                   onChange={(e) => setCompanyCnpjInput(e.target.value)}
                   placeholder="00.000.000/0000-00"
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
                   autoFocus
                 />
                 <p className="mt-2 text-[11px] text-slate-400 italic">Aceita CNPJ com ponto, barra e hífen. O sistema considera apenas números.</p>
@@ -5732,7 +5733,7 @@ Deseja fechar mesmo assim?`;
                     value={companyLookupResultText}
                     onChange={(e) => setCompanyLookupResultText(e.target.value)}
                     rows={6}
-                    className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-white transition-all leading-relaxed text-slate-700 font-medium"
+                    className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-[#f8f7f5] transition-all leading-relaxed text-slate-700 font-medium"
                   />
                 </div>
               )}
@@ -5755,10 +5756,10 @@ Deseja fechar mesmo assim?`;
       {/* Modal de Busca de Bloco */}
       {showBlockSearchModal && (
         <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="block-search-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="block-search-modal" className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Biblioteca de Textos</div>
                 <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">Adicionar Bloco</h3>
@@ -5776,7 +5777,7 @@ Deseja fechar mesmo assim?`;
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Escopo</div>
                 <div className="flex-1" />
-                <div className="inline-flex items-center p-1 rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+                <div className="inline-flex items-center p-1 rounded-2xl border border-[#e7e5df] bg-slate-50">
                   {selectedStandardTypeId && (
                     <button
                       type="button"
@@ -5825,12 +5826,12 @@ Deseja fechar mesmo assim?`;
                   placeholder="Buscar bloco..."
                   value={blockSearchQuery}
                   onChange={(e) => setBlockSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all font-medium"
+                  className="w-full pl-12 pr-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all font-medium"
                   autoFocus
                 />
               </div>
 
-              <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+              <div className="mt-4 border border-[#e7e5df] rounded-lg overflow-hidden">
                 <div className="max-h-[65vh] overflow-y-auto">
                   {blockSearchLoading ? (
                     <div className="p-6 text-center text-slate-400">
@@ -5926,10 +5927,10 @@ Deseja fechar mesmo assim?`;
 
       {showAiEditModal && (
         <aside className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">IA no documento</div>
                 <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">Editar seleção com IA</h3>
@@ -5951,7 +5952,7 @@ Deseja fechar mesmo assim?`;
                   value={aiEditInstruction}
                   onChange={(e) => setAiEditInstruction(e.target.value)}
                   rows={4}
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
                   placeholder="Ex.: Reescreva esse trecho com linguagem mais técnica, mais objetiva e com melhor conexão lógica, sem mudar o pedido."
                   autoFocus
                 />
@@ -5959,7 +5960,7 @@ Deseja fechar mesmo assim?`;
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-2">Trecho selecionado</label>
-                <div className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 leading-relaxed whitespace-pre-wrap max-h-[240px] overflow-y-auto">
+                <div className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl bg-[#f8f7f5] text-slate-700 leading-relaxed whitespace-pre-wrap max-h-[240px] overflow-y-auto">
                   {aiEditSelectedText}
                 </div>
               </div>
@@ -5987,10 +5988,10 @@ Deseja fechar mesmo assim?`;
 
       {showCategoryModal && (
         <aside id="petition-categories-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="petition-categories-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="petition-categories-modal" className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Categorias</div>
                 <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">Configurar categorias</h3>
@@ -6020,7 +6021,7 @@ Deseja fechar mesmo assim?`;
                 </button>
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="border border-[#e7e5df] rounded-xl overflow-hidden">
                 {categoryDraft.length === 0 ? (
                   <div className="p-4 text-center text-slate-400 text-sm">Nenhuma categoria</div>
                 ) : (
@@ -6043,7 +6044,7 @@ Deseja fechar mesmo assim?`;
                                 });
                               }}
                               placeholder="ex: preliminares"
-                              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50"
+                              className="w-full px-3 py-2 text-xs border border-[#e7e5df] rounded-lg bg-slate-50"
                             />
                           </div>
                           <div className="col-span-6">
@@ -6059,7 +6060,7 @@ Deseja fechar mesmo assim?`;
                                 });
                               }}
                               placeholder="ex: Preliminares"
-                              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50"
+                              className="w-full px-3 py-2 text-xs border border-[#e7e5df] rounded-lg bg-slate-50"
                             />
                           </div>
                           <div className="col-span-3 flex justify-end gap-2">
@@ -6075,7 +6076,7 @@ Deseja fechar mesmo assim?`;
                                   return ordered.map((x, i) => ({ ...x, order: i }));
                                 });
                               }}
-                              className="px-2 py-2 text-xs border border-slate-200 rounded-lg hover:bg-slate-50"
+                              className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
                               title="Mover para cima"
                             >
                               ↑
@@ -6092,7 +6093,7 @@ Deseja fechar mesmo assim?`;
                                   return ordered.map((x, i) => ({ ...x, order: i }));
                                 });
                               }}
-                              className="px-2 py-2 text-xs border border-slate-200 rounded-lg hover:bg-slate-50"
+                              className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
                               title="Mover para baixo"
                             >
                               ↓
@@ -6167,10 +6168,10 @@ Deseja fechar mesmo assim?`;
       {/* Modal de Áreas Jurídicas */}
       {showLegalAreaModal && (
         <aside id="legal-area-backdrop" className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="legal-area-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="legal-area-modal" className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0" style={{ backgroundColor: editingLegalArea?.color || legalAreaFormData.color || '#f97316' }} />
 
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5] z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Áreas Jurídicas</div>
                 <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">
@@ -6194,7 +6195,7 @@ Deseja fechar mesmo assim?`;
                   value={legalAreaFormData.name}
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, name: e.target.value })}
                   placeholder="Ex: Trabalhista, Cível, Penal..."
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
                   autoFocus
                 />
               </div>
@@ -6206,7 +6207,7 @@ Deseja fechar mesmo assim?`;
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, description: e.target.value })}
                   placeholder="Ex: Direito do Trabalho - CLT, Justiça do Trabalho"
                   rows={2}
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
@@ -6217,7 +6218,7 @@ Deseja fechar mesmo assim?`;
                     type="color"
                     value={legalAreaFormData.color}
                     onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, color: e.target.value })}
-                    className="w-12 h-10 rounded-lg border border-slate-200 cursor-pointer"
+                    className="w-12 h-10 rounded-lg border border-[#e7e5df] cursor-pointer"
                   />
                   <div className="flex gap-2">
                     {['#f97316', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4'].map((color) => (
@@ -6235,13 +6236,13 @@ Deseja fechar mesmo assim?`;
 
               {/* Lista de áreas existentes */}
               {legalAreas.length > 0 && !editingLegalArea && (
-                <div className="pt-4 border-t border-slate-200">
+                <div className="pt-4 border-t border-[#e7e5df]">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Áreas Cadastradas</label>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {legalAreas.map((area) => (
                       <div
                         key={area.id}
-                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200"
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e7e5df]"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-8 rounded" style={{ backgroundColor: area.color }} />
@@ -6306,7 +6307,7 @@ Deseja fechar mesmo assim?`;
       {/* Modal de Petições Padrões */}
       {showStandardTypeModal && (
         <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-blue-500" />
             <header className="relative px-6 py-5 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -6334,7 +6335,7 @@ Deseja fechar mesmo assim?`;
                   value={standardTypeFormData.name}
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, name: e.target.value })}
                   placeholder="Ex: Auxílio-acidente, BPC, Aposentadoria..."
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
                 />
               </div>
 
@@ -6345,12 +6346,12 @@ Deseja fechar mesmo assim?`;
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, description: e.target.value })}
                   placeholder="Descrição opcional..."
                   rows={2}
-                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
               {/* Área vinculada */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="p-3 bg-slate-50 rounded-xl border border-[#e7e5df]">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Scale className="w-4 h-4" />
                   <span>Área Jurídica:</span>
@@ -6385,7 +6386,7 @@ Deseja fechar mesmo assim?`;
               )}
 
               {/* Lista de petições padrões cadastradas */}
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-[#e7e5df]">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
                   Petições Padrões de "{selectedLegalArea?.name}"
                 </label>
@@ -6396,7 +6397,7 @@ Deseja fechar mesmo assim?`;
                     standardTypes.map((type) => (
                       <div
                         key={type.id}
-                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200"
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e7e5df]"
                       >
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-blue-500" />
@@ -6458,7 +6459,7 @@ Deseja fechar mesmo assim?`;
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[999999] flex flex-col bg-white">
           <main id="block-editor-modal" className="flex flex-col flex-1 overflow-hidden">
             {/* Header compacto */}
-            <header className="shrink-0 h-12 px-4 flex items-center justify-between border-b border-slate-200 bg-slate-50">
+            <header className="shrink-0 h-12 px-4 flex items-center justify-between border-b border-[#e7e5df] bg-slate-50">
               <div className="flex items-center gap-4">
                 <div className="h-8 w-1.5 rounded-full bg-orange-500" style={{ backgroundColor: '#ea580c' }} />
                 <div>
@@ -6475,7 +6476,7 @@ Deseja fechar mesmo assim?`;
             </header>
 
             {/* Barra de campos - compacta */}
-            <div className="shrink-0 px-4 py-2 border-b border-slate-100 bg-white flex items-end gap-3 flex-wrap">
+            <div className="shrink-0 px-4 py-2 border-b border-slate-100 bg-[#f8f7f5] flex items-end gap-3 flex-wrap">
               <div className="flex-1 min-w-[200px] max-w-md">
                 <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Título *</label>
                 <input
@@ -6483,7 +6484,7 @@ Deseja fechar mesmo assim?`;
                   value={blockFormData.title}
                   onChange={(e) => setBlockFormData({ ...blockFormData, title: e.target.value })}
                   placeholder="Ex: Das Questões Iniciais"
-                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
+                  className="w-full px-2.5 py-1.5 text-sm border border-[#e7e5df] rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
                 />
               </div>
 
@@ -6492,7 +6493,7 @@ Deseja fechar mesmo assim?`;
                 <select
                   value={blockFormData.category}
                   onChange={(e) => setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory })}
-                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
+                  className="w-full px-2.5 py-1.5 text-sm border border-[#e7e5df] rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
                 >
                   {categoryKeysOrdered.map((key) => (
                     <option key={key} value={key}>{getCategoryLabel(key)}</option>
@@ -6515,7 +6516,7 @@ Deseja fechar mesmo assim?`;
                         }
                       }
                     }}
-                    className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
+                    className="w-full px-2.5 py-1.5 text-sm border border-[#e7e5df] rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
                   >
                     {legalAreas.map((area) => (
                       <option key={area.id} value={area.id}>
@@ -6541,7 +6542,7 @@ Deseja fechar mesmo assim?`;
                       }
                     }}
                     disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
-                    className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500/20 focus:border-blue-400 transition-all bg-slate-50 font-medium cursor-pointer disabled:opacity-70"
+                    className="w-full px-2.5 py-1.5 text-sm border border-[#e7e5df] rounded-lg focus:ring-1 focus:ring-blue-500/20 focus:border-blue-400 transition-all bg-slate-50 font-medium cursor-pointer disabled:opacity-70"
                   >
                     <option value="">Sem modelo</option>
                     {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
@@ -6552,7 +6553,7 @@ Deseja fechar mesmo assim?`;
               )}
 
               {!editingBlock && (
-                <label className="group flex items-center gap-1.5 cursor-pointer px-2.5 py-1.5 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-all shrink-0">
+                <label className="group flex items-center gap-1.5 cursor-pointer px-2.5 py-1.5 bg-slate-50 rounded-lg border border-[#e7e5df] hover:bg-slate-100 transition-all shrink-0">
                   <input
                     type="checkbox"
                     checked={updateExistingBlockMode}
@@ -6571,7 +6572,7 @@ Deseja fechar mesmo assim?`;
                 <select
                   value={updateExistingBlockId}
                   onChange={(e) => setUpdateExistingBlockId(e.target.value)}
-                  className="px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer w-48"
+                  className="px-2.5 py-1.5 text-sm border border-[#e7e5df] rounded-lg focus:ring-1 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer w-48"
                 >
                   <option value="">Selecione o bloco</option>
                   {updatableBlocks.map((b) => (
@@ -6611,7 +6612,7 @@ Deseja fechar mesmo assim?`;
             </div>
 
             {/* Footer compacto */}
-            <footer className="shrink-0 h-12 px-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
+            <footer className="shrink-0 h-12 px-4 border-t border-[#e7e5df] flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="text-[10px] text-slate-400">
                   <span className="font-bold">Variáveis:</span> [[NOME_CLIENTE]], [[CPF]], [[RG]], [[ENDERECO]], [[CIDADE]], [[UF]]...

@@ -3,6 +3,7 @@ import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, Tren
 import { Modal, ModalBody } from './ui';
 import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
+import { settingsService } from '../services/settings.service';
 import type { Lead, LeadStage, CreateLeadDTO } from '../types/lead.types';
 
 const STAGES: { key: LeadStage; label: string; accent: string; gradient: string; description: string; icon: React.ReactNode }[] = [
@@ -17,7 +18,47 @@ interface LeadsModuleProps {
   onConvertLead: (lead: Lead) => void;
 }
 
+const DEFAULT_LEAD_SOURCES = ['Indicação', 'Site', 'Instagram', 'Google', 'WhatsApp', 'Outro'];
+
 const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
+  const [stages, setStages] = useState(STAGES);
+  const [leadSources, setLeadSources] = useState<string[]>(DEFAULT_LEAD_SOURCES);
+
+  useEffect(() => {
+    settingsService.getLeadModuleConfig().then(cfg => {
+      if (cfg.stages.length > 0) {
+        // Relabela existentes, preservando visual local (accent/gradient/icon); exclui desativados
+        const relabeled = STAGES
+          .filter(local => { const sv = cfg.stages.find(s => s.key === local.key); return !sv || sv.active !== false; })
+          .map(local => { const sv = cfg.stages.find(s => s.key === local.key); return sv ? { ...local, label: sv.label, description: sv.description } : local; });
+        // Acrescenta stages novos criados em Configurações (somente ativos)
+        const newStages = cfg.stages.filter(s => !STAGES.some(l => l.key === s.key) && s.active !== false);
+        const neutralized = newStages.map(s => ({
+          key: s.key as LeadStage,
+          label: s.label,
+          accent: 'text-slate-600',
+          gradient: 'from-slate-950/90 via-slate-900 to-slate-800',
+          description: s.description || '',
+          icon: <Target className="w-4 h-4" />,
+        }));
+        const allStages = [...relabeled, ...neutralized];
+        // Respeita a ordem configurada
+        const orderedKeys = cfg.stages.map(s => s.key);
+        const ordered = [
+          ...orderedKeys.map(k => allStages.find(s => s.key === k)).filter((s): s is (typeof allStages)[number] => !!s),
+          ...allStages.filter(s => !orderedKeys.includes(s.key)),
+        ];
+        setStages(ordered);
+        // Usa o estágio padrão como valor inicial do formulário de criação
+        const defaultStage = cfg.stages.find(s => s.isDefault && s.active !== false);
+        if (defaultStage) {
+          setFormData(prev => ({ ...prev, stage: defaultStage.key as LeadStage }));
+        }
+      }
+      if (cfg.sources.length > 0) setLeadSources(cfg.sources);
+    }).catch(() => {});
+  }, []);
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +72,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
     email: '',
     phone: '',
     source: '',
-    stage: 'novo',
+    stage: stages[0]?.key ?? 'novo',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -62,7 +103,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       await leadService.createLead(formData);
       await loadData();
       setIsModalOpen(false);
-      setFormData({ name: '', email: '', phone: '', source: '', stage: 'novo', notes: '' });
+      setFormData({ name: '', email: '', phone: '', source: '', stage: stages[0]?.key ?? 'novo', notes: '' });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -102,7 +143,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
   };
 
   const handleOpenNewLeadModal = () => {
-    setFormData({ name: '', email: '', phone: '', source: '', stage: 'novo', notes: '' });
+    setFormData({ name: '', email: '', phone: '', source: '', stage: stages[0]?.key ?? 'novo', notes: '' });
     setIsModalOpen(true);
   };
 
@@ -192,10 +233,10 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-600 via-blue-500 to-blue-400 text-white rounded-2xl p-6 shadow-xl border border-blue-400/20 hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-3">
-            <div className="bg-white/20 backdrop-blur-sm p-2.5 rounded-xl">
+            <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-2.5 rounded-xl">
               <TrendingUp className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full">{qualifyingLeads}</span>
+            <span className="text-xs font-semibold bg-[#f8f7f5]/20 px-2.5 py-1 rounded-full">{qualifyingLeads}</span>
           </div>
           <p className="text-sm text-white/90 font-medium">Em Qualificação</p>
           <p className="text-xs text-white/70 mt-1">Interações ativas em andamento</p>
@@ -203,10 +244,10 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
         <div className="bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-400 text-white rounded-2xl p-6 shadow-xl border border-emerald-400/20 hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-3">
-            <div className="bg-white/20 backdrop-blur-sm p-2.5 rounded-xl">
+            <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-2.5 rounded-xl">
               <CheckCircle2 className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full">{qualifiedLeads}</span>
+            <span className="text-xs font-semibold bg-[#f8f7f5]/20 px-2.5 py-1 rounded-full">{qualifiedLeads}</span>
           </div>
           <p className="text-sm text-white/90 font-medium">Qualificados</p>
           <p className="text-xs text-white/70 mt-1">Prontos para conversão</p>
@@ -214,10 +255,10 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
         <div className="bg-gradient-to-br from-amber-600 via-amber-500 to-amber-400 text-white rounded-2xl p-6 shadow-xl border border-amber-400/20 hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-3">
-            <div className="bg-white/20 backdrop-blur-sm p-2.5 rounded-xl">
+            <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-2.5 rounded-xl">
               <Clock className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full">{awaitingDocsLeads}</span>
+            <span className="text-xs font-semibold bg-[#f8f7f5]/20 px-2.5 py-1 rounded-full">{awaitingDocsLeads}</span>
           </div>
           <p className="text-sm text-white/90 font-medium">Aguardando Docs</p>
           <p className="text-xs text-white/70 mt-1">Pendentes de documentação</p>
@@ -225,10 +266,10 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
         <div className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-600 text-white rounded-2xl p-6 shadow-xl border border-slate-500/20 hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-3">
-            <div className="bg-white/20 backdrop-blur-sm p-2.5 rounded-xl">
+            <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-2.5 rounded-xl">
               <Target className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full">{totalLeads}</span>
+            <span className="text-xs font-semibold bg-[#f8f7f5]/20 px-2.5 py-1 rounded-full">{totalLeads}</span>
           </div>
           <p className="text-sm text-white/90 font-medium">Total de Leads</p>
           <p className="text-xs text-white/70 mt-1">Base consolidada no CRM</p>
@@ -237,14 +278,14 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
       {/* Kanban Board */}
       <div className="flex flex-col md:flex-row gap-3 md:gap-4 md:overflow-x-auto pb-4">
-        {STAGES.map((stage) => {
+        {stages.map((stage) => {
           const stageLeads = getLeadsByStage(stage.key);
           const isActiveDrop = dragOverStage === stage.key;
           return (
             <div key={stage.key} className="flex-shrink-0 w-full md:w-80">
               <div
-                className={`bg-white rounded-2xl border ${
-                  isActiveDrop ? 'border-amber-400 shadow-lg shadow-amber-200/40' : 'border-gray-200 shadow-sm'
+                className={`bg-[#f8f7f5] rounded-2xl border ${
+                  isActiveDrop ? 'border-amber-400 shadow-lg shadow-amber-200/40' : 'border-[#e7e5df] shadow-sm'
                 } overflow-hidden backdrop-blur-sm transition-all duration-150`}
                 onDragOver={(event) => handleDragOver(event, stage.key)}
                 onDrop={(event) => handleDrop(event, stage.key)}
@@ -252,7 +293,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                 <div className={`px-3 md:px-5 py-3 md:py-4 border-b border-white/10 bg-gradient-to-r ${stage.gradient}`}>
                   <div className="flex items-center justify-between text-white mb-2">
                     <div className="flex items-center gap-2">
-                      <div className="bg-white/20 backdrop-blur-sm p-1.5 rounded-lg">
+                      <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-1.5 rounded-lg">
                         {stage.icon}
                       </div>
                       <h4 className="font-semibold text-xs md:text-sm tracking-wide uppercase">{stage.label}</h4>
@@ -295,7 +336,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                         onDragStart={(event) => handleDragStart(event, lead)}
                         onDragEnd={handleDragEnd}
                         onClick={() => handleOpenLead(lead)}
-                        className={`relative bg-white border border-slate-200 rounded-xl p-3 md:p-4 hover:shadow-xl hover:border-amber-300 transition-all duration-200 cursor-pointer group ${
+                        className={`relative bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3 md:p-4 hover:shadow-xl hover:border-amber-300 transition-all duration-200 cursor-pointer group ${
                           draggingLeadId === lead.id ? 'opacity-50 scale-95 shadow-2xl shadow-amber-300/50 border-amber-400' : ''
                         }`}
                       >
@@ -356,7 +397,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                               e.stopPropagation();
                               onConvertLead(lead);
                             }}
-                            className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md transition-all"
+                            className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 hover:shadow-md transition-all"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             Converter em Cliente
@@ -378,7 +419,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
         onClose={() => { setIsViewModalOpen(false); setSelectedLead(null); setEditMode(false); }}
         title={selectedLead?.name ?? ''}
         eyebrow={editMode ? 'Editando Lead' : 'Detalhes do Lead'}
-        subtitle={selectedLead ? [STAGES.find(s => s.key === selectedLead.stage)?.label, selectedLead.email, selectedLead.phone].filter(Boolean).join(' · ') : undefined}
+        subtitle={selectedLead ? [stages.find(s => s.key === selectedLead.stage)?.label, selectedLead.email, selectedLead.phone].filter(Boolean).join(' · ') : undefined}
         size="lg"
         zIndex={70}
         headerActions={
@@ -406,7 +447,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       >
         <ModalBody>
           {selectedLead && (
-            <form id="lead-edit-form" onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5 bg-white">
+            <form id="lead-edit-form" onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5 bg-[#f8f7f5]">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-2">Nome *</label>
@@ -415,7 +456,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       required
                     />
                   ) : (
@@ -430,7 +471,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   ) : (
                     <div className="flex items-center gap-2 text-sm text-slate-700 bg-slate-50 px-4 py-3 rounded-lg">
@@ -447,7 +488,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="text"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   ) : (
                     selectedLead.phone ? (
@@ -470,13 +511,19 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">Origem</label>
                   {editMode ? (
-                    <input
-                      type="text"
-                      value={formData.source}
-                      onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                      placeholder="Ex: Indicação, Site, Instagram"
-                    />
+                    <>
+                      <input
+                        type="text"
+                        list="lead-sources-edit"
+                        value={formData.source}
+                        onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        placeholder="Ex: Indicação, Site, Instagram"
+                      />
+                      <datalist id="lead-sources-edit">
+                        {leadSources.map(s => <option key={s} value={s} />)}
+                      </datalist>
+                    </>
                   ) : (
                     <p className="text-sm text-slate-700 bg-slate-50 px-4 py-3 rounded-lg">{selectedLead.source || 'Não informado'}</p>
                   )}
@@ -488,9 +535,9 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     <select
                       value={formData.stage}
                       onChange={(e) => setFormData({ ...formData, stage: e.target.value as LeadStage })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     >
-                      {STAGES.map((stage) => (
+                      {stages.map((stage) => (
                         <option key={stage.key} value={stage.key}>
                           {stage.label}
                         </option>
@@ -498,9 +545,9 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     </select>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm bg-gradient-to-r ${STAGES.find(s => s.key === selectedLead.stage)?.gradient} text-white`}>
-                        {STAGES.find(s => s.key === selectedLead.stage)?.icon}
-                        {STAGES.find(s => s.key === selectedLead.stage)?.label}
+                      <span className={`inline-flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm bg-gradient-to-r ${stages.find(s => s.key === selectedLead.stage)?.gradient} text-white`}>
+                        {stages.find(s => s.key === selectedLead.stage)?.icon}
+                        {stages.find(s => s.key === selectedLead.stage)?.label}
                       </span>
                     </div>
                   )}
@@ -512,7 +559,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     <textarea
                       value={formData.notes}
                       onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all"
                       rows={4}
                     />
                   ) : (
@@ -524,7 +571,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
               </div>
 
               {editMode && (
-                <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
+                <div className="border-t border-[#e7e5df] bg-slate-50 px-4 sm:px-6 py-3">
                   <div className="flex justify-end items-center gap-4">
                     <button
                       type="button"
@@ -566,6 +613,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
         isOpen={isModalOpen}
         saving={saving}
         formData={formData}
+        sources={leadSources}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreateLead}
         onChange={(field, value) => setFormData({ ...formData, [field]: value })}

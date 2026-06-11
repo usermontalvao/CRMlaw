@@ -163,7 +163,7 @@ export const AccessRequestsAdmin: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+          <div className="flex rounded-lg border border-[#e7e5df] overflow-hidden text-xs font-semibold">
             <button onClick={() => setFilter('pending')}
               className={`px-3 py-1.5 transition ${filter === 'pending' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
               Pendentes
@@ -173,7 +173,7 @@ export const AccessRequestsAdmin: React.FC = () => {
               Todas
             </button>
           </div>
-          <button onClick={load} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition">
+          <button onClick={load} className="p-1.5 rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-slate-50 transition">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -195,10 +195,10 @@ export const AccessRequestsAdmin: React.FC = () => {
           </button>
         </div>
       ) : requests.length === 0 ? (
-        <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
+        <div className="text-center py-12 border-2 border-dashed border-[#e7e5df] rounded-2xl">
           <Shield className="w-8 h-8 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-400 font-medium">Nenhuma solicitação {filter === 'pending' ? 'pendente' : 'encontrada'}</p>
-          <button onClick={load} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-semibold hover:bg-slate-50 transition">
+          <button onClick={load} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e7e5df] text-slate-500 text-xs font-semibold hover:bg-slate-50 transition">
             <RefreshCw className="w-3 h-3" /> Recarregar
           </button>
         </div>
@@ -209,7 +209,7 @@ export const AccessRequestsAdmin: React.FC = () => {
             const isExpired = req.expires_at && new Date(req.expires_at) < new Date();
             const photo = avatarMap[req.requester_id];
             return (
-              <div key={req.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+              <div key={req.id} className="border border-[#e7e5df] rounded-2xl overflow-hidden bg-[#f8f7f5]">
                 <div className={`h-0.5 w-full ${req.status === 'pending' ? 'bg-amber-400' : req.status === 'approved' ? 'bg-emerald-400' : 'bg-red-400'}`} />
 
                 <div className="px-5 py-4">
@@ -315,7 +315,7 @@ export const AccessRequestsAdmin: React.FC = () => {
           <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => !processing && setApproveModal(null)}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <div
-              className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200"
+              className="relative bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-[#e7e5df]"
               onClick={e => e.stopPropagation()}
             >
               {/* Thin amber top bar */}
@@ -370,7 +370,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                         className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${
                           durationUnit === opt.unit
                             ? 'border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm'
-                            : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'
+                            : 'border-[#e7e5df] text-slate-500 hover:border-slate-300 hover:bg-slate-50'
                         }`}
                       >
                         {opt.icon}
@@ -388,7 +388,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                         max={365}
                         value={durationDays}
                         onChange={e => setApproveModal(m => m ? { ...m, durationDays: Number(e.target.value) } : m)}
-                        className="w-20 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                        className="w-20 border border-[#e7e5df] rounded-xl px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                       />
                       <span className="text-sm text-slate-500">dias</span>
                       {expiresAt && (
@@ -408,7 +408,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                         max={72}
                         value={durationHours}
                         onChange={e => setApproveModal(m => m ? { ...m, durationHours: Number(e.target.value) } : m)}
-                        className="w-20 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                        className="w-20 border border-[#e7e5df] rounded-xl px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                       />
                       <span className="text-sm text-slate-500">horas</span>
                       {expiresAt && (
@@ -434,7 +434,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                     placeholder="Ex: Acesso liberado para o projeto X..."
                     value={approveModal.adminNotes}
                     onChange={e => setApproveModal(m => m ? { ...m, adminNotes: e.target.value } : m)}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition placeholder:text-slate-300"
+                    className="w-full border border-[#e7e5df] rounded-xl px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition placeholder:text-slate-300"
                   />
                 </div>
               </div>
@@ -443,7 +443,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                 <button
                   onClick={() => setApproveModal(null)}
                   disabled={processing}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-[#e7e5df] text-slate-600 text-sm font-semibold hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -469,7 +469,7 @@ export const AccessRequestsAdmin: React.FC = () => {
           <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => !processing && setDenyModal(null)}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <div
-              className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200"
+              className="relative bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-[#e7e5df]"
               onClick={e => e.stopPropagation()}
             >
               <div className="h-1 w-full bg-gradient-to-r from-red-400 to-red-500" />
@@ -514,7 +514,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                     placeholder="Ex: Acesso não autorizado para este cargo..."
                     value={denyModal.adminNotes}
                     onChange={e => setDenyModal(m => m ? { ...m, adminNotes: e.target.value } : m)}
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:border-red-300 focus:ring-2 focus:ring-red-50 transition placeholder:text-slate-300"
+                    className="w-full border border-[#e7e5df] rounded-xl px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:border-red-300 focus:ring-2 focus:ring-red-50 transition placeholder:text-slate-300"
                   />
                 </div>
               </div>
@@ -523,7 +523,7 @@ export const AccessRequestsAdmin: React.FC = () => {
                 <button
                   onClick={() => setDenyModal(null)}
                   disabled={processing}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-[#e7e5df] text-slate-600 text-sm font-semibold hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>

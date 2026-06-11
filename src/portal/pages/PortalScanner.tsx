@@ -1136,7 +1136,7 @@ export const PortalScanner: React.FC = () => {
             <button
               onClick={() => setItems([])}
               disabled={processing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" /> Limpar
             </button>
@@ -1160,7 +1160,7 @@ export const PortalScanner: React.FC = () => {
       />
 
       {!cameraOpen && items.length === 0 && !sent && (
-        <section className="overflow-hidden rounded-[24px] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px]">
+        <section className="overflow-hidden rounded-[24px] bg-[#f8f7f5] shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:rounded-[28px]">
           {/* Mobile */}
           <div className="sm:hidden">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -1221,7 +1221,7 @@ export const PortalScanner: React.FC = () => {
 
       {/* Histórico de envios — abaixo do card de upload, expandido por padrão */}
       {!cameraOpen && history.length > 0 && items.length === 0 && !sent && (
-        <section className="rounded-[24px] bg-white shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
+        <section className="rounded-[24px] bg-[#f8f7f5] shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
           <button
             type="button"
             onClick={() => setHistoryOpen((v) => !v)}
@@ -1314,7 +1314,7 @@ export const PortalScanner: React.FC = () => {
             </button>
             <button
               onClick={() => { setSent(false); setSentCount(0); setSendMessage(null); }}
-              className="flex w-full items-center justify-center rounded-[18px] bg-white py-4 text-sm font-semibold text-slate-500 shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-200 active:scale-[0.98] transition-transform"
+              className="flex w-full items-center justify-center rounded-[18px] bg-[#f8f7f5] py-4 text-sm font-semibold text-slate-500 shadow-[0_4px_16px_rgba(15,23,42,0.06)] ring-1 ring-slate-200 active:scale-[0.98] transition-transform"
             >
               Fechar
             </button>
@@ -1330,7 +1330,7 @@ export const PortalScanner: React.FC = () => {
       )}
 
       {processedItems.length > 0 && !cameraOpen && (
-        <section className="rounded-[24px] bg-white px-4 py-3.5 shadow-[0_10px_28px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
+        <section className="rounded-[24px] bg-[#f8f7f5] px-4 py-3.5 shadow-[0_10px_28px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
@@ -1547,7 +1547,7 @@ export const PortalScanner: React.FC = () => {
             <div className="flex items-center justify-between gap-3">
               <button
                 onClick={triggerUpload}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/14 text-white backdrop-blur-sm"
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f8f7f5]/14 text-white backdrop-blur-sm"
               >
                 <Upload className="h-5 w-5" />
               </button>
@@ -1568,7 +1568,7 @@ export const PortalScanner: React.FC = () => {
 
               <button
                 onClick={stopCamera}
-                className="flex h-12 items-center justify-center rounded-2xl bg-white px-5 text-sm font-bold text-slate-900"
+                className="flex h-12 items-center justify-center rounded-2xl bg-[#f8f7f5] px-5 text-sm font-bold text-slate-900"
               >
                 Concluir
               </button>
@@ -1582,7 +1582,7 @@ export const PortalScanner: React.FC = () => {
         <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-slate-950/80 backdrop-blur-sm sm:items-center sm:p-4">
           {/* Card — flex column so buttons never scroll off screen */}
           <div
-            className="flex w-full flex-col rounded-t-[28px] bg-white text-slate-900 shadow-[0_-8px_40px_rgba(15,23,42,0.22)] sm:max-w-md sm:rounded-[28px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.24)]"
+            className="flex w-full flex-col rounded-t-[28px] bg-[#f8f7f5] text-slate-900 shadow-[0_-8px_40px_rgba(15,23,42,0.22)] sm:max-w-md sm:rounded-[28px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.24)]"
             style={{ maxHeight: 'calc(100dvh - 16px)' }}
           >
             {/* Header */}
@@ -1647,7 +1647,7 @@ export const PortalScanner: React.FC = () => {
                 {/* Highlighted selection area — updated by applyQuadToDOM */}
                 <div
                   ref={clipHlRef}
-                  className="pointer-events-none absolute inset-0 rounded-[16px] border border-white/20 bg-white/10"
+                  className="pointer-events-none absolute inset-0 rounded-[16px] border border-white/20 bg-[#f8f7f5]/10"
                   style={{ clipPath: `polygon(${draftQuadPolygon})` }}
                 />
                 {/* SVG border lines */}
@@ -1734,7 +1734,7 @@ export const PortalScanner: React.FC = () => {
 
       {!cameraOpen && processedItems.length > 0 && (
         <div className="fixed inset-x-3 z-20 sm:hidden" style={{ bottom: 'calc(58px + env(safe-area-inset-bottom) + 6px)' }}>
-          <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+          <div className="rounded-[24px] border border-slate-200/80 bg-[#f8f7f5]/90 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl">
             <div className="flex gap-2.5">
               {okItems.length > 0 ? (
                 <div className="relative flex-1">

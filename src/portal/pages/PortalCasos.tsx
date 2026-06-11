@@ -139,11 +139,11 @@ export const PortalCasos: React.FC = () => {
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
-                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)] hover:text-slate-800'
+                on ? 'bg-slate-900 text-white' : 'bg-[#f8f7f5] text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)] hover:text-slate-800'
               }`}
             >
               {t.label}
-              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-[#f8f7f5]/20 text-white' : 'text-slate-400'}`}>
                 {t.id === 'all' && (processesLoading || requirementsLoading) ? '?' : t.id === 'processos' && processesLoading ? '?' : t.id === 'requerimentos' && requirementsLoading ? '?' : t.count}
               </span>
             </button>
@@ -153,7 +153,7 @@ export const PortalCasos: React.FC = () => {
 
       {/* -- Lista ---- */}
       {loading ? (
-        <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] bg-white px-6 py-10 text-center shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+        <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] bg-[#f8f7f5] px-6 py-10 text-center shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
           <div className="relative mb-4 flex h-20 w-20 items-center justify-center">
             <span className="absolute inset-0 rounded-full border-4 border-orange-100" />
             <span className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-orange-500 border-r-orange-300" />
@@ -205,7 +205,7 @@ const ProcessCard: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ 
   return (
     <li>
       <button onClick={onClick} className="group w-full text-left active:scale-[0.99] transition">
-        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)]">
+        <div className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)]">
           {/* Card body */}
           <div className="flex">
             {/* Barra de status colorida */}
@@ -277,7 +277,7 @@ const RequirementCard: React.FC<{ req: RequirementItem; onClick: () => void }> =
   return (
     <li>
       <button onClick={onClick} className="group w-full text-left active:scale-[0.99] transition">
-        <div className={`overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)] ${isArchived ? 'opacity-70' : ''}`}>
+        <div className={`overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition group-hover:shadow-[0_4px_16px_rgba(15,23,42,0.10)] ${isArchived ? 'opacity-70' : ''}`}>
           <div className="flex">
             <div className={`w-1 shrink-0 ${isArchived ? 'bg-slate-300' : meta.urgent ? 'bg-amber-500' : tone.dot}`} />
 

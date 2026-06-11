@@ -41,7 +41,7 @@ export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate,
   const fmtMoney = (v: number) => isPlaceholder ? '—' : hideValues ? MASKED : formatCurrency(v);
 
   return (
-    <div className="rounded-2xl border border-slate-200/60 bg-white overflow-hidden h-fit">
+    <div className="rounded-2xl border border-[#e7e5df]/60 bg-[#f8f7f5] overflow-hidden h-fit">
       {/* Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-3">

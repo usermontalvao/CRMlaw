@@ -1924,7 +1924,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     className={`h-9 w-9 rounded-xl active:scale-95 transition-all duration-150 flex items-center justify-center ${
                       selectedRoom.created_by
                         ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                        : 'bg-white/[0.04] text-white/50 hover:bg-rose-500/20 hover:text-rose-400'
+                        : 'bg-[#f8f7f5]/[0.04] text-white/50 hover:bg-rose-500/20 hover:text-rose-400'
                     }`}
                   >
                     {selectedRoom.created_by ? <RotateCcw className="w-4 h-4" /> : <PhoneOff className="w-4 h-4" />}
@@ -1935,7 +1935,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 <button
                   type="button"
                   onClick={() => setShowNewChatModal(true)}
-                  className="h-9 w-9 rounded-xl bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70"
+                  className="h-9 w-9 rounded-xl bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70"
                   title="Nova Conversa"
                 >
                   <MessageCircle className="w-4 h-4" />
@@ -2279,7 +2279,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
                           {/* Reply preview */}
                           {replyMsg && !isDeleted && (
-                            <div className={`mb-1 px-2.5 py-1.5 rounded-xl border-l-2 border-orange-400 bg-white/[0.04] max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
+                            <div className={`mb-1 px-2.5 py-1.5 rounded-xl border-l-2 border-orange-400 bg-[#f8f7f5]/[0.04] max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
                               <div className="text-[10px] text-orange-300 font-semibold truncate">
                                 {replySender?.name || 'Usuário'}
                               </div>
@@ -2294,7 +2294,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
+                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
                                 title="Responder"
                               >
                                 <Reply className="w-3 h-3" />
@@ -2303,7 +2303,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             <div
                               className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13.5px] leading-snug transition-all overflow-hidden ${
                                 isDeleted
-                                  ? 'bg-white/[0.04] text-white/30 italic ring-1 ring-white/5'
+                                  ? 'bg-[#f8f7f5]/[0.04] text-white/30 italic ring-1 ring-white/5'
                                   : isMine
                                     ? 'bg-slate-700/75 text-white rounded-br-md ring-1 ring-white/[0.07] shadow-[0_2px_8px_rgba(0,0,0,.3)]'
                                     : 'bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-bl-md shadow-[0_4px_16px_-4px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.18)]'
@@ -2318,7 +2318,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-white/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
+                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
                                 title="Responder"
                               >
                                 <Reply className="w-3 h-3" />
@@ -2423,7 +2423,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                         {/* Linha 1: lixeira + waveform com play inline */}
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={handleCancelRecording}
-                            className="shrink-0 h-9 w-9 rounded-full bg-white/[0.06] hover:bg-red-500/20 text-white/40 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
+                            className="shrink-0 h-9 w-9 rounded-full bg-[#f8f7f5]/[0.06] hover:bg-red-500/20 text-white/40 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
                             title="Cancelar gravação">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -2431,7 +2431,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             style={{ height: '38px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                             {/* Botão play inline */}
                             <button type="button" onClick={handleTogglePreviewPlayback}
-                              className="shrink-0 w-6 h-6 rounded-full bg-white/[0.10] hover:bg-orange-500/30 flex items-center justify-center transition-all active:scale-90"
+                              className="shrink-0 w-6 h-6 rounded-full bg-[#f8f7f5]/[0.10] hover:bg-orange-500/30 flex items-center justify-center transition-all active:scale-90"
                               title={previewPlaying ? 'Pausar' : 'Ouvir gravação'}>
                               {previewPlaying
                                 ? <Pause className="w-3 h-3 text-orange-300" />
@@ -2470,7 +2470,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       /* ── ESTADO: GRAVANDO ── */
                       <>
                         <button type="button" onClick={handleCancelRecording}
-                          className="shrink-0 h-10 w-10 rounded-full bg-white/[0.06] hover:bg-red-500/20 text-white/45 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
+                          className="shrink-0 h-10 w-10 rounded-full bg-[#f8f7f5]/[0.06] hover:bg-red-500/20 text-white/45 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
                           title="Cancelar gravação">
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -2834,7 +2834,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
           {petitionEditorMinimized && (
             <>
-              <div className="w-px bg-white/[0.08]" aria-hidden />
+              <div className="w-px bg-[#f8f7f5]/[0.08]" aria-hidden />
               <div
                 className="relative flex items-center gap-2 px-4 h-12 text-white hover:bg-white/[0.04] transition"
                 role="button"

@@ -449,7 +449,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
   return (
     <div className="space-y-6">
       {/* Barra única: Título + indicadores + atualizar */}
-      <div className="bg-white border border-slate-100 rounded-lg p-3">
+      <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <Bell className="w-4 h-4 text-blue-600" />
@@ -472,7 +472,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       </div>
 
       {/* Barra de filtros (padrão do sistema) */}
-      <div className="bg-white border border-slate-100 rounded-lg p-3">
+      <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-3">
         <div className="flex flex-wrap items-center gap-2">
             {/* Campo de Busca */}
             <div className="relative flex-1 min-w-[220px]">
@@ -482,7 +482,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar notificações por processo, nome ou conteúdo..."
-                className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                className="w-full pl-8 pr-3 py-1.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
               />
               {searchTerm && (
                 <button
@@ -498,7 +498,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as any)}
-              className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+              className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
             >
                 <option value="all">Todos os tipos</option>
                 <option value="intimation">Intimações ({stats.byType.intimation})</option>
@@ -512,7 +512,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as any)}
-              className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+              className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
             >
                 <option value="all">Todas ({stats.total})</option>
                 <option value="unread">Não lidas ({stats.unread})</option>
@@ -531,7 +531,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
             {stats.total > stats.unread && (
               <button
                 onClick={clearAllRead}
-                className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-3 py-1.5 rounded-lg transition"
+                className="inline-flex items-center gap-1.5 border border-[#e7e5df] text-slate-600 hover:bg-slate-50 text-sm px-3 py-1.5 rounded-lg transition"
               >
                 <Trash2 className="w-4 h-4" />
                 Limpar lidas
@@ -564,14 +564,14 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
         {/* Lista de Notificações */}
         <div className="space-y-3">
           {loading ? (
-            <div className="bg-white border border-slate-100 rounded-lg p-8">
+            <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-8">
               <div className="flex items-center justify-center gap-3 text-slate-600">
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span className="text-sm">Carregando notificações...</span>
               </div>
             </div>
           ) : filteredNotifications.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-lg p-12 text-center">
+            <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-12 text-center">
               <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-400 dark:text-gray-500" />
               </div>
@@ -592,11 +592,11 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                 className={`group rounded-xl shadow-sm border-l-4 ${
                   !notification.isRead
                     ? notification.priority === 'urgent'
-                      ? 'border-l-red-500 border-y border-r border-gray-200 dark:border-gray-700'
-                      : 'border-l-blue-500 border-y border-r border-gray-200 dark:border-gray-700'
-                    : 'border-l-transparent border border-gray-200 dark:border-gray-700'
+                      ? 'border-l-red-500 border-y border-r border-[#e7e5df] dark:border-gray-700'
+                      : 'border-l-blue-500 border-y border-r border-[#e7e5df] dark:border-gray-700'
+                    : 'border-l-transparent border border-[#e7e5df] dark:border-gray-700'
                 } p-5 hover:shadow-md transition-all duration-200 cursor-pointer relative overflow-hidden ${
-                  !notification.isRead ? 'bg-blue-50/50 dark:bg-blue-950/20' : 'bg-white dark:bg-gray-800'
+                  !notification.isRead ? 'bg-blue-50/50 dark:bg-blue-950/20' : 'bg-[#f8f7f5] dark:bg-gray-800'
                 }`}
               >
                 <div className="flex items-start gap-4">
@@ -665,19 +665,19 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
 
         {/* Paginação */}
         {filteredNotifications.length > 0 && totalPages > 1 && (
-          <div className="mt-6 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+          <div className="mt-6 flex items-center justify-between border-t border-[#e7e5df] dark:border-gray-700 pt-4">
             <div className="flex-1 flex justify-between sm:hidden">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-[#f8f7f5] dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Anterior
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-[#f8f7f5] dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Próximo
               </button>
@@ -693,17 +693,17 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage <= 1}
-                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-[#f8f7f5] dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ChevronRight className="w-4 h-4 rotate-180" />
                   </button>
-                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-[#f8f7f5] dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300">
                     Página <span className="font-semibold ml-1">{currentPage}</span> de <span className="font-semibold ml-1">{totalPages}</span>
                   </span>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={currentPage >= totalPages}
-                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-[#f8f7f5] dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>

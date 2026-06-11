@@ -105,7 +105,7 @@ export const PortalProcesses: React.FC = () => {
               key={f.id}
               onClick={() => setFilter(f.id)}
               className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${
-                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+                on ? 'bg-slate-900 text-white' : 'bg-[#f8f7f5] text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
               }`}
             >
               {f.label}
@@ -146,7 +146,7 @@ const ProcessRow: React.FC<{ process: ProcessItem; onClick: () => void }> = ({ p
     <li>
       <button
         onClick={onClick}
-        className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
+        className="group w-full rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
       >
         {/* Linha 1: número + status */}
         <div className="flex items-center gap-3">

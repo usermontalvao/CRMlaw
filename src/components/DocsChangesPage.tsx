@@ -879,7 +879,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.10.219',
+    version: '1.10.220',
+    date: '11/06/2026',
+    summary: 'Refatura visual completa: paleta cream/warm-gray em todos os módulos, cards com fundo #f8f7f5, bordas #e7e5df, fundo app #f5f5f3.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Refatura de cores em todos os módulos', description: 'Substituição do tema azul/slate por paleta cream/warm-gray: fundo #f5f5f3, sidebar #f7f7f5, cards #f8f7f5, bordas #e7e5df. Afeta todos os módulos do CRM.' },
+        { type: 'improvement' as const, title: 'Cards com novo padrão visual', description: 'Cards passaram de border+shadow-sm para shadow suave + ring-1 ring-black/[0.04], com bg-[#f8f7f5] no lugar do branco puro.' },
+        { type: 'fix' as const, title: 'Dark mode dashboard corrigido', description: 'Adicionado dark:bg-zinc-950 ao wrapper do Dashboard; corrigido @layer base no index.css que sobrescrevia a cor de fundo.' },
+        { type: 'improvement' as const, title: 'Agenda: toolbar cream e grid card branco', description: 'Toolbar da agenda passou a usar bg-[#f5f5f3] separado do grid do calendário, que virou card branco independente.' },
+      ]},
+    ],
+  },
+  {
+    version: '1.10.218',
     date: '11/06/2026',
     summary: 'Segurança com PIN, modo sidebar configurável, criptografia INSS, novas edge functions e expansão das configurações do sistema.',
     modules: [

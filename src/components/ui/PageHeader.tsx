@@ -21,7 +21,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   actions,
   accentColor = 'bg-amber-500',
 }) => (
-  <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+  <div className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
     <div className={`h-1.5 w-full ${accentColor}`} />
     <div className="px-5 sm:px-6 py-4 flex items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">

@@ -170,7 +170,7 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
           ref={canvasRef}
           className={`border-2 border-dashed rounded-xl cursor-crosshair touch-none ${
             disabled
-              ? 'border-slate-200 bg-slate-50 cursor-not-allowed'
+              ? 'border-[#e7e5df] bg-slate-50 cursor-not-allowed'
               : 'border-slate-300 hover:border-slate-400'
           }`}
           style={{ width: canvasDimensions.width, height: canvasDimensions.height }}

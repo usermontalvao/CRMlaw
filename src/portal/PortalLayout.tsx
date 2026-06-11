@@ -71,7 +71,7 @@ const PushToastOverlay: React.FC<{
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto flex animate-in items-start gap-3 rounded-[22px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)] slide-in-from-right-4 duration-200 backdrop-blur-xl"
+          className="pointer-events-auto flex animate-in items-start gap-3 rounded-[22px] border border-white/70 bg-[#f8f7f5]/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)] slide-in-from-right-4 duration-200 backdrop-blur-xl"
         >
           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${bgFor(toast.type)}`}>
             {iconFor(toast.type)}
@@ -114,7 +114,7 @@ const PortalInstallAppPrompt: React.FC<{
 
   return createPortal(
     <div className="fixed inset-0 z-[220] flex items-end justify-center bg-slate-950/40 p-3 sm:items-center sm:p-6">
-      <div className="w-full max-w-md rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.28)]">
+      <div className="w-full max-w-md rounded-[28px] border border-white/70 bg-[#f8f7f5] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.28)]">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-500">Aplicativo</p>
@@ -202,8 +202,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   const [signaturesPending, setSignaturesPending] = useState(0);
   const { route, navigate } = usePortalRouter();
   const { session } = useClientAuth();
-  const { isEnabled } = usePortalConfig();
+  const { isEnabled, customization } = usePortalConfig();
   const { toasts, dismissToast } = usePortalNotifications();
+  const accentColor = customization.accent_color || '#ff8a00';
   const isIos = isIosDevice();
   const isStandalone = isStandaloneDisplay();
   const showInstallSuggestion = shouldSuggestInstall();
@@ -324,7 +325,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                   </p>
                   <button
                     onClick={() => navigate('app')}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-orange-600 shadow-sm transition hover:bg-orange-100"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#f8f7f5] px-3 py-1.5 text-[12px] font-semibold text-orange-600 shadow-sm transition hover:bg-orange-100"
                   >
                     Ver como instalar
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -351,7 +352,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
       <nav className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
         <div
-          className="overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08),0_-16px_40px_rgba(15,23,42,0.07)] backdrop-blur-2xl"
+          className="overflow-hidden bg-[#f8f7f5] shadow-[0_-1px_0_rgba(15,23,42,0.08),0_-16px_40px_rgba(15,23,42,0.07)] backdrop-blur-2xl"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="flex items-stretch px-1 pt-2 pb-1">
@@ -368,8 +369,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                     key={id}
                     onClick={() => navigate(id)}
                     className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-2 transition-all duration-150 ${
-                      active ? 'text-orange-500' : 'text-slate-400 active:text-slate-600'
+                      active ? '' : 'text-slate-400 active:text-slate-600'
                     }`}
+                  style={active ? { color: accentColor } : undefined}
                   >
                     <span className="relative">
                       <Icon
@@ -383,11 +385,14 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                         </span>
                       )}
                     </span>
-                    <span className={`truncate text-[10px] font-bold leading-none tracking-tight transition-colors ${active ? 'text-orange-500' : 'text-slate-400'}`}>
+                    <span className={`truncate text-[10px] font-bold leading-none tracking-tight transition-colors ${active ? '' : 'text-slate-400'}`}>
                       {label}
                     </span>
                     {active && (
-                      <span className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-t-full bg-orange-500" />
+                      <span
+                        className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-t-full"
+                        style={{ backgroundColor: accentColor }}
+                      />
                     )}
                   </button>
                 );

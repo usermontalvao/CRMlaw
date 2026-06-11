@@ -391,16 +391,16 @@ export const PostModal: React.FC<PostModalProps> = ({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center aero-backdrop"
+      className="fixed inset-0 z-[9999] flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4"
       onClick={onClose}
     >
       <div
-        className="aero-modal w-full max-w-2xl max-h-[90vh] rounded-2xl flex flex-col overflow-hidden"
+        className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className="aero-modal-inner flex items-center justify-between px-4 py-3 border-b border-white/30 dark:border-white/10 flex-shrink-0"
+          className="aero-modal-inner flex items-center justify-between gap-3 px-4 py-3 border-b border-white/30 dark:border-white/10 flex-shrink-0"
         >
           <div className="flex items-center gap-3">
             {onBackToFeed && (
@@ -413,7 +413,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            <h2 className="text-lg font-semibold" style={{ color: '#0f172a' }}>
+            <h2 className="text-base font-semibold sm:text-lg" style={{ color: '#0f172a' }}>
               {post ? `Post de ${post.author?.name || 'Usuário'}` : 'Carregando...'}
             </h2>
           </div>
@@ -522,7 +522,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                             <img
                               src={a.signedUrl || ''}
                               alt={a.fileName}
-                              className="w-full rounded-lg border border-slate-200"
+                              className="w-full rounded-lg border border-[#e7e5df]"
                             />
                           </a>
                         ))}
@@ -555,8 +555,8 @@ export const PostModal: React.FC<PostModalProps> = ({
                                     hasVoted 
                                       ? 'border-indigo-400 bg-indigo-50' 
                                       : canVote 
-                                        ? 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
-                                        : 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                                        ? 'border-[#e7e5df] bg-[#f8f7f5] hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
+                                        : 'border-[#e7e5df] bg-slate-50 cursor-not-allowed'
                                   }`}
                                 >
                                   {/* Barra de progresso */}
@@ -606,7 +606,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                     {!post.banned_at && post.preview_data && Object.keys(post.preview_data).length > 0 && (
                       <div className="mt-3 space-y-2">
                         {(post.preview_data as any).financeiro && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-emerald-500 rounded-lg p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex items-start gap-2">
                                 <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
@@ -622,15 +622,15 @@ export const PostModal: React.FC<PostModalProps> = ({
                               </span>
                             </div>
                             <div className="grid grid-cols-3 gap-2 mt-2">
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Recebido</p>
                                 <p className="text-emerald-600 font-bold text-sm">{(post.preview_data as any).financeiro.recebido}</p>
                               </div>
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Pendente</p>
                                 <p className="text-amber-600 font-bold text-sm">{(post.preview_data as any).financeiro.pendente}</p>
                               </div>
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Atrasado</p>
                                 <p className="text-red-600 font-bold text-sm">{(post.preview_data as any).financeiro.atrasado}</p>
                               </div>
@@ -639,7 +639,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).cliente && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-blue-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
                                 <Users className="w-5 h-5" />
@@ -653,7 +653,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).processo && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
                                 <Gavel className="w-5 h-5" />
@@ -667,7 +667,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).prazo && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-red-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center text-red-700">
                                 <Clock className="w-5 h-5" />
@@ -681,7 +681,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).agenda && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-amber-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700">
                                 <Calendar className="w-5 h-5" />
@@ -695,7 +695,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).documento && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-700">
                                 <FileText className="w-5 h-5" />
@@ -709,7 +709,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).peticao && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-cyan-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-700">
                                 <ScrollText className="w-5 h-5" />
@@ -723,7 +723,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).assinatura && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-pink-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center text-pink-700">
                                 <Pencil className="w-5 h-5" />
@@ -737,7 +737,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         )}
 
                         {(post.preview_data as any).requerimento && (
-                          <div className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3">
+                          <div className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-orange-500 rounded-lg p-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center text-orange-700">
                                 <Target className="w-5 h-5" />
@@ -857,7 +857,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                 <div className="p-4 relative" style={{ borderTop: '1px solid rgba(255,255,255,0.30)', backgroundColor: 'rgba(255,255,255,0.50)' }}>
                   {/* Dropdown de menções */}
                   {showMentionDropdown && allProfiles.length > 0 && (
-                    <div className="absolute left-4 right-4 bottom-full mb-2 bg-white rounded-lg border border-slate-200 shadow-lg z-[100] max-h-48 overflow-y-auto">
+                    <div className="absolute left-4 right-4 bottom-full mb-2 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-[100] max-h-48 overflow-y-auto">
                       <div className="p-2 border-b border-slate-100">
                         <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                           <AtSign className="w-3 h-3" /> Mencionar usuário

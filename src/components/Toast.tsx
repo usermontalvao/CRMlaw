@@ -76,12 +76,12 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
   };
 
   const getStyles = () => {
-    return 'bg-white shadow-lg rounded-lg border border-slate-200';
+    return 'bg-white shadow-lg rounded-lg border border-[#e7e5df]';
   };
 
   return (
     <div
-      className={`${getStyles()} p-3 mb-2 min-w-[340px] max-w-md transition-all duration-300 ${
+      className={`${getStyles()} mb-2 w-[min(100vw-24px,28rem)] p-3 transition-all duration-300 sm:min-w-[340px] sm:max-w-md ${
         isExiting ? 'opacity-0 transform scale-95' : 'opacity-100 transform scale-100'
       }`}
       style={{
@@ -148,7 +148,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           }
         `}
       </style>
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[2147483647] pointer-events-none">
+      <div className="fixed top-4 left-1/2 z-[2147483647] w-full max-w-[100vw] -translate-x-1/2 px-3 pointer-events-none sm:px-0">
         <div className="pointer-events-auto flex flex-col items-center">
           {toasts.map((toast) => (
             <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />

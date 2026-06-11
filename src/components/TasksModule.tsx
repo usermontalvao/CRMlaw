@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useFormLayout } from '../hooks/useFormLayout';
 import {
   CheckCircle2,
   Circle,
@@ -9,8 +10,9 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { taskService } from '../services/task.service';
+import { settingsService, type TaskPriorityConfig, TASK_MODULE_DEFAULTS } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
-import type { Task } from '../types/task.types';
+import type { Task, TaskPriority } from '../types/task.types';
 import { formatDate, formatTime } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
@@ -32,6 +34,22 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   const [addingTask, setAddingTask] = useState(false);
   const newTaskInputRef = useRef<HTMLInputElement | null>(null);
   const { user } = useAuth();
+
+  const fl = useFormLayout('tasks');
+
+  // Prioridades configuráveis
+  const [priorities, setPriorities] = useState<TaskPriorityConfig[]>(TASK_MODULE_DEFAULTS.priorities);
+  const [selectedPriority, setSelectedPriority] = useState<string>('medium');
+
+  useEffect(() => {
+    settingsService.getTaskModuleConfig().then(cfg => {
+      if (cfg.priorities?.length) {
+        setPriorities(cfg.priorities);
+        // Usa a primeira prioridade como padrão (respeita ordem configurada)
+        setSelectedPriority(cfg.priorities[0].key);
+      }
+    }).catch(() => {/* mantém fallbacks */});
+  }, []);
   const fallbackCreatorName =
     (user?.user_metadata?.full_name && user.user_metadata.full_name.trim()) || 'usuário';
 
@@ -78,9 +96,10 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
     try {
       setAddingTask(true);
+      const priority: TaskPriority = (selectedPriority || 'medium') as TaskPriority;
       await taskService.createTask({
         title: newTaskTitle.trim(),
-        priority: 'medium',
+        priority,
       });
       setNewTaskTitle('');
       await loadTasks();
@@ -208,17 +227,28 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           type="text"
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder="Digite uma nova tarefa..."
+          placeholder={fl.fieldLabel('title', 'Digite uma nova tarefa...')}
           ref={newTaskInputRef}
-          className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
         />
+        {!fl.isHidden('priority') && priorities.length > 1 && (
+          <select
+            value={selectedPriority}
+            onChange={(e) => setSelectedPriority(e.target.value)}
+            className="w-full sm:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-[#f8f7f5]"
+          >
+            {priorities.map(p => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
+        )}
         <button
           type="submit"
           disabled={!newTaskTitle.trim() || addingTask}
           className={`w-full sm:w-auto px-4 sm:px-6 py-2 text-white rounded-lg font-medium text-sm transition-all transform active:scale-95 ${
-            addingTask 
-              ? 'bg-emerald-600 hover:bg-emerald-700 cursor-not-allowed' 
-              : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+            addingTask
+              ? 'bg-amber-600 hover:bg-amber-700 cursor-not-allowed'
+              : 'bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
           }`}
         >
           {addingTask ? (
@@ -239,7 +269,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'pending'
               ? 'bg-blue-600 text-white'
-              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              : 'bg-[#f8f7f5] border border-slate-300 text-slate-700 hover:bg-slate-50'
           }`}
         >
           Pendentes ({pendingTasks.length})
@@ -249,7 +279,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'completed'
               ? 'bg-green-600 text-white'
-              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              : 'bg-[#f8f7f5] border border-slate-300 text-slate-700 hover:bg-slate-50'
           }`}
         >
           Concluídas ({completedTasks.length})
@@ -259,7 +289,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'all'
               ? 'bg-slate-600 text-white'
-              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              : 'bg-[#f8f7f5] border border-slate-300 text-slate-700 hover:bg-slate-50'
           }`}
         >
           Todas ({tasks.length})
@@ -293,7 +323,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 animate-spin" />
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="text-center py-8 sm:py-12 bg-white rounded-xl border border-slate-200">
+        <div className="text-center py-8 sm:py-12 bg-[#f8f7f5] rounded-xl border border-[#e7e5df]">
           <AlertCircle className="w-8 h-8 sm:w-12 sm:h-12 text-slate-400 mx-auto mb-3" />
           <p className="text-xs sm:text-sm text-slate-600">Nenhuma tarefa encontrada</p>
         </div>
@@ -305,9 +335,9 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
             return (
             <div
               key={task.id}
-              className={`bg-white border rounded-lg p-3 sm:p-4 transition flex items-center gap-2 sm:gap-3 ${
+              className={`bg-[#f8f7f5] border rounded-lg p-3 sm:p-4 transition flex items-center gap-2 sm:gap-3 ${
                 task.status === 'completed'
-                  ? 'border-slate-200 bg-slate-50'
+                  ? 'border-[#e7e5df] bg-slate-50'
                   : isDragging
                   ? 'border-blue-400 ring-2 ring-blue-200'
                   : 'border-blue-200 hover:shadow-md'
@@ -384,6 +414,16 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
                     {task.title}
                   </p>
                 )}
+                {task.status === 'pending' && (() => {
+                  const cfg = priorities.find(p => p.key === task.priority);
+                  const label = cfg?.label ?? task.priority;
+                  const badge = cfg?.badge ?? 'bg-slate-100 text-slate-600';
+                  return (
+                    <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${badge}`}>
+                      {label}
+                    </span>
+                  );
+                })()}
                 <p className="text-[10px] sm:text-xs text-slate-500 mt-1">
                   Criado em {formatDate(task.created_at)} às {formatTime(task.created_at)} por {task.created_by_name || fallbackCreatorName}
                 </p>

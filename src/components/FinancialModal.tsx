@@ -40,8 +40,8 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50">
-        <div className="aero-modal rounded-2xl p-6 max-w-md w-full mx-4">
+      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+        <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Carregando...</p>
         </div>
       </div>
@@ -50,8 +50,8 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (!agreement) {
     return (
-      <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50">
-        <div className="aero-modal rounded-2xl p-6 max-w-md w-full mx-4">
+      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+        <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Acordo não encontrado</p>
           <button
             onClick={onClose}
@@ -65,11 +65,11 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 aero-backdrop flex items-center justify-center z-50 p-4">
-      <div className="aero-modal rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+      <div className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl">
         {/* Header */}
-        <div className="sticky top-0 aero-modal-inner border-b border-white/30 dark:border-white/10 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-900">Detalhes do Acordo</h2>
+        <div className="sticky top-0 z-10 aero-modal-inner flex items-start justify-between gap-3 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-6">
+          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Detalhes do Acordo</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
@@ -79,7 +79,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 sm:p-6">
           {/* Descrição */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">DESCRIÇÃO</label>
@@ -98,7 +98,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
           </div>
 
           {/* Valores */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">VALOR TOTAL</label>
               <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4">
+        <div className="sticky bottom-0 bg-[#f8f7f5] border-t border-[#e7e5df] px-4 py-4 sm:px-6">
           <button
             onClick={onClose}
             className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors"

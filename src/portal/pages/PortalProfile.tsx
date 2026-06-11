@@ -42,7 +42,7 @@ const FIELD_LABELS: Record<string, string> = {
   address_zip_code: 'CEP',
 };
 
-const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100';
+const inputCls = 'w-full rounded-lg border border-slate-200 bg-[#f8f7f5] px-3 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100';
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div>
@@ -212,7 +212,7 @@ export const PortalProfile: React.FC = () => {
     <div className="flex flex-col gap-4 lg:h-[calc(100vh-2.5rem)] lg:overflow-hidden">
       <div className="grid gap-4 lg:min-h-0 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="flex flex-col gap-3">
-          <div className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div className="rounded-[22px] border border-slate-200 bg-[#f8f7f5] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
@@ -256,7 +256,7 @@ export const PortalProfile: React.FC = () => {
               href={officePhone ? `https://wa.me/${officePhone}` : 'mailto:contato@jurius.com.br'}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-emerald-200 hover:shadow-[0_14px_28px_rgba(15,23,42,0.06)]"
+              className="group flex items-center gap-3 rounded-[20px] border border-slate-200 bg-[#f8f7f5] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-emerald-200 hover:shadow-[0_14px_28px_rgba(15,23,42,0.06)]"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white">
                 <MessageCircle className="h-5 w-5" />
@@ -270,7 +270,7 @@ export const PortalProfile: React.FC = () => {
 
             <button
               onClick={handleLogout}
-              className="group flex items-center gap-3 rounded-[20px] border border-rose-200 bg-white p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:bg-rose-50 hover:shadow-[0_14px_28px_rgba(15,23,42,0.06)]"
+              className="group flex items-center gap-3 rounded-[20px] border border-rose-200 bg-[#f8f7f5] p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:bg-rose-50 hover:shadow-[0_14px_28px_rgba(15,23,42,0.06)]"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500 text-white">
                 <LogOut className="h-5 w-5" />
@@ -283,7 +283,7 @@ export const PortalProfile: React.FC = () => {
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col rounded-[22px] border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+        <section className="flex min-h-0 flex-col rounded-[22px] border border-slate-200 bg-[#f8f7f5] shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">{editing ? 'Atualizar dados' : 'Dados do cliente'}</h2>
@@ -457,7 +457,7 @@ export const PortalProfile: React.FC = () => {
                   <button
                     onClick={cancelEdit}
                     disabled={saving}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-[#f8f7f5] py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <X className="h-4 w-4" /> Cancelar
                   </button>
@@ -522,7 +522,7 @@ const DataCard: React.FC<{ title: string; icon: React.ReactNode; children: React
 );
 
 const DataRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+  <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] px-3 py-2.5">
     <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</p>
     <p className="mt-1 text-[13px] font-medium leading-relaxed text-slate-800 break-words">{value}</p>
   </div>

@@ -628,12 +628,12 @@ const ModuleItem = ({
   leading?: React.ReactNode;
   dense?: boolean;
 }) => (
-  <div className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md ${
+  <div className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md ${
     urgent
       ? 'border-rose-200 bg-rose-50/40'
       : muted
-      ? 'border-slate-100 hover:border-slate-200'
-      : 'border-slate-200 hover:border-slate-300'
+      ? 'border-slate-100 hover:border-[#e7e5df]'
+      : 'border-[#e7e5df] hover:border-slate-300'
   }`}>
     <div className={`px-3.5 flex items-center gap-3 ${dense ? 'py-2' : 'py-2.5'}`}>
       {leading && <div className="flex-shrink-0">{leading}</div>}
@@ -1448,7 +1448,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   ];
 
   return (
-    <div className="w-full text-xs sm:text-sm rounded-xl bg-white border border-slate-200 shadow-sm">
+    <div className="w-full text-xs sm:text-sm rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
 
       {/* ══════════════════════════════════════════════════════════════════
           HERO — Identidade + Stats (seção, superfície única)
@@ -1636,7 +1636,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-semibold transition ${
                     isWaiting
                       ? 'border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      : 'border-[#e7e5df] bg-slate-50 text-slate-600 hover:bg-slate-100'
                   }`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isWaiting ? 'bg-amber-400' : 'bg-slate-400'}`} />
@@ -1789,7 +1789,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('email', sigEmail)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
                       <Mail className="w-3 h-3 text-amber-500" />
@@ -1803,7 +1803,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('phone', sigPhone)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
                       <Phone className="w-3 h-3 text-amber-500" />
@@ -1817,7 +1817,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       type="button"
                       onClick={() => handleImportField('cpf_cnpj', sigCpfDigits)}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
                       <User className="w-3 h-3 text-amber-500" />
@@ -1904,7 +1904,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
         return createPortal(
           <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={() => setSelfiePickerOpen(false)}>
-            <div className="bg-white w-full sm:max-w-lg flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+            <div className="bg-[#f8f7f5] w-full sm:max-w-lg flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
 
               {/* Handle bar (mobile) */}
               <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -1921,7 +1921,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 </div>
                 <button
                   onClick={() => setSelfiePickerOpen(false)}
-                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition shadow-sm"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 transition shadow-sm"
                 >
                   <X className="w-4 h-4 stroke-2" />
                 </button>
@@ -1975,7 +1975,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <button
                               onClick={() => void handleExclude(s.path, s.label)}
                               disabled={settingPhoto}
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/20 hover:bg-red-500/80 text-white backdrop-blur-sm transition disabled:opacity-50"
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#f8f7f5]/20 hover:bg-red-500/80 text-white backdrop-blur-sm transition disabled:opacity-50"
                               title="Remover esta foto (preserva a prova jurídica)"
                             >
                               {settingPhoto ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
@@ -2005,31 +2005,31 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         <div className="flex flex-wrap items-center gap-1.5">
           {onCreateProcess && (
             <button onClick={onCreateProcess}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
               <Plus className="w-3 h-3" /> Processo
             </button>
           )}
           {onCreateRequirement && (
             <button onClick={onCreateRequirement}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
               <Plus className="w-3 h-3" /> Requerimento
             </button>
           )}
           {onCreateDeadline && (
             <button onClick={onCreateDeadline}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
               <Plus className="w-3 h-3" /> Prazo
             </button>
           )}
           <button
             onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
           >
             <PenTool className="w-3 h-3" /> Petição
           </button>
           <button
             onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
           >
             <CalendarPlus className="w-3 h-3" /> Compromisso
           </button>
@@ -2038,7 +2038,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleExport}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-500 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
+            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-500 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
             title="Exportar ficha"
           >
             <Printer className="w-3 h-3" /> Exportar
@@ -2053,8 +2053,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       </div>
 
       {/* ── Tabs ── */}
-      <div className="bg-white">
-        <div className="flex overflow-x-auto border-b border-slate-200/70 px-4 scrollbar-none sticky top-0 bg-white/80 backdrop-blur-md z-10">
+      <div className="bg-[#f8f7f5]">
+        <div className="flex overflow-x-auto border-b border-[#e7e5df]/70 px-4 scrollbar-none sticky top-0 bg-[#f8f7f5]/80 backdrop-blur-md z-10">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -2129,7 +2129,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   {/* Campos em linha */}
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(req.changes).map(([k, v]) => v && (
-                      <span key={k} className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] ring-1 ring-orange-100">
+                      <span key={k} className="inline-flex items-center gap-1 rounded-md bg-[#f8f7f5] px-2 py-1 text-[11px] ring-1 ring-orange-100">
                         <span className="font-medium text-slate-500">{FIELD_LABELS[k] || k}:</span>
                         <span className="font-semibold text-slate-800">{displayValue(k, String(v))}</span>
                       </span>
@@ -2144,10 +2144,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         value={rejectReason}
                         onChange={(e) => setRejectReason(e.target.value)}
                         placeholder="Motivo (opcional)"
-                        className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                        className="flex-1 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
                       />
                       <button onClick={() => { setRejectInputId(null); setRejectReason(''); }}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                        className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                         Cancelar
                       </button>
                       <button disabled={!!profileReqProcessing} onClick={() => handleRejectProfileReq(req.id)}
@@ -2159,7 +2159,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     <div className="flex gap-2">
                       <button disabled={!!profileReqProcessing}
                         onClick={() => { setRejectInputId(req.id); setRejectReason(''); }}
-                        className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
+                        className="flex items-center gap-1 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
                         <UserX className="w-3 h-3" /> Rejeitar
                       </button>
                       <button disabled={!!profileReqProcessing}
@@ -2302,7 +2302,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   placeholder="Buscar no histórico..."
-                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#e7e5df] text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
                 />
               </div>
 
@@ -2475,7 +2475,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         return (
                           <div
                             key={p.id}
-                            className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${isMuted ? 'border-slate-100 opacity-60' : 'border-slate-200 hover:border-slate-300'}`}
+                            className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${isMuted ? 'border-slate-100 opacity-60' : 'border-[#e7e5df] hover:border-slate-300'}`}
                           >
                             <div className="px-4 py-3 flex items-start gap-3">
                               <div className="flex-shrink-0 mt-0.5">
@@ -2559,7 +2559,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         return (
                           <div
                             key={r.id}
-                            className={`rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${hasAlert ? 'border-rose-200' : 'border-slate-200 hover:border-slate-300'}`}
+                            className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${hasAlert ? 'border-rose-200' : 'border-[#e7e5df] hover:border-slate-300'}`}
                           >
                             <div className="px-4 py-3 flex items-start gap-3">
                               <div className="flex-shrink-0 mt-0.5">
@@ -2693,7 +2693,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     const overdue = insts.filter((i) => i.status === 'vencido').length;
 
                     return (
-                      <div key={a.id} className="rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                      <div key={a.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden hover:border-slate-300 hover:shadow-md transition-all duration-150">
                         <div className="px-4 pt-3.5 pb-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -2754,7 +2754,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     <div key={inst.id} className={`rounded-lg border px-3 py-2 text-xs ${
                                       inst.status === 'pago' ? 'border-emerald-100 bg-emerald-50' :
                                       inst.status === 'vencido' ? 'border-rose-100 bg-rose-50' :
-                                      'border-slate-100 bg-white'
+                                      'border-slate-100 bg-[#f8f7f5]'
                                     }`}>
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-2 min-w-0">
@@ -2778,7 +2778,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                               setPayingInstallmentId(inst.id);
                                               setPayForm({ date: new Date().toISOString().split('T')[0], method: 'pix', value: inst.value });
                                             }}
-                                            className="flex-shrink-0 px-2.5 py-1 rounded-lg border border-emerald-200 bg-white text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 transition"
+                                            className="flex-shrink-0 px-2.5 py-1 rounded-lg border border-emerald-200 bg-[#f8f7f5] text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 transition"
                                           >
                                             Dar baixa
                                           </button>
@@ -2803,7 +2803,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                                 type="date"
                                                 value={payForm.date}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
                                               />
                                             </div>
                                             <div>
@@ -2811,7 +2811,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                               <select
                                                 value={payForm.method}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
                                               >
                                                 <option value="pix">PIX</option>
                                                 <option value="transferencia">Transferência</option>
@@ -2828,7 +2828,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                                 step="0.01"
                                                 value={payForm.value}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, value: parseFloat(e.target.value) || 0 }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
                                               />
                                             </div>
                                           </div>
@@ -3073,7 +3073,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   onClick={onClick}
                   className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150 group ${
                     isFuture
-                      ? 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-md'
+                      ? 'bg-[#f8f7f5] border-[#e7e5df] hover:border-slate-300 hover:shadow-md'
                       : 'bg-slate-50 border-slate-100 opacity-60 hover:opacity-80'
                   }`}
                 >
@@ -3156,7 +3156,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 {signatureLoading ? (
                   <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
                 ) : signatureRequests.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                  <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
                     <PenTool className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="text-sm text-slate-400">Nenhuma assinatura digital vinculada a este cliente.</p>
                     <button
@@ -3174,7 +3174,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     const allSigned = signers.length > 0 && signersSigned === signers.length;
                     const accentBorder = r.status === 'signed' ? 'border-l-emerald-400' : r.status === 'pending' ? 'border-l-amber-400' : r.status === 'expired' ? 'border-l-red-400' : 'border-l-slate-300';
                     return (
-                      <div key={r.id} className="rounded-xl bg-white border border-slate-200 shadow-sm transition-all duration-150 hover:shadow-md hover:border-slate-300">
+                      <div key={r.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] transition-all duration-150 hover:shadow-md hover:border-slate-300">
                         <div className="px-4 pt-3.5 pb-3">
                           {/* Row 1 — nome + status + abrir */}
                           <div className="flex items-start justify-between gap-3">
@@ -3233,7 +3233,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     s.status === 'signed'
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                       : s.status === 'cancelled'
-                                      ? 'bg-slate-50 text-slate-400 border-slate-200 line-through'
+                                      ? 'bg-slate-50 text-slate-400 border-[#e7e5df] line-through'
                                       : 'bg-amber-50 text-amber-700 border-amber-200'
                                   }`}>
                                     {s.status === 'signed'
@@ -3277,7 +3277,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       )}
                     </div>
                     {signedDocuments.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                         Nenhum documento assinado registrado
                       </div>
                     ) : (
@@ -3286,7 +3286,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           const signer = (r.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
                           const signedAt = r.signed_at ?? signer?.signed_at ?? null;
                           return (
-                            <div key={r.id} className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                            <div key={r.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all duration-150">
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
                                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -3300,7 +3300,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path!);
                                     if (url) window.open(url, '_blank');
                                   }}
-                                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-white text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-[#f8f7f5] text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
                                 >
                                   <FileText className="w-3.5 h-3.5" /> Ver PDF
                                 </button>
@@ -3328,7 +3328,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             tabIndex={0}
                             onClick={() => { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); }}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); } }}
-                            className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
+                            className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
                           >
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
@@ -3353,13 +3353,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       )}
                     </div>
                     {clientPetitions.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                         Nenhuma petição vinculada
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {clientPetitions.map((p) => (
-                          <div key={p.id} className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 group hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                          <div key={p.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 group hover:border-slate-300 hover:shadow-md transition-all duration-150">
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 truncate">{p.title ?? 'Sem título'}</p>
                               <p className="text-xs text-slate-400 mt-0.5">Atualizada em {formatDateTime(p.updated_at)}</p>
@@ -3367,7 +3367,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <button
                                 onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id, petitionId: p.id })}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e7e5df] text-xs font-semibold text-slate-700 hover:bg-slate-50"
                               >
                                 <PenTool className="w-3.5 h-3.5" /> Abrir
                               </button>
@@ -3400,7 +3400,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       )}
                     </div>
                     {clientCloudFolders.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                         Nenhuma pasta vinculada
                       </div>
                     ) : (
@@ -3412,7 +3412,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             tabIndex={0}
                             onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('cloud', { folderId: f.id } as any); } }}
-                            className="rounded-xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
+                            className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
                           >
                             <div className="min-w-0 flex items-center gap-2.5">
                               <FolderPlus className="w-4 h-4 text-amber-500 flex-shrink-0" />
@@ -3445,7 +3445,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
                         </div>
                       ) : scannerUploadsLoaded && scannerUploads.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                        <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                           Nenhum envio pelo scanner registrado
                         </div>
                       ) : scannerUploadsLoaded ? (
@@ -3455,7 +3455,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               ? u.size > 1_048_576 ? `${(u.size / 1_048_576).toFixed(1)} MB` : `${Math.round(u.size / 1024)} KB`
                               : null;
                             return (
-                              <div key={u.messageId} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 flex items-center justify-between gap-3 group">
+                              <div key={u.messageId} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 flex items-center justify-between gap-3 group">
                                 <div className="min-w-0 flex items-center gap-2.5">
                                   <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
                                   <div className="min-w-0">
@@ -3482,7 +3482,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           })}
                         </div>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                        <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                           Abra esta aba para carregar os envios
                         </div>
                       )}
@@ -3503,13 +3503,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
                 </div>
               ) : !portalUser ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
                   <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
                   <p className="text-xs text-slate-400 mt-1">Este cliente não possui acesso ao portal do cliente.</p>
                 </div>
               ) : clientChatRooms.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
                   <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-500">Nenhuma conversa iniciada</p>
                   <p className="text-xs text-slate-400 mt-1">O cliente ainda não abriu uma conversa pelo portal.</p>
@@ -3533,7 +3533,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 const stripCls = isWaiting ? 'bg-amber-400' : isOpen ? 'bg-emerald-400' : 'bg-slate-300';
 
                 return (
-                  <div className="rounded-xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                  <div className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:border-slate-300 hover:shadow-md transition-all duration-150">
                     <div className="px-4 pt-3.5 pb-3">
                       {/* Row 1 — nome + status */}
                       <div className="flex items-start justify-between gap-3">
@@ -3585,7 +3585,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
                 </div>
               ) : !portalUser ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
+                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
                   <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
                   <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
@@ -3595,7 +3595,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               ) : (
                 <>
                   {/* ── Status compacto ── */}
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-3">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
@@ -3632,7 +3632,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       </span>
                     </div>
                     {clientChatRooms.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                         Nenhuma conversa ainda
                       </div>
                     ) : (
@@ -3651,7 +3651,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-slate-100 text-slate-500';
                           return (
-                            <div key={room.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                            <div key={room.id} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] overflow-hidden">
                               <div
                                 role="button"
                                 tabIndex={0}
@@ -3706,7 +3706,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                           <div className={`max-w-[85%] px-2.5 py-1.5 rounded-xl text-xs ${
                                             isClient
                                               ? 'bg-orange-100 text-orange-900'
-                                              : 'bg-white border border-slate-200 text-slate-800'
+                                              : 'bg-[#f8f7f5] border border-[#e7e5df] text-slate-800'
                                           }`}>
                                             {msg.content.startsWith('__anexo__:')
                                               ? <span className="italic text-slate-500">📎 Arquivo enviado</span>
@@ -3756,7 +3756,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
                       </div>
                     ) : portalNotifsLoaded && portalNotifications.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                         Nenhuma notificação enviada
                       </div>
                     ) : (
@@ -3765,7 +3765,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           const filtered = portalNotifications.filter((n) => n.type !== 'chat_reply');
                           const visible = showAllNotifs ? filtered : filtered.slice(0, 6);
                           if (filtered.length === 0) return (
-                            <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-slate-400 text-sm">
+                            <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
                               Nenhuma notificação relevante
                             </div>
                           );
@@ -3836,7 +3836,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             const reqStatusLabel = req.status === 'pending' ? 'Pendente' : req.status === 'approved' ? 'Aprovado' : 'Rejeitado';
                             const changedFields = Object.keys(req.changes).length;
                             return (
-                              <div key={req.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 flex items-center justify-between gap-3">
+                              <div key={req.id} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold text-slate-800">
                                     {changedFields} campo{changedFields !== 1 ? 's' : ''} alterado{changedFields !== 1 ? 's' : ''}

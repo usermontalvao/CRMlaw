@@ -167,8 +167,8 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="!bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div className="!bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e7e5df]">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Gerenciar Documentos</h2>
             <p className="text-sm text-slate-600">{template.name}</p>
@@ -243,7 +243,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                   const label = isMain ? 'Principal' : 'Anexo';
                   const badgeClass = isMain
                     ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                    : 'bg-slate-50 text-slate-600 border-slate-200';
+                    : 'bg-slate-50 text-slate-600 border-[#e7e5df]';
 
                   return (
                 <div
@@ -252,7 +252,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                   onDragStart={() => handleDragStart(file.id)}
                   onDragOver={(e) => handleDragOver(e, file.id)}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 ${
+                  className={`flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-[#e7e5df] ${
                     draggedFileId === file.id ? 'opacity-50' : ''
                   } hover:border-amber-300 transition cursor-move`}
                 >
@@ -312,7 +312,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center">
+        <div className="px-6 py-4 border-t border-[#e7e5df] flex justify-between items-center">
           <p className="text-xs text-slate-500">
             Todos os documentos terão assinatura e página de autenticidade
           </p>

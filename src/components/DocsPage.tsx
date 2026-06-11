@@ -132,7 +132,7 @@ const DocsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 lg:translate-x-0 lg:static ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-[#e7e5df] transform transition-transform duration-300 lg:translate-x-0 lg:static ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center gap-3">
@@ -154,7 +154,7 @@ const DocsPage: React.FC = () => {
               const isActive = activeSection === section.id;
               return (
                 <button key={section.id} onClick={() => { setActiveSection(section.id); setSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${isActive ? 'bg-slate-100 text-slate-900 border border-slate-200' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${isActive ? 'bg-slate-100 text-slate-900 border border-[#e7e5df]' : 'text-slate-600 hover:bg-slate-50'}`}>
                   <Icon className={`w-5 h-5 ${isActive ? 'text-slate-700' : 'text-slate-400'}`} />
                   <div className="flex-1">
                     <div className="text-sm font-medium text-slate-900">{section.name}</div>
@@ -179,7 +179,7 @@ const DocsPage: React.FC = () => {
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
       <main ref={mainRef} className="flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-30 bg-white border-b border-slate-200 lg:hidden">
+        <header className="sticky top-0 z-30 bg-[#f8f7f5] border-b border-[#e7e5df] lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-slate-100"><Menu className="w-5 h-5 text-slate-600" /></button>
             <div className="flex items-center gap-2"><Scale className="w-5 h-5 text-slate-900" /><span className="font-semibold text-slate-900">Documentação</span></div>
@@ -192,7 +192,7 @@ const DocsPage: React.FC = () => {
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar na documentação..."
-                className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 transition" />
+                className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] focus:outline-none focus:ring-2 focus:ring-slate-200 transition" />
               {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-100"><X className="w-4 h-4 text-slate-400" /></button>}
             </div>
           </div>
@@ -200,7 +200,7 @@ const DocsPage: React.FC = () => {
           {/* INÍCIO */}
           {activeSection === 'inicio' && (
             <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">Documentação</h1>
@@ -225,25 +225,25 @@ const DocsPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="text-xs text-slate-500">Módulos</div>
                   <div className="mt-1 text-2xl font-bold text-slate-900">{SYSTEM_MODULES.length}</div>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="text-xs text-slate-500">Funcionalidades</div>
                   <div className="mt-1 text-2xl font-bold text-slate-900">{SYSTEM_MODULES.reduce((acc, m) => acc + m.features.length, 0)}</div>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="text-xs text-slate-500">Versões</div>
                   <div className="mt-1 text-2xl font-bold text-slate-900">{CHANGELOG.length}+</div>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="text-xs text-slate-500">FAQs</div>
                   <div className="mt-1 text-2xl font-bold text-slate-900">{FAQ_ITEMS.length}</div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-semibold text-slate-900">Acesso rápido</h2>
                   <button onClick={() => setActiveSection('guia')} className="text-sm text-slate-600 hover:text-slate-900 font-medium">Ver todos</button>
@@ -255,7 +255,7 @@ const DocsPage: React.FC = () => {
                       <button
                         key={mod.id}
                         onClick={() => { setActiveSection('guia'); setExpandedModules(new Set([mod.id])); }}
-                        className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition text-left"
+                        className="flex items-center gap-3 p-4 rounded-xl border border-[#e7e5df] hover:bg-slate-50 transition text-left"
                       >
                         <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
                           <Icon className="w-5 h-5 text-slate-700" />
@@ -276,7 +276,7 @@ const DocsPage: React.FC = () => {
           {/* GUIA */}
           {activeSection === 'guia' && (
             <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">Guia do Sistema</h1>
@@ -288,7 +288,7 @@ const DocsPage: React.FC = () => {
               {filteredModules.length === 0 ? (<div className="text-center py-12"><Search className="w-12 h-12 text-slate-300 mx-auto mb-4" /><p className="text-slate-500">Nenhum módulo encontrado</p></div>) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {filteredModules.map((mod) => { const Icon = mod.icon; const isExpanded = expandedModules.has(mod.id); return (
-                    <div key={mod.id} className={`bg-white rounded-xl border overflow-hidden transition-all ${isExpanded ? 'border-slate-300' : 'border-slate-200'}`}>
+                    <div key={mod.id} className={`bg-[#f8f7f5] rounded-xl border overflow-hidden transition-all ${isExpanded ? 'border-slate-300' : 'border-[#e7e5df]'}`}>
                       <button onClick={() => toggleModule(mod.id)} className="w-full p-5 flex items-start gap-4 text-left hover:bg-slate-50/50 transition">
                         <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
                           <Icon className="w-6 h-6 text-slate-700" />
@@ -321,7 +321,7 @@ const DocsPage: React.FC = () => {
                               </ul>
                             </div>
                             {mod.tips && mod.tips.length > 0 && (
-                              <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                              <div className="p-4 rounded-lg bg-slate-50 border border-[#e7e5df]">
                                 <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-2">
                                   <Lightbulb className="w-3.5 h-3.5" />Dicas
                                 </h4>
@@ -345,7 +345,7 @@ const DocsPage: React.FC = () => {
           {/* CHANGELOG */}
           {activeSection === 'changelog' && (
             <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">Changelog</h1>
@@ -360,7 +360,7 @@ const DocsPage: React.FC = () => {
               {filteredChangelog.length === 0 ? (<div className="text-center py-12"><Search className="w-12 h-12 text-slate-300 mx-auto mb-4" /><p className="text-slate-500">Nenhuma versão encontrada</p></div>) : (
                 <div className="space-y-4">
                   {filteredChangelog.map((entry) => (
-                    <article key={entry.version} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <article key={entry.version} className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] overflow-hidden">
                       <div className="p-5 border-b border-slate-100 bg-slate-50">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -404,7 +404,7 @@ const DocsPage: React.FC = () => {
           {/* FAQ */}
           {activeSection === 'faq' && (
             <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">Perguntas Frequentes</h1>
@@ -416,7 +416,7 @@ const DocsPage: React.FC = () => {
               {filteredFAQ.length === 0 ? (<div className="text-center py-12"><Search className="w-12 h-12 text-slate-300 mx-auto mb-4" /><p className="text-slate-500">Nenhuma pergunta encontrada</p></div>) : (
                 <div className="space-y-3">
                   {filteredFAQ.map((faq, idx) => { const isExpanded = expandedFAQ.has(idx); return (
-                    <div key={idx} className={`bg-white rounded-xl border overflow-hidden transition-all ${isExpanded ? 'border-slate-300' : 'border-slate-200'}`}>
+                    <div key={idx} className={`bg-[#f8f7f5] rounded-xl border overflow-hidden transition-all ${isExpanded ? 'border-slate-300' : 'border-[#e7e5df]'}`}>
                       <button onClick={() => toggleFAQ(idx)} className="w-full p-5 flex items-start gap-4 text-left hover:bg-slate-50/50 transition">
                         <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
                           <MessageCircleQuestion className="w-4 h-4 text-slate-700" />

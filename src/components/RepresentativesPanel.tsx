@@ -97,7 +97,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   preSelectedEventId,
   onDataChanged,
 }) => {
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const toast = useToastContext();
 
   // Estados principais
@@ -392,6 +392,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
     try {
       await representativeService.deleteRepresentative(rep.id);
+      notifyDeleted(rep.full_name);
       toast.success('Correspondente excluído');
       await loadData();
     } catch (err: any) {
@@ -513,6 +514,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
     try {
       await representativeService.deleteAppointment(apt.id);
+      notifyDeleted();
       toast.success('Vínculo removido');
       await loadData();
       await onDataChanged?.();
@@ -766,10 +768,10 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   }
 
   return (
-    <div className="flex max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm">
+    <div className="flex max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] text-slate-900 shadow-sm">
       <div className="h-2 w-full bg-orange-500" />
       {/* Header */}
-      <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+      <div className="border-b border-[#e7e5df] bg-[#f8f7f5] px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
@@ -801,19 +803,19 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
         {/* Stats */}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="rounded-lg border border-[#e7e5df] bg-slate-50 px-3 py-2">
             <p className="text-xs text-slate-500">Diligências Ativas</p>
             <p className="text-lg font-bold text-slate-900">{stats.activeAppointments}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="rounded-lg border border-[#e7e5df] bg-slate-50 px-3 py-2">
             <p className="text-xs text-slate-500">Correspondentes Ativos</p>
             <p className="text-lg font-bold text-slate-900">{stats.totalRepresentatives}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="rounded-lg border border-[#e7e5df] bg-slate-50 px-3 py-2">
             <p className="text-xs text-slate-500">Valor Pago</p>
             <p className="text-lg font-bold text-slate-900">{formatCurrency(stats.paidValue)}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="rounded-lg border border-[#e7e5df] bg-slate-50 px-3 py-2">
             <p className="text-xs text-slate-500">Pendente</p>
             <p className="text-lg font-bold text-slate-900">{formatCurrency(stats.pendingValue)}</p>
           </div>
@@ -821,7 +823,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-slate-200">
+      <div className="border-b border-[#e7e5df]">
         <div className="flex">
           <button
             onClick={() => setActiveTab('vinculos')}
@@ -861,7 +863,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="mb-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
+        <div className="mb-4 rounded-2xl border border-[#e7e5df] bg-gradient-to-r from-slate-50 to-white px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -896,13 +898,13 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   placeholder="Buscar vínculo..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-[#e7e5df] py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
               <select
                 value={serviceStatusFilter}
                 onChange={(e) => setServiceStatusFilter(e.target.value as any)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="all">Status da Diligência</option>
                 {Object.entries(SERVICE_STATUS_LABELS_MAP).map(([key, label]) => (
@@ -912,7 +914,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               <select
                 value={paymentStatusFilter}
                 onChange={(e) => setPaymentStatusFilter(e.target.value as any)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="all">Status Pagamento</option>
                 {Object.entries(PAYMENT_STATUS_LABELS_MAP).map(([key, label]) => (
@@ -930,7 +932,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   placeholder="Buscar diligência arquivada..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-[#e7e5df] py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </>
@@ -944,7 +946,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   placeholder="Buscar por nome..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-[#e7e5df] py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </>
@@ -979,7 +981,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               filteredRepresentatives.map((rep) => (
                 <div
                   key={rep.id}
-                  className="rounded-xl border border-slate-200 p-4 transition hover:border-blue-200 hover:bg-blue-50/30"
+                  className="rounded-xl border border-[#e7e5df] p-4 transition hover:border-blue-200 hover:bg-blue-50/30"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -1058,7 +1060,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               archivedAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm transition hover:border-slate-300"
+                  className="rounded-2xl border border-[#e7e5df] bg-slate-50/60 p-4 shadow-sm transition hover:border-slate-300"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -1139,7 +1141,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               filteredAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-amber-200 hover:shadow-md transition"
+                  className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 shadow-sm hover:border-amber-200 hover:shadow-md transition"
                 >
                   <div className="flex flex-col gap-4">
                     <div className="flex-1 min-w-0">
@@ -1182,7 +1184,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           <select
                             value={apt.service_status}
                             onChange={(e) => handleUpdateServiceStatus(apt, e.target.value as ServiceStatus)}
-                            className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 sm:w-56"
+                            className="w-full rounded-lg border border-amber-200 bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 sm:w-56"
                           >
                             {Object.entries(SERVICE_STATUS_LABELS_MAP).map(([key, label]) => (
                               <option key={key} value={key}>{label}</option>
@@ -1244,9 +1246,9 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       {isRepresentativeModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsRepresentativeModalOpen(false)} />
-          <div className="relative w-full max-w-2xl max-h-[92vh] rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-2xl max-h-[92vh] rounded-2xl bg-[#f8f7f5] shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+            <div className="px-5 sm:px-8 py-5 border-b border-[#e7e5df] bg-white flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Correspondente</p>
                 <h3 className="text-xl font-semibold text-slate-900">
@@ -1261,7 +1263,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f7f5]">
               <div className="p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-32 space-y-4 sm:space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
@@ -1270,7 +1272,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.full_name}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, full_name: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                     placeholder="Nome do correspondente"
                   />
                 </div>
@@ -1281,7 +1283,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.cpf || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, cpf: applyCpfMask(e.target.value) })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="000.000.000-00"
                     maxLength={14}
                   />
@@ -1293,7 +1295,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.phone || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, phone: applyPhoneMask(e.target.value) })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="(00) 0 0000-0000"
                     maxLength={16}
                   />
@@ -1305,7 +1307,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.oab_number || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, oab_number: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="Ex.: MT 12345"
                   />
                 </div>
@@ -1316,7 +1318,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="email"
                     value={representativeForm.email || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, email: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="email@exemplo.com"
                   />
                   {representativeForm.email && !validateEmail(representativeForm.email) && (
@@ -1324,7 +1326,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   )}
                 </div>
 
-                <div className="sm:col-span-2 border-t border-slate-200 pt-4">
+                <div className="sm:col-span-2 border-t border-[#e7e5df] pt-4">
                   <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
                     <CreditCard className="w-4 h-4 text-orange-500" />
                     Dados Bancários
@@ -1337,7 +1339,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.pix_key || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, pix_key: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="CPF, e-mail, telefone ou chave aleatória"
                   />
                 </div>
@@ -1348,7 +1350,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.bank_name || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, bank_name: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="Nome do banco"
                   />
                 </div>
@@ -1359,7 +1361,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.bank_agency || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, bank_agency: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="0000"
                   />
                 </div>
@@ -1370,7 +1372,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     type="text"
                     value={representativeForm.bank_account || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, bank_account: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="00000-0"
                   />
                 </div>
@@ -1380,7 +1382,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   <select
                     value={representativeForm.status}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, status: e.target.value as any })}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   >
                     <option value="ativo">Ativo</option>
                     <option value="inativo">Inativo</option>
@@ -1393,7 +1395,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     value={representativeForm.notes || ''}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
+                    className="w-full px-4 py-2.5 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
                     placeholder="Observações sobre o correspondente..."
                   />
                 </div>
@@ -1401,7 +1403,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               </div>
             </div>
 
-            <div className="sticky bottom-0 z-10 border-t border-slate-200 bg-white/95 px-5 sm:px-8 py-5 flex justify-end gap-3 backdrop-blur-sm">
+            <div className="sticky bottom-0 z-10 border-t border-[#e7e5df] bg-[#f8f7f5]/95 px-5 sm:px-8 py-5 flex justify-end gap-3 backdrop-blur-sm">
               <button
                 onClick={() => setIsRepresentativeModalOpen(false)}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 transition"
@@ -1426,9 +1428,9 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         {isAppointmentModalOpen && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsAppointmentModalOpen(false)} />
-            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white text-slate-900 shadow-2xl ring-1 ring-black/5">
+            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-[#f8f7f5] text-slate-900 shadow-2xl ring-1 ring-black/5">
               <div className="h-2 w-full bg-orange-500" />
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 sm:px-8 py-5">
+              <div className="flex items-start justify-between gap-4 border-b border-[#e7e5df] bg-[#f8f7f5] px-5 sm:px-8 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Vínculo</p>
                   <h3 className="text-xl font-semibold text-slate-900">
@@ -1443,7 +1445,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f7f5]">
                 <div className="p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-32 space-y-4 sm:space-y-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
@@ -1459,7 +1461,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                             setAppointmentForm({ ...appointmentForm, representative_id: '' });
                           }
                         }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-10 py-2.5 text-sm focus:border-orange-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        className="w-full rounded-lg border border-[#e7e5df] bg-white px-10 py-2.5 text-sm focus:border-orange-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                         placeholder="Digite para buscar correspondente..."
                       />
                       {selectedAppointmentRepresentative && representativeModalSearchTerm.trim() === selectedAppointmentRepresentative.full_name && (
@@ -1475,7 +1477,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                         </button>
                       )}
                       {representativeModalSearchTerm.trim() && representativeModalSearchTerm.trim() !== (selectedAppointmentRepresentative?.full_name || '') && (
-                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-52 overflow-y-auto rounded-xl border border-[#e7e5df] bg-[#f8f7f5] shadow-lg">
                           {filteredModalRepresentatives.length > 0 ? (
                             filteredModalRepresentatives.map((rep) => (
                               <button
@@ -1511,7 +1513,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           service_date: event?.start_at?.split('T')[0] || appointmentForm.service_date,
                         });
                       }}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     >
                       <option value="">Selecione um compromisso</option>
                       {availableFutureEvents.map((ev) => (
@@ -1534,7 +1536,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       type="date"
                       value={appointmentForm.service_date}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, service_date: e.target.value })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     />
                     <p className="mt-1 text-xs text-slate-500">Puxada automaticamente do compromisso selecionado</p>
                   </div>
@@ -1545,7 +1547,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       type="text"
                       value={appointmentForm.diligence_location || ''}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, diligence_location: e.target.value })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       placeholder="Ex: Fórum Trabalhista de Cuiabá - Sala 3"
                     />
                     <p className="mt-1 text-xs text-slate-500">Informe o endereço, fórum, sala ou ponto de atendimento da diligência.</p>
@@ -1595,7 +1597,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       min="0"
                       value={appointmentForm.service_value}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, service_value: parseFloat(e.target.value) || 0 })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       placeholder="0,00"
                     />
                   </div>
@@ -1605,7 +1607,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     <select
                       value={appointmentForm.service_status}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, service_status: e.target.value as ServiceStatus })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     >
                       {Object.entries(SERVICE_STATUS_LABELS_MAP).map(([key, label]) => (
                         <option key={key} value={key}>{label}</option>
@@ -1618,7 +1620,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     <select
                       value={appointmentForm.payment_status}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, payment_status: e.target.value as PaymentStatus })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     >
                       {Object.entries(PAYMENT_STATUS_LABELS_MAP).map(([key, label]) => (
                         <option key={key} value={key}>{label}</option>
@@ -1632,7 +1634,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       type="text"
                       value={appointmentForm.service_description || ''}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, service_description: e.target.value })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       placeholder="Ex: Audiência trabalhista"
                     />
                   </div>
@@ -1643,7 +1645,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       value={appointmentForm.notes || ''}
                       onChange={(e) => setAppointmentForm({ ...appointmentForm, notes: e.target.value })}
                       rows={3}
-                      className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full resize-none rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       placeholder="Observações sobre o serviço..."
                     />
                   </div>
@@ -1651,7 +1653,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 </div>
               </div>
 
-              <div className="sticky bottom-0 z-10 flex justify-end gap-3 border-t border-slate-200 bg-white/95 px-5 sm:px-8 py-5 backdrop-blur-sm">
+              <div className="sticky bottom-0 z-10 flex justify-end gap-3 border-t border-[#e7e5df] bg-[#f8f7f5]/95 px-5 sm:px-8 py-5 backdrop-blur-sm">
                 <button
                   onClick={() => setIsAppointmentModalOpen(false)}
                   className="px-4 py-2 text-sm text-slate-600 transition hover:text-slate-900"
@@ -1674,9 +1676,9 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         {isPaymentModalOpen && payingAppointment && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsPaymentModalOpen(false)} />
-            <div className="relative flex w-full max-w-2xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-white text-slate-900 shadow-2xl ring-1 ring-black/5">
+            <div className="relative flex w-full max-w-2xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-[#f8f7f5] text-slate-900 shadow-2xl ring-1 ring-black/5">
               <div className="h-2 w-full bg-orange-500" />
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 sm:px-8 py-5">
+              <div className="flex items-start justify-between gap-4 border-b border-[#e7e5df] bg-[#f8f7f5] px-5 sm:px-8 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Pagamento</p>
                   <h3 className="text-xl font-semibold text-slate-900">Confirmar Pagamento do Correspondente</h3>
@@ -1689,7 +1691,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white p-4 sm:p-6 md:p-8">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f7f5] p-4 sm:p-6 md:p-8">
                 <div className="space-y-5">
                   <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
                     <div className="space-y-4">
@@ -1703,25 +1705,25 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4">
                         <div className="flex items-center gap-2">
                           <CreditCard className="h-4 w-4 text-orange-500" />
                           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Dados bancários do correspondente</p>
                         </div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
-                          <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
+                          <div className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] p-3 sm:col-span-2">
                             <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Chave PIX</span>
                             <span className="mt-1 block break-all text-slate-900">{payingAppointment.representative?.pix_key || 'Não informado'}</span>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] p-3">
                             <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Banco</span>
                             <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_name || 'Não informado'}</span>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] p-3">
                             <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Agência</span>
                             <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_agency || 'Não informado'}</span>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
+                          <div className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] p-3 sm:col-span-2">
                             <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Conta</span>
                             <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_account || 'Não informado'}</span>
                           </div>
@@ -1741,7 +1743,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           type="date"
                           value={paymentForm.payment_date}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                         />
                       </div>
 
@@ -1750,7 +1752,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                         <select
                           value={paymentForm.payment_method}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value as PaymentMethod })}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                         >
                           {Object.entries(PAYMENT_METHOD_LABELS_MAP).map(([key, label]) => (
                             <option key={key} value={key}>{label}</option>
@@ -1764,7 +1766,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           type="text"
                           value={paymentForm.payment_receipt}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_receipt: e.target.value })}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                           placeholder="Número do comprovante ou referência"
                         />
                       </div>
@@ -1775,7 +1777,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           value={paymentForm.payment_notes}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_notes: e.target.value })}
                           rows={4}
-                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          className="w-full resize-none rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                           placeholder="Observações sobre o pagamento..."
                         />
                       </div>
@@ -1784,7 +1786,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-5 sm:px-8 py-5">
+              <div className="flex justify-end gap-3 border-t border-[#e7e5df] bg-[#f8f7f5] px-5 sm:px-8 py-5">
                 <button
                   onClick={() => setIsPaymentModalOpen(false)}
                   className="px-4 py-2 text-sm text-slate-600 transition hover:text-slate-900"

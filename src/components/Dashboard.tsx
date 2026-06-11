@@ -47,7 +47,6 @@ import { calendarService } from '../services/calendar.service';
 import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
-import { dashboardPreferencesService, isFinancialRevealed } from '../services/dashboardPreferences.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -60,6 +59,8 @@ import type { DjenComunicacaoLocal } from '../types/djen.types';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { DashboardHeader } from './dashboard/DashboardHeader';
 import { profileService } from '../services/profile.service';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
+import SensitiveValue from './SensitiveValue';
 
 // ── Modal rápido de ficha do cliente (abre sem sair do dashboard) ────────────
 const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; onNavigateToModule?: (k: string, p?: any) => void }> = ({ clientId, onClose, onNavigateToModule }) => {
@@ -91,7 +92,7 @@ const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; on
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-start justify-center px-3 sm:px-6 py-6 overflow-y-auto">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden my-auto">
+      <div className="relative w-full max-w-5xl bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden my-auto">
         <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
         {loading || !client ? (
           <div className="flex h-64 items-center justify-center">
@@ -143,7 +144,7 @@ const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onC
   return (
     <button
       onClick={onClick}
-      className="flex items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-amber-300 hover:shadow-md"
+      className="flex items-start gap-4 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] p-4 text-left transition hover:border-amber-300 hover:shadow-md"
     >
       <div className={`rounded-lg p-3 ${accentClasses[accent]}`}>{icon}</div>
       <div className="flex-1">
@@ -248,6 +249,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [userAuthId, setUserAuthId] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('');
   const [financialRevealedUntil, setFinancialRevealedUntil] = useState<Date | null>(null);
+  const [financialSecondsLeft, setFinancialSecondsLeft] = useState(0);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   // Solicitações de acesso pendentes (visível só para admin)
@@ -476,11 +478,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         setUserAuthId(profile?.user_id || '');
         setUserRole(profile?.role || '');
 
-        if (profile?.user_id) {
-          const prefs = await dashboardPreferencesService.getPreferences(profile.user_id);
-          if (prefs?.financial_revealed_until && isFinancialRevealed(prefs)) {
-            setFinancialRevealedUntil(new Date(prefs.financial_revealed_until));
-          }
+        // Restaura reveal financeiro a partir da sessão PIN (sessionStorage, não DB)
+        const sessionExpiry = getFinancialSessionExpiry();
+        if (sessionExpiry && sessionExpiry > new Date()) {
+          setFinancialRevealedUntil(sessionExpiry);
         }
       } catch (error) {
         console.warn('Não foi possível carregar o nome do usuário:', error);
@@ -496,6 +497,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     if (ms <= 0) { setFinancialRevealedUntil(null); return; }
     const timer = setTimeout(() => setFinancialRevealedUntil(null), ms);
     return () => clearTimeout(timer);
+  }, [financialRevealedUntil]);
+
+  // Contador regressivo em segundos (atualiza a cada segundo quando revelado)
+  useEffect(() => {
+    if (!financialRevealedUntil) { setFinancialSecondsLeft(0); return; }
+    const tick = () => {
+      const secs = Math.max(0, Math.round((financialRevealedUntil.getTime() - Date.now()) / 1000));
+      setFinancialSecondsLeft(secs);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
   }, [financialRevealedUntil]);
 
   useEffect(() => {
@@ -515,6 +528,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }, []);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
+  const { requirePin, getFinancialSessionExpiry } = useSecurityPin();
 
   const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;
@@ -807,7 +821,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   return (
     <>
-    <div className="bg-[#f4f6fb] -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
+    <div className="bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
 
       {/* Header */}
       <div className="mb-5 sm:mb-6 space-y-2.5">
@@ -903,7 +917,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       {/* Banner de solicitações de acesso pendentes (apenas admin) */}
       {isAdmin && pendingAccessCount > 0 && !accessBannerDismissed && (
         <div className="mx-1 mb-3">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-amber-200 border-l-4 border-l-amber-400 shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f8f7f5] border border-amber-200 border-l-4 border-l-amber-400 shadow-sm">
             <ShieldAlert className="w-4 h-4 text-amber-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800 leading-tight">
@@ -964,7 +978,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         };
         return (
           <div className="mx-1 mb-3">
-            <div className="rounded-xl border border-orange-200 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-xl border border-orange-200 bg-[#f8f7f5] shadow-sm overflow-hidden">
               {/* Header clicável */}
               <button
                 onClick={() => setProfileBannerExpanded(e => !e)}
@@ -1020,10 +1034,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                           <input type="text" value={profileRejectReason}
                             onChange={e => setProfileRejectReason(e.target.value)}
                             placeholder="Motivo (opcional)"
-                            className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                            className="flex-1 rounded-lg border border-[#e7e5df] px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
                           />
                           <button onClick={() => { setProfileRejectId(null); setProfileRejectReason(''); }}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                             Cancelar
                           </button>
                           <button disabled={!!profileReqProcessing} onClick={() => handleReject(req.id)}
@@ -1035,7 +1049,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         <div className="flex gap-2">
                           <button disabled={!!profileReqProcessing}
                             onClick={() => { setProfileRejectId(req.id); setProfileRejectReason(''); }}
-                            className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
+                            className="flex items-center gap-1 rounded-lg border border-rose-200 bg-[#f8f7f5] px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
                             <UserX className="w-3 h-3" /> Rejeitar
                           </button>
                           <button disabled={!!profileReqProcessing}
@@ -1058,7 +1072,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       {/* Banner de chave DataJud inválida (apenas admin) */}
       {isAdmin && datajudKeyInvalid && !datajudKeyBannerDismissed && (
         <div className="mx-1 mb-3">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-red-200 border-l-4 border-l-red-500 shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f8f7f5] border border-red-200 border-l-4 border-l-red-500 shadow-sm">
             <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800 leading-tight">
@@ -1089,7 +1103,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       {!isAdmin && userDeniedNotifs.length > 0 && (
         <div className="mx-1 mb-3 space-y-2">
           {userDeniedNotifs.map(notif => (
-            <div key={notif.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-red-200 border-l-4 border-l-red-400 shadow-sm">
+            <div key={notif.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f8f7f5] border border-red-200 border-l-4 border-l-red-400 shadow-sm">
               <ShieldAlert className="w-4 h-4 text-red-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-800 leading-tight">
@@ -1135,7 +1149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
         {/* ── AGENDA (7 cols or full) ── */}
         {showAgenda && (
-          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
+          <div key="agenda" className={`min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
             <div className="h-0.5 bg-gradient-to-r from-amber-400 to-orange-400 flex-shrink-0" />
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
@@ -1183,7 +1197,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                             {DAY_ABBR[day.getDay()]}
                           </span>
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
-                            isToday ? 'bg-amber-500 shadow-sm shadow-amber-200' : 'hover:bg-slate-100'
+                            isToday ? 'bg-amber-500 shadow-amber-200' : 'hover:bg-slate-100'
                           }`}>
                             <span className={`text-xs font-bold tabular-nums ${isToday ? 'text-white' : 'text-slate-700'}`}>
                               {day.getDate()}
@@ -1278,7 +1292,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           <div className={`min-w-0 ${showAgenda ? 'lg:col-span-5' : 'lg:col-span-12'} flex flex-col gap-4`}>
             {/* Financeiro */}
             {showFinanceiro && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-emerald-400 to-teal-400 flex-shrink-0" />
                 <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1291,19 +1305,52 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Contador regressivo com arco SVG — visível apenas quando revelado */}
+                    {financialRevealedUntil && financialRevealedUntil > new Date() && (() => {
+                      const totalSecs = 10 * 60;
+                      const pct = financialSecondsLeft / totalSecs;
+                      const r = 9;
+                      const circ = 2 * Math.PI * r;
+                      const dash = circ * pct;
+                      const mm = String(Math.floor(financialSecondsLeft / 60)).padStart(2, '0');
+                      const ss = String(financialSecondsLeft % 60).padStart(2, '0');
+                      const color = pct > 0.4 ? '#10b981' : pct > 0.15 ? '#f59e0b' : '#ef4444';
+                      return (
+                        <div className="relative flex items-center justify-center w-8 h-8" title={`Valores visíveis por mais ${mm}:${ss}`}>
+                          <svg width="32" height="32" viewBox="0 0 32 32" className="-rotate-90">
+                            <circle cx="16" cy="16" r={r} fill="none" stroke="#e2e8f0" strokeWidth="2.5" />
+                            <circle
+                              cx="16" cy="16" r={r} fill="none"
+                              stroke={color} strokeWidth="2.5"
+                              strokeDasharray={`${dash} ${circ}`}
+                              strokeLinecap="round"
+                              style={{ transition: 'stroke-dasharray 0.9s linear, stroke 0.5s' }}
+                            />
+                          </svg>
+                          <span className="absolute text-[8px] font-bold tabular-nums" style={{ color }}>{mm}:{ss}</span>
+                        </div>
+                      );
+                    })()}
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         const revealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
                         if (revealed) {
                           setFinancialRevealedUntil(null);
-                          if (userAuthId) dashboardPreferencesService.updateFinancialRevealedUntil(userAuthId, null);
                         } else {
-                          const until = new Date(Date.now() + 6 * 60 * 60 * 1000);
-                          setFinancialRevealedUntil(until);
-                          if (userAuthId) dashboardPreferencesService.updateFinancialRevealedUntil(userAuthId, until.toISOString());
+                          await requirePin({
+                            action: 'view_dashboard_financial_values',
+                            resourceType: 'dashboard',
+                            sensitivity: 'medium',
+                            title: 'Visualizar valores financeiros',
+                            description: 'Informe seu PIN de Segurança para revelar os valores do dashboard.',
+                            onVerified: () => {
+                              const expiry = getFinancialSessionExpiry();
+                              setFinancialRevealedUntil(expiry ?? new Date(Date.now() + 10 * 60 * 1000));
+                            },
+                          });
                         }
                       }}
-                      title={financialRevealedUntil && financialRevealedUntil > new Date() ? 'Ocultar valores' : 'Ver valores (6h)'}
+                      title={financialRevealedUntil && financialRevealedUntil > new Date() ? 'Ocultar valores' : 'Ver valores'}
                       className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                     >
                       {financialRevealedUntil && financialRevealedUntil > new Date() ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -1323,7 +1370,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   ) : (() => {
                     const s = financialStats;
                     const isRevealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
-                    const fmt = (v: number) => isRevealed ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : 'R$ •••••';
                     return (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -1332,14 +1378,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                               <TrendingUp className="w-3 h-3 text-emerald-500" />
                               <span className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Recebido</span>
                             </div>
-                            <p className="text-sm font-bold text-emerald-700 tabular-nums leading-tight whitespace-nowrap">{fmt(s.monthly_fees_received)}</p>
+                            <p className="text-sm font-bold text-emerald-700 tabular-nums leading-tight whitespace-nowrap"><SensitiveValue value={s.monthly_fees_received} isRevealed={isRevealed} /></p>
                           </div>
                           <div className="bg-amber-50/60 rounded-xl px-3 py-2.5">
                             <div className="flex items-center gap-1.5 mb-1">
                               <PiggyBank className="w-3 h-3 text-amber-500" />
                               <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wide">A receber</span>
                             </div>
-                            <p className="text-sm font-bold text-amber-700 tabular-nums leading-tight whitespace-nowrap">{fmt(s.monthly_fees_pending)}</p>
+                            <p className="text-sm font-bold text-amber-700 tabular-nums leading-tight whitespace-nowrap"><SensitiveValue value={s.monthly_fees_pending} isRevealed={isRevealed} /></p>
                           </div>
                         </div>
                         {s.total_overdue > 0 && (
@@ -1349,7 +1395,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                                 <AlertTriangle className="w-3 h-3 text-red-500" />
                                 <span className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">Em atraso</span>
                               </div>
-                              <p className="text-sm font-bold text-red-600 tabular-nums whitespace-nowrap">{fmt(s.total_overdue)}</p>
+                              <p className="text-sm font-bold text-red-600 tabular-nums whitespace-nowrap"><SensitiveValue value={s.total_overdue} isRevealed={isRevealed} /></p>
                             </div>
                             {overdueInstallments.length > 0 && (
                               <div className="divide-y divide-red-50">
@@ -1375,7 +1421,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                                         </p>
                                       </div>
                                       <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                                        <span className="text-[11px] font-bold text-red-600 tabular-nums">{fmt(inst.value)}</span>
+                                        <SensitiveValue value={inst.value} isRevealed={isRevealed} className="text-[11px] font-bold text-red-600 tabular-nums" />
                                         <span className="text-[9px] font-semibold text-red-400">{daysLate}d atraso</span>
                                       </div>
                                     </button>
@@ -1400,7 +1446,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
             {/* Prazos */}
             {showPrazos && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-rose-400 to-pink-400 flex-shrink-0" />
                 <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1474,7 +1520,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           }`}>
             {/* Tarefas */}
             {showTarefas && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-emerald-400 to-teal-400 flex-shrink-0" />
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1514,7 +1560,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
             {/* Intimações */}
             {showIntimacoes && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-orange-400 to-amber-400 flex-shrink-0" />
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1560,7 +1606,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
             {/* Processos */}
             {showProcessos && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-amber-400 to-yellow-400 flex-shrink-0" />
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1608,7 +1654,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
             {/* Requerimentos */}
             {showRequer && (
-              <div className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
+              <div className="min-w-0 overflow-hidden bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] flex flex-col">
                 <div className="h-0.5 bg-gradient-to-r from-violet-400 to-purple-400 flex-shrink-0" />
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0 gap-2">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1690,7 +1736,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         return (
           <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 py-4">
             <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedEvent(null)} />
-            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="relative w-full max-w-md bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden max-h-[90vh]">
               <div className={`h-1.5 w-full ${accentBar[ev.type] ?? accentBar.other}`} />
               <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -1759,9 +1805,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       {selectedIntimacao && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-2 sm:px-4 py-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedIntimacao(null)} aria-hidden="true" />
-          <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-white rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-[#f8f7f5] rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-1.5 sm:h-2 w-full bg-orange-500" />
-            <div className="px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-2 sm:gap-4">
+            <div className="px-4 sm:px-6 py-3 sm:py-5 border-b border-[#e7e5df] bg-white flex items-start justify-between gap-2 sm:gap-4">
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">DJEN</p>
                 <h3 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 truncate">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
@@ -1800,7 +1846,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   <p className="text-xs sm:text-sm text-slate-600 mt-1 max-h-40 overflow-y-auto">{selectedIntimacao.texto}</p>
                 </div>
               )}
-              <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+              <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-[#e7e5df] flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
                 <button onClick={() => setSelectedIntimacao(null)}
                   className="w-full sm:w-auto px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition">
                   Fechar

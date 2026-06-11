@@ -42,7 +42,7 @@ interface DashboardData {
 export const PortalDashboard: React.FC = () => {
   const { session } = useClientAuth();
   const { navigate } = usePortalRouter();
-  const { isEnabled } = usePortalConfig();
+  const { isEnabled, customization } = usePortalConfig();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,20 +85,23 @@ export const PortalDashboard: React.FC = () => {
           style={{ paddingTop: 'calc(env(safe-area-inset-top) + 5.25rem)' }}
         >
           {/* Círculos decorativos */}
-          <div className="pointer-events-none absolute -right-14 -top-14 h-80 w-80 rounded-full bg-white/[0.04]" />
-          <div className="pointer-events-none absolute right-8  top-8  h-52 w-52 rounded-full bg-white/[0.03]" />
-          <div className="pointer-events-none absolute bottom-3 left-[42%] h-16 w-16 rounded-full bg-white/[0.04]" />
+          <div className="pointer-events-none absolute -right-14 -top-14 h-80 w-80 rounded-full bg-[#f8f7f5]/[0.04]" />
+          <div className="pointer-events-none absolute right-8  top-8  h-52 w-52 rounded-full bg-[#f8f7f5]/[0.03]" />
+          <div className="pointer-events-none absolute bottom-3 left-[42%] h-16 w-16 rounded-full bg-[#f8f7f5]/[0.04]" />
 
           {/* Conteúdo */}
           <div className="relative flex items-end justify-between">
             <div>
               <p className="text-[13px] font-medium text-slate-400">{greeting}</p>
               <p className="mt-0.5 text-[18px] font-bold text-white/80 leading-none">{firstName}</p>
+              {customization.welcome_message && (
+                <p className="mt-1 text-[11px] text-slate-500 leading-tight">{customization.welcome_message}</p>
+              )}
               <div className="mt-4">
                 {loading ? (
                   <div className="space-y-2">
-                    <div className="h-14 w-16 animate-pulse rounded-2xl bg-white/10" />
-                    <div className="h-3 w-28 animate-pulse rounded bg-white/10" />
+                    <div className="h-14 w-16 animate-pulse rounded-2xl bg-[#f8f7f5]/10" />
+                    <div className="h-3 w-28 animate-pulse rounded bg-[#f8f7f5]/10" />
                   </div>
                 ) : (
                   <button
@@ -112,7 +115,7 @@ export const PortalDashboard: React.FC = () => {
                     <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[13px] text-slate-400">
                       caso{(data?.processesActive ?? 0) !== 1 ? 's' : ''} ativo{(data?.processesActive ?? 0) !== 1 ? 's' : ''}
                       {pendingTotal > 0 && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-bold text-white">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f8f7f5]/10 px-2 py-0.5 text-[11px] font-bold text-white">
                           {pendingTotal} pendência{pendingTotal !== 1 ? 's' : ''}
                         </span>
                       )}
@@ -121,7 +124,7 @@ export const PortalDashboard: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className="mb-2 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/[0.07]">
+            <div className="mb-2 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#f8f7f5]/[0.07]">
               <Briefcase className="h-8 w-8 text-white/50" strokeWidth={1.5} />
             </div>
           </div>
@@ -138,7 +141,7 @@ export const PortalDashboard: React.FC = () => {
             {isEnabled('mensagens' as never) && (
               <button
                 onClick={() => navigate('mensagens')}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white transition active:bg-white/15"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f8f7f5]/10 text-white transition active:bg-[#f8f7f5]/15"
                 aria-label="Mensagens"
               >
                 <MessageCircle className="h-5 w-5" strokeWidth={1.75} />
@@ -153,7 +156,7 @@ export const PortalDashboard: React.FC = () => {
 
         {/* Atalhos rápidos — grade 4 colunas, só mobile */}
         {shortcuts.length > 0 && (
-          <div className="grid grid-cols-4 gap-2 rounded-[28px] bg-white px-3 py-4 shadow-[0_8px_32px_rgba(15,23,42,0.09)] lg:hidden">
+          <div className="grid grid-cols-4 gap-2 rounded-[28px] bg-[#f8f7f5] px-3 py-4 shadow-[0_8px_32px_rgba(15,23,42,0.09)] lg:hidden">
             {shortcuts.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
@@ -176,7 +179,7 @@ export const PortalDashboard: React.FC = () => {
           <div className="flex flex-col gap-2">
             {hasPendingSig && (
               <button onClick={() => navigate('assinar')}
-                className="group flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
+                className="group flex w-full items-center gap-3 rounded-2xl bg-[#f8f7f5] px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
                   <PenTool className="h-4 w-4" />
                 </span>
@@ -191,7 +194,7 @@ export const PortalDashboard: React.FC = () => {
             )}
             {hasPendingDocs && (
               <button onClick={() => navigate('documentos')}
-                className="group flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
+                className="group flex w-full items-center gap-3 rounded-2xl bg-[#f8f7f5] px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-500">
                   <Inbox className="h-4 w-4" />
                 </span>
@@ -206,7 +209,7 @@ export const PortalDashboard: React.FC = () => {
             )}
             {hasOverdueFin && (
               <button onClick={() => navigate('financeiro')}
-                className="group flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
+                className="group flex w-full items-center gap-3 rounded-2xl bg-[#f8f7f5] px-4 py-3.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition active:opacity-90">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500">
                   <AlertTriangle className="h-4 w-4" />
                 </span>
@@ -224,7 +227,7 @@ export const PortalDashboard: React.FC = () => {
 
         {/* Desktop: cabeçalho com mini-cards */}
         <header className="hidden grid-cols-[minmax(0,1fr)_250px] gap-3 lg:grid">
-          <div className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="rounded-[22px] border border-slate-200 bg-[#f8f7f5] px-5 py-4 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-600">{greeting}</p>
             <h1 className="mt-1.5 text-[26px] font-extrabold tracking-tight text-slate-900 sm:text-[30px]">{firstName}</h1>
             <p className="mt-1.5 text-sm leading-relaxed text-slate-500">Acompanhe casos, documentos, agenda e mensagens.</p>
@@ -258,7 +261,7 @@ export const PortalDashboard: React.FC = () => {
 
         {/* Compromissos + Movimentações */}
         <div className="grid min-h-0 grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-2">
-          <section className="flex min-h-[160px] flex-col rounded-[22px] bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.06)] lg:min-h-0">
+          <section className="flex min-h-[160px] flex-col rounded-[22px] bg-[#f8f7f5] p-4 shadow-[0_2px_10px_rgba(15,23,42,0.06)] lg:min-h-0">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-[13px] font-bold text-slate-900">Próximos compromissos</h2>
               <button onClick={() => navigate('agenda')} className="text-xs font-semibold text-orange-500">Ver agenda</button>
@@ -273,7 +276,7 @@ export const PortalDashboard: React.FC = () => {
             </div>
           </section>
 
-          <section className="flex min-h-[160px] flex-col rounded-[22px] bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.06)] lg:min-h-0">
+          <section className="flex min-h-[160px] flex-col rounded-[22px] bg-[#f8f7f5] p-4 shadow-[0_2px_10px_rgba(15,23,42,0.06)] lg:min-h-0">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-[13px] font-bold text-slate-900">Últimas movimentações</h2>
               <button onClick={() => navigate('casos')} className="text-xs font-semibold text-orange-500">Ver tudo</button>
@@ -296,7 +299,7 @@ export const PortalDashboard: React.FC = () => {
 // ── Sub-componentes ──────────────────────────────────────────────────────────
 
 const HeroMiniCard: React.FC<{ label: string; value: string; helper: string; accent?: boolean }> = ({ label, value, helper, accent }) => (
-  <div className={`rounded-[20px] border bg-white px-4 py-3.5 shadow-sm ${accent ? 'border-orange-200' : 'border-slate-200'}`}>
+  <div className={`rounded-[20px] border bg-[#f8f7f5] px-4 py-3.5 shadow-sm ${accent ? 'border-orange-200' : 'border-slate-200'}`}>
     <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
     <p className={`mt-2 text-[28px] font-extrabold tracking-tight ${accent ? 'text-orange-500' : 'text-slate-900'}`}>{value}</p>
     <p className="mt-1 text-[11px] text-slate-400">{helper}</p>
@@ -304,7 +307,7 @@ const HeroMiniCard: React.FC<{ label: string; value: string; helper: string; acc
 );
 
 const StatCell: React.FC<{ icon: React.ComponentType<{ className?: string }>; label: string; value: number; sub?: string; urgent?: boolean; onClick?: () => void }> = ({ icon: Icon, label, value, sub, urgent, onClick }) => (
-  <button onClick={onClick} className="group flex min-h-[120px] flex-col gap-2 rounded-[20px] bg-white p-4 text-left shadow-sm transition active:opacity-90 hover:shadow-md">
+  <button onClick={onClick} className="group flex min-h-[120px] flex-col gap-2 rounded-[20px] bg-[#f8f7f5] p-4 text-left shadow-sm transition active:opacity-90 hover:shadow-md">
     <div className="flex items-center justify-between">
       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
       <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${urgent ? 'bg-rose-50 text-rose-500' : 'bg-slate-100 text-slate-400'}`}>
@@ -323,7 +326,7 @@ const FinancialOverview: React.FC<{ financial: FinancialSummary; nextInstallment
   const nextDue   = nextInstallment?.due_date as string | undefined;
   const nextValue = nextInstallment?.value as number | undefined;
   return (
-    <section className={`rounded-[22px] bg-white shadow-[0_2px_10px_rgba(15,23,42,0.06)] ${compact ? 'p-4' : 'p-5'}`}>
+    <section className={`rounded-[22px] bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.06)] ${compact ? 'p-4' : 'p-5'}`}>
       <div className={`flex items-center justify-between ${compact ? 'mb-3' : 'mb-4'}`}>
         <h2 className="text-[13px] font-bold text-slate-900">{hasReceivable ? 'Seus acordos' : 'Resumo financeiro'}</h2>
         <button onClick={onClick} className="text-xs font-semibold text-orange-500">Ver detalhes</button>
@@ -385,7 +388,7 @@ const UpcomingItem: React.FC<{ type: keyof typeof UPCOMING_META; data: Record<st
   if (dateField && new Date(dateField) < new Date()) return null;
   return (
     <button onClick={onClick} className="group flex w-full items-center gap-3 rounded-[16px] bg-slate-50 px-3 py-2.5 text-left transition active:opacity-90 hover:bg-slate-100">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-400 shadow-sm"><Icon className="h-4 w-4" /></span>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f8f7f5] text-slate-400 shadow-sm"><Icon className="h-4 w-4" /></span>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
         <p className="truncate text-sm font-semibold text-slate-900">{title}</p>

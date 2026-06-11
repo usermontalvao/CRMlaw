@@ -99,7 +99,7 @@ interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon, title, description, action }) => (
-  <div className="flex flex-col items-center justify-center rounded-[30px] border border-white/70 bg-white/72 px-6 py-12 text-center shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+  <div className="flex flex-col items-center justify-center rounded-[30px] border border-white/70 bg-[#f8f7f5]/72 px-6 py-12 text-center shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
     <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#fff7ed,#f8fafc)] text-orange-500 ring-1 ring-orange-100">
       <Icon className="h-7 w-7" />
     </div>
@@ -110,7 +110,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon, title, descr
 );
 
 export const SkeletonCard: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] backdrop-blur-xl ${className}`}>
+  <div className={`animate-pulse rounded-[28px] border border-white/70 bg-[#f8f7f5]/80 p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] backdrop-blur-xl ${className}`}>
     <div className="h-3 w-24 rounded-full bg-slate-200" />
     <div className="mt-3 h-8 w-32 rounded-2xl bg-slate-200" />
     <div className="mt-4 h-2.5 w-full rounded-full bg-slate-100" />

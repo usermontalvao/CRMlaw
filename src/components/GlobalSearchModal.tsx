@@ -180,7 +180,7 @@ const ALL_COMMANDS: Cmd[] = [
 const TYPE_CONFIG: Record<ResultType, {
   label: string; icon: React.ElementType; color: string; border: string; group: string;
 }> = {
-  cliente:               { label: 'Cliente',      icon: Users,         color: 'text-slate-600 bg-slate-100',    border: 'border-slate-200',   group: 'Clientes'      },
+  cliente:               { label: 'Cliente',      icon: Users,         color: 'text-slate-600 bg-slate-100',    border: 'border-[#e7e5df]',   group: 'Clientes'      },
   processo:              { label: 'Processo',     icon: FileText,      color: 'text-amber-600 bg-amber-50',     border: 'border-amber-200',   group: 'Processos'     },
   'processo-via-cliente':{ label: 'Processo',     icon: FileText,      color: 'text-amber-600 bg-amber-50',     border: 'border-amber-200',   group: 'Processos'     },
   intimacao:             { label: 'Intimação',    icon: Gavel,         color: 'text-orange-600 bg-orange-50',   border: 'border-orange-200',  group: 'Intimações'    },
@@ -390,8 +390,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const [previewExpanded, setPreviewExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem('gsLayout_preview') === 'true'; } catch { return false; }
   });
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  const effectiveSidebarExpanded = sidebarExpanded && !isMobile;
 
   const toggleSidebar = () => {
     setSidebarExpanded(v => {
@@ -1010,22 +1019,45 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       <style>{`
         @keyframes gsOverlayIn { from { opacity:0 } to { opacity:1 } }
         @keyframes gsModalIn {
-          from { opacity:0; transform:scale(.97) translateY(-8px) }
+          from { opacity:0; transform:scale(.96) translateY(-10px) }
           to   { opacity:1; transform:scale(1) translateY(0) }
+        }
+        @keyframes gsModalInMobile {
+          from { opacity:0; transform:translateY(100%) }
+          to   { opacity:1; transform:translateY(0) }
         }
         @keyframes gsContentIn {
           from { opacity:0; transform:translateY(6px) }
           to   { opacity:1; transform:translateY(0) }
         }
+        @keyframes gsItemIn {
+          from { opacity:0; transform:translateY(5px) }
+          to   { opacity:1; transform:translateY(0) }
+        }
+        @keyframes gsPulseRing {
+          0%   { box-shadow: 0 0 0 2px rgba(255,138,0,0.20), 0 0 0 1px #ff8a00; }
+          60%  { box-shadow: 0 0 0 6px rgba(255,138,0,0.00), 0 0 0 1px #ff8a00; }
+          100% { box-shadow: 0 0 0 2px rgba(255,138,0,0.18), 0 0 0 1px #ff8a00; }
+        }
+        @keyframes gsShimmer {
+          from { background-position: -200% 0; }
+          to   { background-position: 200% 0; }
+        }
+        @keyframes gsDragPulse {
+          0%,100% { opacity:.35; transform:scaleX(1) }
+          50%     { opacity:.6;  transform:scaleX(1.15) }
+        }
+
         .gs-content-anim { animation: gsContentIn .2s ease-out; }
+        .gs-item-anim { animation: gsItemIn .18s ease-out backwards; }
 
         /* Overlay */
         .global-search-overlay {
           position: fixed; inset: 0; z-index: 9999;
           display: flex; align-items: flex-start; justify-content: center;
-          padding-top: 80px;
-          background: rgba(0, 0, 0, 0.40);
-          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          padding-top: 72px;
+          background: rgba(0,0,0,0.45);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
           animation: gsOverlayIn .18s ease-out;
         }
 
@@ -1035,9 +1067,18 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           height: min(760px, 82vh);
           display: flex; flex-direction: column; overflow: hidden;
           background: #ffffff;
-          border: 1px solid #c4c7c7; border-radius: 12px;
-          box-shadow: 0 32px 80px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.03);
-          animation: gsModalIn .18s cubic-bezier(.32,0,.67,0);
+          border: 1px solid rgba(0,0,0,0.12); border-radius: 14px;
+          box-shadow: 0 40px 100px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.04);
+          animation: gsModalIn .22s cubic-bezier(.22,.68,0,1.2);
+        }
+
+        /* Mobile drag handle */
+        .gs-drag-handle {
+          display: none; justify-content: center; padding: 10px 0 4px; flex-shrink: 0;
+        }
+        .gs-drag-handle-bar {
+          width: 36px; height: 4px; border-radius: 2px; background: rgba(0,0,0,0.14);
+          animation: gsDragPulse 2s ease-in-out infinite;
         }
 
         /* Header */
@@ -1054,7 +1095,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         .global-search-input-wrap:focus-within {
-          border-color: #ff8a00; box-shadow: 0 0 0 2px rgba(255,138,0,0.18), 0 0 0 1px #ff8a00;
+          border-color: #ff8a00;
+          animation: gsPulseRing 1.2s ease-out 1;
+          box-shadow: 0 0 0 2px rgba(255,138,0,0.18), 0 0 0 1px #ff8a00;
         }
         .global-search-icon { width:20px; height:20px; color:#747878; flex-shrink:0; }
         .global-search-input-wrap:focus-within .global-search-icon { color: #ff8a00; }
@@ -1153,13 +1196,23 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           min-height: 60px; padding: 10px 12px;
           border: 1px solid transparent; border-radius: 12px;
           cursor: pointer; width: 100%; text-align: left; background: transparent;
-          transition: background .15s ease, border-color .15s ease, transform .12s ease;
+          transition: background .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+          overflow: hidden;
         }
-        .search-result-item:hover { background: #f2f4f6; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .search-result-item:hover {
+          background: #f2f4f6;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
         .search-result-item:active { transform: scale(0.997); }
         .search-result-item.selected {
-          background: rgba(255,138,0,0.05); border-color: rgba(255,138,0,0.50);
-          box-shadow: 0 0 0 1px rgba(255,138,0,0.12);
+          background: rgba(255,138,0,0.06); border-color: rgba(255,138,0,0.45);
+          box-shadow: 0 0 0 1px rgba(255,138,0,0.10), 0 2px 10px rgba(255,138,0,0.08);
+        }
+        .search-result-item.selected::before {
+          content: '';
+          position: absolute; left: 0; top: 10px; bottom: 10px;
+          width: 3px; border-radius: 0 3px 3px 0;
+          background: linear-gradient(180deg, #ff8a00, #ffb347);
         }
 
         /* Avatar / icon */
@@ -1331,17 +1384,29 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .quick-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
         .quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
         .quick-card {
+          position: relative; overflow: hidden;
           display: flex; align-items: center; gap: 12px;
           min-height: 68px; padding: 12px 14px;
           border: 1px solid #e0e3e5; border-radius: 12px;
           background: #fff; cursor: pointer; text-align: left;
-          transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+          transition: transform .18s cubic-bezier(.22,.68,0,1.2), box-shadow .18s ease, border-color .15s ease;
+        }
+        .quick-card::after {
+          content: '';
+          position: absolute; inset: 0; border-radius: 12px;
+          background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.75) 50%, transparent 65%);
+          background-size: 250% 100%; background-position: -100% 0;
+          opacity: 0; pointer-events: none; transition: opacity .2s;
         }
         .quick-card:hover {
-          transform: translateY(-2px); border-color: rgba(255,138,0,0.30);
-          box-shadow: 0 8px 24px rgba(15,23,42,0.08);
+          transform: translateY(-3px); border-color: rgba(255,138,0,0.35);
+          box-shadow: 0 10px 28px rgba(15,23,42,0.10);
         }
-        .quick-card:active { transform: scale(0.98); }
+        .quick-card:hover::after {
+          opacity: 1;
+          animation: gsShimmer .5s ease forwards;
+        }
+        .quick-card:active { transform: scale(0.97) translateY(0); }
         .quick-card-icon {
           width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
           display: flex; align-items: center; justify-content: center;
@@ -1476,16 +1541,117 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .dark .gs-filter-btn { color: #a1a1aa; }
         .dark .gs-filter-btn:hover { background: rgba(255,255,255,0.07); color: #fafafa; }
         .dark .gs-filter-btn.active { background: #fafafa; color: #18181b; }
+        .dark .quick-card::after {
+          background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.12) 50%, transparent 65%);
+          background-size: 250% 100%; background-position: -100% 0;
+        }
+
+        /* Anular o outline global laranja do dark mode dentro do modal */
+        .global-search-modal *:focus { outline: none !important; }
+        .global-search-modal { outline: none !important; }
+
+        /* ── Tablet (640px – 1023px): sidebar estreita, sem preview ── */
+        @media (min-width: 640px) and (max-width: 1023px) {
+          .global-search-overlay { padding-top: 48px; }
+          .global-search-modal { height: min(720px, 86vh); }
+          .gs-sidebar { width: 220px; padding: 20px 14px; }
+          .global-search-body { grid-template-columns: 1fr !important; }
+          .global-search-preview { display: none !important; }
+          .quick-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        }
+
+        /* ── Mobile (< 640px): bottom sheet nativo ── */
+        @media (max-width: 639px) {
+          .global-search-overlay {
+            padding: 0 !important;
+            align-items: flex-end;
+          }
+          .global-search-modal {
+            width: 100% !important; max-width: 100% !important;
+            height: min(90vh, 90dvh);
+            border-radius: 20px 20px 0 0;
+            border: none !important;
+            outline: none !important;
+            box-shadow: 0 -4px 40px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.08);
+            animation: gsModalInMobile .3s cubic-bezier(.32,.72,0,1) !important;
+          }
+          .gs-drag-handle { display: flex; }
+          .gs-sidebar { display: none !important; }
+
+          /* Header compacto */
+          .global-search-header {
+            padding: 2px 14px 10px;
+            border-bottom-color: rgba(0,0,0,0.07);
+          }
+          .global-search-input-wrap {
+            height: 50px; border-radius: 12px;
+            border-color: #d1d5db;
+          }
+          .global-search-input { font-size: 16px; font-weight: 400; }
+
+          /* Tabs menores */
+          .global-search-tab { height: 28px; padding: 0 12px; font-size: 11.5px; }
+          .global-search-tabs { padding: 8px 0 0; gap: 4px; }
+
+          /* Resultados */
+          .global-search-results { padding: 6px 10px 0; }
+          .search-result-item { min-height: 56px; padding: 9px 10px; border-radius: 10px; gap: 10px; }
+          .search-result-avatar, .search-result-avatar-initials { width: 38px; height: 38px; font-size: 11px; }
+          .search-result-icon { width: 34px; height: 34px; border-radius: 8px; }
+          .search-result-title { font-size: 13.5px; }
+          .search-result-subtitle { font-size: 11.5px; }
+
+          /* Layout */
+          .global-search-body { grid-template-columns: 1fr !important; }
+          .global-search-preview { display: none !important; }
+
+          /* Quick access: 2 colunas compactas */
+          .quick-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+          .quick-access-section { padding: 10px 12px 12px; }
+          .quick-card { min-height: 60px; padding: 10px 10px; gap: 9px; border-radius: 12px; }
+          .quick-card-icon { width: 36px; height: 36px; border-radius: 9px; }
+          .quick-card-title { font-size: 12.5px; }
+          .quick-card-subtitle { font-size: 10.5px; }
+
+          /* Recentes */
+          .recent-section { padding: 10px 12px 0; }
+          .recent-pill { font-size: 11.5px; padding: 5px 10px; }
+
+          /* Footer simplificado */
+          .global-search-footer {
+            height: auto;
+            padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+            justify-content: center;
+          }
+          .global-search-footer > div:last-child { display: none; }
+
+          /* Ocultar atalhos de teclado */
+          .global-search-keycap { display: none; }
+          .footer-shortcuts { display: none; }
+
+          /* No results state menor */
+          .no-results-state { padding: 40px 20px; }
+          .no-results-icon { width: 44px; height: 44px; }
+
+          /* Section headers menores */
+          .search-section { margin-bottom: 14px; }
+          .search-section-title { font-size: 10.5px; }
+        }
       `}</style>
 
       <div className="global-search-modal" onClick={e => e.stopPropagation()}>
+
+        {/* Mobile drag handle */}
+        <div className="gs-drag-handle">
+          <div className="gs-drag-handle-bar" />
+        </div>
 
         {/* ── Layout: sidebar + main ── */}
         <div className="gs-layout">
 
           {/* ── LEFT SIDEBAR ── */}
-          <aside className={`gs-sidebar${sidebarExpanded ? '' : ' collapsed'}`}>
-            {sidebarExpanded ? (
+          <aside className={`gs-sidebar${effectiveSidebarExpanded ? '' : ' collapsed'}`}>
+            {effectiveSidebarExpanded ? (
               <>
                 {/* Heading */}
                 <div className="gs-sidebar-heading">
@@ -1511,7 +1677,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                     }
                   </div>
                   <input
-                    ref={sidebarExpanded ? inputRef : undefined}
+                    ref={effectiveSidebarExpanded ? inputRef : undefined}
                     value={query}
                     onChange={e => setQuery(e.target.value)}
                     placeholder={isCommandMode ? 'Digite um comando…' : 'Pesquisar...'}
@@ -1618,7 +1784,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           <div className="gs-main">
 
             {/* Header com search visível apenas quando sidebar colapsada */}
-            {!sidebarExpanded && (
+            {!effectiveSidebarExpanded && (
               <div className="global-search-header">
                 <div className="global-search-input-wrap">
                   <div style={{ flexShrink: 0 }}>
@@ -1630,7 +1796,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                     }
                   </div>
                   <input
-                    ref={!sidebarExpanded ? inputRef : undefined}
+                    ref={!effectiveSidebarExpanded ? inputRef : undefined}
                     value={query}
                     onChange={e => setQuery(e.target.value)}
                     placeholder={isCommandMode ? 'Digite um comando…' : 'Pesquisar...'}
@@ -1723,7 +1889,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                                   type="button"
                                   onClick={() => cmd.action({ onNavigate, onClose, userId })}
                                   onMouseEnter={() => setSelectedCmd(idx)}
-                                  className={`search-result-item${isSel ? ' selected' : ''}`}
+                                  className={`search-result-item gs-item-anim${isSel ? ' selected' : ''}`}
+                                  style={{ animationDelay: `${idx * 28}ms` }}
                                 >
                                   <span
                                     className="search-result-icon"
@@ -1775,7 +1942,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                           )}
                         </div>
 
-                        {items.map(r => {
+                        {items.map((r, rIdx) => {
                           const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
                           const isSel = fi === safeSelected;
                           const Icon = cfg.icon;
@@ -1783,7 +1950,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                             <button
                               key={`${r.type}-${r.id}`}
                               type="button"
-                              className={`search-result-item${isSel ? ' selected' : ''}`}
+                              className={`search-result-item gs-item-anim${isSel ? ' selected' : ''}`}
+                              style={{ animationDelay: `${rIdx * 22}ms` }}
                               onClick={() => handleSelect(r)}
                               onMouseEnter={() => setSelected(fi)}
                             >

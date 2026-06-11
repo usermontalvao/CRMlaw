@@ -534,16 +534,16 @@ export default function ProfileModal({
   if (!isOpen) return null;
 
   const content = (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center px-0 py-0 sm:items-center sm:px-6 sm:py-4">
       <div
         className="aero-backdrop absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="aero-modal relative w-full max-w-4xl max-h-[92vh] rounded-2xl flex flex-col overflow-hidden">
+      <div className="aero-modal relative flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[92vh] sm:max-w-4xl sm:rounded-2xl">
         <div className="h-1.5 w-full bg-orange-500 flex-shrink-0" />
-        <div className="aero-modal-inner px-5 sm:px-8 py-4 border-b border-white/30 dark:border-white/10 flex items-start justify-between gap-4">
-          <div>
+        <div className="aero-modal-inner flex items-start justify-between gap-4 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-8">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               Perfil do Usuário
             </p>
@@ -559,10 +559,10 @@ export default function ProfileModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {/* Tabs Navigation */}
-          <div className="border-b border-white/30 dark:border-white/10 bg-white/40 dark:bg-black/20">
-            <nav className="flex space-x-8 px-8" aria-label="Tabs">
+          <div className="border-b border-white/30 dark:border-white/10 bg-[#f8f7f5]/40 dark:bg-black/20">
+            <nav className="flex min-w-max gap-5 overflow-x-auto px-4 scrollbar-hide sm:gap-8 sm:px-8" aria-label="Tabs">
               {[
                 { id: 'dados', label: 'Dados Pessoais', icon: User },
                 ...(canSeeProfessionalTab ? [{ id: 'profissional', label: 'Profissional', icon: Briefcase }] : []),
@@ -590,7 +590,7 @@ export default function ProfileModal({
           </div>
 
           {/* Tab Content */}
-          <div className="p-8">
+          <div className="p-4 sm:p-8">
             {message && (
               <div
                 className={`mb-6 p-4 rounded-xl border ${
@@ -606,7 +606,7 @@ export default function ProfileModal({
             {/* Tab Contents */}
             {activeTab === 'dados' && (
               <form onSubmit={handleSaveProfile} className="space-y-6">
-                <div className="flex items-center gap-6 pb-6 border-b border-slate-200">
+                <div className="flex flex-col items-start gap-4 pb-6 border-b border-[#e7e5df] sm:flex-row sm:items-center sm:gap-6">
                   <div className="relative">
                     <img
                       src={profileForm.avatarUrl}
@@ -623,7 +623,7 @@ export default function ProfileModal({
                       />
                     </label>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-slate-900">{profileForm.name}</h3>
                     <p className="text-sm text-slate-500">{profileForm.role}</p>
                   </div>
@@ -638,7 +638,7 @@ export default function ProfileModal({
                       type="text"
                       value={profileForm.name}
                       onChange={(e) => handleProfileChange('name', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       required
                     />
                   </div>
@@ -650,7 +650,7 @@ export default function ProfileModal({
                       type="email"
                       value={profileForm.email}
                       onChange={(e) => handleProfileChange('email', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                     />
                   </div>
                 </div>
@@ -664,7 +664,7 @@ export default function ProfileModal({
                       type="text"
                       value={profileForm.cpf}
                       onChange={(e) => handleProfileChange('cpf', formatCpf(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="000.000.000-00"
                       maxLength={14}
                     />
@@ -677,7 +677,7 @@ export default function ProfileModal({
                       type="tel"
                       value={profileForm.phone}
                       onChange={(e) => handleProfileChange('phone', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="(00) 00000-0000"
                     />
                   </div>
@@ -691,7 +691,7 @@ export default function ProfileModal({
                     <select
                       value={profileForm.role}
                       onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       disabled
                     >
                       <option value="Administrador">Administrador</option>
@@ -704,11 +704,11 @@ export default function ProfileModal({
                   </div>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex justify-stretch sm:justify-end">
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-2.5 font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50 sm:w-auto"
                   >
                     {saving ? (
                       <>
@@ -737,7 +737,7 @@ export default function ProfileModal({
                       type="text"
                       value={profileForm.lawyerFullName}
                       onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="Nome como deve aparecer em documentos jurídicos"
                     />
                   </div>
@@ -749,7 +749,7 @@ export default function ProfileModal({
                       type="text"
                       value={profileForm.oab}
                       onChange={(e) => handleProfileChange('oab', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="UF 123456"
                     />
                   </div>
@@ -794,7 +794,7 @@ export default function ProfileModal({
                     value={profileForm.bio}
                     onChange={(e) => handleProfileChange('bio', e.target.value)}
                     rows={6}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none"
                     placeholder="Fale sobre sua formação, especializações e áreas de atuação..."
                   />
                 </div>
@@ -834,7 +834,7 @@ export default function ProfileModal({
                         type="password"
                         value={passwordForm.newPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                         placeholder="••••••••"
                       />
                     </div>
@@ -846,7 +846,7 @@ export default function ProfileModal({
                         type="password"
                         value={passwordForm.confirmPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                         placeholder="••••••••"
                       />
                     </div>
@@ -872,7 +872,7 @@ export default function ProfileModal({
                   </form>
                 </div>
 
-                <div className="border-t border-slate-200 pt-8">
+                <div className="border-t border-[#e7e5df] pt-8">
                   <h3 className="text-lg font-semibold text-slate-900 mb-6">Detalhes da Conta</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-slate-50 p-4 rounded-xl">
@@ -899,7 +899,7 @@ export default function ProfileModal({
                 {/* Cards Principais */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                   {canView('clientes') && (
-                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="p-2 bg-blue-100 rounded-lg">
                           <Users className="w-6 h-6 text-blue-600" />
@@ -911,7 +911,7 @@ export default function ProfileModal({
                   )}
 
                   {canView('processos') && (
-                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="p-2 bg-emerald-100 rounded-lg">
                           <Briefcase className="w-6 h-6 text-emerald-600" />
@@ -924,7 +924,7 @@ export default function ProfileModal({
 
                   {canView('tarefas') && (
                     <>
-                      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                      <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
                         <div className="flex items-center justify-between mb-4">
                           <div className="p-2 bg-purple-100 rounded-lg">
                             <CheckCircle className="w-6 h-6 text-purple-600" />
@@ -934,7 +934,7 @@ export default function ProfileModal({
                         <p className="text-sm text-slate-600">Tarefas Concluídas</p>
                       </div>
 
-                      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                      <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
                         <div className="flex items-center justify-between mb-4">
                           <div className="p-2 bg-orange-100 rounded-lg">
                             <Activity className="w-6 h-6 text-orange-600" />
@@ -971,21 +971,21 @@ export default function ProfileModal({
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">Requerimentos</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-2xl font-bold text-slate-900">{stats.totalRequirements}</span>
                         <FileText className="w-4 h-4 text-blue-600" />
                       </div>
                       <p className="text-xs text-slate-600">Total</p>
                     </div>
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-2xl font-bold text-slate-900">{stats.requirementsInAnalysis}</span>
                         <Clock className="w-4 h-4 text-yellow-600" />
                       </div>
                       <p className="text-xs text-slate-600">Em Análise</p>
                     </div>
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-2xl font-bold text-slate-900">{stats.requirementsDeferred}</span>
                         <CheckCircle className="w-4 h-4 text-green-600" />
@@ -1001,7 +1001,7 @@ export default function ProfileModal({
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">Prazos</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-2xl font-bold text-slate-900">{stats.totalDeadlines}</span>
                           <Calendar className="w-4 h-4 text-slate-600" />
@@ -1031,7 +1031,7 @@ export default function ProfileModal({
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">Agenda</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-2xl font-bold text-slate-900">{stats.totalEvents}</span>
                           <Calendar className="w-4 h-4 text-blue-600" />
@@ -1054,7 +1054,7 @@ export default function ProfileModal({
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">Intimações DJEN</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-2xl font-bold text-slate-900">{stats.totalIntimacoes}</span>
                           <Bell className="w-4 h-4 text-slate-600" />

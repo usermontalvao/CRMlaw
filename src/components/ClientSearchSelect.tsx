@@ -171,13 +171,13 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
             onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
             placeholder={placeholder}
             required={required}
-            className="w-full rounded-xl border border-slate-200 bg-white text-slate-900 h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 placeholder:text-slate-400"
+            className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-slate-900 h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 placeholder:text-slate-400"
           />
         )}
 
         {/* Cliente selecionado */}
         {value && selectedClientName && (
-          <div className="flex items-center justify-between w-full rounded-xl border border-slate-200 h-11 px-4 text-sm bg-white">
+          <div className="flex items-center justify-between w-full rounded-xl border border-[#e7e5df] h-11 px-4 text-sm bg-[#f8f7f5]">
             <span className="text-slate-900 font-medium truncate">{selectedClientName}</span>
             <button
               type="button"
@@ -261,7 +261,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
 
       {isClientFormModalOpen &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[90] flex items-end justify-center px-0 py-0 sm:items-center sm:p-4">
             <div
               className="absolute inset-0 bg-slate-50/80 backdrop-blur-md"
               onClick={() => {
@@ -270,10 +270,10 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
               }}
               aria-hidden="true"
             />
-            <div className="relative w-full max-w-4xl">
-              <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 overflow-hidden">
+            <div className="relative w-full max-w-[calc(100vw-12px)] sm:max-w-4xl">
+              <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden rounded-t-[28px] border border-[#e7e5df] bg-[#f8f7f5] shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
                 <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-                <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3 border-b border-[#e7e5df] bg-[#f8f7f5] px-4 py-4 sm:px-6 sm:py-5">
                   <div className="min-w-0">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Formulário</div>
                     <h2 className="mt-1 text-lg font-semibold text-slate-900">Novo Cliente</h2>
@@ -291,7 +291,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                   </button>
                 </div>
 
-                <div className="bg-white">
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#f8f7f5]">
                   <ClientForm
                     client={null}
                     prefill={clientFormPrefill}

@@ -122,7 +122,7 @@ export const PortalNotificationBell: React.FC<{ className?: string }> = ({ class
         className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition ${
           open
             ? 'border-orange-200 bg-orange-50 text-orange-600'
-            : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600'
+            : 'border-slate-200 bg-[#f8f7f5] text-slate-500 shadow-sm hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600'
         }`}
         aria-label="Notificações"
       >

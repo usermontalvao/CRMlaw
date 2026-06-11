@@ -38,8 +38,9 @@ interface PortalSidebarProps {
 export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onClose }) => {
   const { route, navigate } = usePortalRouter();
   const { session, logout } = useClientAuth();
-  const { isEnabled } = usePortalConfig();
+  const { isEnabled, customization } = usePortalConfig();
   const isMobile = useIsMobile();
+  const accentColor = customization.accent_color || '#ff8a00';
 
   const visible = NAV_ITEMS.filter((item) => {
     if (item.id === 'scanner' && !isMobile) return false;
@@ -60,19 +61,25 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
       >
         <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 px-6">
           <button onClick={() => navigate('dashboard')} className="flex items-center gap-3" aria-label="Início">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500 text-base font-extrabold text-white shadow-[0_12px_24px_rgba(249,115,22,0.24)]">
+            <span
+              className="flex h-11 w-11 items-center justify-center rounded-2xl text-base font-extrabold text-white"
+              style={{ backgroundColor: accentColor, boxShadow: `0 12px 24px ${accentColor}3d` }}
+            >
               J
             </span>
             <span className="flex flex-col items-start leading-none">
               <span className="text-[17px] font-extrabold tracking-tight text-slate-900">Jurius</span>
-              <span className="mt-1 rounded-full border border-orange-100 bg-orange-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.24em] text-orange-700">
+              <span
+                className="mt-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.24em]"
+                style={{ borderColor: accentColor + '33', backgroundColor: accentColor + '10', color: accentColor }}
+              >
                 Portal do Cliente
               </span>
             </span>
           </button>
           <button
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-[#f8f7f5] text-slate-500 transition hover:bg-slate-50 lg:hidden"
             aria-label="Fechar menu"
           >
             <X className="h-4 w-4" />
@@ -84,7 +91,7 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
             navigate('perfil');
             onClose?.();
           }}
-          className="group mx-4 mt-4 flex w-[calc(100%-2rem)] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          className="group mx-4 mt-4 flex w-[calc(100%-2rem)] items-center gap-3 rounded-2xl border border-slate-200 bg-[#f8f7f5] px-3.5 py-3 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
         >
           <ClientAvatar size={40} rounded="full" className="shadow-none" />
           <div className="min-w-0 flex-1">
@@ -112,11 +119,18 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
                 }}
                 className={`mb-1 flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-[13px] font-semibold transition-all ${
                   active
-                    ? 'border-orange-100 bg-orange-50 text-orange-700'
+                    ? ''
                     : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
                 }`}
+              style={active ? {
+                borderColor: accentColor + '33',
+                backgroundColor: accentColor + '10',
+                color: accentColor,
+              } : undefined}
               >
-                <Icon className={`h-[15px] w-[15px] shrink-0 ${active ? 'text-orange-600' : 'text-slate-400'}`} />
+                <span style={active ? { color: accentColor } : undefined} className="shrink-0">
+                  <Icon className="h-[15px] w-[15px]" />
+                </span>
                 <span className="flex-1 text-left leading-none">{item.label}</span>
                 {item.badge && (
                   <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
@@ -137,7 +151,12 @@ export const PortalSidebar: React.FC<PortalSidebarProps> = ({ isOpen = true, onC
             <LogOut className="h-[15px] w-[15px] shrink-0 transition group-hover:text-rose-700" />
             Sair da conta
           </button>
-          <p className="mt-3 px-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">Jurius {new Date().getFullYear()}</p>
+          <p className="mt-3 px-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+            {customization.footer_text || `Jurius ${new Date().getFullYear()}`}
+          </p>
+          {customization.support_contact && (
+            <p className="px-3 pb-1 text-[10px] text-slate-400">{customization.support_contact}</p>
+          )}
         </div>
       </aside>
     </>

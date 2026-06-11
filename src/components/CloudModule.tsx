@@ -239,7 +239,7 @@ const formatRemainingDays = (value?: string | null) => {
 };
 
 const getFolderIssueBadgeClass = (folder: CloudFolder) => {
-  if (!folder.has_pending_issue && !folder.resolved_at) return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (!folder.has_pending_issue && !folder.resolved_at) return 'border-[#e7e5df] bg-slate-50 text-slate-600';
   if (!folder.has_pending_issue) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (folder.alert_level === 'alerta') return 'border-red-200 bg-red-50 text-red-700';
   return 'border-amber-200 bg-amber-50 text-amber-700';
@@ -4709,7 +4709,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   return (
-    <div className="relative flex w-full flex-col overflow-visible rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#fffaf5_0%,#ffffff_32%,#f6f4ef_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
+    <div className="relative flex w-full flex-col overflow-visible rounded-[28px] border border-[#e7e5df] bg-[radial-gradient(circle_at_top,#fffaf5_0%,#ffffff_32%,#f6f4ef_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
 
       {/* Filtros avançados - colapsados por padrão em mobile */}
@@ -4732,11 +4732,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <input type="date" value={searchFilters.dateFrom} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100" />
               <input type="date" value={searchFilters.dateTo} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100" />
             </div>
-            <input type="number" min="0" value={searchFilters.sizeMinKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMinKb: e.target.value }))} placeholder="Tamanho mín. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-            <input type="number" min="0" value={searchFilters.sizeMaxKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMaxKb: e.target.value }))} placeholder="Tamanho máx. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            <input type="number" min="0" value={searchFilters.sizeMinKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMinKb: e.target.value }))} placeholder="Tamanho mín. KB" className="w-full rounded-xl border border-[#e7e5df] px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            <input type="number" min="0" value={searchFilters.sizeMaxKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMaxKb: e.target.value }))} placeholder="Tamanho máx. KB" className="w-full rounded-xl border border-[#e7e5df] px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
-            <button onClick={resetAdvancedFilters} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50">Limpar filtros</button>
+            <button onClick={resetAdvancedFilters} className="px-3 py-2 rounded-lg border border-[#e7e5df] bg-white text-sm text-slate-700 hover:bg-slate-50">Limpar filtros</button>
           </div>
         </div>
       ) : null}
@@ -4751,7 +4751,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       ) : null}
 
       {/* Barra de breadcrumb/busca - apenas desktop */}
-      <div className="hidden flex-col gap-2 border-b border-[#ece8df] bg-white/90 px-4 py-3 backdrop-blur lg:flex xl:flex-row xl:items-center xl:gap-3">
+      <div className="hidden flex-col gap-2 border-b border-[#ece8df] bg-[#f8f7f5]/90 px-4 py-3 backdrop-blur lg:flex xl:flex-row xl:items-center xl:gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button onClick={() => setCurrentFolderId(null)} className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-[#f3f1ec] hover:text-slate-700">
             <Home className="w-3.5 h-3.5" />
@@ -4784,7 +4784,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               className="min-w-0 flex-1 rounded-[10px] border border-[#ebe6dc] bg-[#f4f4f1] py-2.5 pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-100"
             />
             <div className="hidden max-w-[170px] shrink-0 items-center gap-1 md:flex">
-              <span className="max-w-[88px] truncate whitespace-nowrap rounded-[9px] border border-[#ebe6dc] bg-white px-2.5 py-1.5 text-[10px] font-medium text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
+              <span className="max-w-[88px] truncate whitespace-nowrap rounded-[9px] border border-[#ebe6dc] bg-[#f8f7f5] px-2.5 py-1.5 text-[10px] font-medium text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
               {headerClientPhone ? (
                 <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-[9px] border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
                   <Phone className="h-3 w-3 shrink-0" />
@@ -4802,7 +4802,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </span>
               ) : null}
             </div>
-            <div className="hidden items-center gap-1 rounded-[10px] border border-[#ebe6dc] bg-white p-0.5 xl:inline-flex">
+            <div className="hidden items-center gap-1 rounded-[10px] border border-[#ebe6dc] bg-[#f8f7f5] p-0.5 xl:inline-flex">
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
@@ -4841,7 +4841,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           <button
             type="button"
             onClick={() => setShowAdvancedFilters((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12.5px] font-medium transition ${showAdvancedFilters ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-[#ebe6dc] bg-white text-slate-600 hover:bg-[#f4f4f1]'}`}
+            className={`inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12.5px] font-medium transition ${showAdvancedFilters ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-[#ebe6dc] bg-[#f8f7f5] text-slate-600 hover:bg-[#f4f4f1]'}`}
           >
             <Filter className="h-3.5 w-3.5" />
             Filtros
@@ -4849,7 +4849,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           <button
             type="button"
             onClick={handleOpenCreateFolder}
-            className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#ebe6dc] bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-[#f4f4f1]"
+            className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#ebe6dc] bg-[#f8f7f5] px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-[#f4f4f1]"
           >
             <FolderPlus className="h-3.5 w-3.5" />
             Nova pasta
@@ -4892,7 +4892,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             <button
               type="button"
               onClick={() => setDetailsDrawerOpen((prev) => !prev)}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium ${detailsDrawerOpen ? 'border-slate-300 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium ${detailsDrawerOpen ? 'border-slate-300 bg-slate-900 text-white hover:bg-slate-800' : 'border-[#e7e5df] bg-[#f8f7f5] text-slate-700 hover:bg-slate-50'}`}
             >
               <Info className="w-4 h-4" />
               {detailsDrawerOpen ? 'Ocultar detalhes' : 'Mostrar detalhes'}
@@ -4916,7 +4916,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#ece8df] bg-white text-slate-600 shadow-sm"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#ece8df] bg-[#f8f7f5] text-slate-600 shadow-sm"
             >
               <X className="w-4 h-4" />
             </button>
@@ -4973,7 +4973,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 <div className={`flex items-center rounded-[10px] transition-all duration-150 ${
                   currentFolderId === null
                     ? 'bg-orange-500 text-white shadow-sm'
-                    : 'bg-white text-slate-600 hover:bg-[#f4f4f1]'
+                    : 'bg-[#f8f7f5] text-slate-600 hover:bg-[#f4f4f1]'
                 }`}>
                   <button
                     type="button"
@@ -4983,7 +4983,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     <HardDrive className="h-[15px] w-[15px] shrink-0" />
                     <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
                     {currentFolderId === null && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-white/70" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#f8f7f5]/70" />
                     )}
                   </button>
                   <button
@@ -5183,7 +5183,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden gap-3 border-b border-[#e7e2d8] bg-white/90 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b8b80] select-none lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px]">
+              <div className="hidden gap-3 border-b border-[#e7e2d8] bg-[#f8f7f5]/90 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b8b80] select-none lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px]">
                 {/* Select all checkbox */}
                 <button
                   type="button"
@@ -5347,7 +5347,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         ...(totalOther > 0 ? [{ key: 'other' as const, label: 'Outros', count: totalOther, color: 'text-slate-500 hover:bg-slate-100', activeColor: 'bg-slate-600 text-white' }] : []),
                       ];
                       return (
-                        <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-[#e7e2d8] bg-white/90 px-4 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-[#e7e2d8] bg-[#f8f7f5]/90 px-4 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {chips.map(chip => (
                               <button
@@ -5486,7 +5486,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   }
                                 }}
                                 onBlur={() => { void commitInlineRename(); }}
-                                className="min-w-[180px] rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                className="min-w-[180px] rounded-md border border-orange-300 bg-[#f8f7f5] px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
                                 autoFocus
                               />
                             ) : (
@@ -5494,7 +5494,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             )}
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               {showClientLinkBadge ? (
-                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-[#e7e5df] bg-slate-100 text-slate-500'}`}>
                                   {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
                                 </span>
                               ) : null}
@@ -5636,7 +5636,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         </div>
                         {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
                           splitFileNameAndExtension(file.original_name).extension ? (
-                            <div className="flex min-w-[220px] overflow-hidden rounded-md border border-orange-300 bg-white">
+                            <div className="flex min-w-[220px] overflow-hidden rounded-md border border-orange-300 bg-[#f8f7f5]">
                               <input
                                 value={inlineRenameValue}
                                 onChange={(e) => setInlineRenameValue(e.target.value)}
@@ -5655,7 +5655,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                 className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
                                 autoFocus
                               />
-                              <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
+                              <span className="inline-flex items-center border-l border-[#e7e5df] bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
                             </div>
                           ) : (
                             <input
@@ -5673,7 +5673,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                 }
                               }}
                               onBlur={() => { void commitInlineRename(); }}
-                              className="min-w-[220px] rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                              className="min-w-[220px] rounded-md border border-orange-300 bg-[#f8f7f5] px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
                               autoFocus
                             />
                           )
@@ -5790,7 +5790,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             {/* Seleção */}
                             <div
                               onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
-                              className={`absolute top-3 left-3 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-white/80 transition-all duration-150 shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.35)]' : 'bg-white/70 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                              className={`absolute top-3 left-3 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-white/80 transition-all duration-150 shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.35)]' : 'bg-[#f8f7f5]/70 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
                             >
                               {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                             </div>
@@ -5846,7 +5846,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           </div>
 
                           {/* ── Corpo ── */}
-                          <div className="flex flex-1 flex-col bg-white px-4 pt-3 pb-4">
+                          <div className="flex flex-1 flex-col bg-[#f8f7f5] px-4 pt-3 pb-4">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                               <input
                                 value={inlineRenameValue}
@@ -5857,7 +5857,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   if (e.key === 'Escape') { e.preventDefault(); cancelInlineRename(); }
                                 }}
                                 onBlur={() => { void commitInlineRename(); }}
-                                className="mb-2 w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                className="mb-2 w-full rounded-lg border border-orange-300 bg-[#f8f7f5] px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
                                 autoFocus
                               />
                             ) : (
@@ -5955,7 +5955,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         draggable
                         onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
-                        className={`group overflow-hidden rounded-[18px] border bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.14),0_10px_24px_-12px_rgba(15,23,42,0.18)] -translate-y-0.5' : 'border-[#e7e2d8] shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:border-[#ddd6ca] hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.18)] hover:-translate-y-0.5'}`}
+                        className={`group overflow-hidden rounded-[18px] border bg-[#f8f7f5] cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.14),0_10px_24px_-12px_rgba(15,23,42,0.18)] -translate-y-0.5' : 'border-[#e7e2d8] shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:border-[#ddd6ca] hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.18)] hover:-translate-y-0.5'}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
@@ -5998,7 +5998,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           {/* Selection */}
                           <div
                             onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
-                            className={`absolute top-2.5 left-2.5 z-20 w-5 h-5 rounded-full border-2 border-white/90 flex items-center justify-center transition-all duration-150 cursor-pointer shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.45)]' : 'bg-white/80 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                            className={`absolute top-2.5 left-2.5 z-20 w-5 h-5 rounded-full border-2 border-white/90 flex items-center justify-center transition-all duration-150 cursor-pointer shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.45)]' : 'bg-[#f8f7f5]/80 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
                           >
                             {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                           </div>
@@ -6043,9 +6043,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             <div className="w-full h-full flex items-center justify-center bg-[#fafafa] p-3">
                               {pdfThumbnailUrl ? (
                                 <img src={pdfThumbnailUrl} alt={file.original_name} draggable={false} onDragStart={(e) => e.preventDefault()}
-                                  className="h-full w-full object-contain rounded-lg shadow-sm bg-white" />
+                                  className="h-full w-full object-contain rounded-lg shadow-sm bg-[#f8f7f5]" />
                               ) : (
-                                <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-xl bg-white shadow-sm text-slate-400">
+                                <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-xl bg-[#f8f7f5] shadow-sm text-slate-400">
                                   <Loader2 className="h-5 w-5 animate-spin text-red-400" />
                                   <span className="text-[10px] font-medium">Gerando preview</span>
                                 </div>
@@ -6059,10 +6059,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         </div>
 
                         {/* ── Footer ── */}
-                        <div className="border-t border-[#efede7] bg-white px-3 py-3">
+                        <div className="border-t border-[#efede7] bg-[#f8f7f5] px-3 py-3">
                           {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
                             splitFileNameAndExtension(file.original_name).extension ? (
-                              <div className="flex overflow-hidden rounded-lg border border-orange-300 bg-white shadow-sm">
+                              <div className="flex overflow-hidden rounded-lg border border-orange-300 bg-[#f8f7f5] shadow-sm">
                                 <input
                                   value={inlineRenameValue}
                                   onChange={(e) => setInlineRenameValue(e.target.value)}
@@ -6081,7 +6081,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
                                   autoFocus
                                 />
-                                <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
+                                <span className="inline-flex items-center border-l border-[#e7e5df] bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
                               </div>
                             ) : (
                               <input
@@ -6093,7 +6093,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                     if (e.key === 'Escape') { e.preventDefault(); cancelInlineRename(); }
                                   }}
                                   onBlur={() => { void commitInlineRename(); }}
-                                  className="w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                  className="w-full rounded-lg border border-orange-300 bg-[#f8f7f5] px-2.5 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
                                   autoFocus
                                 />
                             )
@@ -6125,14 +6125,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="absolute inset-0 z-30 flex items-center justify-center bg-white/72 backdrop-blur-[2px] p-4"
+                  className="absolute inset-0 z-30 flex items-center justify-center bg-[#f8f7f5]/72 backdrop-blur-[2px] p-4"
                 >
                   <motion.div
                     initial={{ scale: 0.96, opacity: 0.9 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.98, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-                    className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-orange-200 bg-white px-6 py-7 text-center shadow-[0_24px_70px_rgba(15,23,42,0.16)]"
+                    className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-orange-200 bg-[#f8f7f5] px-6 py-7 text-center shadow-[0_24px_70px_rgba(15,23,42,0.16)]"
                   >
                     <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
                       <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -6147,7 +6147,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
             {dragActive ? (
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/12 backdrop-blur-[2px] p-4">
-                <div className="w-full max-w-3xl rounded-[32px] border border-dashed border-orange-300 bg-white/96 px-8 py-12 text-center shadow-[0_30px_90px_rgba(15,23,42,0.16)]">
+                <div className="w-full max-w-3xl rounded-[32px] border border-dashed border-orange-300 bg-[#f8f7f5]/96 px-8 py-12 text-center shadow-[0_30px_90px_rgba(15,23,42,0.16)]">
                   <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_18px_45px_rgba(249,115,22,0.20)]">
                     <Upload className="h-9 w-9 text-orange-500" />
                   </div>
@@ -6181,9 +6181,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: '100%', opacity: 0.98 }}
               transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-              className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[340px] flex-col border-l border-slate-200 bg-slate-50 shadow-[-12px_0_40px_rgba(15,23,42,0.12)]"
+              className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[340px] flex-col border-l border-[#e7e5df] bg-[#f5f5f3] shadow-[-12px_0_40px_rgba(15,23,42,0.12)]"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+              <div className="flex items-center justify-between border-b border-[#e7e5df] bg-[#f8f7f5] px-4 py-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Painel</p>
                   <p className="text-sm font-medium text-slate-900">Detalhes do item</p>
@@ -6199,7 +6199,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <div className="flex-1 overflow-auto p-4 space-y-4">
                 {selectedFolder ? (
                   <>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 space-y-3">
                     <div className="flex items-center gap-3">
                       <FolderOpen className="w-8 h-8 text-amber-500" />
                       <div className="min-w-0">
@@ -6216,7 +6216,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             type="button"
                             onClick={() => handleAssignFolderLabel(selectedFolder.id, label.id)}
                             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                              active ? `${label.bgClass} ${label.textClass} ${label.borderClass}` : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              active ? `${label.bgClass} ${label.textClass} ${label.borderClass}` : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-50'
                             }`}
                           >
                             <Tag className="w-3 h-3" />
@@ -6261,7 +6261,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 space-y-3">
                     <p className="text-sm font-medium text-slate-900">Vincular cliente</p>
                     <ClientSearchSelect
                       value={selectedFolder.client_id || ''}
@@ -6270,24 +6270,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       allowCreate={false}
                     />
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 space-y-3">
                     <p className="text-sm font-medium text-slate-900">Adicionar mais etiqueta</p>
                     <div className="grid grid-cols-1 gap-3">
                       <input
                         value={newLabelName}
                         onChange={(e) => setNewLabelName(e.target.value)}
                         placeholder="Ex: Protocolado"
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                        className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                       />
                       <div className="flex items-center gap-3">
-                        <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-16 h-11 rounded-xl border border-slate-200 bg-white p-1" />
+                        <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-16 h-11 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-1" />
                         <button type="button" onClick={handleCreateCustomLabel} className="flex-1 px-4 py-2.5 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
                           Adicionar mais
                         </button>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-slate-900">Pendência e alerta</p>
@@ -6310,7 +6310,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           value={folderIssueLevel}
                           onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
                           disabled={!folderIssueEnabled}
-                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                          className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                         >
                           <option value="pendencia">Pendência</option>
                           <option value="alerta">Alerta</option>
@@ -6336,7 +6336,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         disabled={!folderIssueEnabled}
                         rows={3}
                         placeholder="Ex: Aguardando documento do cliente, revisão urgente, prazo sensível..."
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                        className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                       />
                     </div>
                     <button
@@ -6368,7 +6368,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   <button
                     onClick={() => void handleDownloadFolder(selectedFolder)}
                     disabled={downloadingFolderId === selectedFolder.id}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-[#e7e5df] disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {downloadingFolderId === selectedFolder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     {downloadingFolderId === selectedFolder.id ? 'Aguarde... estamos montando a pasta...' : 'Baixar pasta'}
@@ -6389,13 +6389,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   </>
                 ) : selectedFile ? (
                   <>
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                    <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 space-y-3">
                       <div className="flex items-center gap-3">
                         {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? <FileText className="w-6 h-6 text-red-500" /> : isImageFile(selectedFile.mime_type) ? <ImageIcon className="w-6 h-6 text-emerald-500" /> : isVideoFile(selectedFile.mime_type, selectedFile.original_name) ? <CloudCog className="w-6 h-6 text-orange-500" /> : <File className="w-6 h-6 text-sky-500" />}
                         <div className="min-w-0">
                           <p className="text-slate-900 font-semibold truncate">{selectedFile.original_name}</p>
                           <div className="mt-1">
-                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                            <span className="inline-flex items-center rounded-full border border-[#e7e5df] bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
                               {getFileTypeLabel(selectedFile)}
                             </span>
                           </div>
@@ -6415,7 +6415,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       </button>
                       <button
                         onClick={() => handleDownloadFile(selectedFile)}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-[#e7e5df]"
                       >
                         <Download className="w-4 h-4" />
                         Baixar arquivo
@@ -6454,7 +6454,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           setTargetFolderId('');
                           setMoveModalOpen(true);
                         }}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-[#e7e5df]"
                       >
                         <MoveRight className="w-4 h-4" />
                         Mover arquivo
@@ -6480,9 +6480,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   
       {folderModalOpen && (
         <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-3xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -6493,18 +6493,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               {currentFolderId ? (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Nome da subpasta</label>
-                  <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Documentos" />
+                  <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Documentos" />
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Nome</label>
-                      <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Contratos do cliente" />
+                      <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Contratos do cliente" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Etiqueta inicial</label>
-                      <select value={selectedFolderLabelId} onChange={(e) => setSelectedFolderLabelId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+                      <select value={selectedFolderLabelId} onChange={(e) => setSelectedFolderLabelId(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
                         {folderLabels.map((label) => (
                           <option key={label.id} value={label.id}>{label.name}</option>
                         ))}
@@ -6512,7 +6512,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     </div>
                   </div>
                   <ClientSearchSelect value={folderClientId} onChange={(clientId) => setFolderClientId(clientId)} label="Vincular a cliente" required={false} allowCreate={false} />
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-slate-900">Pendência inicial</p>
@@ -6533,7 +6533,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         value={folderIssueLevel}
                         onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
                         disabled={!folderIssueEnabled}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                        className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                       >
                         <option value="pendencia">Pendência</option>
                         <option value="alerta">Alerta</option>
@@ -6543,15 +6543,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         onChange={(e) => setFolderIssueReason(e.target.value)}
                         disabled={!folderIssueEnabled}
                         placeholder="Motivo da pendência/alerta"
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                        className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                       />
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-4 space-y-3">
                     <p className="text-sm font-medium text-slate-900">Cadastrar nova etiqueta</p>
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_auto] gap-3">
-                      <input value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} placeholder="Ex: Em análise" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-                      <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-full h-[50px] rounded-xl border border-slate-200 bg-white p-2" />
+                      <input value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} placeholder="Ex: Em análise" className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                      <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-full h-[50px] rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-2" />
                       <button type="button" onClick={handleCreateCustomLabel} className="px-4 py-3 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
                         Cadastrar etiqueta
                       </button>
@@ -6559,7 +6559,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   </div>
                 </>
               )}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900">Pendência inicial</p>
@@ -6580,7 +6580,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     value={folderIssueLevel}
                     onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
                     disabled={!folderIssueEnabled}
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                    className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                   >
                     <option value="pendencia">Pendência</option>
                     <option value="alerta">Alerta</option>
@@ -6590,12 +6590,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     onChange={(e) => setFolderIssueReason(e.target.value)}
                     disabled={!folderIssueEnabled}
                     placeholder="Motivo da pendência/alerta"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                    className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setFolderModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setFolderModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] text-sm text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleCreateFolder} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Criar pasta</button>
               </div>
             </div>
@@ -6605,9 +6605,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {moveModalOpen && selectedFileToMove && (
         <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -6615,12 +6615,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </div>
                 <button onClick={() => setMoveModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Arquivo: <span className="font-medium text-slate-900">{selectedFileToMove.original_name}</span>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Pasta de destino</label>
-                <select value={targetFolderId} onChange={(e) => setTargetFolderId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+                <select value={targetFolderId} onChange={(e) => setTargetFolderId(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
                   <option value="">Selecione a pasta destino</option>
                   {moveTargetOptions.map((folder) => (
                     <option key={folder.id} value={folder.id}>{folder.label}</option>
@@ -6628,7 +6628,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </select>
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setMoveModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setMoveModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleMoveFile} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Mover</button>
               </div>
             </div>
@@ -6638,9 +6638,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {shareModalOpen && selectedFolderForShare && (
         <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -6648,16 +6648,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </div>
                 <button onClick={() => setShareModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Pasta: <span className="font-medium text-slate-900">{selectedFolderForShare.name}</span>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Senha (opcional)</label>
-                <input value={sharePassword} onChange={(e) => setSharePassword(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Defina uma senha para o link" />
+                <input value={sharePassword} onChange={(e) => setSharePassword(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Defina uma senha para o link" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Expira em (opcional)</label>
-                <input type="date" value={shareExpiresAt} onChange={(e) => setShareExpiresAt(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input type="date" value={shareExpiresAt} onChange={(e) => setShareExpiresAt(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
               </div>
               {activeShare ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -6665,7 +6665,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   <p className="text-xs mt-1 text-emerald-700">Você pode manter o mesmo link, atualizar senha/validade ou tornar a pasta privada novamente.</p>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   Ainda não existe link compartilhado para esta pasta.
                 </div>
               )}
@@ -6685,7 +6685,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               )}
               {activeShare ? (
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={handleClearSharePassword} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <button onClick={handleClearSharePassword} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">
                     Remover senha
                   </button>
                   <button onClick={handleDisableShare} className="px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm font-medium text-red-700 hover:bg-red-100">
@@ -6694,7 +6694,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </div>
               ) : null}
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShareModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
+                <button onClick={() => setShareModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
                 <button onClick={handleCreateShare} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">{activeShare ? 'Salvar link' : 'Gerar link'}</button>
               </div>
           </div>
@@ -6704,8 +6704,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {previewFile && (
         <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
-          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[92vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
-            <div className="border-b border-slate-200 bg-white px-3 py-2 sm:px-4">
+          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[92vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden flex flex-col`}>
+            <div className="border-b border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 sm:px-4">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-sm font-semibold text-slate-900 sm:text-base">{previewFile.original_name}</h3>
@@ -6758,7 +6758,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
                       {previewActionsMenuOpen ? (
-                        <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
+                        <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-xl border border-[#e7e5df] bg-[#f8f7f5] py-1 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
                           <button
                             type="button"
                             onClick={() => {
@@ -6829,14 +6829,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   <button
                     type="button"
                     onClick={() => openPreviewPdfByOffset(-1)}
-                    className="absolute left-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="absolute left-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e7e5df] bg-[#f8f7f5]/95 text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => openPreviewPdfByOffset(1)}
-                    className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e7e5df] bg-[#f8f7f5]/95 text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
@@ -6847,14 +6847,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   <button
                     type="button"
                     onClick={() => openPreviewImageByOffset(-1)}
-                    className="absolute left-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="absolute left-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e7e5df] bg-[#f8f7f5]/95 text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => openPreviewImageByOffset(1)}
-                    className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e7e5df] bg-[#f8f7f5]/95 text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
@@ -6863,17 +6863,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               {previewLoading ? (
                 <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
               ) : isDocxFile(previewFile.mime_type, previewFile.original_name) ? (
-                <div className="h-full bg-white">
+                <div className="h-full bg-[#f8f7f5]">
                   <SyncfusionEditor ref={editorRef} readOnly={false} height="100%" enableToolbar={true} showPropertiesPane={true} showNavigationPane={false} />
                 </div>
               ) : isPdfFile(previewFile.mime_type, previewFile.original_name) && previewUrl ? (
                 <div className="min-h-full w-full overflow-auto p-3 sm:p-6">
                   <div className="mx-auto flex min-h-full w-full max-w-[1120px] items-start justify-center rounded-2xl bg-slate-300/40 p-2 sm:p-4">
-                    <div className="w-full max-w-[900px] rounded-xl bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] overflow-hidden">
+                    <div className="w-full max-w-[900px] rounded-xl bg-[#f8f7f5] shadow-[0_18px_50px_rgba(15,23,42,0.16)] overflow-hidden">
                       <iframe
                         key={`${previewFile.id}-${previewUrl}`}
                         src={previewUrl}
-                        className="block h-[75vh] sm:h-[78vh] w-full bg-white"
+                        className="block h-[75vh] sm:h-[78vh] w-full bg-[#f8f7f5]"
                         title={previewFile.original_name}
                       />
                     </div>
@@ -6907,7 +6907,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               )}
             </div>
             {isPdfFile(previewFile.mime_type, previewFile.original_name) && previewPdfFiles.length > 1 ? (
-              <div className="border-t border-slate-200 bg-white px-4 py-3">
+              <div className="border-t border-[#e7e5df] bg-[#f8f7f5] px-4 py-3">
                 <div className="flex gap-3 overflow-x-auto">
                   {previewPdfFiles.map((file, index) => {
                     const active = file.id === previewFile.id;
@@ -6916,7 +6916,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         key={file.id}
                         type="button"
                         onClick={() => setPreviewFile(file)}
-                        className={`min-w-[170px] rounded-xl border px-3 py-2 text-left transition ${active ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-slate-50 hover:bg-white hover:border-slate-300'}`}
+                        className={`min-w-[170px] rounded-xl border px-3 py-2 text-left transition ${active ? 'border-orange-300 bg-orange-50' : 'border-[#e7e5df] bg-slate-50 hover:bg-white hover:border-slate-300'}`}
                       >
                         <p className="text-[11px] font-medium text-slate-500">PDF {index + 1}</p>
                         <p className={`mt-1 truncate text-sm font-medium ${active ? 'text-orange-700' : 'text-slate-800'}`}>{file.original_name}</p>
@@ -6938,7 +6938,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
+          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
             <button
               type="button"
               onClick={() => openFolderFromContextMenu(selectedContextFolder)}
@@ -6970,7 +6970,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             </button>
             {folderColorPickerTarget === selectedContextFolder.id && (
               <div className="px-3 pb-3">
-                <div className="grid grid-cols-6 gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-6 gap-1.5 p-2 bg-slate-50 rounded-xl border border-[#e7e5df]">
                   {FOLDER_COLOR_PRESETS.map(preset => (
                     <button
                       key={preset.value || 'default'}
@@ -7200,9 +7200,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {folderIssueQuickModalOpen && folderIssueQuickTarget ? (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
             <div className={`h-2 w-full ${folderIssueQuickLevel === 'alerta' ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-amber-500 to-amber-600'}`} />
-            <div className="space-y-4 bg-white p-5 sm:p-6">
+            <div className="space-y-4 bg-[#f8f7f5] p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Cloud</p>
@@ -7241,7 +7241,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     setFolderIssueQuickReason('');
                     setFolderIssueQuickLevel('pendencia');
                   }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-[#e7e5df] px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
@@ -7266,7 +7266,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-56 rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1 overflow-hidden">
+          <div className="w-56 rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1 overflow-hidden">
             <button
               type="button"
               onClick={() => {
@@ -7376,7 +7376,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="max-h-[80vh] w-60 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
+          <div className="max-h-[80vh] w-60 overflow-y-auto rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
             {/* Cabeçalho com nome do arquivo */}
             <div className="px-3 py-2 border-b border-slate-100">
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide truncate">{selectedContextFile.original_name}</p>
@@ -7641,7 +7641,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           const singleFile = isSingleFile ? files.find(f => `file:${f.id}` === selectedItemKeys[0]) : null;
           const singleFolder = isSingleFolder ? allFolders.find(f => `folder:${f.id}` === selectedItemKeys[0]) : null;
           const hasSignable = files.some(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
-          const Sep = () => <div className="w-px h-4 bg-white/10 mx-1 shrink-0" />;
+          const Sep = () => <div className="w-px h-4 bg-[#f8f7f5]/10 mx-1 shrink-0" />;
           const Btn = ({ onClick, icon, label, color = 'text-slate-200 hover:bg-white/10 hover:text-white', disabled = false }: { onClick: () => void; icon: React.ReactNode; label: string; color?: string; disabled?: boolean }) => (
             <button type="button" onClick={onClick} disabled={disabled}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap disabled:opacity-40 ${color}`}
@@ -7775,9 +7775,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {renameModalOpen && renameTarget && (
         <div className="fixed inset-0 z-[135] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-md rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -7788,7 +7788,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Novo nome</label>
                 {renameTarget.type === 'file' && splitFileNameAndExtension(renameTarget.currentName).extension ? (
-                  <div className="flex overflow-hidden rounded-xl border border-orange-300 bg-white shadow-[0_0_0_3px_rgba(249,115,22,0.08)]">
+                  <div className="flex overflow-hidden rounded-xl border border-orange-300 bg-[#f8f7f5] shadow-[0_0_0_3px_rgba(249,115,22,0.08)]">
                     <input
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
@@ -7798,11 +7798,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           void handleRename();
                         }
                       }}
-                      className="flex-1 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none"
+                      className="flex-1 px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 focus:outline-none"
                       placeholder="Digite o novo nome"
                       autoFocus
                     />
-                    <div className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 select-none">
+                    <div className="inline-flex items-center border-l border-[#e7e5df] bg-slate-50 px-4 text-sm font-medium text-slate-500 select-none">
                       {splitFileNameAndExtension(renameTarget.currentName).extension}
                     </div>
                   </div>
@@ -7816,14 +7816,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         void handleRename();
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                    className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-[#f8f7f5] text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                     placeholder="Digite o novo nome"
                     autoFocus
                   />
                 )}
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setRenameModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setRenameModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={() => void handleRename()} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Renomear</button>
               </div>
             </div>
@@ -7833,9 +7833,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {bulkRenameModalOpen && (
         <div className="fixed inset-0 z-[135] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -7844,16 +7844,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 <button onClick={() => setBulkRenameModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input value={bulkRenamePrefix} onChange={(e) => setBulkRenamePrefix(e.target.value)} placeholder="Prefixo" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-                <input value={bulkRenameSuffix} onChange={(e) => setBulkRenameSuffix(e.target.value)} placeholder="Sufixo" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-                <input value={bulkRenameSearch} onChange={(e) => setBulkRenameSearch(e.target.value)} placeholder="Texto a buscar" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-                <input value={bulkRenameReplace} onChange={(e) => setBulkRenameReplace(e.target.value)} placeholder="Substituir por" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenamePrefix} onChange={(e) => setBulkRenamePrefix(e.target.value)} placeholder="Prefixo" className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameSuffix} onChange={(e) => setBulkRenameSuffix(e.target.value)} placeholder="Sufixo" className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameSearch} onChange={(e) => setBulkRenameSearch(e.target.value)} placeholder="Texto a buscar" className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameReplace} onChange={(e) => setBulkRenameReplace(e.target.value)} placeholder="Substituir por" className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {selectedItemKeys.length} item(ns) selecionado(s)
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setBulkRenameModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setBulkRenameModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={() => void handleBulkRename()} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Aplicar</button>
               </div>
             </div>
@@ -7863,9 +7863,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {bulkMoveModalOpen && (
         <div className="fixed inset-0 z-[125] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
@@ -7873,12 +7873,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </div>
                 <button onClick={() => setBulkMoveModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {selectedItemKeys.length} item(ns) selecionado(s)
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Pasta de destino</label>
-                <select value={bulkMoveTargetFolderId} onChange={(e) => setBulkMoveTargetFolderId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+                <select value={bulkMoveTargetFolderId} onChange={(e) => setBulkMoveTargetFolderId(e.target.value)} className="w-full rounded-xl border border-[#e7e5df] px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
                   <option value="">Selecione a pasta destino</option>
                   {bulkMoveOptions.map((folder) => (
                     <option key={folder.id} value={folder.id}>{folder.label}</option>
@@ -7886,7 +7886,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </select>
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setBulkMoveModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setBulkMoveModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={() => void handleBulkMove()} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Mover</button>
               </div>
             </div>
@@ -7908,10 +7908,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.98, y: 12, opacity: 0 }}
               transition={{ duration: 0.22 }}
-              className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-orange-100 bg-white text-slate-900 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
+              className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-orange-100 bg-[#f8f7f5] text-slate-900 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
               style={{ backgroundColor: '#ffffff', color: '#0f172a', colorScheme: 'light' }}
             >
-              <div className="border-b border-orange-100 bg-white px-6 py-5" style={{ backgroundColor: '#ffffff' }}>
+              <div className="border-b border-orange-100 bg-[#f8f7f5] px-6 py-5" style={{ backgroundColor: '#ffffff' }}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4 min-w-0">
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 shadow-[0_0_30px_rgba(249,115,22,0.14)]">
@@ -7939,7 +7939,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     <button
                       type="button"
                       onClick={clearFinishedUploads}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       Fechar
                     </button>
@@ -7959,30 +7959,30 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">{uploadQueueSummary.completedItems} concluído(s)</span>
+                    <span className="rounded-full border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1 text-slate-700">{uploadQueueSummary.completedItems} concluído(s)</span>
                     {uploadQueueSummary.uploadingItems ? <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-700">{uploadQueueSummary.uploadingItems} enviando</span> : null}
                     {uploadQueueSummary.failedItems ? <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-red-700">{uploadQueueSummary.failedItems} falhou(ram)</span> : null}
                   </div>
                 </div>
               </div>
 
-              <div className="max-h-[45vh] space-y-3 overflow-auto bg-white px-6 py-5" style={{ backgroundColor: '#ffffff' }}>
+              <div className="max-h-[45vh] space-y-3 overflow-auto bg-[#f8f7f5] px-6 py-5" style={{ backgroundColor: '#ffffff' }}>
                 {uploadQueueItems.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 backdrop-blur-sm shadow-sm" style={{ backgroundColor: '#ffffff' }}>
+                  <div key={item.id} className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 backdrop-blur-sm shadow-sm" style={{ backgroundColor: '#ffffff' }}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-900">{item.fileName}</p>
                         <p className="mt-1 truncate text-xs text-slate-500">{item.folderLabel} • {formatFileSize(item.fileSize)}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${item.status === 'completed' ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'failed' ? 'border border-red-200 bg-red-50 text-red-700' : item.status === 'uploading' ? 'border border-orange-200 bg-orange-50 text-orange-700' : 'border border-slate-200 bg-slate-50 text-slate-600'}`}>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${item.status === 'completed' ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'failed' ? 'border border-red-200 bg-red-50 text-red-700' : item.status === 'uploading' ? 'border border-orange-200 bg-orange-50 text-orange-700' : 'border border-[#e7e5df] bg-slate-50 text-slate-600'}`}>
                           {item.status === 'completed' ? 'Concluído' : item.status === 'failed' ? 'Falhou' : item.status === 'uploading' ? 'Enviando' : 'Na fila'}
                         </span>
                         {item.status === 'failed' ? (
                           <button
                             type="button"
                             onClick={() => void retryUploadItem(item.id)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                            className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                           >
                             Tentar novamente
                           </button>
@@ -8042,7 +8042,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       : deleteModalState.stage === 'success'
                         ? { duration: 0.45 }
                         : { duration: 0.42 }}
-                    className={`relative flex h-24 w-24 items-center justify-center rounded-3xl border ${deleteModalState.stage === 'success' ? 'border-emerald-200 bg-emerald-50' : deleteModalState.stage === 'error' ? 'border-red-200 bg-red-50' : 'border-red-100 bg-white'}`}
+                    className={`relative flex h-24 w-24 items-center justify-center rounded-3xl border ${deleteModalState.stage === 'success' ? 'border-emerald-200 bg-emerald-50' : deleteModalState.stage === 'error' ? 'border-red-200 bg-red-50' : 'border-red-100 bg-[#f8f7f5]'}`}
                   >
                     {deleteModalState.kind === 'folder' ? <Folder className="w-11 h-11 text-amber-500" /> : <FileText className="w-11 h-11 text-red-500" />}
                     {deleteModalState.stage === 'processing' ? (
@@ -8066,7 +8066,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         : deleteModalState.error || 'Tente novamente em instantes.'}
                   </p>
 
-                  <div className="mt-6 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4" style={{ backgroundColor: '#f8fafc' }}>
+                  <div className="mt-6 w-full rounded-2xl border border-[#e7e5df] bg-slate-50 p-4" style={{ backgroundColor: '#f8fafc' }}>
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span>Status</span>
                       <span className="font-semibold text-slate-900">{deleteModalState.stage === 'processing' ? 'Excluindo...' : deleteModalState.stage === 'success' ? 'Concluído' : 'Falhou'}</span>
@@ -8092,7 +8092,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       <button
                         type="button"
                         onClick={() => setDeleteModalState((prev) => ({ ...prev, open: false }))}
-                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
                         Fechar
                       </button>
@@ -8107,9 +8107,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
       {imagePdfModalOpen && (
         <div className="fixed inset-0 z-[140] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl rounded-3xl bg-white text-slate-900 shadow-[0_25px_60px_rgba(15,23,42,0.22)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-4xl rounded-3xl bg-[#f8f7f5] text-slate-900 shadow-[0_25px_60px_rgba(15,23,42,0.22)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">Converter imagens em PDF</h3>
@@ -8123,16 +8123,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 <input
                   value={imagePdfName}
                   onChange={(e) => setImagePdfName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-300"
+                  className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-300"
                   placeholder="Ex: documentos-consolidados"
                 />
               </div>
 
-              <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
-                <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-[0.16em] text-slate-500 font-semibold">
+              <div className="rounded-2xl border border-[#e7e5df] overflow-hidden bg-[#f8f7f5]">
+                <div className="px-4 py-3 bg-slate-50 border-b border-[#e7e5df] text-xs uppercase tracking-[0.16em] text-slate-500 font-semibold">
                   Ordem das imagens
                 </div>
-                <div className="max-h-[420px] overflow-auto bg-white p-4">
+                <div className="max-h-[420px] overflow-auto bg-[#f8f7f5] p-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {imagePdfItems.map((item, index) => (
                       <div
@@ -8147,9 +8147,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           setDraggingImagePdfId(null);
                         }}
                         onDragEnd={() => setDraggingImagePdfId(null)}
-                        className={`rounded-2xl border bg-white shadow-sm transition-all overflow-hidden cursor-grab active:cursor-grabbing ${draggingImagePdfId === item.id ? 'opacity-70 scale-[0.98] border-orange-300 shadow-lg' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
+                        className={`rounded-2xl border bg-white shadow-sm transition-all overflow-hidden cursor-grab active:cursor-grabbing ${draggingImagePdfId === item.id ? 'opacity-70 scale-[0.98] border-orange-300 shadow-lg' : 'border-[#e7e5df] hover:border-orange-200 hover:shadow-md'}`}
                       >
-                        <div className="aspect-[4/3] bg-slate-100 overflow-hidden border-b border-slate-200">
+                        <div className="aspect-[4/3] bg-slate-100 overflow-hidden border-b border-[#e7e5df]">
                           {imagePdfPreviewUrls[item.id] ? (
                             <img
                               src={imagePdfPreviewUrls[item.id]}
@@ -8162,7 +8162,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                             </div>
                           )}
                         </div>
-                        <div className="p-3 space-y-3 bg-white">
+                        <div className="p-3 space-y-3 bg-[#f8f7f5]">
                           <div className="flex items-start gap-3">
                             <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-orange-50 px-2 text-xs font-semibold text-orange-700">{index + 1}</span>
                             <div className="min-w-0 flex-1">
@@ -8175,7 +8175,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                               type="button"
                               onClick={() => moveImagePdfItem(index, -1)}
                               disabled={index === 0}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                              className="px-2.5 py-1.5 rounded-lg border border-[#e7e5df] bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                             >
                               ↑
                             </button>
@@ -8183,7 +8183,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                               type="button"
                               onClick={() => moveImagePdfItem(index, 1)}
                               disabled={index === imagePdfItems.length - 1}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                              className="px-2.5 py-1.5 rounded-lg border border-[#e7e5df] bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                             >
                               ↓
                             </button>
@@ -8196,7 +8196,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               </div>
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setImagePdfModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => setImagePdfModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleConvertImagesToPdf} disabled={convertingImagesToPdf} className="px-4 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-70 shadow-sm shadow-orange-500/20">
                   {convertingImagesToPdf ? 'Convertendo...' : 'Salvar PDF'}
                 </button>
@@ -8234,7 +8234,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <div className="px-6 pb-6 pt-2 flex gap-3 border-t border-slate-100">
                 <button
                   onClick={() => setPdfToolMode('home')}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+                  className="flex-1 py-2.5 rounded-xl border border-[#e7e5df] text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -8251,7 +8251,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             {/* Right: preview hint */}
             <div className="hidden lg:flex flex-1 items-center justify-center bg-[#f8f9fb] p-10">
               <div className="text-center max-w-[200px]">
-                <div className="w-16 h-20 mx-auto bg-white rounded-xl border border-slate-200 shadow-sm shadow-md flex items-center justify-center mb-4">
+                <div className="w-16 h-20 mx-auto bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] shadow-md flex items-center justify-center mb-4">
                   <FileText className="w-7 h-7 text-slate-300" />
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">O resultado será gerado e baixado automaticamente.</p>
@@ -8267,7 +8267,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.98 }}
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full sm:max-w-5xl h-[96vh] sm:h-[88vh] rounded-t-[24px] sm:rounded-2xl bg-white shadow-[0_40px_100px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col"
+            className="w-full sm:max-w-5xl h-[96vh] sm:h-[88vh] rounded-t-[24px] sm:rounded-2xl bg-[#f8f7f5] shadow-[0_40px_100px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col"
           >
             {/* ══ HEADER ══ */}
             <div className="flex-shrink-0 bg-slate-900 px-5 py-4 flex items-center gap-4">
@@ -8322,7 +8322,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <div className="flex flex-1 min-h-0">
 
                 {/* ── Left sidebar: tools ── */}
-                <div className="w-full lg:w-[272px] lg:flex-shrink-0 border-r border-slate-100 flex flex-col bg-white overflow-y-auto">
+                <div className="w-full lg:w-[272px] lg:flex-shrink-0 border-r border-slate-100 flex flex-col bg-[#f8f7f5] overflow-y-auto">
 
                   {/* Section: Editar */}
                   <div className="pt-4 pb-1 px-4">
@@ -8483,10 +8483,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                               <button
                                 key={`${page.sourceIndex}-${idx}`}
                                 onClick={() => togglePdfPageSelection(idx)}
-                                className={`group relative overflow-hidden rounded-xl border-2 transition-all text-left bg-white flex flex-col hover:shadow-md ${sel ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]' : 'border-slate-200 hover:border-slate-300'}`}
+                                className={`group relative overflow-hidden rounded-xl border-2 transition-all text-left bg-[#f8f7f5] flex flex-col hover:shadow-md ${sel ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]' : 'border-[#e7e5df] hover:border-slate-300'}`}
                               >
                                 {/* Selection badge */}
-                                <div className={`absolute top-2 right-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${sel ? 'bg-red-500 border-red-500' : 'bg-white/80 border-slate-300 group-hover:border-slate-400'}`}>
+                                <div className={`absolute top-2 right-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${sel ? 'bg-red-500 border-red-500' : 'bg-[#f8f7f5]/80 border-slate-300 group-hover:border-slate-400'}`}>
                                   {sel && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="2"><path d="M1 3l2 2 4-4"/></svg>}
                                 </div>
                                 {/* Thumbnail */}
@@ -8501,7 +8501,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                   />
                                 </div>
                                 {/* Footer */}
-                                <div className={`px-2.5 py-2 flex items-center justify-between transition-colors ${sel ? 'bg-red-50' : 'bg-white'}`}>
+                                <div className={`px-2.5 py-2 flex items-center justify-between transition-colors ${sel ? 'bg-red-50' : 'bg-[#f8f7f5]'}`}>
                                   <span className={`text-[11px] font-semibold ${sel ? 'text-red-700' : 'text-slate-500'}`}>
                                     {idx + 1}
                                   </span>
@@ -8541,7 +8541,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       value={pdfWatermarkText}
                       onChange={e => setPdfWatermarkText(e.target.value)}
                       placeholder="Ex: CONFIDENCIAL"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-bold text-slate-900 uppercase focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition"
+                      className="w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm font-bold text-slate-900 uppercase focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition"
                     />
                   </div>
                   <div>
@@ -8553,14 +8553,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                   <div className="grid grid-cols-2 gap-2">
                     {[{ v: true, l: '↗ Diagonal (45°)' }, { v: false, l: '— Horizontal' }].map(opt => (
                       <button key={String(opt.v)} type="button" onClick={() => setPdfWatermarkDiagonal(opt.v)}
-                        className={`py-2.5 rounded-xl border text-sm font-medium transition ${pdfWatermarkDiagonal === opt.v ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        className={`py-2.5 rounded-xl border text-sm font-medium transition ${pdfWatermarkDiagonal === opt.v ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-[#e7e5df] text-slate-600 hover:bg-slate-50'}`}>
                         {opt.l}
                       </button>
                     ))}
                   </div>
                   {/* Live preview */}
-                  <div className="rounded-xl bg-slate-100 h-36 flex items-center justify-center overflow-hidden relative border border-slate-200">
-                    <div className="absolute inset-3 border border-slate-200 rounded-lg bg-white" />
+                  <div className="rounded-xl bg-slate-100 h-36 flex items-center justify-center overflow-hidden relative border border-[#e7e5df]">
+                    <div className="absolute inset-3 border border-[#e7e5df] rounded-lg bg-[#f8f7f5]" />
                     <span className="relative font-black pointer-events-none select-none text-slate-400"
                       style={{ opacity: pdfWatermarkOpacity * 3, transform: pdfWatermarkDiagonal ? 'rotate(-35deg)' : 'none', fontSize: 22, whiteSpace: 'nowrap', letterSpacing: '0.08em' }}>
                       {pdfWatermarkText || 'CONFIDENCIAL'}
@@ -8588,7 +8588,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         { value: 'top-center',    label: 'Cabeçalho — Centro',icon: '▲ —' },
                       ] as { value: typeof pdfPageNumPosition; label: string; icon: string }[]).map(opt => (
                         <button key={opt.value} type="button" onClick={() => setPdfPageNumPosition(opt.value)}
-                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition text-left ${pdfPageNumPosition === opt.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition text-left ${pdfPageNumPosition === opt.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-[#e7e5df] text-slate-600 hover:bg-slate-50'}`}>
                           <span className="text-base w-8 text-center">{opt.icon}</span>
                           {opt.label}
                           {pdfPageNumPosition === opt.value && <svg className="ml-auto w-4 h-4 text-teal-500" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>}
@@ -8597,8 +8597,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     </div>
                   </div>
                   {/* Preview */}
-                  <div className="relative rounded-xl bg-slate-100 h-32 border border-slate-200 flex items-center justify-center overflow-hidden">
-                    <div className="w-16 h-20 bg-white border border-slate-300 rounded shadow-sm" />
+                  <div className="relative rounded-xl bg-slate-100 h-32 border border-[#e7e5df] flex items-center justify-center overflow-hidden">
+                    <div className="w-16 h-20 bg-[#f8f7f5] border border-slate-300 rounded shadow-sm" />
                     {pdfPageNumPosition === 'top-center' && <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shadow-sm">1 / {pdfToolPages.length}</div>}
                     {pdfPageNumPosition !== 'top-center' && <div className={`absolute bottom-3 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shadow-sm ${pdfPageNumPosition === 'bottom-right' ? 'right-6' : 'left-1/2 -translate-x-1/2'}`}>1 / {pdfToolPages.length}</div>}
                   </div>
@@ -8681,7 +8681,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                 <SortablePdfPageCard key={sortableId} id={sortableId}>
                                   <div
                                     onClick={() => togglePdfPageSelection(index)}
-                                    className={`rounded-2xl border bg-white transition-all cursor-pointer group hover:shadow-md ${selected ? 'border-red-400 shadow-[0_0_0_3px_rgba(239,68,68,0.10)]' : 'border-slate-200 hover:border-slate-300'}`}
+                                    className={`rounded-2xl border bg-[#f8f7f5] transition-all cursor-pointer group hover:shadow-md ${selected ? 'border-red-400 shadow-[0_0_0_3px_rgba(239,68,68,0.10)]' : 'border-[#e7e5df] hover:border-slate-300'}`}
                                   >
                                     {/* Card header */}
                                     <div className="flex items-center justify-between px-3 pt-3 pb-2">
@@ -8707,11 +8707,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                                       <span className="text-[10px] text-slate-400 tabular-nums">{page.rotation !== 0 ? `${page.rotation}°` : ''}</span>
                                       <div className="flex items-center gap-1">
                                         <button type="button" onClick={() => rotateSinglePdfPage(index, -90)} title="Girar esquerda"
-                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition">
+                                          className="w-7 h-7 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] hover:bg-slate-50 flex items-center justify-center transition">
                                           <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
                                         </button>
                                         <button type="button" onClick={() => rotateSinglePdfPage(index, 90)} title="Girar direita"
-                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition">
+                                          className="w-7 h-7 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] hover:bg-slate-50 flex items-center justify-center transition">
                                           <RotateCw className="w-3.5 h-3.5 text-slate-500" />
                                         </button>
                                         {pdfToolMode === 'remove' && (
@@ -8740,7 +8740,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </div>
 
                 {/* Footer bar */}
-                <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center justify-between gap-3 flex-shrink-0">
+                <div className="border-t border-[#e7e5df] bg-[#f8f7f5] px-5 py-3 flex items-center justify-between gap-3 flex-shrink-0">
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-slate-400 tabular-nums">
                       {selectedPdfPageIndexes.length > 0
@@ -8755,7 +8755,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={closePdfToolsModal} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
+                    <button onClick={closePdfToolsModal} className="px-4 py-2 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
                       Fechar
                     </button>
                     <button
@@ -8775,8 +8775,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
         );
       })()}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-white px-3 py-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] pr-16">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e7e5df]/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-2 rounded-[28px] border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] pr-16">
           <button
             type="button"
             onClick={handleMobileBackNavigation}

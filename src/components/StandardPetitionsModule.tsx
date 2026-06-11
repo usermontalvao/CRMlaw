@@ -60,7 +60,7 @@ const CATEGORY_COLORS: Record<StandardPetitionCategory, string> = {
   peticao_inicial: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900/60',
   recurso: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/60',
   contestacao: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-900/60',
-  outros: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700',
+  outros: 'bg-slate-100 text-slate-700 border-[#e7e5df] dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700',
 };
 
 const getManausNow = () => {
@@ -720,7 +720,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg shadow-sm p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2 dark:text-zinc-100">
@@ -733,15 +733,15 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
           </div>
           <div className="flex items-center gap-3">
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span className="text-[10px] font-medium text-slate-600 uppercase dark:text-zinc-400">Total</span>
                 <p className="text-lg font-semibold text-slate-900 dark:text-zinc-100">{petitionCounts.total}</p>
               </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span className="text-[10px] font-medium text-emerald-600 uppercase">Ativos</span>
                 <p className="text-lg font-semibold text-emerald-600">{petitionCounts.active}</p>
               </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span className="text-[10px] font-medium text-blue-600 uppercase">DOCX</span>
                 <p className="text-lg font-semibold text-blue-600">{petitionCounts.withFile}</p>
               </div>
@@ -750,7 +750,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         </div>
 
         <div className="mt-4 flex items-center gap-2">
-          <div className="inline-flex rounded-xl bg-slate-100 border border-slate-200 p-1 dark:bg-zinc-800 dark:border-zinc-700">
+          <div className="inline-flex rounded-xl bg-slate-100 border border-[#e7e5df] p-1 dark:bg-zinc-800 dark:border-zinc-700">
             <button
               type="button"
               onClick={() => setActiveView('generate')}
@@ -773,7 +773,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
 
       {activeView === 'list' && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-1 gap-3">
                 <div className="relative flex-1 max-w-md">
@@ -783,13 +783,13 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                     placeholder="Buscar modelos..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   />
                 </div>
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value as StandardPetitionCategory | '')}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                 >
                   <option value="">Todas as categorias</option>
                   {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
@@ -807,7 +807,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
           {loading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
           ) : filteredPetitions.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/40">
+            <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/40">
               <FolderOpen className="mx-auto h-10 w-10 text-slate-300 dark:text-zinc-700" />
               <p className="mt-3 text-sm font-medium text-slate-600 dark:text-zinc-300">Nenhuma petição encontrada</p>
               {!searchTerm && !categoryFilter && (
@@ -819,7 +819,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {filteredPetitions.map((petition) => (
-                <div key={petition.id} className="group rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
+                <div key={petition.id} className="group rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 transition hover:border-slate-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -840,13 +840,13 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                     )}
                   </div>
                   <div className="mt-4 flex items-center gap-2">
-                    <button onClick={() => handleViewPetition(petition)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                    <button onClick={() => handleViewPetition(petition)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
                       <Eye className="h-3.5 w-3.5" />Ver
                     </button>
-                    <button onClick={() => handleOpenFieldsModal(petition)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                    <button onClick={() => handleOpenFieldsModal(petition)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
                       <Settings className="h-3.5 w-3.5" />Campos
                     </button>
-                    <button onClick={() => handleOpenEditModal(petition)} className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                    <button onClick={() => handleOpenEditModal(petition)} className="inline-flex items-center justify-center rounded-lg border border-[#e7e5df] p-2 text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
                     <button onClick={() => handleDeletePetition(petition)} className="inline-flex items-center justify-center rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:hover:bg-red-950/30">
@@ -861,8 +861,8 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       )}
 
       {activeView === 'generate' && (
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="p-4 border-b border-slate-200 dark:border-zinc-800">
+        <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="p-4 border-b border-[#e7e5df] dark:border-zinc-800">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center dark:bg-orange-950/30">
                 <FileDown className="h-5 w-5 text-orange-600 dark:text-orange-400" />
@@ -918,7 +918,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                           isSelected 
                             ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-500/20 dark:bg-orange-950/20' 
                             : hasModels 
-                              ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800' 
+                              ? 'border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800' 
                               : 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed dark:border-zinc-800 dark:bg-zinc-900/40'
                         }`}
                       >
@@ -952,7 +952,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                       value={modelSearchQuery}
                       onChange={(e) => setModelSearchQuery(e.target.value)}
                       placeholder="Buscar modelo..."
-                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                      className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                     />
                   </div>
                   {modelSearchQuery.trim() && filteredModelsByCategory.length === 0 && (
@@ -969,7 +969,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                             className={`p-4 rounded-xl border-2 text-left transition ${
                               isSelected 
                                 ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-500/20 dark:bg-orange-950/20' 
-                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800'
+                                : 'border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800'
                             }`}
                           >
                             <div className="flex items-start gap-3">
@@ -1010,7 +1010,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
               )}
 
               {selectedPetition && selectedClientId && petitionFields.length > 0 && (
-                <div ref={stepCamposRef} className="animate-in fade-in slide-in-from-top-2 duration-300 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+                <div ref={stepCamposRef} className="animate-in fade-in slide-in-from-top-2 duration-300 rounded-xl border border-[#e7e5df] bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
                   <div className="flex items-center gap-2"><Settings className="h-4 w-4 text-slate-500 dark:text-zinc-400" /><p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos Personalizados</p></div>
                   <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Preencha os campos específicos desta petição.</p>
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1026,7 +1026,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                             <textarea
                               value={value}
                               onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.placeholder]: e.target.value }))}
-                              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                              className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                               placeholder={field.description || `Preencher ${field.name}...`}
                               rows={3}
                             />
@@ -1034,7 +1034,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                             <select
                               value={value}
                               onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.placeholder]: e.target.value }))}
-                              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                              className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                             >
                               <option value="">Selecione...</option>
                               {field.options.map((opt) => (
@@ -1046,7 +1046,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                               type={inputType}
                               value={value}
                               onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.placeholder]: e.target.value }))}
-                              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                              className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                               placeholder={field.description || `Preencher ${field.name}...`}
                               step={field.field_type === 'currency' ? '0.01' : undefined}
                             />
@@ -1083,9 +1083,9 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       {isFormModalOpen && createPortal(
         <div className="pericia-light-modal fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseFormModal} />
-          <div className="pericia-light-modal__panel relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
+          <div className="pericia-light-modal__panel relative w-full max-w-2xl bg-[#f8f7f5] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
             <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4 dark:border-zinc-800">
+            <div className="px-5 sm:px-6 py-5 border-b border-[#e7e5df] flex items-start justify-between gap-4 dark:border-zinc-800">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center dark:bg-orange-950/40"><FileText className="w-6 h-6 text-orange-600 dark:text-orange-400" /></div>
                 <div>
@@ -1097,15 +1097,15 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
             </div>
             <form onSubmit={handleSavePetition} className="flex-1 overflow-y-auto">
               <div className="p-5 sm:p-6 space-y-4">
-                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nome *</label><input type="text" value={formData.name} onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: Requerimento Administrativo INSS" required /></div>
-                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label><input type="text" value={formData.description} onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))} className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Breve descrição da petição" /></div>
-                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria *</label><select value={formData.category} onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value as StandardPetitionCategory }))} className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">{Object.entries(CATEGORY_LABELS).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}</select></div>
+                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nome *</label><input type="text" value={formData.name} onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: Requerimento Administrativo INSS" required /></div>
+                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label><input type="text" value={formData.description} onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Breve descrição da petição" /></div>
+                <div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria *</label><select value={formData.category} onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value as StandardPetitionCategory }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">{Object.entries(CATEGORY_LABELS).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}</select></div>
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                     {editingPetition?.file_path ? 'Arquivo Template' : 'Arquivo DOCX (opcional)'}
                   </label>
                   {editingPetition?.file_path && !formFile ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                    <div className="rounded-lg border border-[#e7e5df] bg-slate-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <FileText className="h-5 w-5 text-orange-500 flex-shrink-0" />
@@ -1126,7 +1126,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                   ) : (
                     <div className="flex items-center gap-3">
                       <label className="flex-1 cursor-pointer">
-                        <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 hover:border-slate-300 hover:bg-slate-100 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                        <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600 hover:border-slate-300 hover:bg-slate-100 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-200 dark:hover:bg-zinc-800">
                           <Upload className="h-4 w-4" />
                           {formFile ? formFile.name : 'Selecionar arquivo .docx'}
                         </div>
@@ -1146,13 +1146,13 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                     </p>
                   )}
                 </div>
-                {!formFile && !editingPetition?.file_path && (<div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo do Template</label><textarea value={formData.content} onChange={(e) => setFormData((prev) => ({ ...prev, content: e.target.value }))} rows={8} className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Use [[PLACEHOLDER]] para campos dinâmicos..." /><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Use [[NOME_COMPLETO]], [[CPF]], [[ENDERECO]], etc.</p></div>)}
-                <div className="flex items-center gap-3"><button type="button" onClick={() => setFormData((prev) => ({ ...prev, is_active: !prev.is_active }))} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.is_active ? 'bg-orange-500' : 'bg-slate-200 dark:bg-zinc-800'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${formData.is_active ? 'translate-x-6' : 'translate-x-1'}`} /></button><span className="text-sm text-slate-700 dark:text-zinc-200">{formData.is_active ? 'Petição ativa' : 'Petição inativa'}</span></div>
+                {!formFile && !editingPetition?.file_path && (<div><label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo do Template</label><textarea value={formData.content} onChange={(e) => setFormData((prev) => ({ ...prev, content: e.target.value }))} rows={8} className="w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Use [[PLACEHOLDER]] para campos dinâmicos..." /><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Use [[NOME_COMPLETO]], [[CPF]], [[ENDERECO]], etc.</p></div>)}
+                <div className="flex items-center gap-3"><button type="button" onClick={() => setFormData((prev) => ({ ...prev, is_active: !prev.is_active }))} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.is_active ? 'bg-orange-500' : 'bg-slate-200 dark:bg-zinc-800'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-[#f8f7f5] transition ${formData.is_active ? 'translate-x-6' : 'translate-x-1'}`} /></button><span className="text-sm text-slate-700 dark:text-zinc-200">{formData.is_active ? 'Petição ativa' : 'Petição inativa'}</span></div>
                 {formError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2"><AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" /><span>{formError}</span></div>}
               </div>
-              <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <div className="border-t border-[#e7e5df] bg-slate-50 px-4 sm:px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
-                  <button type="button" onClick={handleCloseFormModal} className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800" disabled={formSaving}>Cancelar</button>
+                  <button type="button" onClick={handleCloseFormModal} className="px-4 py-2.5 rounded-xl border border-[#e7e5df] text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800" disabled={formSaving}>Cancelar</button>
                   <button type="submit" disabled={formSaving} className="px-4 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 bg-orange-500 text-white hover:bg-orange-600 disabled:bg-slate-300 disabled:cursor-not-allowed shadow-sm shadow-orange-500/30">{formSaving && <Loader2 className="w-4 h-4 animate-spin" />}{editingPetition ? 'Salvar Alterações' : 'Criar Petição'}</button>
                 </div>
               </div>
@@ -1165,9 +1165,9 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       {isFieldsModalOpen && fieldsPetition && createPortal(
         <div className="pericia-light-modal fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseFieldsModal} />
-          <div className="pericia-light-modal__panel relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
+          <div className="pericia-light-modal__panel relative w-full max-w-3xl bg-[#f8f7f5] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
             <div className="h-2 w-full bg-amber-500" />
-            <div className="px-5 sm:px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4 dark:border-zinc-800">
+            <div className="px-5 sm:px-6 py-5 border-b border-[#e7e5df] flex items-start justify-between gap-4 dark:border-zinc-800">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center"><Settings className="w-6 h-6 text-amber-600" /></div>
                 <div>
@@ -1178,7 +1178,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
               <button type="button" onClick={handleCloseFieldsModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl dark:hover:bg-zinc-800"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{editingField ? 'Editar Campo' : 'Adicionar Campo'}</h4>
                   {editingField && (
@@ -1188,9 +1188,9 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                   )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Nome do Campo</label><input type="text" value={newField.name} onChange={(e) => setNewField((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: Valor do Benefício" /></div>
-                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Placeholder</label><input type="text" value={newField.placeholder} onChange={(e) => setNewField((prev) => ({ ...prev, placeholder: e.target.value }))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: VALOR_BENEFICIO" /></div>
-                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Tipo</label><select value={newField.field_type} onChange={(e) => setNewField((prev) => ({ ...prev, field_type: e.target.value as StandardPetitionFieldType }))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">{Object.entries(FIELD_TYPE_LABELS).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}</select></div>
+                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Nome do Campo</label><input type="text" value={newField.name} onChange={(e) => setNewField((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: Valor do Benefício" /></div>
+                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Placeholder</label><input type="text" value={newField.placeholder} onChange={(e) => setNewField((prev) => ({ ...prev, placeholder: e.target.value }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Ex: VALOR_BENEFICIO" /></div>
+                  <div><label className="mb-1 block text-xs font-medium text-slate-500">Tipo</label><select value={newField.field_type} onChange={(e) => setNewField((prev) => ({ ...prev, field_type: e.target.value as StandardPetitionFieldType }))} className="w-full rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">{Object.entries(FIELD_TYPE_LABELS).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}</select></div>
                   <div className="flex items-end gap-3">
                     <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-200"><input type="checkbox" checked={newField.required} onChange={(e) => setNewField((prev) => ({ ...prev, required: e.target.checked }))} className="rounded border-slate-300 dark:border-zinc-700" />Obrigatório</label>
                     <button type="button" onClick={handleSaveField} disabled={fieldSaving || !newField.name.trim() || !newField.placeholder.trim()} className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed inline-flex items-center gap-2">{fieldSaving && <Loader2 className="w-4 h-4 animate-spin" />}{editingField ? (<><Pencil className="h-4 w-4" />Salvar</>) : (<><Plus className="h-4 w-4" />Adicionar</>)}</button>
@@ -1201,7 +1201,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos Cadastrados ({fields.length})</h4>
                   {fields.map((field) => (
-                    <div key={field.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                    <div key={field.id} className="flex items-center gap-3 p-3 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-slate-900 dark:text-zinc-100">{field.name}</span>
@@ -1224,7 +1224,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                 </div>
               )}
             </div>
-            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+            <div className="border-t border-[#e7e5df] bg-slate-50 px-4 sm:px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
               <button type="button" onClick={handleCloseFieldsModal} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700">Fechar</button>
             </div>
           </div>
@@ -1235,9 +1235,9 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       {isViewModalOpen && viewingPetition && createPortal(
         <div className="pericia-light-modal fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseViewModal} />
-          <div className="pericia-light-modal__panel relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
+          <div className="pericia-light-modal__panel relative w-full max-w-2xl bg-[#f8f7f5] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden dark:bg-zinc-900">
             <div className="h-2 w-full bg-emerald-500" />
-            <div className="px-5 sm:px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4 dark:border-zinc-800">
+            <div className="px-5 sm:px-6 py-5 border-b border-[#e7e5df] flex items-start justify-between gap-4 dark:border-zinc-800">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center"><Eye className="w-6 h-6 text-emerald-600" /></div>
                 <div>
@@ -1254,11 +1254,11 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
               </div>
               {viewingPetition.description && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Descrição</p><p className="text-sm text-slate-700 dark:text-zinc-200">{viewingPetition.description}</p></div>}
               {viewingPetition.file_path && (<div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60"><FileText className="h-5 w-5 text-blue-600 dark:text-blue-300" /><div className="flex-1"><p className="text-sm font-medium text-blue-900 dark:text-blue-100">{viewingPetition.file_name}</p><p className="text-xs text-blue-600 dark:text-blue-200">{viewingPetition.file_size ? `${(viewingPetition.file_size / 1024).toFixed(1)} KB` : 'Arquivo DOCX'}</p></div><button onClick={() => handleDownloadFile(viewingPetition)} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 inline-flex items-center gap-1.5"><Download className="h-3.5 w-3.5" />Baixar</button></div>)}
-              {!viewingPetition.file_path && viewingPetition.content && (<div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Conteúdo</p><div className="p-3 rounded-lg bg-slate-50 border border-slate-200 max-h-64 overflow-y-auto dark:border-zinc-800 dark:bg-zinc-900/40"><pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono dark:text-zinc-200">{viewingPetition.content}</pre></div></div>)}
-              {viewLoading ? (<div className="flex items-center justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>) : viewingFields.length > 0 && (<div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Campos Personalizados ({viewingFields.length})</p><div className="space-y-2">{viewingFields.map((field) => (<div key={field.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200 dark:border-zinc-800 dark:bg-zinc-900/40"><span className="text-sm font-medium text-slate-900 dark:text-zinc-100">{field.name}</span><span className="text-xs text-slate-500 font-mono bg-white px-1.5 py-0.5 rounded border dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-700">[[{field.placeholder}]]</span><span className="text-xs text-slate-500 dark:text-zinc-400">{FIELD_TYPE_LABELS[field.field_type]}</span>{field.required && <span className="text-xs text-red-600">*</span>}</div>))}</div></div>)}
+              {!viewingPetition.file_path && viewingPetition.content && (<div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Conteúdo</p><div className="p-3 rounded-lg bg-slate-50 border border-[#e7e5df] max-h-64 overflow-y-auto dark:border-zinc-800 dark:bg-zinc-900/40"><pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono dark:text-zinc-200">{viewingPetition.content}</pre></div></div>)}
+              {viewLoading ? (<div className="flex items-center justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>) : viewingFields.length > 0 && (<div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Campos Personalizados ({viewingFields.length})</p><div className="space-y-2">{viewingFields.map((field) => (<div key={field.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-[#e7e5df] dark:border-zinc-800 dark:bg-zinc-900/40"><span className="text-sm font-medium text-slate-900 dark:text-zinc-100">{field.name}</span><span className="text-xs text-slate-500 font-mono bg-white px-1.5 py-0.5 rounded border dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-700">[[{field.placeholder}]]</span><span className="text-xs text-slate-500 dark:text-zinc-400">{FIELD_TYPE_LABELS[field.field_type]}</span>{field.required && <span className="text-xs text-red-600">*</span>}</div>))}</div></div>)}
             </div>
-            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3 flex gap-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-              <button type="button" onClick={handleCloseViewModal} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">Fechar</button>
+            <div className="border-t border-[#e7e5df] bg-slate-50 px-4 sm:px-6 py-3 flex gap-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <button type="button" onClick={handleCloseViewModal} className="flex-1 px-4 py-2.5 rounded-xl border border-[#e7e5df] text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800">Fechar</button>
               <button type="button" onClick={() => { handleCloseViewModal(); handleOpenEditModal(viewingPetition); }} className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 inline-flex items-center justify-center gap-2"><Pencil className="h-4 w-4" />Editar</button>
             </div>
           </div>

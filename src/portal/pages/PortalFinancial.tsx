@@ -114,7 +114,7 @@ export const PortalFinancial: React.FC = () => {
         <>
           {/* RECEBER (acordos) */}
           {summary.hasReceivable && (
-            <section className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+            <section className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
               <div className="flex">
                 <div className="w-1 shrink-0 bg-emerald-500" />
                 <div className="flex-1 px-5 py-4">
@@ -139,7 +139,7 @@ export const PortalFinancial: React.FC = () => {
 
           {/* PAGAR (honorários contratados pelo cliente) */}
           {summary.hasPayable && (
-            <section className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+            <section className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
               <div className="flex">
                 <div className={`w-1 shrink-0 ${summary.payOverdue > 0 ? 'bg-rose-500' : 'bg-orange-500'}`} />
                 <div className="flex-1 px-5 py-4">
@@ -169,10 +169,10 @@ export const PortalFinancial: React.FC = () => {
               return (
                 <button key={t.id} onClick={() => setTab(t.id)}
                   className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
-                    on ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
+                    on ? 'bg-slate-900 text-white' : 'bg-[#f8f7f5] text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
                   }`}>
                   {t.label}
-                  <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+                  <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${on ? 'bg-[#f8f7f5]/20 text-white' : 'text-slate-400'}`}>
                     {t.count}
                   </span>
                 </button>
@@ -213,7 +213,7 @@ const ContractCard: React.FC<{ agreement: Agreement; open: boolean; onToggle: ()
   const accentColor = v.isAcordo ? 'bg-emerald-500' : 'bg-orange-500';
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+    <div className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
       <div className="flex">
         <div className={`w-1 shrink-0 ${accentColor}`} />
         <div className="flex-1">
@@ -340,7 +340,7 @@ const ReceiptCard: React.FC<{ inst: Installment & { agreement: Agreement } }> = 
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+    <div className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
       <div className="flex">
         <div className="w-1 shrink-0 bg-emerald-500" />
         <div className="flex flex-1 items-center gap-3 px-4 py-3.5">

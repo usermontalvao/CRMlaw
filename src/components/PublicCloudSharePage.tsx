@@ -179,7 +179,7 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-5">
           <h1 className="text-2xl font-bold text-slate-900">{rootFolder?.name || 'Pasta compartilhada'}</h1>
           <div className="flex items-center flex-wrap gap-2 text-sm text-slate-500 mt-2">
             {breadcrumb.map((item, index) => (
@@ -191,15 +191,15 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 space-y-3">
           {folders.map((folder) => (
-            <button key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl border border-slate-200 hover:bg-slate-50">
+            <button key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl border border-[#e7e5df] hover:bg-slate-50">
               <Folder className="w-5 h-5 text-amber-500" />
               <span className="font-medium text-slate-900">{folder.name}</span>
             </button>
           ))}
           {files.map((file) => (
-            <button key={file.id} onClick={() => setPreviewFile(file)} className="w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl border border-slate-200 hover:bg-slate-50">
+            <button key={file.id} onClick={() => setPreviewFile(file)} className="w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl border border-[#e7e5df] hover:bg-slate-50">
               {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-5 h-5 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-5 h-5 text-emerald-500" /> : <File className="w-5 h-5 text-slate-500" />}
               <span className="font-medium text-slate-900">{file.original_name}</span>
             </button>
@@ -209,8 +209,8 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
 
       {previewFile && (
         <div className="fixed inset-0 z-[130] bg-black/70 flex items-center justify-center p-4">
-          <div className="w-full max-w-6xl h-[88vh] rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <div className="w-full max-w-6xl h-[88vh] rounded-2xl bg-[#f8f7f5] shadow-2xl border border-[#e7e5df] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#e7e5df]">
               <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
               <button onClick={() => setPreviewFile(null)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
@@ -218,7 +218,7 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
               {previewLoading ? (
                 <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-sky-600" /></div>
               ) : isDocxFile(previewFile.mime_type, previewFile.original_name) ? (
-                <div className="h-full bg-white"><SyncfusionEditor ref={editorRef} readOnly height="100%" enableToolbar={false} showPropertiesPane={false} showNavigationPane={false} /></div>
+                <div className="h-full bg-[#f8f7f5]"><SyncfusionEditor ref={editorRef} readOnly height="100%" enableToolbar={false} showPropertiesPane={false} showNavigationPane={false} /></div>
               ) : isPdfFile(previewFile.mime_type, previewFile.original_name) && previewUrl ? (
                 <iframe src={previewUrl} className="w-full h-full" title={previewFile.original_name} />
               ) : isImageFile(previewFile.mime_type) && previewUrl ? (

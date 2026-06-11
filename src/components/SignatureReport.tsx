@@ -106,7 +106,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
   );
 
   return (
-    <div className="min-h-screen print:bg-white" style={{ background: '#e8edf2' }}>
+    <div className="min-h-screen print:bg-[#f8f7f5]" style={{ background: '#e8edf2' }}>
 
       {/* ── Toolbar ── */}
       <div className="print:hidden sticky top-0 z-20"
@@ -181,7 +181,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
           <div className="lg:col-span-2 flex flex-col gap-4">
 
             {/* Card: Documento */}
-            <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+            <div className="bg-[#f8f7f5] rounded-2xl print:rounded-none overflow-hidden"
               style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
               <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <SectionLabel>Documento</SectionLabel>
@@ -206,7 +206,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
             </div>
 
             {/* Card: Signatário */}
-            <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+            <div className="bg-[#f8f7f5] rounded-2xl print:rounded-none overflow-hidden"
               style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
               <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <SectionLabel>Signatário</SectionLabel>
@@ -302,7 +302,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
             {/* Card: Código de verificação */}
             {signer.verification_hash && (
-              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+              <div className="bg-[#f8f7f5] rounded-2xl print:rounded-none overflow-hidden"
                 style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
                 <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <SectionLabel>Código de verificação</SectionLabel>
@@ -320,13 +320,13 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
             {/* Card: QR Code */}
             {qrDataUrl && verificationUrl && (
-              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+              <div className="bg-[#f8f7f5] rounded-2xl print:rounded-none overflow-hidden"
                 style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
                 <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <SectionLabel>QR de verificação</SectionLabel>
                 </div>
                 <div className="px-5 py-4 flex flex-col items-center gap-3">
-                  <div className="p-2 rounded-xl bg-white" style={{ border: '1px solid #e2e8f0' }}>
+                  <div className="p-2 rounded-xl bg-[#f8f7f5]" style={{ border: '1px solid #e2e8f0' }}>
                     <img src={qrDataUrl} alt="QR Code" className="w-[120px] h-[120px] block" />
                   </div>
                   <a href={verificationUrl} target="_blank" rel="noopener noreferrer"
@@ -340,7 +340,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
             {/* Card: Hash SHA-256 */}
             {signer.signed_pdf_sha256 && (
-              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+              <div className="bg-[#f8f7f5] rounded-2xl print:rounded-none overflow-hidden"
                 style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
                 <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <SectionLabel>Integridade · SHA-256</SectionLabel>

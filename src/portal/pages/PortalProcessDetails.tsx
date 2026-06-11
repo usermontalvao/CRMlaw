@@ -225,7 +225,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
   }, [session?.user?.id, processId, data]);
 
   if (loading) return (
-    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white">
+    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f8f7f5]">
       <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
       <div className="text-center">
         <p className="text-sm font-semibold text-slate-900">Aguarde</p>
@@ -343,7 +343,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       <BackBtn onClick={() => navigate('casos')} />
 
       {/* -- CABECALHO + SITUACAO -- */}
-      <section className="rounded-xl border border-slate-200 bg-white">
+      <section className="rounded-xl border border-slate-200 bg-[#f8f7f5]">
         <div className="p-5 sm:p-6">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
@@ -392,7 +392,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
       })()}
 
       {/* -- O QUE VOCE PRECISA FAZER -- */}
-      <section className={`rounded-xl border border-slate-200 border-l-[3px] bg-white p-4 sm:p-5 ${action.tone === 'attention' ? 'border-l-amber-400' : 'border-l-emerald-400'}`}>
+      <section className={`rounded-xl border border-slate-200 border-l-[3px] bg-[#f8f7f5] p-4 sm:p-5 ${action.tone === 'attention' ? 'border-l-amber-400' : 'border-l-emerald-400'}`}>
         <div className="flex items-start gap-3">
           {action.tone === 'attention'
             ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
@@ -413,7 +413,7 @@ export const PortalProcessDetails: React.FC<{ processId: string }> = ({ processI
         const { noun, fem } = APT_TYPE_LABELS[next.event_type] ?? { noun: 'compromisso', fem: false };
         const modeLabel = next.event_mode === 'online' ? 'Online' : next.event_mode === 'presencial' ? 'Presencial' : null;
         return (
-          <section className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <section className="flex items-center gap-3.5 rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
               <Gavel className="h-5 w-5" />
             </div>
@@ -488,7 +488,7 @@ const Journey: React.FC<{ stage: number }> = ({ stage }) => {
               <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition ${
                 current ? 'bg-orange-500 text-white ring-2 ring-orange-300 ring-offset-1'
                 : done  ? 'bg-orange-500 text-white'
-                :         'bg-white text-slate-300 ring-1 ring-slate-200'
+                :         'bg-[#f8f7f5] text-slate-300 ring-1 ring-slate-200'
               }`}>
                 {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
               </div>
@@ -617,14 +617,14 @@ function formatAiAge(d: Date): string {
 const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibleLawyer?: string | null; distributedAt: string | null; onSeeAll: () => void }> = ({ data, movements, responsibleLawyer, distributedAt, onSeeAll }) => (
   <div className="flex flex-col gap-3">
     {/* Dados gerais  -  lista de definicao limpa */}
-    <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 sm:divide-y-0 sm:divide-x">
+    <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-[#f8f7f5] sm:grid-cols-2 sm:divide-y-0 sm:divide-x">
       <InfoRow label="Distribu&iacute;do em" value={distributedAt ? formatDate(distributedAt) : ' - '} icon={Calendar} />
       <InfoRow label="Advogado respons&aacute;vel" value={responsibleLawyer || ' - '} icon={Gavel} />
     </dl>
 
     {/* Ultimas atualizacoes (curado: 4 mais recentes) */}
     {movements.length > 0 ? (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
         <p className="mb-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">&Uacute;ltimas atualiza&ccedil;&otilde;es</p>
         <ol className="relative ml-1 space-y-4 border-l border-slate-200 pl-4">
           {movements.slice(0, 4).map((m, i) => (
@@ -642,7 +642,7 @@ const ResumoTab: React.FC<{ data: ProcessFull; movements: Movement[]; responsibl
         )}
       </div>
     ) : (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 text-center">
+      <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-6 text-center">
         <Activity className="mx-auto h-6 w-6 text-slate-300" />
         <p className="mt-2 text-sm text-slate-500">Ainda n&atilde;o h&aacute; atualiza&ccedil;&otilde;es registradas.</p>
       </div>
@@ -741,7 +741,7 @@ const MovementItem: React.FC<{
 const AndamentosTab: React.FC<{ movements: Movement[]; statusLabel: string; area?: string | null }> = ({ movements, statusLabel, area }) => {
   if (!movements.length) return <EmptyState icon={Activity} title="Sem andamentos" description="Nenhuma atualiza&ccedil;&atilde;o registrada ainda." />;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
       <ol className="relative ml-1 space-y-5 border-l border-slate-200 pl-4">
         {movements.map((m, i) => <MovementItem key={i} m={m} timeline={movements} statusLabel={statusLabel} area={area} />)}
       </ol>
@@ -757,7 +757,7 @@ const PrazosTab: React.FC<{ deadlines: Deadline[] }> = ({ deadlines }) => {
         const overdue = d.status === 'pendente' && new Date(d.due_date) < new Date();
         const done = d.status === 'cumprido';
         return (
-          <div key={d.id} className={`flex items-center gap-3.5 rounded-xl border bg-white p-4 ${overdue ? 'border-l-[3px] border-l-rose-400 border-slate-200' : done ? 'border-slate-200' : 'border-l-[3px] border-l-amber-400 border-slate-200'}`}>
+          <div key={d.id} className={`flex items-center gap-3.5 rounded-xl border bg-[#f8f7f5] p-4 ${overdue ? 'border-l-[3px] border-l-rose-400 border-slate-200' : done ? 'border-slate-200' : 'border-l-[3px] border-l-amber-400 border-slate-200'}`}>
             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${overdue ? 'bg-rose-50 text-rose-600' : done ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
               {done ? <CheckCircle2 className="h-4 w-4" /> : overdue ? <AlertCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
             </div>
@@ -801,7 +801,7 @@ const AppointmentsTab: React.FC<{ appointments: Appointment[] }> = ({ appointmen
         const modeLabel = a.event_mode === 'online' ? 'Online' : a.event_mode === 'presencial' ? 'Presencial' : null;
 
         return (
-          <div key={a.id} className={`flex items-start gap-3.5 rounded-xl border bg-white p-4 transition ${
+          <div key={a.id} className={`flex items-start gap-3.5 rounded-xl border bg-[#f8f7f5] p-4 transition ${
             isPast ? 'border-slate-200 opacity-70' : 'border-l-[3px] border-l-orange-500 border-slate-200'
           }`}>
             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isPast ? 'bg-slate-100 text-slate-400' : 'bg-orange-50 text-orange-600'}`}>
@@ -835,7 +835,7 @@ const AppointmentsTab: React.FC<{ appointments: Appointment[] }> = ({ appointmen
 const TimelineTab: React.FC<{ timeline: TimelineEntry[] }> = ({ timeline }) => {
   if (!timeline.length) return <EmptyState icon={Activity} title="Sem eventos" description="Nenhum evento registrado neste processo." />;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
       <TimelineList entries={timeline} />
     </div>
   );

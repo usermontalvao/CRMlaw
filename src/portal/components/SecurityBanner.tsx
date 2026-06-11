@@ -54,7 +54,7 @@ export const SecurityBanner: React.FC<{ compact?: boolean }> = ({ compact = fals
           </div>
         </div>
 
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-400 ring-1 ring-slate-200 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f8f7f5] text-slate-400 ring-1 ring-slate-200 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
           <ChevronDown className="h-4 w-4" />
         </div>
       </button>
@@ -68,7 +68,7 @@ export const SecurityBanner: React.FC<{ compact?: boolean }> = ({ compact = fals
             </p>
 
             {contact?.name && (
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mt-3 rounded-xl border border-slate-200 bg-[#f8f7f5] p-3">
                 <div className="flex items-center gap-1.5">
                   <BadgeCheck className="h-4 w-4 text-emerald-500" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Canal oficial verificado</span>
@@ -92,7 +92,7 @@ export const SecurityBanner: React.FC<{ compact?: boolean }> = ({ compact = fals
                     </a>
                     <a
                       href={`tel:+${waNumber}`}
-                      className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                      className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-[#f8f7f5] px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
                     >
                       <Phone className="h-3.5 w-3.5 text-amber-500" /> Ligar
                     </a>

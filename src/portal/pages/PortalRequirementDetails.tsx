@@ -153,7 +153,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
   }, [session?.user?.id, requirementId]);
 
   if (loading) return (
-    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white">
+    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f8f7f5]">
       <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
       <div className="text-center">
         <p className="text-sm font-semibold text-slate-900">Aguarde</p>
@@ -219,7 +219,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
       <BackBtn onClick={() => navigate('casos')} />
 
       {/* -- CABECALHO -- */}
-      <section className="rounded-xl border border-slate-200 bg-white">
+      <section className="rounded-xl border border-slate-200 bg-[#f8f7f5]">
         <div className="p-5 sm:p-6">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
@@ -277,7 +277,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
       })()}
 
       {/* -- STATUS CONTEXTUAL -- */}
-      <section className={`rounded-xl border border-l-[3px] bg-white p-4 sm:p-5 ${
+      <section className={`rounded-xl border border-l-[3px] bg-[#f8f7f5] p-4 sm:p-5 ${
         statusBlock.tone === 'attention'
           ? 'border-amber-200 border-l-amber-500'
           : 'border-emerald-200 border-l-emerald-500'
@@ -309,7 +309,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
               <button
                 key={p.id}
                 onClick={() => navigate('casos', `proc:${p.id}`)}
-                className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+                className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 text-left transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                   <Briefcase className="h-4 w-4 text-slate-500" />
@@ -338,7 +338,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const isFuture = (iso?: string | null) => !!iso && new Date(iso) >= today;
         return (
-          <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-[#f8f7f5] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             <InfoRow label="Data de entrada" value={fmt(data.entry_date)} icon={Calendar} />
             {data.exigency_due_date && (
               <InfoRow label="Prazo da exig&ecirc;ncia" value={fmt(data.exigency_due_date)} icon={Clock} highlight={isFuture(data.exigency_due_date)} />
@@ -358,7 +358,7 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
 
       {/* -- OBSERVACOES -- */}
       {data.observations && (
-        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Observa&ccedil;&otilde;es do escrit&oacute;rio</p>
           <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{data.observations}</p>
         </section>
@@ -423,7 +423,7 @@ const RequirementJourney: React.FC<{ stage: number }> = ({ stage }) => {
               <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition ${
                 current ? 'bg-orange-500 text-white ring-2 ring-orange-300 ring-offset-1'
                 : done  ? 'bg-orange-500 text-white'
-                :         'bg-white text-slate-300 ring-1 ring-slate-200'
+                :         'bg-[#f8f7f5] text-slate-300 ring-1 ring-slate-200'
               }`}>
                 {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
               </div>
@@ -519,7 +519,7 @@ const ReqAiSummary: React.FC<{
 const StatusHistory: React.FC<{ entries: StatusHistoryEntry[] }> = ({ entries }) => (
   <section className="flex flex-col gap-3">
     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hist&oacute;rico de altera&ccedil;&otilde;es</p>
-    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <div className="rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 sm:p-5">
       <ol className="relative ml-1 space-y-4 border-l border-slate-200 pl-4">
         {entries.map((e, i) => {
           const fromLabel = e.from_status ? (REQ_STATUS_LABELS[e.from_status] ?? e.from_status) : ' - ';
@@ -573,7 +573,7 @@ const AppointmentCard: React.FC<{
   const statusLabel = isBeforeDenial ? 'Realizado' : 'Cancelado';
 
   return (
-    <div className={`flex items-start gap-3.5 rounded-xl border bg-white p-4 transition ${
+    <div className={`flex items-start gap-3.5 rounded-xl border bg-[#f8f7f5] p-4 transition ${
       isCancelled
         ? 'border-slate-200 opacity-60'
         : 'border-l-[3px] border-l-orange-500 border-slate-200'

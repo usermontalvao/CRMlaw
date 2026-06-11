@@ -135,7 +135,7 @@ const UploadDrawer: React.FC<UploadDrawerProps> = ({ item, clientId, portalUserI
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => cameraRef.current?.click()}
-          className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-white py-5 text-slate-500 transition hover:border-slate-400 active:scale-95"
+          className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-[#f8f7f5] py-5 text-slate-500 transition hover:border-slate-400 active:scale-95"
         >
           <Camera className="h-6 w-6" />
           <span className="text-xs font-medium">Tirar foto</span>
@@ -144,7 +144,7 @@ const UploadDrawer: React.FC<UploadDrawerProps> = ({ item, clientId, portalUserI
 
         <button
           onClick={() => fileRef.current?.click()}
-          className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-white py-5 text-slate-500 transition hover:border-slate-400 active:scale-95"
+          className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-[#f8f7f5] py-5 text-slate-500 transition hover:border-slate-400 active:scale-95"
         >
           <Upload className="h-6 w-6" />
           <span className="text-xs font-medium">Selecionar arquivo</span>
@@ -214,7 +214,7 @@ const ItemCard: React.FC<{
     : 'Pendente';
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+    <div className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
       <div className="flex">
         <div className={`w-1 shrink-0 ${accentBar}`} />
         <div className="flex-1 px-4 py-3.5">
@@ -378,7 +378,7 @@ export const PortalDocumentRequests: React.FC = () => {
             const isPending = req.status === 'pending' || req.status === 'partial';
 
             return (
-              <li key={req.id} className="overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
+              <li key={req.id} className="overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)]">
                 <div className="flex">
                   {/* Left accent bar */}
                   <div className={`w-1 shrink-0 ${s.dot}`} />

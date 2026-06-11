@@ -237,7 +237,7 @@ const Avatar: React.FC<{ src?: string | null; name: string; size?: 'xs' | 'sm' |
         alt={name}
         loading="eager"
         decoding="async"
-        className={`${sizeClasses[size]} rounded-full object-cover border-2 border-slate-200 shrink-0`}
+        className={`${sizeClasses[size]} rounded-full object-cover border-2 border-[#e7e5df] shrink-0`}
       />
     );
   }
@@ -303,7 +303,7 @@ const StatCard: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`bg-white rounded-xl p-2 border border-slate-200 shadow-sm flex flex-col items-center sm:items-start ${hoverClass} transition-colors cursor-pointer`}
+      className={`bg-[#f8f7f5] rounded-xl p-2 border border-[#e7e5df] shadow-sm flex flex-col items-center sm:items-start ${hoverClass} transition-colors cursor-pointer`}
     >
       <div className="flex items-center gap-1.5 mb-0.5">
         <span className={`${iconColor} [&_svg]:w-4 [&_svg]:h-4`}>{icon}</span>
@@ -395,7 +395,7 @@ const FeedPost: React.FC<{
   comments?: number;
   highlight?: { icon: React.ReactNode; title: string; subtitle: string; color: string };
 }> = ({ author, timeAgo, content, badge, likes = 0, comments = 0, highlight }) => (
-  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
     <div className="p-4 pb-2 flex gap-3">
       <Avatar src={author.avatar} name={author.name} />
       <div className="flex flex-col flex-1">
@@ -419,7 +419,7 @@ const FeedPost: React.FC<{
       <div className="text-slate-800 text-sm leading-relaxed mb-3">{content}</div>
       {highlight && (
         <div className={`${highlight.color} rounded-lg p-3 flex items-center gap-3`}>
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0 shadow-sm">
+          <div className="w-10 h-10 rounded-full bg-[#f8f7f5]/20 flex items-center justify-center text-white shrink-0 shadow-sm">
             {highlight.icon}
           </div>
           <div>
@@ -429,7 +429,7 @@ const FeedPost: React.FC<{
         </div>
       )}
     </div>
-    <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200 mt-2">
+    <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-[#e7e5df] mt-2">
       <div className="flex items-center gap-1">
         <div className="flex -space-x-1.5">
           <div className="w-5 h-5 rounded-full bg-blue-500 border border-white flex items-center justify-center">
@@ -520,7 +520,7 @@ const SortableWidget: React.FC<{
       <div
         {...attributes}
         {...listeners}
-        className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing bg-white rounded-full p-1 shadow-md border border-slate-200"
+        className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing bg-[#f8f7f5] rounded-full p-1 shadow-md border border-[#e7e5df]"
       >
         <GripVertical className="w-4 h-4 text-slate-400" />
       </div>
@@ -532,7 +532,7 @@ const SortableWidget: React.FC<{
 const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const { user } = useAuth();
   const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const toast = useToastContext();
   const avatarSyncedRef = useRef(false);
   
@@ -1397,7 +1397,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           <img 
             src={attachment.file_url} 
             alt={attachment.file_name}
-            className="w-16 h-16 object-cover rounded-lg border border-slate-200"
+            className="w-16 h-16 object-cover rounded-lg border border-[#e7e5df]"
           />
           <button
             onClick={() => removeAttachment(attachment.id)}
@@ -1410,7 +1410,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     
     return (
-      <div className="relative group flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200">
+      <div className="relative group flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-[#e7e5df]">
         <Paperclip className="w-4 h-4 text-slate-500" />
         <span className="text-xs text-slate-700 truncate max-w-[120px]">{attachment.file_name}</span>
         <button
@@ -2117,12 +2117,13 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     if (!confirmed) return;
     try {
       await feedPostsService.deletePost(postId);
+      notifyDeleted();
       setFeedPosts(prev => prev.filter(p => p.id !== postId));
       setOpenPostMenu(null);
     } catch (error) {
       console.error('Erro ao excluir post:', error);
     }
-  }, [confirmDelete]);
+  }, [confirmDelete, notifyDeleted]);
 
   // Handler para abrir modal do acordo financeiro
   const handleOpenFinancialModal = useCallback((agreementId: string) => {
@@ -2940,7 +2941,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     if (widgetId === 'ultima_enquete') {
       if (!latestPoll) {
         return (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-purple-600" />
@@ -3003,7 +3004,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       const hasVoted = latestPoll.user_votes && latestPoll.user_votes.length > 0;
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-purple-600" />
@@ -3052,7 +3053,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     } ${
                       hasVotedOption
                         ? 'border-purple-300 bg-purple-50'
-                        : 'border-slate-200 bg-slate-50'
+                        : 'border-[#e7e5df] bg-slate-50'
                     } ${
                       isWinning && totalVotes > 0
                         ? 'ring-1 ring-purple-200'
@@ -3124,7 +3125,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         .slice(0, 4); // Últimos 4 posts
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <MessageCircle className="w-4 h-4 text-purple-600" />
@@ -3181,7 +3182,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       const maxCount = Math.max(...topConnections.map(c => c.interactions), 1);
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <Users className="w-4 h-4 text-green-600" />
@@ -3226,7 +3227,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       const avgEngagement = totalPosts > 0 ? Math.round(((totalLikes + totalComments) / totalPosts) * 10) / 10 : 0;
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <BarChart2 className="w-4 h-4 text-indigo-600" />
@@ -3276,7 +3277,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       const maxCount = Math.max(...topTopics.map(([, count]) => count), 1);
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <Hash className="w-4 h-4 text-orange-600" />
@@ -3330,7 +3331,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       // Post mais curtido da semana
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <Award className="w-4 h-4 text-yellow-600" />
@@ -3386,8 +3387,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'agenda') {
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[320px]">
-          <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm flex flex-col max-h-[320px]">
+          <div className="p-3 border-b border-[#e7e5df] flex justify-between items-center bg-slate-50 rounded-t-xl">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <Calendar className="w-4 h-4 text-blue-600" />
               Agenda Jurídica
@@ -3431,7 +3432,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'tarefas') {
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <CheckSquare className="w-4 h-4 text-orange-500" />
@@ -3482,7 +3483,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'djen') {
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <Newspaper className="w-4 h-4 text-blue-500" />
@@ -3523,7 +3524,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       const totalItems = awaitingDraftProcesses.length + requirementsAwaiting.length;
       
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
               <FileText className="w-4 h-4 text-indigo-500" />
@@ -3549,7 +3550,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
                   className="w-full text-left group"
                 >
-                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                  <div className="bg-slate-50 rounded-lg border border-[#e7e5df] p-2.5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -3560,7 +3561,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           <div className="text-[10px] text-slate-500">Aguardando confecção</div>
                         </div>
                       </div>
-                      <span className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700">
+                      <span className="text-xs font-bold bg-[#f8f7f5] border border-[#e7e5df] px-2 py-0.5 rounded-full text-slate-700">
                         {awaitingDraftProcesses.length}
                       </span>
                     </div>
@@ -3594,7 +3595,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   onClick={() => handleNavigate('requerimentos', { statusTab: 'aguardando_confeccao' })}
                   className="w-full text-left group"
                 >
-                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 hover:border-purple-300 hover:bg-purple-50/50 transition-all">
+                  <div className="bg-slate-50 rounded-lg border border-[#e7e5df] p-2.5 hover:border-purple-300 hover:bg-purple-50/50 transition-all">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
@@ -3605,7 +3606,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           <div className="text-[10px] text-slate-500">Aguardando confecção</div>
                         </div>
                       </div>
-                      <span className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700">
+                      <span className="text-xs font-bold bg-[#f8f7f5] border border-[#e7e5df] px-2 py-0.5 rounded-full text-slate-700">
                         {requirementsAwaiting.length}
                       </span>
                     </div>
@@ -3673,7 +3674,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         .slice(0, 5);
 
       return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -3819,7 +3820,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             {/* Feed Central */}
             <main className="w-full min-w-0 flex flex-col gap-4 sm:gap-6">
               {/* Caixa de Postagem - Design Premium */}
-              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
+              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-[#e7e5df]/80 shadow-lg shadow-slate-200/50 overflow-visible">
             {/* Header do Post */}
             <div className="p-3 sm:p-4 pb-2 sm:pb-3">
               <div className="flex gap-3">
@@ -3833,12 +3834,12 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     value={postText}
                     onChange={handlePostTextChange}
                     rows={2}
-                    className="w-full bg-white border border-slate-200 rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
+                    className="w-full bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
                     placeholder={getDynamicPlaceholder()}
                   />
 
                   {showEmojiPicker && (
-                    <div className="absolute bottom-14 left-0 z-50 w-[280px] rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
+                    <div className="absolute bottom-14 left-0 z-50 w-[280px] rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] shadow-xl p-3">
                       <p className="text-xs font-semibold text-slate-500 mb-2">Emojis</p>
                       <div className="grid grid-cols-8 gap-1">
                         {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
@@ -3858,7 +3859,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   
                   {/* Dropdown de Menções */}
                   {showMentionDropdown && filteredProfiles.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-48 overflow-y-auto">
                       <div className="p-2 border-b border-slate-100">
                         <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                           <AtSign className="w-3 h-3" /> Mencionar usuário
@@ -3882,7 +3883,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
                   {/* Dropdown de Tags */}
                   {showTagDropdown && !selectedTagForRecords && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50">
                       <div className="p-2 border-b border-slate-100">
                         <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                           <Hash className="w-3 h-3" /> Selecione uma categoria para ver registros
@@ -3905,8 +3906,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
                   {/* Dropdown de Registros da Tag Selecionada */}
                   {selectedTagForRecords && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-80 overflow-y-auto">
-                      <div className="p-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-80 overflow-y-auto">
+                      <div className="p-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5]">
                         <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                           <Hash className="w-3 h-3" /> 
                           {availableTags.find(t => t.id === selectedTagForRecords)?.label || 'Registros'}
@@ -3926,7 +3927,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           placeholder="Buscar..."
                           value={tagRecordSearch}
                           onChange={(e) => handleTagRecordSearch(e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 outline-none"
+                          className="w-full px-3 py-2 text-sm border border-[#e7e5df] rounded-lg focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 outline-none"
                           autoFocus
                         />
                       </div>
@@ -4004,12 +4005,12 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                             <img 
                               src={att.localUrl} 
                               alt={att.attachment.file_name}
-                              className="h-20 w-20 object-cover rounded-lg border border-slate-200 shadow-sm group-hover:shadow-md transition-shadow" 
+                              className="h-20 w-20 object-cover rounded-lg border border-[#e7e5df] group-hover:shadow-md transition-shadow" 
                             />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-lg transition-colors" />
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200 h-20 w-32 group-hover:bg-slate-200 transition-colors">
+                          <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-[#e7e5df] h-20 w-32 group-hover:bg-slate-200 transition-colors">
                             <Paperclip className="w-4 h-4 text-slate-500 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs text-slate-700 truncate font-medium">{att.attachment.file_name}</p>
@@ -4037,7 +4038,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
               )}
             </div>
 
-            <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border-t border-slate-200 space-y-1.5">
+            <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border-t border-[#e7e5df] space-y-1.5">
               {/* Linha 1: Ações principais */}
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-2">
@@ -4088,8 +4089,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     }
                     className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
                       postVisibility === 'public' || postVisibility === 'team' || postVisibility === 'private'
-                        ? 'bg-slate-200 text-slate-800 border-slate-200'
-                        : 'bg-white text-slate-600 border-slate-200'
+                        ? 'bg-slate-200 text-slate-800 border-[#e7e5df]'
+                        : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df]'
                     }`}
                     title={`Visibilidade: ${postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}`}
                   >
@@ -4108,8 +4109,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     onClick={() => setShowScheduler((v) => !v)}
                     className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
                       showScheduler
-                        ? 'bg-slate-200 text-slate-800 border-slate-200'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-slate-200 text-slate-800 border-[#e7e5df]'
+                        : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-100'
                     }`}
                     aria-label="Agendar publicação"
                     title="Agendar publicação"
@@ -4181,8 +4182,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     onClick={() => setShowScheduler((v) => !v)}
                     className={`inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
                       showScheduler 
-                        ? 'bg-slate-200 text-slate-800 border-slate-200' 
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-slate-200 text-slate-800 border-[#e7e5df]' 
+                        : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-100'
                     }`}
                     title="Agendar"
                   >
@@ -4193,7 +4194,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     <button
                       type="button"
                       onClick={() => setShowVisibilityDropdown((v) => !v)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors text-xs font-medium whitespace-nowrap"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] text-slate-600 hover:bg-slate-50 transition-colors text-xs font-medium whitespace-nowrap"
                       title="Visibilidade"
                     >
                       {postVisibility === 'public' ? (
@@ -4216,7 +4217,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     </button>
 
                     {showVisibilityDropdown && (
-                      <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg border border-slate-200 shadow-lg p-1 z-50 min-w-[140px]">
+                      <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg border border-[#e7e5df] shadow-lg p-1 z-50 min-w-[140px]">
                         <button
                           type="button"
                           onClick={() => {
@@ -4339,7 +4340,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
               {/* Destinatários (Privado/Equipe) */}
               {postVisibility !== 'public' && (
-                <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] px-3 py-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-semibold text-slate-700">
                       {postVisibility === 'private' ? 'Privado para:' : 'Equipe (selecionar):'}
@@ -4366,7 +4367,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                             className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
                               active
                                 ? 'bg-slate-900 text-white border-slate-900'
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-50'
                             }`}
                             title={role}
                           >
@@ -4383,7 +4384,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       value={audienceSearch}
                       onChange={(e) => setAudienceSearch(e.target.value)}
                       placeholder="Buscar pessoas..."
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-[#e7e5df] bg-[#f8f7f5] focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                     <div className="flex flex-wrap gap-1 mt-2">
                       {audienceUserIds.map((uid) => {
@@ -4403,7 +4404,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       })}
                     </div>
                     {audienceSearch.trim().length > 0 && (
-                      <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg bg-white">
+                      <div className="mt-2 max-h-40 overflow-auto border border-[#e7e5df] rounded-lg bg-[#f8f7f5]">
                         {filteredAudienceProfiles
                           .filter((p) => !audienceUserIds.includes(p.user_id))
                           .slice(0, 10)
@@ -4543,7 +4544,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   {/* Configurações */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                     {/* Múltiplas opções */}
-                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100 hover:border-blue-200 transition-all cursor-pointer"
+                    <div className="flex items-center gap-2 p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100 hover:border-blue-200 transition-all cursor-pointer"
                       onClick={() => setPollAllowMultiple(!pollAllowMultiple)}
                     >
                       <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${pollAllowMultiple ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
@@ -4560,7 +4561,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     </div>
 
                     {/* Expiração */}
-                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100">
+                    <div className="flex items-center gap-2 p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100">
                       <Clock className="w-4 h-4 text-slate-400" />
                       <select
                         value={pollExpiresIn}
@@ -4578,7 +4579,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   </div>
 
                   {/* Participantes */}
-                  <div className="p-3 bg-white rounded-xl border-2 border-slate-100">
+                  <div className="p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100">
                     <div className="flex items-center gap-2 mb-2">
                       <Users className="w-4 h-4 text-slate-400" />
                       <span className="text-xs font-semibold text-slate-700">Participantes</span>
@@ -4662,7 +4663,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         type="date"
                         value={eventDate}
                         onChange={(e) => setEventDate(e.target.value)}
-                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
+                        className="w-full bg-[#f8f7f5] border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
                       />
                     </div>
 
@@ -4672,7 +4673,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         type="time"
                         value={eventTime}
                         onChange={(e) => setEventTime(e.target.value)}
-                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
+                        className="w-full bg-[#f8f7f5] border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
                       />
                     </div>
 
@@ -4799,7 +4800,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             {loadingPosts ? (
               <>
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div key={i} className="bg-[#f8f7f5] rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-4 flex gap-3">
                       <div className="w-12 h-12 rounded-full bg-slate-200 animate-pulse" />
                       <div className="flex-1 space-y-2">
@@ -4832,7 +4833,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
               </div>
             ) : (
               displayedFeedPosts.map((post) => (
-                <div key={post.id} data-post-id={post.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div key={post.id} data-post-id={post.id} className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
                   {/* Header do Post - Estilo Instagram/Facebook */}
                   <div className="px-4 py-3 flex items-center gap-3">
                     <button 
@@ -4887,7 +4888,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           <MoreHorizontal className="w-5 h-5" />
                         </button>
                         {openPostMenu === post.id && (
-                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[160px]">
+                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-[#e7e5df] py-1 z-20 min-w-[160px]">
                             {/* Opções do autor - não permite editar/excluir posts banidos */}
                             {user?.id === post.author_id && !post.banned_at && (
                               <>
@@ -4975,6 +4976,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                                         
                                         try {
                                           await feedPostsService.deletePost(post.id);
+                                          notifyDeleted();
                                           setFeedPosts(prev => prev.filter(p => p.id !== post.id));
                                           setOpenPostMenu(null);
                                           toast.success('Post removido com sucesso');
@@ -5053,6 +5055,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                                         
                                         try {
                                           await feedPostsService.deletePost(post.id);
+                                          notifyDeleted();
                                           setFeedPosts(prev => prev.filter(p => p.id !== post.id));
                                           setOpenPostMenu(null);
                                           toast.success('Post removido com sucesso');
@@ -5093,20 +5096,20 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         </p>
                       </div>
                     ) : editingPostId === post.id ? (
-                      <div className="bg-slate-50 rounded-xl p-3 border-2 border-slate-200">
+                      <div className="bg-slate-50 rounded-xl p-3 border-2 border-[#e7e5df]">
                         <div className="relative">
                           <textarea
                             ref={inlineEditRef}
                             value={editingContent}
                             onChange={handleInlineEditChange}
                             rows={4}
-                            className="w-full bg-white border-2 border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 resize-none"
+                            className="w-full bg-[#f8f7f5] border-2 border-[#e7e5df] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 resize-none"
                             placeholder="Edite seu post... Use @ para mencionar e # para tags"
                           />
                           
                           {/* Dropdown de Menções no Editor Inline */}
                           {showMentionDropdownInline && filteredProfilesInline.length > 0 && (
-                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-48 overflow-y-auto">
                               <div className="p-2 border-b border-slate-100">
                                 <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                                   <AtSign className="w-3 h-3" /> Mencionar usuário
@@ -5130,7 +5133,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
                           {/* Dropdown de Tags no Editor Inline */}
                           {showTagDropdownInline && filteredTagsInline.length > 0 && (
-                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-48 overflow-y-auto">
                               <div className="p-2 border-b border-slate-100">
                                 <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                                   <Hash className="w-3 h-3" /> Adicionar tag
@@ -5151,7 +5154,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         </div>
 
                         {/* Visibilidade */}
-                        <div className="mt-3 pt-3 border-t border-slate-200">
+                        <div className="mt-3 pt-3 border-t border-[#e7e5df]">
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-xs font-medium text-slate-500">Visibilidade:</span>
                           </div>
@@ -5197,7 +5200,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
                         {/* Seleção de Destinatários (para privado/equipe) */}
                         {editingVisibility !== 'public' && (
-                          <div className="mt-3 p-3 bg-white rounded-lg border border-slate-200">
+                          <div className="mt-3 p-3 bg-[#f8f7f5] rounded-lg border border-[#e7e5df]">
                             <p className="text-xs font-semibold text-slate-700 mb-2">
                               Selecione os destinatários:
                             </p>
@@ -5237,7 +5240,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                                 value={editingAudienceSearch}
                                 onChange={(e) => setEditingAudienceSearch(e.target.value)}
                                 placeholder="Buscar pessoa..."
-                                className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg mb-1"
+                                className="w-full px-2 py-1 text-xs border border-[#e7e5df] rounded-lg mb-1"
                               />
                               <div className="max-h-24 overflow-y-auto space-y-0.5">
                                 {filteredEditingAudienceProfiles.slice(0, 10).map((profile) => (
@@ -5303,7 +5306,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           const article = parseInstitutionalArticleContent(post.content);
                           if (article) {
                             return (
-                              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                              <div className="bg-[#f8f7f5] rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
                                 {/* Header */}
                                 <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
                                   <div className="flex items-center gap-2 mb-1">
@@ -5378,8 +5381,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                                     hasVoted 
                                       ? 'border-indigo-400 bg-indigo-50' 
                                       : canVote 
-                                        ? 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
-                                        : 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                                        ? 'border-[#e7e5df] bg-[#f8f7f5] hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
+                                        : 'border-[#e7e5df] bg-slate-50 cursor-not-allowed'
                                   }`}
                                 >
                                   {/* Barra de progresso */}
@@ -5488,7 +5491,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Financeiro */}
                         {post.preview_data.financeiro && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
                               if (agreementId) {
@@ -5513,15 +5516,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                               </span>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Recebido</p>
                                 <p className="text-emerald-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
                               </div>
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Pendente</p>
                                 <p className="text-amber-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
                               </div>
-                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-2 text-center">
                                 <p className="text-slate-500 text-[10px] font-medium">Atrasado</p>
                                 <p className="text-red-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
                               </div>
@@ -5532,7 +5535,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Cliente */}
                         {post.preview_data.cliente && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const clientId = post.preview_data?.cliente?.id;
                               if (clientId) {
@@ -5557,7 +5560,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Processo */}
                         {post.preview_data.processo && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const processId = post.preview_data?.processo?.id;
                               if (processId) {
@@ -5582,7 +5585,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Prazo */}
                         {post.preview_data.prazo && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const deadlineId = post.preview_data?.prazo?.id;
                               if (deadlineId) {
@@ -5607,7 +5610,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Agenda */}
                         {post.preview_data.agenda && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const calendarEventId = post.preview_data?.agenda?.id;
                               if (calendarEventId) {
@@ -5632,7 +5635,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Documento */}
                         {post.preview_data.documento && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const docId = post.preview_data?.documento?.id;
                               if (docId) {
@@ -5657,7 +5660,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Petição */}
                         {post.preview_data.peticao && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const petId = post.preview_data?.peticao?.id;
                               if (petId) {
@@ -5682,7 +5685,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Assinatura */}
                         {post.preview_data.assinatura && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const requestId = post.preview_data?.assinatura?.id;
                               if (requestId) {
@@ -5709,7 +5712,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         {/* Preview Requerimento */}
                         {post.preview_data.requerimento && (
                           <div 
-                            className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const reqId = post.preview_data?.requerimento?.id;
                               if (reqId) {
@@ -5796,7 +5799,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     <div style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }} className="relative">
                       {/* Dropdown de menções - fora do container com overflow */}
                       {expandedComments[post.id].showMentionDropdown && allProfiles.length > 0 && (
-                        <div className="absolute left-4 right-4 bottom-16 bg-white rounded-lg border border-slate-200 shadow-lg z-[100] max-h-48 overflow-y-auto">
+                        <div className="absolute left-4 right-4 bottom-16 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-[100] max-h-48 overflow-y-auto">
                           <div className="p-2 border-b border-slate-100">
                             <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                               <AtSign className="w-3 h-3" /> Mencionar usuário
@@ -6023,7 +6026,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     {interactionModal.open && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
             <h3 className="font-bold text-slate-900">
               {interactionModal.type === 'likes' ? 'Curtidas' : 'Comentários'}
             </h3>
@@ -6101,7 +6104,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           </div>
           {/* Input para novo comentário */}
           {interactionModal.type === 'comments' && (
-            <div className="p-4 border-t border-slate-200 bg-slate-50">
+            <div className="p-4 border-t border-[#e7e5df] bg-slate-50">
               <div className="flex gap-3">
                 <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Você'} size="sm" />
                 <div className="flex-1 flex gap-2">
@@ -6116,7 +6119,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       }
                     }}
                     placeholder="Escreva um comentário..."
-                    className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400"
+                    className="flex-1 px-4 py-2 bg-[#f8f7f5] border border-[#e7e5df] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400"
                     disabled={interactionModal.submitting}
                   />
                   <button
@@ -6141,7 +6144,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
             <div className="min-w-0">
               <h3 className="font-bold text-slate-900 truncate">Quem votou</h3>
               {pollForVotersModal?.question && (

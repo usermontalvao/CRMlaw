@@ -50,6 +50,9 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
+import { useSidebarMode } from '../contexts/SidebarModeContext';
+import { securityPinService, type PinMeta } from '../services/securityPin.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { settingsService } from '../services/settings.service';
 import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
@@ -193,6 +196,8 @@ const formatTimeAgo = (dateString: string) => {
 
 export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClose, onNavigateToModule }) => {
   const { user } = useAuth();
+  const { openCreatePin, openChangePin, openRemovePin } = useSecurityPin();
+  const { sidebarMode, setSidebarMode } = useSidebarMode();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [openPostMenu, setOpenPostMenu] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -208,6 +213,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   const [showCoverModal, setShowCoverModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [pinMeta, setPinMeta] = useState<PinMeta | null>(null);
+  const [pinLoading, setPinLoading] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: '',
     email: '',
@@ -527,8 +534,14 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         .maybeSingle();
       
       setProfile(data as Profile | null);
-      setIsOwnProfile(targetUserId === user?.id);
-      
+      const ownProfile = targetUserId === user?.id;
+      setIsOwnProfile(ownProfile);
+
+      // Carregar metadados do PIN (apenas perfil próprio)
+      if (ownProfile) {
+        securityPinService.getPinMeta().then(setPinMeta).catch(() => {});
+      }
+
       // Carregar dados no formulário
       if (data) {
         setProfileForm({
@@ -1485,7 +1498,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
       {showMobileTabs && (
         <div className="sm:hidden px-4 pt-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+          <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-[#e7e5df] dark:border-slate-800">
             <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100">
               <Badge className="w-5 h-5 text-blue-600" /> Contato Profissional
             </h3>
@@ -1554,7 +1567,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       <div className="px-4 lg:px-8 py-6 grid grid-cols-12 gap-6">
         {/* Sidebar */}
         <aside className="hidden lg:block col-span-12 lg:col-span-4 space-y-6">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+          <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-[#e7e5df] dark:border-slate-800">
             <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100">
               <Badge className="w-5 h-5 text-blue-600" /> Contato Profissional
             </h3>
@@ -1624,7 +1637,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
             <>
               {/* Box de Criar Post (apenas para o próprio perfil) */}
               {isOwnProfile && (
-                <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
+                <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-[#e7e5df]/80 shadow-lg shadow-slate-200/50 overflow-visible">
                   {/* Header do Post */}
                   <div className="p-4 pb-3">
                     <div className="flex gap-3">
@@ -1638,12 +1651,12 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                           value={postText}
                           onChange={handlePostTextChange}
                           rows={2}
-                          className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
+                          className="w-full bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
                           placeholder="O que você gostaria de compartilhar? Use @ para mencionar e # para tags..."
                         />
 
                         {showEmojiPicker && (
-                          <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
+                          <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] shadow-xl p-3">
                             <p className="text-xs font-semibold text-slate-500 mb-2">Emojis</p>
                             <div className="grid grid-cols-8 gap-1">
                               {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
@@ -1663,7 +1676,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                         {/* Dropdown de Menções */}
                         {showMentionDropdown && filteredProfiles.length > 0 && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-48 overflow-y-auto">
                             <div className="p-2 border-b border-slate-100">
                               <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                                 <AtSign className="w-3 h-3" /> Mencionar usuário
@@ -1688,7 +1701,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                         {/* Dropdown de Tags */}
                         {showTagDropdown && !selectedTagForRecords && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50">
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50">
                             <div className="p-2 border-b border-slate-100">
                               <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                                 <Hash className="w-3 h-3" /> Selecione uma categoria para ver registros
@@ -1712,8 +1725,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                         {/* Dropdown de Registros da Tag Selecionada */}
                         {selectedTagForRecords && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-80 overflow-y-auto">
-                            <div className="p-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-[#e7e5df] shadow-lg z-50 max-h-80 overflow-y-auto">
+                            <div className="p-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-[#f8f7f5]">
                               <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                                 <Hash className="w-3 h-3" />
                                 {availableTags.find(t => t.id === selectedTagForRecords)?.label || 'Registros'}
@@ -1733,7 +1746,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                 placeholder="Buscar..."
                                 value={tagRecordSearch}
                                 onChange={(e) => handleTagRecordSearch(e.target.value)}
-                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 outline-none"
+                                className="w-full px-3 py-2 text-sm border border-[#e7e5df] rounded-lg focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 outline-none"
                                 autoFocus
                               />
                             </div>
@@ -1808,10 +1821,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         <div className="flex flex-wrap gap-2">
                           {pendingAttachments.map((att) => (
                             <div key={att.attachment.filePath} className="relative">
-                              <img src={att.localUrl} className="h-20 w-20 object-cover rounded-lg border border-slate-200" />
+                              <img src={att.localUrl} className="h-20 w-20 object-cover rounded-lg border border-[#e7e5df]" />
                               <button
                                 type="button"
-                                className="absolute -top-2 -right-2 bg-white rounded-full border border-slate-200 shadow p-1"
+                                className="absolute -top-2 -right-2 bg-[#f8f7f5] rounded-full border border-[#e7e5df] shadow p-1"
                                 onClick={() => {
                                   try { URL.revokeObjectURL(att.localUrl); } catch {}
                                   setPendingAttachments((prev) => prev.filter((p) => p.attachment.filePath !== att.attachment.filePath));
@@ -1828,7 +1841,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                   </div>
 
                   {/* Barra de Ações - Layout responsivo em 2 linhas */}
-                  <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
+                  <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-[#e7e5df]/80 space-y-2">
                     {/* Linha 1: Ações principais */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1 flex-wrap">
@@ -1903,7 +1916,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     {/* Linha 2: Visibilidade e Agendamento */}
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* Visibilidade - Tabs */}
-                      <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5">
+                      <div className="flex items-center gap-1 bg-[#f8f7f5] rounded-lg border border-[#e7e5df] px-1 py-0.5">
                         <button
                           type="button"
                           onClick={() => setPostVisibility('public')}
@@ -1946,7 +1959,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium border ${
                           showScheduler 
                             ? 'bg-orange-100 text-orange-700 border-orange-200' 
-                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-50'
                         }`}
                         title="Agendar publicação"
                       >
@@ -1969,7 +1982,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                     {/* Destinatários (Privado/Equipe) */}
                     {postVisibility !== 'public' && (
-                      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+                      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] px-3 py-2">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span className="text-xs font-semibold text-slate-700">
                             {postVisibility === 'private' ? 'Privado para:' : 'Equipe (selecionar):'}
@@ -1996,7 +2009,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                   className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
                                     active
                                       ? 'bg-slate-900 text-white border-slate-900'
-                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                      : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:bg-slate-50'
                                   }`}
                                   title={role}
                                 >
@@ -2013,7 +2026,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                             value={audienceSearch}
                             onChange={(e) => setAudienceSearch(e.target.value)}
                             placeholder="Buscar pessoas..."
-                            className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            className="w-full px-3 py-2 text-sm rounded-lg border border-[#e7e5df] bg-[#f8f7f5] focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                           />
                           <div className="flex flex-wrap gap-1 mt-2">
                             {audienceUserIds.map((uid) => {
@@ -2033,7 +2046,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                             })}
                           </div>
                           {audienceSearch.trim().length > 0 && (
-                            <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg bg-white">
+                            <div className="mt-2 max-h-40 overflow-auto border border-[#e7e5df] rounded-lg bg-[#f8f7f5]">
                               {filteredAudienceProfiles
                                 .filter((p) => !audienceUserIds.includes(p.user_id))
                                 .slice(0, 10)
@@ -2106,7 +2119,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                           </div>
                           <button
                             onClick={() => setShowPollCreator(false)}
-                            className="w-8 h-8 rounded-lg bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 flex items-center justify-center transition-all shadow-sm hover:shadow-md"
+                            className="w-8 h-8 rounded-lg bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 flex items-center justify-center transition-all hover:shadow-md"
                             type="button"
                           >
                             <X className="w-4 h-4" />
@@ -2176,7 +2189,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         {/* Configurações */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                           <div
-                            className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100 hover:border-blue-200 transition-all cursor-pointer"
+                            className="flex items-center gap-2 p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100 hover:border-blue-200 transition-all cursor-pointer"
                             onClick={() => setPollAllowMultiple(!pollAllowMultiple)}
                           >
                             <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${pollAllowMultiple ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
@@ -2192,7 +2205,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100">
+                          <div className="flex items-center gap-2 p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100">
                             <Clock className="w-4 h-4 text-slate-400" />
                             <select
                               value={pollExpiresIn}
@@ -2210,7 +2223,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         </div>
 
                         {/* Participantes */}
-                        <div className="p-3 bg-white rounded-xl border-2 border-slate-100">
+                        <div className="p-3 bg-[#f8f7f5] rounded-xl border-2 border-slate-100">
                           <div className="flex items-center gap-2 mb-2">
                             <Users className="w-4 h-4 text-slate-400" />
                             <span className="text-xs font-semibold text-slate-700">Participantes</span>
@@ -2262,13 +2275,13 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                   <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                 </div>
               ) : userPosts.length === 0 ? (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-8 text-center">
                   <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-500">Nenhuma publicação ainda</p>
                 </div>
               ) : (
                 userPosts.map((post) => (
-                  <div key={post.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div key={post.id} className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
                     {/* Post Header */}
                     <div className="p-3 pb-2 flex gap-3">
                       <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} />
@@ -2311,7 +2324,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                             <MoreHorizontal className="w-5 h-5" />
                           </button>
                           {openPostMenu === post.id && (
-                            <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[140px]">
+                            <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-[#e7e5df] py-1 z-20 min-w-[140px]">
                               <button
                                 onClick={() => {
                                   setEditingPostId(post.id);
@@ -2360,7 +2373,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                   <div
                                     key={idx}
                                     className={`relative overflow-hidden rounded-lg border ${
-                                      hasVoted ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'
+                                      hasVoted ? 'border-indigo-400 bg-indigo-50' : 'border-[#e7e5df] bg-[#f8f7f5]'
                                     }`}
                                   >
                                     <div
@@ -2407,7 +2420,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                               <button
                                 key={a.filePath}
                                 onClick={() => openImageGallery(post.attachments || [], idx)}
-                                className="h-32 w-32 object-cover rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+                                className="h-32 w-32 object-cover rounded-lg border border-[#e7e5df] cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
                               >
                                 <img
                                   src={a.signedUrl}
@@ -2423,7 +2436,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         <div className="space-y-2 mt-3">
                           {post.preview_data.financeiro && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
                                 if (agreementId) {
@@ -2474,7 +2487,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.cliente && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const clientId = post.preview_data?.cliente?.id;
                                 if (clientId) {
@@ -2500,7 +2513,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.processo && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const processId = post.preview_data?.processo?.id;
                                 if (processId) {
@@ -2524,7 +2537,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.prazo && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const deadlineId = post.preview_data?.prazo?.id;
                                 if (deadlineId) {
@@ -2548,7 +2561,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.agenda && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const calendarEventId = post.preview_data?.agenda?.id;
                                 if (calendarEventId) {
@@ -2572,7 +2585,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.documento && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const docId = post.preview_data?.documento?.id;
                                 if (docId) {
@@ -2596,7 +2609,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.peticao && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const petId = post.preview_data?.peticao?.id;
                                 if (petId) {
@@ -2620,7 +2633,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.assinatura && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const requestId = post.preview_data?.assinatura?.id;
                                 if (requestId) {
@@ -2646,7 +2659,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.requerimento && (
                             <div
-                              className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="bg-[#f8f7f5] border border-[#e7e5df] border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                               onClick={() => {
                                 const reqId = post.preview_data?.requerimento?.id;
                                 if (reqId) {
@@ -2787,7 +2800,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                 }
                               }}
                               placeholder={`Comente como ${myProfile?.name || profile?.name || 'você'}...`}
-                              className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                              className="flex-1 px-3 py-2 bg-[#f8f7f5] border border-[#e7e5df] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                               disabled={expandedComments[post.id]?.submitting}
                             />
                             {expandedComments[post.id]?.submitting && (
@@ -2802,7 +2815,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     {interactionModal.open && interactionModal.type === 'likes' && (
                       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                         <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
-                          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                          <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
                             <h3 className="font-bold text-slate-900">
                               {interactionModal.type === 'likes' ? 'Curtidas' : 'Comentários'}
                             </h3>
@@ -2845,7 +2858,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     {imageGalleryModal.open && (
                       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/95 p-4">
                         <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
-                          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                          <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
                             <h3 className="font-bold text-slate-900">
                               {imageGalleryModal.currentIndex + 1} de {imageGalleryModal.images.length}
                             </h3>
@@ -2858,7 +2871,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                               {imageGalleryModal.images.length > 1 && (
                                 <button
                                   onClick={prevImage}
-                                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-full p-2 shadow-lg border border-slate-200 transition-all"
+                                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-full p-2 shadow-lg border border-[#e7e5df] transition-all"
                                 >
                                   <ChevronLeft className="w-6 h-6" />
                                 </button>
@@ -2871,14 +2884,14 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                               {imageGalleryModal.images.length > 1 && (
                                 <button
                                   onClick={nextImage}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-full p-2 shadow-lg border border-slate-200 transition-all"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-full p-2 shadow-lg border border-[#e7e5df] transition-all"
                                 >
                                   <ChevronRight className="w-6 h-6" />
                                 </button>
                               )}
                             </div>
                           </div>
-                          <div className="p-4 border-t border-slate-200 bg-slate-50/50">
+                          <div className="p-4 border-t border-[#e7e5df] bg-slate-50/50">
                             <p className="text-sm text-slate-600 text-center truncate">
                               {imageGalleryModal.images[imageGalleryModal.currentIndex]?.fileName}
                             </p>
@@ -2893,7 +2906,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
           )}
 
           {activeTab === 'about' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm p-6">
               <h3 className="font-bold text-slate-900 mb-4">Sobre {profile.name}</h3>
               
               {profile.bio ? (
@@ -2948,7 +2961,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
           {/* Tab Dados Pessoais */}
           {activeTab === 'dados' && isOwnProfile && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+            <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-xl border border-[#e7e5df] dark:border-slate-800 shadow-sm p-6">
               <h3 className="font-bold text-slate-900 dark:text-white mb-6">Dados Pessoais</h3>
               
               {message && (
@@ -2971,7 +2984,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="text"
                       value={profileForm.name}
                       onChange={(e) => handleProfileChange('name', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       required
                     />
                   </div>
@@ -2983,7 +2996,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="email"
                       value={profileForm.email}
                       onChange={(e) => handleProfileChange('email', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                 </div>
@@ -2997,7 +3010,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="text"
                       value={profileForm.cpf}
                       onChange={(e) => handleProfileChange('cpf', formatCpf(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       placeholder="000.000.000-00"
                       maxLength={14}
                     />
@@ -3010,7 +3023,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="tel"
                       value={profileForm.phone}
                       onChange={(e) => handleProfileChange('phone', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       placeholder="(00) 00000-0000"
                     />
                   </div>
@@ -3025,7 +3038,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="text"
                       value={profileForm.oab}
                       onChange={(e) => handleProfileChange('oab', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       placeholder="UF 123456"
                     />
                   </div>
@@ -3037,7 +3050,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       type="text"
                       value={profileForm.role}
                       disabled
-                      className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                      className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -3050,7 +3063,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     value={profileForm.bio}
                     onChange={(e) => handleProfileChange('bio', e.target.value)}
                     rows={4}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                     placeholder="Fale sobre sua formação, especializações e áreas de atuação..."
                   />
                 </div>
@@ -3080,7 +3093,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
           {/* Tab Segurança */}
           {activeTab === 'security' && isOwnProfile && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+            <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-xl border border-[#e7e5df] dark:border-slate-800 shadow-sm p-6">
               <h3 className="font-bold text-slate-900 dark:text-white mb-6">Segurança</h3>
               
               {message && (
@@ -3094,6 +3107,69 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
               )}
 
               <div className="space-y-8">
+                {/* ── Tipo de Menu Lateral ───────────────────────────────── */}
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Tipo de Menu Lateral</h4>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                    Escolha como o menu lateral é exibido no sistema.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSidebarMode('compact')}
+                      className={`relative flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all ${
+                        sidebarMode === 'compact'
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                          : 'border-[#e7e5df] dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex gap-1.5 w-full h-14 items-stretch">
+                        <div className="w-7 bg-slate-800 rounded-lg flex flex-col items-center gap-1.5 py-2 flex-shrink-0">
+                          <div className="w-3 h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-3 h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-3 h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-3 h-0.5 bg-slate-500 rounded-full" />
+                        </div>
+                        <div className="flex-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg" />
+                      </div>
+                      <div className="w-full">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Menu compacto</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Ícones empilhados</p>
+                      </div>
+                      {sidebarMode === 'compact' && (
+                        <CheckCircle className="absolute top-3 right-3 w-4 h-4 text-amber-500" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSidebarMode('normal')}
+                      className={`relative flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all ${
+                        sidebarMode === 'normal'
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                          : 'border-[#e7e5df] dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex gap-1.5 w-full h-14 items-stretch">
+                        <div className="w-16 bg-slate-800 rounded-lg flex flex-col gap-1.5 py-2 px-1.5 flex-shrink-0">
+                          <div className="w-full h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-full h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-full h-0.5 bg-slate-500 rounded-full" />
+                          <div className="w-full h-0.5 bg-slate-500 rounded-full" />
+                        </div>
+                        <div className="flex-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg" />
+                      </div>
+                      <div className="w-full">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Menu normal</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Ícone + texto</p>
+                      </div>
+                      {sidebarMode === 'normal' && (
+                        <CheckCircle className="absolute top-3 right-3 w-4 h-4 text-amber-500" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 <div>
                   <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Alterar Senha</h4>
                   <form onSubmit={handlePasswordSubmit} className="space-y-4">
@@ -3105,7 +3181,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         type="password"
                         value={passwordForm.newPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         placeholder="••••••••"
                       />
                     </div>
@@ -3117,7 +3193,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         type="password"
                         value={passwordForm.confirmPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         placeholder="••••••••"
                       />
                     </div>
@@ -3143,7 +3219,108 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                   </form>
                 </div>
 
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                {/* ── PIN de Segurança ─────────────────────────────────────── */}
+                <div className="border-t border-[#e7e5df] dark:border-slate-700 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold text-slate-900 dark:text-white">PIN de Segurança</h4>
+                    {pinMeta?.has_pin && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Configurado
+                      </span>
+                    )}
+                    {pinMeta !== null && !pinMeta.has_pin && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        {pinMeta.pin_required_setup ? 'Necessário criar' : 'Não configurado'}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                    O PIN protege ações críticas — exclusões, edições financeiras e visualização de valores sensíveis.
+                  </p>
+
+                  {/* Status extra */}
+                  {pinMeta?.has_pin && (
+                    <div className="mb-4 grid grid-cols-2 gap-3 text-xs text-slate-500">
+                      {pinMeta.pin_set_at && (
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+                          <p className="text-slate-400 mb-0.5">Configurado em</p>
+                          <p className="font-medium text-slate-700 dark:text-slate-300">
+                            {new Date(pinMeta.pin_set_at).toLocaleDateString('pt-BR')}
+                          </p>
+                        </div>
+                      )}
+                      {pinMeta.locked_until && new Date(pinMeta.locked_until) > new Date() && (
+                        <div className="bg-red-50 rounded-lg px-3 py-2">
+                          <p className="text-red-400 mb-0.5">Bloqueado até</p>
+                          <p className="font-medium text-red-700">
+                            {new Date(pinMeta.locked_until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-3">
+                    {!pinMeta?.has_pin && (
+                      <button
+                        type="button"
+                        disabled={pinLoading}
+                        onClick={async () => {
+                          setPinLoading(true);
+                          try {
+                            const ok = await openCreatePin();
+                            if (ok) setPinMeta(await securityPinService.getPinMeta());
+                          } finally { setPinLoading(false); }
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                      >
+                        <Shield className="w-4 h-4" />
+                        Criar PIN
+                      </button>
+                    )}
+
+                    {pinMeta?.has_pin && (
+                      <button
+                        type="button"
+                        disabled={pinLoading}
+                        onClick={async () => {
+                          setPinLoading(true);
+                          try {
+                            const ok = await openChangePin();
+                            if (ok) setPinMeta(await securityPinService.getPinMeta());
+                          } finally { setPinLoading(false); }
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                      >
+                        <Key className="w-4 h-4" />
+                        Alterar PIN
+                      </button>
+                    )}
+
+                    {pinMeta?.has_pin && (
+                      <button
+                        type="button"
+                        disabled={pinLoading}
+                        onClick={async () => {
+                          setPinLoading(true);
+                          try {
+                            const ok = await openRemovePin();
+                            if (ok) setPinMeta(await securityPinService.getPinMeta());
+                          } finally { setPinLoading(false); }
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Remover PIN
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#e7e5df] dark:border-slate-700 pt-6">
                   <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Detalhes da Conta</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl">
@@ -3164,7 +3341,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
           {/* Tab Estatísticas */}
           {activeTab === 'stats' && isOwnProfile && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+            <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-xl border border-[#e7e5df] dark:border-slate-800 shadow-sm p-6">
               <h3 className="font-bold text-slate-900 dark:text-white mb-6">Estatísticas do Sistema</h3>
               
               {/* Estatísticas do Feed */}
@@ -3273,8 +3450,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       {/* Modal de Seleção de Capa */}
       {showCoverModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
+          <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-[#e7e5df] dark:border-slate-800">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Escolher Capa</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Selecione uma capa predefinida para seu perfil</p>

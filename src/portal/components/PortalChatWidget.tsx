@@ -129,7 +129,7 @@ const Bubble: React.FC<{ msg: PortalChatMessage }> = ({ msg }) => {
         <div className={`rounded-[14px] px-3 py-2 shadow-sm ${
           isClient
             ? 'rounded-br-[4px] bg-orange-500 text-white'
-            : 'rounded-bl-[4px] bg-white text-slate-800 ring-1 ring-slate-100'
+            : 'rounded-bl-[4px] bg-[#f8f7f5] text-slate-800 ring-1 ring-slate-100'
         }`}>
           {body}
         </div>
@@ -560,8 +560,8 @@ export const PortalChatWidget: React.FC = () => {
               {attendant?.avatar_url
                 ? <img src={attendant.avatar_url} alt={attendant.name} className="h-9 w-9 rounded-full object-cover ring-2 ring-white/30" />
                 : attendant
-                ? <div className="h-9 w-9 rounded-full bg-white/20 ring-2 ring-white/30 flex items-center justify-center text-[12px] font-bold text-white">{initials(attendant.name)}</div>
-                : <div className="h-9 w-9 rounded-full bg-white/20 ring-2 ring-white/30 flex items-center justify-center"><MessageCircle className="h-4 w-4 text-white" /></div>
+                ? <div className="h-9 w-9 rounded-full bg-[#f8f7f5]/20 ring-2 ring-white/30 flex items-center justify-center text-[12px] font-bold text-white">{initials(attendant.name)}</div>
+                : <div className="h-9 w-9 rounded-full bg-[#f8f7f5]/20 ring-2 ring-white/30 flex items-center justify-center"><MessageCircle className="h-4 w-4 text-white" /></div>
               }
               {attendant && <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-orange-500 ${isOnline?'bg-emerald-400':'bg-slate-300'}`} />}
             </div>
@@ -597,7 +597,7 @@ export const PortalChatWidget: React.FC = () => {
                     <div className="flex justify-center py-3"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
                   ) : shortcuts.map((sc, i) => (
                     <button key={i} onClick={() => void doSend(sc.message)} disabled={sending}
-                      className="flex items-center gap-3 rounded-2xl bg-white px-3.5 py-2.5 text-left ring-1 ring-slate-200 transition hover:ring-orange-300 hover:shadow-sm active:scale-[0.98] disabled:opacity-50">
+                      className="flex items-center gap-3 rounded-2xl bg-[#f8f7f5] px-3.5 py-2.5 text-left ring-1 ring-slate-200 transition hover:ring-orange-300 hover:shadow-sm active:scale-[0.98] disabled:opacity-50">
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${sc.bg} ${sc.fg}`}>{sc.icon}</span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[12.5px] font-semibold text-slate-800 truncate">{sc.label}</p>
@@ -615,7 +615,7 @@ export const PortalChatWidget: React.FC = () => {
                   <div key={g.label}>
                     <div className="flex items-center gap-2 my-3">
                       <div className="h-px flex-1 bg-slate-200" />
-                      <span className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-slate-200">{g.label}</span>
+                      <span className="rounded-full bg-[#f8f7f5] px-2.5 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-slate-200">{g.label}</span>
                       <div className="h-px flex-1 bg-slate-200" />
                     </div>
                     {g.msgs.map(msg =>
@@ -627,7 +627,7 @@ export const PortalChatWidget: React.FC = () => {
                 ))}
                 {attTyping && (
                   <div className="flex justify-start mb-1">
-                    <div className="rounded-[14px] rounded-bl-[4px] bg-white ring-1 ring-slate-100 shadow-sm"><Dots /></div>
+                    <div className="rounded-[14px] rounded-bl-[4px] bg-[#f8f7f5] ring-1 ring-slate-100 shadow-sm"><Dots /></div>
                   </div>
                 )}
                 <div ref={bottomRef} />
@@ -637,7 +637,7 @@ export const PortalChatWidget: React.FC = () => {
 
           {/* Footer */}
           {closed ? (
-            <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3">
+            <div className="shrink-0 border-t border-slate-100 bg-[#f8f7f5] px-3 py-3">
               <p className="mb-2 text-center text-[11px] text-slate-400">Conversa encerrada pelo escritório</p>
               <button onClick={() => void handleStartNew()} disabled={starting}
                 className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-orange-500 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(249,115,22,0.28)] disabled:opacity-50">
@@ -646,7 +646,7 @@ export const PortalChatWidget: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-2.5">
+            <div className="shrink-0 border-t border-slate-100 bg-[#f8f7f5] px-3 py-2.5">
               <div className="flex items-end gap-2">
                 <textarea ref={inputRef} value={text} onChange={onTextChange} onKeyDown={onKey}
                   placeholder="Escreva uma mensagem..." rows={1}
@@ -687,7 +687,7 @@ export const PortalChatWidget: React.FC = () => {
           <>
             {attendant.avatar_url
               ? <img src={attendant.avatar_url} alt={attendant.name} className="h-full w-full rounded-full object-cover" />
-              : <div className="flex h-full w-full items-center justify-center rounded-full bg-white/20 text-[16px] font-bold">{initials(attendant.name)}</div>
+              : <div className="flex h-full w-full items-center justify-center rounded-full bg-[#f8f7f5]/20 text-[16px] font-bold">{initials(attendant.name)}</div>
             }
             {attendant.presence_status === 'online' && (
               <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white" />

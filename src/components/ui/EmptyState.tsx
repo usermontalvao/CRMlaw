@@ -22,7 +22,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
     className={[
       'flex flex-col items-center justify-center py-10 px-6 text-center rounded-xl',
       variant === 'dashed'
-        ? 'border border-dashed border-slate-200 dark:border-zinc-700'
+        ? 'border border-dashed border-[#e7e5df] dark:border-zinc-700'
         : 'bg-slate-50 dark:bg-zinc-800/50 border border-slate-100 dark:border-zinc-800',
       className,
     ]

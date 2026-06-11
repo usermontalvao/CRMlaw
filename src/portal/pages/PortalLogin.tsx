@@ -1,7 +1,7 @@
 ﻿import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Loader2, AlertCircle, ArrowLeft, ArrowRight,
-  Eye, EyeOff, Lock, Shield, Gavel, Bell, History, MessageSquare, CheckCircle,
+  Eye, EyeOff, Lock, Shield, Gavel, Bell, History, MessageSquare, CheckCircle, Ban,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { supabase } from '../../config/supabase';
@@ -56,7 +56,7 @@ const Logo: React.FC<{ compact?: boolean }> = ({ compact = false }) => (
 );
 
 const HeroFeatureCard: React.FC<{ icon: React.ElementType; title: string; desc: string }> = ({ icon: Icon, title, desc }) => (
-  <div className="group bg-white p-3.5 rounded-xl border border-orange-200/40 hover:border-orange-700/30 hover:shadow-sm transition-all flex gap-3 items-start">
+  <div className="group bg-[#f8f7f5] p-3.5 rounded-xl border border-orange-200/40 hover:border-orange-700/30 hover:shadow-sm transition-all flex gap-3 items-start">
     <div className="shrink-0 w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center text-orange-700 transition-transform group-hover:scale-110">
       <Icon size={18} strokeWidth={1.5} />
     </div>
@@ -68,8 +68,27 @@ const HeroFeatureCard: React.FC<{ icon: React.ElementType; title: string; desc: 
 );
 
 const ErrorMsg: React.FC<{ msg: string }> = ({ msg }) => (
-  <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{msg}</span>
+  <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5">
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-100">
+      <AlertCircle className="h-4 w-4 text-red-600" />
+    </div>
+    <p className="text-[13px] font-medium leading-snug text-red-700">{msg}</p>
+  </div>
+);
+
+const BannedMsg: React.FC = () => (
+  <div className="flex flex-col items-center gap-4 rounded-xl border border-orange-200 bg-gradient-to-b from-orange-50 to-white px-6 py-6 text-center"
+    style={{ animation: 'staffProfileIn 0.35s ease both' }}>
+    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 shadow-sm shadow-orange-200">
+      <Ban className="h-7 w-7 text-orange-600" />
+    </div>
+    <div>
+      <p className="text-[15px] font-bold text-slate-900">Acesso Revogado</p>
+      <p className="mt-1.5 text-[13px] leading-snug text-slate-500">
+        Sua conta foi desativada pelo administrador do escritório.
+        <br />Entre em contato para reativar o acesso.
+      </p>
+    </div>
   </div>
 );
 
@@ -142,6 +161,7 @@ export const PortalLogin: React.FC = () => {
   const [identifierLoading, setIdentifierLoading] = useState(false);
   const [staffLoading, setStaffLoading]           = useState(false);
   const [staffError, setStaffError]               = useState<string | null>(null);
+  const [staffBanned, setStaffBanned]             = useState(false);
 
   const cpfRef       = useRef<HTMLInputElement>(null);
   const identRef     = useRef<HTMLInputElement>(null);
@@ -209,13 +229,15 @@ export const PortalLogin: React.FC = () => {
   const loadProfile = useCallback(async (id: string): Promise<boolean> => {
     setIdentifierLoading(true);
     setStaffError(null);
+    setStaffBanned(false);
     try {
       const trimmed = id.trim();
 
       if (trimmed.includes('@')) {
-        const { data } = await supabase.from('profiles').select('name,avatar_url,email').ilike('email', trimmed);
+        const { data } = await supabase.from('profiles').select('name,avatar_url,email,is_active').ilike('email', trimmed);
         const p = data?.[0] ?? null;
         if (!p) { setStaffError('Usuário não encontrado. Verifique o e-mail informado.'); return false; }
+        if (p.is_active === false) { setStaffBanned(true); return false; }
         setProfileName(p.name ?? p.email);
         setProfileAvatar(p.avatar_url ?? null);
         setStaffEmail(p.email ?? trimmed);
@@ -227,11 +249,17 @@ export const PortalLogin: React.FC = () => {
 
       if (numeric.length === 11) {
         const masked = formatCpfRaw(numeric);
-        const { data: byMasked } = await supabase.from('profiles').select('name,avatar_url,email').eq('cpf', masked).maybeSingle();
-        if (byMasked?.email) { setProfileName(byMasked.name ?? byMasked.email); setProfileAvatar(byMasked.avatar_url ?? null); setStaffEmail(byMasked.email); return true; }
+        const { data: byMasked } = await supabase.from('profiles').select('name,avatar_url,email,is_active').eq('cpf', masked).maybeSingle();
+        if (byMasked?.email) {
+          if (byMasked.is_active === false) { setStaffBanned(true); return false; }
+          setProfileName(byMasked.name ?? byMasked.email); setProfileAvatar(byMasked.avatar_url ?? null); setStaffEmail(byMasked.email); return true;
+        }
 
-        const { data: byRaw } = await supabase.from('profiles').select('name,avatar_url,email').eq('cpf', numeric).maybeSingle();
-        if (byRaw?.email) { setProfileName(byRaw.name ?? byRaw.email); setProfileAvatar(byRaw.avatar_url ?? null); setStaffEmail(byRaw.email); return true; }
+        const { data: byRaw } = await supabase.from('profiles').select('name,avatar_url,email,is_active').eq('cpf', numeric).maybeSingle();
+        if (byRaw?.email) {
+          if (byRaw.is_active === false) { setStaffBanned(true); return false; }
+          setProfileName(byRaw.name ?? byRaw.email); setProfileAvatar(byRaw.avatar_url ?? null); setStaffEmail(byRaw.email); return true;
+        }
       }
 
       try {
@@ -263,15 +291,24 @@ export const PortalLogin: React.FC = () => {
       const { error } = await supabase.auth.signInWithPassword({ email: staffEmail, password: staffPw });
       if (error) throw error;
       window.location.href = '/';   // main.tsx detecta sessão Supabase e carrega o CRM
-    } catch (err: any) { setStaffError(err.message || 'Credenciais inválidas.'); }
+    } catch (err: any) {
+      const msg: string = err.message || '';
+      if (msg.toLowerCase().includes('banned')) {
+        setStaffBanned(true);
+        setStaffError(null);
+      } else {
+        setStaffError(msg || 'Credenciais inválidas.');
+        setStaffBanned(false);
+      }
+    }
     finally { setStaffLoading(false); }
   };
 
-  const goBackStaff = () => { setStaffStep('identifier'); setStaffError(null); setStaffPw(''); setProfileName(null); setProfileAvatar(null); };
+  const goBackStaff = () => { setStaffStep('identifier'); setStaffError(null); setStaffBanned(false); setStaffPw(''); setProfileName(null); setProfileAvatar(null); };
 
   const switchMode = (m: Mode) => {
     setMode(m);
-    setClientError(null); setStaffError(null);
+    setClientError(null); setStaffError(null); setStaffBanned(false);
   };
 
   const avatarInitial = (profileName || identifier || staffEmail).trim().charAt(0).toUpperCase() || '?';
@@ -347,14 +384,14 @@ export const PortalLogin: React.FC = () => {
 
           {/* RIGHT — Login card */}
           <div id="login-card" className="lg:col-span-5 self-center order-1 lg:order-2">
-            <div className="bg-white rounded-2xl border border-orange-200 overflow-hidden" style={{ boxShadow: '0 20px 40px -15px rgba(15,23,42,0.12)' }}>
+            <div className="bg-[#f8f7f5] rounded-2xl border border-orange-200 overflow-hidden" style={{ boxShadow: '0 20px 40px -15px rgba(15,23,42,0.12)' }}>
 
             {/* Tabs */}
             <div className="flex border-b border-orange-200">
               <button type="button" onClick={() => switchMode('client')}
                 className={`flex-1 py-4 text-sm font-semibold tracking-wide transition-colors ${
                   mode === 'client'
-                    ? 'text-orange-700 border-b-2 border-orange-700 bg-white'
+                    ? 'text-orange-700 border-b-2 border-orange-700 bg-[#f8f7f5]'
                     : 'text-slate-500 bg-slate-100 hover:text-slate-700'
                 }`}>
                 Portal do Cliente
@@ -362,7 +399,7 @@ export const PortalLogin: React.FC = () => {
               <button type="button" onClick={() => switchMode('staff')}
                 className={`flex-1 py-4 text-sm font-semibold tracking-wide transition-colors flex items-center justify-center gap-2 ${
                   mode === 'staff'
-                    ? 'text-slate-900 border-b-2 border-slate-700 bg-white'
+                    ? 'text-slate-900 border-b-2 border-slate-700 bg-[#f8f7f5]'
                     : 'text-slate-500 bg-slate-100 hover:text-slate-700'
                 }`}>
                 <Lock className="h-3.5 w-3.5" /> Área Restrita
@@ -456,7 +493,7 @@ export const PortalLogin: React.FC = () => {
             {mode === 'staff' && (
               <div className="relative p-8 space-y-6">
                 {identifierLoading && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-b-2xl bg-white"
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-b-2xl bg-[#f8f7f5]"
                     style={{ animation: 'fadeIn 0.25s ease both' }}>
                     <style>{`
                       @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
@@ -508,13 +545,15 @@ export const PortalLogin: React.FC = () => {
                             setIdentifier(raw);
                           }
                           setStaffError(null);
+                          setStaffBanned(false);
                         }}
                         inputMode="text"
                         placeholder="000.000.000-00 ou email@..." autoComplete="username" disabled={identifierLoading}
                         className="w-full px-4 py-3.5 bg-slate-100 border border-orange-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400"
                       />
                     </div>
-                    {staffError && <ErrorMsg msg={staffError} />}
+                    {staffBanned && <BannedMsg />}
+                    {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={identifierLoading || !identifier.trim()}
                       className="w-full bg-slate-900 text-white py-4 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40">
                       {identifierLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Buscando...</> : <><span>Continuar</span><ArrowRight className="h-5 w-5" /></>}
@@ -561,7 +600,7 @@ export const PortalLogin: React.FC = () => {
                       <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Senha</label>
                       <div className="relative">
                         <input ref={pwRef} type={showPw ? 'text' : 'password'} value={staffPw}
-                          onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); }}
+                          onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
                           placeholder="••••••••" autoComplete="current-password" disabled={staffLoading}
                           className="w-full px-4 py-3.5 bg-slate-100 border border-orange-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all pr-12 text-base font-medium text-slate-900"
                         />
@@ -571,7 +610,8 @@ export const PortalLogin: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                    {staffError && <ErrorMsg msg={staffError} />}
+                    {staffBanned && <BannedMsg />}
+                    {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={staffLoading || !staffPw}
                       style={{ animation: 'staffProfileIn 0.4s ease 0.4s both' }}
                       className="w-full bg-slate-900 text-white py-4 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40">

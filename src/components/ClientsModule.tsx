@@ -19,6 +19,7 @@ import { Modal, ModalBody } from './ui';
 import { buildDuplicateGroups, buildDuplicateSummaryMap, pickPrimaryClient, type DuplicateGroup } from '../utils/clientDuplicates';
 import { useSelectionState } from '../hooks/useSelectionState';
 import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
+import { settingsService, CLIENT_MODULE_DEFAULTS } from '../services/settings.service';
 
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
@@ -39,9 +40,16 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   onNavigateToModule,
   focusClientId,
 }) => {
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
+  const [clientStatuses, setClientStatuses] = useState(CLIENT_MODULE_DEFAULTS.statuses);
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+
+  useEffect(() => {
+    settingsService.getClientModuleConfig().then(cfg => {
+      if (cfg.statuses.length > 0) setClientStatuses(cfg.statuses.filter(s => s.active !== false));
+    }).catch(() => {});
+  }, []);
 
   // ── Cache de fotos em localStorage (sobrevive reload) ─────────────
   // Schema: { [clientId]: { url, path, expiresAt, miss?: true } }
@@ -529,6 +537,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     try {
       setBulkDeleteLoading(true);
       await Promise.all(Array.from(selectedClientIds).map((id) => clientService.deleteClient(id)));
+      notifyDeleted();
       disableSelectionMode();
       loadClients();
     } catch (error) {
@@ -678,6 +687,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
     try {
       await clientService.deleteClient(id);
+      notifyDeleted(client?.full_name || undefined);
       loadClients();
     } catch (error) {
       console.error('Erro ao deletar cliente:', error);
@@ -721,7 +731,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       <div className="space-y-4">
         
         {/* Stats — enterprise treatment */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-slate-100">
             {/* Total */}
             <div className="px-4 py-4 sm:px-5 sm:py-5">
@@ -844,7 +854,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     const names = group.clients.map((client) => client.full_name).slice(0, 3);
                     const extraCount = group.clients.length - names.length;
                     return (
-                      <div key={group.key} className="rounded-lg border border-red-200 bg-white/70 px-3 py-2">
+                      <div key={group.key} className="rounded-lg border border-red-200 bg-[#f8f7f5]/70 px-3 py-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-xs font-semibold text-red-900 flex-1 min-w-0 truncate">
                             {names.join(', ')}{extraCount > 0 ? ` +${extraCount}` : ''}
@@ -867,7 +877,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               </div>
             )}
             {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0 || hasActiveFilters) && (
-              <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+              <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-[#e7e5df] text-xs">
                 {/* Chip: Incompletos (toggle) */}
                 {missingFieldsMap.size > 0 && showMissingBanner && (
                   <button
@@ -876,7 +886,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition ${
                       showIncompleteOnly
                         ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
-                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-amber-300 hover:text-amber-700'
+                        : 'bg-[#f8f7f5] text-slate-600 ring-1 ring-slate-200 hover:ring-amber-300 hover:text-amber-700'
                     }`}
                     title={showIncompleteOnly ? 'Remover filtro de incompletos' : 'Filtrar somente incompletos'}
                   >
@@ -894,7 +904,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition ${
                       showOutdatedOnly
                         ? 'bg-sky-100 text-sky-800 ring-1 ring-sky-300'
-                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-sky-300 hover:text-sky-700'
+                        : 'bg-[#f8f7f5] text-slate-600 ring-1 ring-slate-200 hover:ring-sky-300 hover:text-sky-700'
                     }`}
                     title={showOutdatedOnly ? 'Remover filtro de desatualizados' : `Filtrar cadastros com > ${OUTDATED_THRESHOLD_DAYS} dias sem atualização`}
                   >
@@ -939,7 +949,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         )}
 
         {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+        <div className="bg-[#f8f7f5] rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
           {/* Linha 1: busca sempre visível + actions */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
             <div className="relative flex-1 min-w-0">
@@ -949,7 +959,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-[#e7e5df] bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
                 placeholder="Buscar por nome, CPF, e-mail ou telefone…"
               />
             </div>
@@ -957,7 +967,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={handleNewClient}
-                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-2 rounded-lg text-xs font-semibold text-white shadow-sm shadow-orange-500/30"
+                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-2 rounded-lg text-xs font-semibold text-white shadow-orange-500/30"
               >
                 <Plus className="w-4 h-4" />
                 Novo Cliente
@@ -966,7 +976,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <button
                 type="button"
                 onClick={openManualMerge}
-                className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-2 rounded-lg text-xs font-medium text-slate-700 shadow-sm"
+                className="inline-flex items-center gap-1.5 bg-[#f8f7f5] border border-[#e7e5df] hover:bg-slate-50 transition-colors px-3 py-2 rounded-lg text-xs font-medium text-slate-700 shadow-sm"
                 title="Mesclar contatos manualmente"
               >
                 <Merge className="w-4 h-4" />
@@ -979,7 +989,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 className={`inline-flex items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                   selectionMode
                     ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    : 'border-[#e7e5df] bg-[#f8f7f5] text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Selecionar
@@ -1004,12 +1014,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 <select
                   value={filters.status || ''}
                   onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-3 py-1.5 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 >
                   <option value="">Todos</option>
-                  <option value="ativo">Ativos</option>
-                  <option value="inativo">Inativos</option>
-                  <option value="suspenso">Suspensos</option>
+                  {clientStatuses.map(s => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1018,7 +1028,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 <select
                   value={filters.client_type || ''}
                   onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-3 py-1.5 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 >
                   <option value="">Todos</option>
                   <option value="pessoa_fisica">Pessoa Física</option>
@@ -1031,7 +1041,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 <select
                   value={filters.sort_order || 'newest'}
                   onChange={(e) => setFilters({ ...filters, sort_order: (e.target.value as any) || 'newest' })}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-3 py-1.5 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 >
                   <option value="newest">Mais novos</option>
                   <option value="oldest">Mais antigos</option>
@@ -1039,7 +1049,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               </div>
 
               <div className="sm:col-span-2 lg:col-span-3 flex items-end gap-2">
-                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
+                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-[#e7e5df] hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-[#f8f7f5] cursor-pointer transition">
                   <input
                     type="checkbox"
                     className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
@@ -1048,7 +1058,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   />
                   <span className="text-xs">Incompletos</span>
                 </label>
-                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
+                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-[#e7e5df] hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-[#f8f7f5] cursor-pointer transition">
                   <input
                     type="checkbox"
                     className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
@@ -1061,7 +1071,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 <button
                   onClick={handleExportToExcel}
                   disabled={exporting}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:border-emerald-300 disabled:text-emerald-400 bg-white font-medium px-3 py-2 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:border-emerald-300 disabled:text-emerald-400 bg-[#f8f7f5] font-medium px-3 py-2 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
                   title="Exportar para Excel"
                 >
                   {exporting ? (
@@ -1082,7 +1092,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         </div>
 
         {selectionMode && (
-          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+          <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs text-slate-600">
                 <span className="text-slate-500">Dica: use “Selecionar” para excluir vários clientes.</span>
@@ -1104,7 +1114,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   type="button"
                   onClick={selectAllVisibleClients}
                   disabled={clients.length === 0}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   Selecionar todos
                 </button>
@@ -1120,7 +1130,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   type="button"
                   onClick={clearSelectedIds}
                   disabled={selectedClientIds.size === 0}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   Limpar
                 </button>
@@ -1215,7 +1225,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               {manualMergeSelected.length < 2 ? 'Selecione ao menos 2 contatos' : `${manualMergeSelected.length} contatos selecionados`}
             </p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowManualMerge(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">Cancelar</button>
+              <button type="button" onClick={() => setShowManualMerge(false)} className="px-4 py-2 rounded-lg border border-[#e7e5df] text-sm font-medium text-slate-600 hover:bg-slate-50 transition">Cancelar</button>
               <button type="button" onClick={executeManualMerge} disabled={manualMergeSelected.length < 2 || !manualMergePrimaryId || manualMergeLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
                 {manualMergeLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Mesclando...</> : <><Merge className="w-4 h-4" /> Mesclar contatos</>}
               </button>
@@ -1236,7 +1246,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   value={manualMergeSearch}
                   onChange={(e) => handleManualMergeSearchChange(e.target.value)}
                   placeholder="Digite o nome do contato para buscar..."
-                  className="w-full pl-9 pr-9 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                  className="w-full pl-9 pr-9 py-2 rounded-lg border border-[#e7e5df] text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
                   autoFocus
                 />
               </div>
@@ -1248,7 +1258,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               {manualMergeResults.length > 0 && (
                 <div className="mt-2">
                   <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">Resultados da busca</p>
-                  <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                  <div className="border border-[#e7e5df] rounded-lg overflow-hidden divide-y divide-slate-100 max-h-52 overflow-y-auto">
                     {manualMergeResults.map((client) => {
                       const isSelected = manualMergeSelected.some((c) => c.id === client.id);
                       return (
@@ -1271,13 +1281,19 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                               {[client.cpf_cnpj, client.email, client.phone || client.mobile].filter(Boolean).join(' · ')}
                             </p>
                           </div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                            client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700' :
-                            client.status === 'inativo' ? 'bg-slate-100 text-slate-500' :
-                            'bg-amber-50 text-amber-700'
-                          }`}>
-                            {client.status}
-                          </span>
+                          {(() => {
+                            const statusCfg = clientStatuses.find(s => s.key === client.status);
+                            return (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                                statusCfg?.badge ??
+                                (client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700' :
+                                client.status === 'inativo' ? 'bg-slate-100 text-slate-500' :
+                                'bg-amber-50 text-amber-700')
+                              }`}>
+                                {statusCfg?.label ?? client.status}
+                              </span>
+                            );
+                          })()}
                         </button>
                       );
                     })}
@@ -1291,11 +1307,11 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">
                     Selecionados ({manualMergeSelected.length}) — marque quem será o contato principal
                   </p>
-                  <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
+                  <div className="border border-[#e7e5df] rounded-lg overflow-hidden divide-y divide-slate-100">
                     {manualMergeSelected.map((client) => {
                       const isPrimary = client.id === manualMergePrimaryId;
                       return (
-                        <div key={client.id} className={`flex items-center gap-3 px-3 py-2.5 ${isPrimary ? 'bg-orange-50' : 'bg-white'}`}>
+                        <div key={client.id} className={`flex items-center gap-3 px-3 py-2.5 ${isPrimary ? 'bg-orange-50' : 'bg-[#f8f7f5]'}`}>
                           <button
                             type="button"
                             onClick={() => setManualMergePrimaryId(client.id)}
@@ -1304,7 +1320,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                             }`}
                             title="Definir como contato principal"
                           >
-                            {isPrimary && <div className="w-2 h-2 rounded-full bg-white" />}
+                            {isPrimary && <div className="w-2 h-2 rounded-full bg-[#f8f7f5]" />}
                           </button>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">
@@ -1351,10 +1367,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         <ClientModal
           isOpen={isDetailsModalOpen}
           onClose={closeDetailsModal}
-          title={selectedClient.full_name}
+          title="Detalhes do cliente"
           size="xl"
         >
-          <div className="p-4">
+          <div className="p-3">
             <ClientDetails
               client={selectedClient}
               processes={clientProcesses}

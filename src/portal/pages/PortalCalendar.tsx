@@ -172,7 +172,7 @@ export const PortalCalendar: React.FC = () => {
                   return (
                     <div
                       key={ev.id}
-                      className={`flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 transition ${isPast ? 'opacity-60' : 'hover:border-slate-300'}`}
+                      className={`flex items-start gap-3 rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 transition ${isPast ? 'opacity-60' : 'hover:border-slate-300'}`}
                     >
                       <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white ${bg}`}>
                         <Icon className="h-4 w-4" />

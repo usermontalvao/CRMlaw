@@ -67,7 +67,7 @@ const OfflinePage: React.FC = () => {
         </div>
 
         {/* Card principal */}
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-6">
+        <div className="bg-white rounded-2xl shadow-xl border border-[#e7e5df] p-8 mb-6">
           {/* Ícone de sem conexão */}
           <div className="relative inline-block mb-6">
             <div className="bg-red-50 p-6 rounded-full">
@@ -99,7 +99,7 @@ const OfflinePage: React.FC = () => {
         </div>
 
         {/* Dicas */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border border-slate-200 text-left">
+        <div className="bg-[#f8f7f5]/80 backdrop-blur-sm rounded-xl p-5 border border-[#e7e5df] text-left">
           <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
             <Wifi className="w-4 h-4 text-amber-500" />
             O que você pode fazer:

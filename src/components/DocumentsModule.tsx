@@ -37,6 +37,7 @@ import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { signatureService } from '../services/signature.service';
+import { settingsService } from '../services/settings.service';
 import { supabase } from '../config/supabase';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useToastContext } from '../contexts/ToastContext';
@@ -48,6 +49,7 @@ import StandardPetitionsModule from './StandardPetitionsModule';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
+import type { SignerAuthMethod } from '../types/signature.types';
 
 
 const defaultTemplateContent = `[[NOME COMPLETO]], [[nacionalidade]], [[estado civil]], [[profissão]], inscrito(a) no CPF sob o nº [[CPF]], residente e domiciliado(a) na [[endereço]], nº [[número]], [[complemento]], Bairro [[bairro]], [[cidade]] – [[estado]], CEP [[CEP]], telefone/WhatsApp [[celular]]
@@ -231,7 +233,7 @@ interface DocumentsModuleProps {
 
 const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
 
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,6 +309,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [showSignatureLinkModal, setShowSignatureLinkModal] = useState(false);
   const [signatureLink, setSignatureLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+
   const [preparingSignature, setPreparingSignature] = useState(false);
 
   const [showTemplateFillLinkModal, setShowTemplateFillLinkModal] = useState(false);
@@ -1340,10 +1343,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // Enviar para assinatura - Envia DOCXs separados (documento principal + anexos)
   const handleSendForSignature = async () => {
     if (!selectedTemplate || !selectedClient || !generatedDocBlob) return;
-    
+
     try {
       setPreparingSignature(true);
       setShowDocOptionsModal(false);
+
+      const sigCfg = await settingsService.getSignatureModuleConfig().catch(() => null);
+      const authMethodMapDocs: Record<string, SignerAuthMethod> = {
+        'Só assinatura': 'signature_only',
+        'Assinatura + Validação Facial': 'signature_facial',
+        'Assinatura + Facial + Documento': 'signature_facial_document',
+        signature_only: 'signature_only',
+        signature_facial: 'signature_facial',
+        signature_facial_document: 'signature_facial_document',
+      };
+      const resolvedAuthMethod: SignerAuthMethod = (sigCfg && authMethodMapDocs[sigCfg.default_auth_method]) || 'signature_only';
       
       // 1. Fazer upload do documento principal gerado (DOCX)
       const fileName = `${generatedDocName}.docx`;
@@ -1409,7 +1423,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         attachment_paths: attachmentPaths.length > 0 ? attachmentPaths : null,
         client_id: selectedClient.id,
         client_name: selectedClient.full_name,
-        auth_method: 'signature_only',
+        auth_method: resolvedAuthMethod,
         signers: [{
           name: selectedClient.full_name,
           email: selectedClient.email || '',
@@ -1586,6 +1600,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setDeletingTemplateId(template.id);
       setTemplateActionError(null);
       await documentTemplateService.deleteTemplate(template.id);
+      notifyDeleted(template.name);
       const data = await documentTemplateService.listTemplates();
       setTemplates(data);
       if (selectedTemplateId === template.id) setSelectedTemplateId('');
@@ -1604,14 +1619,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   return (
     <div className="space-y-6">
       {/* Header com tabs */}
-      <div className="rounded-2xl border border-slate-200 bg-white">
-                <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:px-6">
+      <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5]">
+                <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 sm:flex-row sm:px-6">
           <button
             onClick={() => setActiveView('new-doc')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'new-doc'
                 ? 'bg-slate-900 text-white'
-                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <Plus className="h-4 w-4" />
@@ -1622,7 +1637,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'manage'
                 ? 'bg-slate-900 text-white'
-                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <Settings className="h-4 w-4" />
@@ -1633,7 +1648,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'petitions'
                 ? 'bg-slate-900 text-white'
-                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <BookOpen className="h-4 w-4" />
@@ -1657,7 +1672,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
               </div>
             ) : newDocTemplates.length === 0 ? (
-              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+              <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-6 text-center">
                 <FileText className="mx-auto h-8 w-8 text-slate-300" />
                 <p className="mt-2 text-sm text-slate-500">Nenhum template disponível</p>
                 <button
@@ -1677,7 +1692,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       value={templateSearchQuery}
                       onChange={(e) => setTemplateSearchQuery(e.target.value)}
                       placeholder="Buscar modelo..."
-                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                   {templateSearchQuery.trim() && filteredNewDocTemplates.length === 0 && (
@@ -1699,7 +1714,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       className={`w-full text-left p-3 rounded-xl border-2 transition ${
                         isSelected
                           ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                          : 'border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-start gap-3">
@@ -1738,7 +1753,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
           {/* Coluna direita: Formulário */}
           <div className="lg:col-span-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+            <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 sm:p-6">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
                   <FileDown className="h-5 w-5 text-white" />
@@ -1761,14 +1776,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       value={templateSearchQuery}
                       onChange={(e) => setTemplateSearchQuery(e.target.value)}
                       placeholder="Buscar modelo..."
-                      className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
                     disabled={loading || newDocTemplates.length === 0}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+                    className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Selecione um template...</option>
                     {filteredNewDocTemplates.map((template) => (
@@ -1815,7 +1830,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     </label>
                     <input
                       type="text"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                       placeholder="Ex: Empresa XPTO Ltda"
                       value={defendantInput}
                       onChange={(e) => setDefendantInput(e.target.value)}
@@ -1825,7 +1840,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                 {/* Campos do Modelo (dinâmicos) */}
                 {templateExtraPlaceholders.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-slate-500" />
                       <p className="text-sm font-semibold text-slate-900">Campos do Modelo</p>
@@ -1858,14 +1873,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                             {isLong ? (
                               <textarea
                                 rows={3}
-                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                                 placeholder={`Preencher ${ph}...`}
                                 {...commonProps}
                               />
                             ) : (
                               <input
                                 type={isDate ? 'text' : isNumber ? 'number' : 'text'}
-                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                                 placeholder={`Preencher ${ph}...`}
                                 {...commonProps}
                               />
@@ -1919,7 +1934,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </button>
 
                 {/* Botão gerar (mobile sticky) */}
-                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-white/95 backdrop-blur border-t border-slate-200">
+                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-[#f8f7f5]/95 backdrop-blur border-t border-[#e7e5df]">
                   <button
                     onClick={handleGenerateDocx}
                     disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
@@ -1971,7 +1986,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setCustomFieldsManagerOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
                 <span className="hidden sm:inline">Campos Personalizados</span>
@@ -1993,7 +2008,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
           ) : manageTemplates.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 py-12 text-center">
+            <div className="rounded-2xl border-2 border-dashed border-[#e7e5df] bg-slate-50 py-12 text-center">
               <FileText className="mx-auto h-10 w-10 text-slate-300" />
               <p className="mt-3 text-sm text-slate-500">Nenhum template cadastrado</p>
               <button
@@ -2020,7 +2035,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 return (
                   <div
                     key={template.id}
-                    className="group relative rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm"
+                    className="group relative rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 transition hover:border-slate-300 hover:shadow-sm"
                   >
                     {/* Cabeçalho do card */}
                     <div className="mb-3">
@@ -2185,7 +2200,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Template</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-[#f8f7f5]"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
                   placeholder="Digite o nome do template"
@@ -2204,7 +2219,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-center justify-between rounded-lg border border-[#e7e5df] bg-slate-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
                   <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
@@ -2279,7 +2294,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         ) : previewTemplate?.file_path ? (
           <div className="flex h-full flex-col gap-4">
             {previewPdfUrl ? (
-              <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-gray-200" />
+              <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-[#e7e5df]" />
             ) : (
               <p className="text-sm text-gray-500">Carregando documento...</p>
             )}
@@ -2360,7 +2375,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   Editar Conteúdo
                 </button>
               </div>
-              <pre className="flex-1 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-700 whitespace-pre-wrap">
+              <pre className="flex-1 overflow-auto rounded-xl border border-[#e7e5df] bg-gray-50 p-4 text-xs text-gray-700 whitespace-pre-wrap">
                 {previewEditContent}
               </pre>
             </div>
@@ -2450,7 +2465,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border border-[#e7e5df] bg-slate-50 px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
               <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
@@ -2541,7 +2556,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         <div className="space-y-3">
           <button
             onClick={handleDownloadWord}
-            className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl transition border border-slate-200 dark:border-slate-700"
+            className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl transition border border-[#e7e5df] dark:border-slate-700"
           >
             <div className="w-10 h-10 bg-slate-700 dark:bg-slate-600 rounded-lg flex items-center justify-center">
               <FileText className="w-5 h-5 text-white" />
@@ -2592,7 +2607,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       footer={
         <button
           onClick={() => setShowTemplateFillLinkModal(false)}
-          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-[#f8f7f5] text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
         >
           Fechar
         </button>
@@ -2603,14 +2618,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
         </p>
 
-        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">
           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
           <div className="flex items-center gap-2 flex-col sm:flex-row">
             <input
               type="text"
               readOnly
               value={templateFillLink}
-              className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+              className="flex-1 w-full bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
             />
             <button
               type="button"
@@ -2666,7 +2681,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             if (templateFormConfigSaving || templateFormConfigLoading) return;
             void handleSaveTemplateFormConfig();
           }}
-          className={`px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition inline-flex items-center justify-center gap-2 ${(templateFormConfigSaving || templateFormConfigLoading) ? 'opacity-60 pointer-events-none' : ''}`}
+          className={`px-3 py-2 rounded-xl bg-slate-900 dark:bg-[#f8f7f5] text-white dark:text-slate-900 text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition inline-flex items-center justify-center gap-2 ${(templateFormConfigSaving || templateFormConfigLoading) ? 'opacity-60 pointer-events-none' : ''}`}
         >
           {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
           Salvar
@@ -2682,7 +2697,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 setTemplateFormConfigTemplate(null);
               }
             }}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+            className="px-4 py-2.5 rounded-xl border border-[#e7e5df] dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
             disabled={templateFormConfigSaving}
           >
             Cancelar
@@ -2725,7 +2740,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             {templateFormConfigFields.map((f, idx) => (
               <div
                 key={`${f.placeholder}-${idx}`}
-                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
+                className="rounded-xl border border-[#e7e5df] dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
                 draggable={!templateFormConfigSaving && !templateFormConfigLoading}
                 onDragStart={() => {
                   templateFormConfigDragIndexRef.current = idx;
@@ -2796,7 +2811,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p)),
                         )
                       }
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
                     />
                   </label>
                   <label className="block">
@@ -2833,7 +2848,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           }),
                         );
                       }}
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
                     >
                       <option value="text">Texto</option>
                       <option value="name">Nome</option>
@@ -2855,7 +2870,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           prev.map((p, i) => (i === idx ? { ...p, description: e.target.value } : p)),
                         )
                       }
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
                       placeholder="Ex: Digite o número com DDD"
                     />
                   </label>
@@ -2886,7 +2901,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                                     ];
                               setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: preset } : p)));
                             }}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                            className="px-3 py-1.5 rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
                           >
                             Aplicar padrão
                           </button>
@@ -2894,7 +2909,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         <button
                           type="button"
                           onClick={() => setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: null } : p)))}
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                          className="px-3 py-1.5 rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
                         >
                           Limpar
                         </button>
@@ -2907,7 +2922,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         const parsed = templateFormConfigParseOptions(e.target.value);
                         setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));
                       }}
-                      className="mt-2 w-full min-h-[96px] rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="mt-2 w-full min-h-[96px] rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
                       placeholder="Ex:\nSolteiro(a)\nCasado(a)"
                     />
                   </div>
@@ -2931,7 +2946,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       footer={
         <button
           onClick={() => setShowSignatureLinkModal(false)}
-          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+          className="w-full px-4 py-2.5 bg-slate-900 dark:bg-[#f8f7f5] text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
         >
           Fechar
         </button>
@@ -2942,14 +2957,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           Envie este link para o cliente assinar o documento
         </p>
 
-        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">
           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para assinatura:</p>
           <div className="flex items-center gap-2 flex-col sm:flex-row">
             <input
               type="text"
               readOnly
               value={signatureLink}
-              className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+              className="flex-1 w-full bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
             />
             <button
               onClick={handleCopyLink}

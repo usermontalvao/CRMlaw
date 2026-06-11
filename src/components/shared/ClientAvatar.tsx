@@ -57,7 +57,7 @@ export const ClientAvatar: React.FC<ClientAvatarProps> = ({
   if (isPj) {
     return (
       <div
-        className={`flex-shrink-0 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center ${className}`}
+        className={`flex-shrink-0 rounded-full bg-slate-100 border border-[#e7e5df] text-slate-500 flex items-center justify-center ${className}`}
         style={{ width: size, height: size }}
       >
         <Building2 style={{ width: size * 0.5, height: size * 0.5 }} />

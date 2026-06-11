@@ -119,7 +119,7 @@ const PopupItem = memo<PopupItemProps>(({
 
   return (
     <div
-      className={`pointer-events-auto bg-white cursor-pointer select-none overflow-hidden transition-all duration-300 ${
+      className={`pointer-events-auto bg-[#f8f7f5] cursor-pointer select-none overflow-hidden transition-all duration-300 ${
         exiting ? 'opacity-0 translate-x-4 scale-[0.97]' : 'opacity-100 translate-x-0 scale-100'
       }`}
       style={{
@@ -792,7 +792,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
           <div className="fixed inset-0 z-[90] sm:hidden bg-black/20 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
           
           {/* Container Mobile (Fixed) */}
-          <div className="fixed left-4 right-4 top-[70px] z-[100] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden sm:hidden flex flex-col max-h-[calc(100vh-100px)] animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed left-4 right-4 top-[70px] z-[100] bg-white rounded-xl shadow-2xl border border-[#e7e5df] overflow-hidden sm:hidden flex flex-col max-h-[calc(100vh-100px)] animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 flex-shrink-0">
               <h3 className="text-base font-semibold text-slate-900">Notificações</h3>
               <div className="flex items-center gap-2">
@@ -860,7 +860,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                     if (onNavigateToModule) onNavigateToModule('notificacoes');
                     setIsOpen(false);
                   }}
-                  className="w-full text-center text-sm text-blue-600 font-medium py-2 bg-white border border-blue-100 rounded-lg shadow-sm active:bg-blue-50"
+                  className="w-full text-center text-sm text-blue-600 font-medium py-2 bg-[#f8f7f5] border border-blue-100 rounded-lg shadow-sm active:bg-blue-50"
                 >
                   Ver todas as notificações
                 </button>
@@ -869,7 +869,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
           </div>
 
           {/* Container Desktop (Absolute) */}
-          <div className="hidden sm:block absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden origin-top-right animate-in fade-in zoom-in-95 duration-200">
+          <div className="hidden sm:block absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl border border-[#e7e5df] z-50 overflow-hidden origin-top-right animate-in fade-in zoom-in-95 duration-200">
             {/* Header */}
           <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 bg-slate-50">
             <h3 className="text-sm sm:text-base font-semibold text-slate-900 truncate">Notificações</h3>
@@ -1030,7 +1030,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                     if (onNavigateToModule) onNavigateToModule('notificacoes');
                     setIsOpen(false);
                   }}
-                  className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-1 bg-white border border-blue-100 rounded-lg shadow-sm"
+                  className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-1 bg-[#f8f7f5] border border-blue-100 rounded-lg shadow-sm"
                 >
                   {notifications.length > 10 ? 'Ver todas as notificações' : 'Ver notificações'}
                 </button>

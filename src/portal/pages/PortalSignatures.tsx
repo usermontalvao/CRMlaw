@@ -198,11 +198,11 @@ export const PortalSignatures: React.FC = () => {
               key={tabItem.key}
               onClick={() => setTab(tabItem.key)}
               className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition ${
-                active ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
+                active ? 'bg-slate-900 text-white' : 'bg-[#f8f7f5] text-slate-500 shadow-[0_1px_4px_rgba(15,23,42,0.08)]'
               }`}
             >
               {tabItem.label}
-              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${active ? 'bg-white/20 text-white' : 'text-slate-400'}`}>
+              <span className={`min-w-[18px] rounded-full px-1.5 text-[11px] font-bold tabular-nums ${active ? 'bg-[#f8f7f5]/20 text-white' : 'text-slate-400'}`}>
                 {tabItem.count}
               </span>
             </button>
@@ -280,7 +280,7 @@ const SignatureCard: React.FC<{ item: SignatureRequest; clientEmail?: string }> 
       tabIndex={actionUrl ? 0 : undefined}
       onClick={handleCardClick}
       onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}
-      className={`overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition ${
+      className={`overflow-hidden rounded-2xl bg-[#f8f7f5] shadow-[0_2px_10px_rgba(15,23,42,0.07)] transition ${
         actionUrl ? 'cursor-pointer active:scale-[0.99]' : ''
       }`}
     >

@@ -22,7 +22,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({ onNewClient })
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-all duration-700 ${
+      className={`relative overflow-hidden rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-5 py-4 shadow-sm transition-all duration-700 ${
         mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
       }`}
     >

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket, User, Lock, ArrowRight } from 'lucide-react';
+import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket, User, Lock, ArrowRight, Ban } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
 
@@ -390,6 +390,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isBanned, setIsBanned] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [sessionExpiredNotice] = useState(() => {
     try {
@@ -446,6 +447,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
     if (normalized.includes('email not confirmed')) {
       return 'Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.';
+    }
+
+    if (normalized.includes('user is banned') || normalized.includes('user_banned') || normalized.includes('banned')) {
+      return '__BANNED__';
     }
 
     if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
@@ -658,7 +663,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     try {
       await onLogin(email, password);
     } catch (err: any) {
-      setError(translateAuthError(err?.message));
+      const msg = translateAuthError(err?.message);
+      if (msg === '__BANNED__') {
+        setIsBanned(true);
+        setError(null);
+      } else {
+        setError(msg);
+        setIsBanned(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -685,10 +697,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   };
 
   return (
-    <div className="min-h-screen md:h-screen flex flex-col md:flex-row overflow-hidden bg-white">
+    <div className="min-h-screen md:h-screen flex flex-col md:flex-row overflow-hidden bg-[#f8f7f5]">
       {/* ===== LADO ESQUERDO - LOGIN ===== */}
       <div
-        className={`w-full md:w-[45%] lg:w-[40%] flex flex-col justify-between p-8 md:p-10 lg:p-12 bg-white relative z-20 shadow-2xl min-h-screen md:h-screen md:overflow-y-auto transition-all duration-700 ${
+        className={`w-full md:w-[45%] lg:w-[40%] flex flex-col justify-between p-8 md:p-10 lg:p-12 bg-[#f8f7f5] relative z-20 shadow-2xl min-h-screen md:h-screen md:overflow-y-auto transition-all duration-700 ${
           mounted ? 'opacity-100' : 'opacity-0'
         }`}
       >
@@ -762,7 +774,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                       setIdentifierRaw(value);
                       setEmail(value);
                     }}
-                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 text-slate-900 pl-10 pr-4 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                    className="block w-full rounded-xl border border-[#e7e5df] bg-slate-50 text-slate-900 pl-10 pr-4 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
                     placeholder="seu email ou CPF"
                     required
                   />
@@ -782,7 +794,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             {identifierConfirmed && (
               <>
                 {/* Card do usuário identificado */}
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="flex items-center gap-3 rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-3 shadow-sm">
                   <div className="relative h-12 w-12">
                     <div className="h-12 w-12 rounded-2xl bg-slate-50 text-slate-600 font-bold text-lg flex items-center justify-center uppercase overflow-hidden">
                       {identifierProfileAvatar ? (
@@ -795,7 +807,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                         (identifierProfileName || identifierRaw || email).trim().charAt(0) || '?'
                       )}
                     </div>
-                    <span className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+                    <span className="absolute -bottom-1 -right-1 bg-[#f8f7f5] rounded-full p-0.5 shadow-sm">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                     </span>
                   </div>
@@ -831,8 +843,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 text-slate-900 pl-10 pr-12 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                      onChange={(e) => { setPassword(e.target.value); setIsBanned(false); }}
+                      className="block w-full rounded-xl border border-[#e7e5df] bg-slate-50 text-slate-900 pl-10 pr-12 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
                       placeholder="Digite sua senha"
                       required
                       autoFocus
@@ -880,8 +892,25 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
               </div>
             )}
 
+            {/* Acesso revogado */}
+            {isBanned && (
+              <div className="flex flex-col items-center gap-3 p-5 bg-orange-50 border border-orange-200 rounded-xl text-center">
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                  <Ban className="w-6 h-6 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-orange-900">Ops! Seu acesso foi revogado.</p>
+                  <p className="text-sm text-orange-700 mt-1">
+                    Sua conta foi desativada pelo administrador do escritório.
+                    <br />
+                    Entre em contato para reativar o acesso.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Mensagem de erro */}
-            {error && (
+            {error && !isBanned && (
               <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
@@ -967,7 +996,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         <div className="relative z-10 w-full max-w-4xl px-8 lg:px-14 py-10 text-white h-full flex flex-col justify-between">
           {/* Header */}
           <div className={`mb-8 transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-6 w-fit">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f8f7f5]/5 border border-white/10 backdrop-blur-sm mb-6 w-fit">
               <span className="w-2 h-2 rounded-full bg-orange-500" />
               <span className="text-xs font-medium tracking-wide uppercase text-slate-300">Plataforma All-in-One</span>
             </div>

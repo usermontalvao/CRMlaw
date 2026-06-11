@@ -39,7 +39,7 @@ const ClientAvatar: React.FC<{ client: Client; size?: number; photoUrl?: string 
   if (client.client_type === 'pessoa_juridica') {
     return (
       <div
-        className="flex-shrink-0 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center"
+        className="flex-shrink-0 rounded-full bg-slate-100 border border-[#e7e5df] text-slate-500 flex items-center justify-center"
         style={{ width: size, height: size }}
       >
         <Building2 style={{ width: size * 0.5, height: size * 0.5 }} />
@@ -97,7 +97,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-12">
+      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-12">
         <div className="flex flex-col items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mb-4"></div>
           <p className="text-slate-600">Carregando clientes...</p>
@@ -109,7 +109,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
   if (clients.length === 0) {
     if (isFiltered) {
       return (
-        <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+        <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-10 text-center">
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Search className="w-8 h-8 text-slate-400" />
           </div>
@@ -120,7 +120,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
     }
 
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-12 text-center">
         <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <User className="w-10 h-10 text-slate-400" />
         </div>
@@ -142,7 +142,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
           const isSelected = selectionMode && Boolean(selectedIds?.has(client.id));
           
           return (
-            <div key={client.id} className="bg-white rounded-lg border border-gray-200 p-3">
+            <div key={client.id} className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] p-3">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   {selectionMode && (
@@ -266,10 +266,10 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
       </div>
 
       {/* Layout de Tabela para Desktop */}
-      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-100">
-            <thead className="bg-slate-50/60 border-b border-slate-200">
+      <div className="hidden md:block bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[1120px] divide-y divide-slate-100">
+            <thead className="bg-slate-50/60 border-b border-[#e7e5df]">
               <tr>
                 {selectionMode && (
                   <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -291,12 +291,12 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                 <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Status
                 </th>
-                <th className="px-6 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                <th className="sticky right-0 z-10 bg-slate-50/95 px-4 py-3.5 pr-8 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm">
                   Ações
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-[#f8f7f5] divide-y divide-gray-200">
               {clients.map((client) => {
                 const duplicateInfo = duplicateSummaryMap?.get(client.id);
                 const missingFields = missingFieldsMap?.get(client.id) || [];
@@ -393,8 +393,11 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                     {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                  <div className="inline-flex items-center gap-0.5">
+                <td
+                  className="sticky right-0 z-[1] whitespace-nowrap bg-[#f8f7f5] px-4 py-4 pr-8 text-right text-sm font-medium shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.28)] transition-colors group-hover:bg-slate-50/95"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="inline-flex min-w-[108px] items-center justify-end gap-0.5">
                     <button
                       onClick={(e) => { e.stopPropagation(); onView(client); }}
                       className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition"

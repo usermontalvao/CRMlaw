@@ -26,7 +26,7 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 const colorClasses: Record<BadgeColor, string> = {
-  slate:   'bg-slate-100 text-slate-700 border-slate-200',
+  slate:   'bg-slate-100 text-slate-700 border-[#e7e5df]',
   amber:   'bg-amber-100 text-amber-700 border-amber-200',
   orange:  'bg-orange-100 text-orange-700 border-orange-200',
   emerald: 'bg-emerald-100 text-emerald-700 border-emerald-200',

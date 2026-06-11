@@ -134,7 +134,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-3 py-6 sm:px-6">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
+      <div className="relative w-full max-w-xl bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
         <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
 
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -158,7 +158,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="Ex: Documentos para audiÃªncia trabalhista"
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
             />
           </div>
 
@@ -172,7 +172,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
               onChange={e => setDescription(e.target.value)}
               placeholder="InstruÃ§Ãµes gerais para o cliente..."
               rows={2}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
             />
           </div>
 
@@ -185,7 +185,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
               type="date"
               value={dueDate}
               onChange={e => setDueDate(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
             />
           </div>
 
@@ -204,7 +204,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
                       value={item.label}
                       onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, label: e.target.value } : it))}
                       placeholder="Nome do documento"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                      className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
                     />
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
@@ -236,7 +236,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
                   <button
                     key={q}
                     onClick={() => addItem(q)}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition"
+                    className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition"
                   >
                     <Plus className="h-3 w-3" /> {q}
                   </button>
@@ -259,7 +259,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
 
         <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
           <button onClick={onClose} disabled={saving}
-            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             Cancelar
           </button>
           <button onClick={handleSave} disabled={saving}
@@ -381,7 +381,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
           <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
         </div>
       ) : requests.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-slate-200 py-8 text-center">
+        <div className="rounded-xl border-2 border-dashed border-[#e7e5df] py-8 text-center">
           <FolderOpen className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-xs text-slate-400">Nenhuma solicitaÃ§Ã£o ainda</p>
           <button onClick={() => setShowCreate(true)}
@@ -396,7 +396,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
             const doneCount = req.items.filter(i => i.status === 'approved' || i.status === 'uploaded').length;
 
             return (
-              <div key={req.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div key={req.id} className="overflow-hidden rounded-xl border border-[#e7e5df] bg-[#f8f7f5]">
                 <button
                   onClick={() => toggleExpand(req.id)}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/60 transition"
@@ -424,7 +424,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                         item.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' :
                         item.status === 'rejected' ? 'border-rose-200 bg-rose-50/30' :
                         item.upload ? 'border-blue-200 bg-blue-50/30' :
-                        'border-slate-200'
+                        'border-[#e7e5df]'
                       }`}>
                         <div className="flex items-start gap-2">
                           <div className="mt-0.5 shrink-0">
@@ -456,7 +456,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                             <div className="flex gap-1.5 shrink-0">
                               {item.upload.processed_path && (
                                 <button onClick={() => getSignedUrl(item.upload!.processed_path!)}
-                                  className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-100" title="Visualizar">
+                                  className="rounded-lg border border-[#e7e5df] p-1.5 text-slate-500 hover:bg-slate-100" title="Visualizar">
                                   <Eye className="h-3.5 w-3.5" />
                                 </button>
                               )}
@@ -465,9 +465,9 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                                   <input type="text" value={rejectReason}
                                     onChange={e => setRejectReason(e.target.value)}
                                     placeholder="Motivo"
-                                    className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-xs focus:outline-none" />
+                                    className="w-28 rounded-lg border border-[#e7e5df] px-2 py-1 text-xs focus:outline-none" />
                                   <button onClick={() => { setRejectInput(null); setRejectReason(''); }}
-                                    className="rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50">âœ•</button>
+                                    className="rounded-lg border border-[#e7e5df] px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50">âœ•</button>
                                   <button disabled={!!reviewLoading}
                                     onClick={() => handleReject(item.upload!.id, item.id)}
                                     className="rounded-lg bg-rose-500 px-2 py-1 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-60">
@@ -492,7 +492,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
 
                           {item.upload?.processed_path && item.status === 'approved' && (
                             <button onClick={() => getSignedUrl(item.upload!.processed_path!)}
-                              className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50" title="Baixar">
+                              className="shrink-0 rounded-lg border border-[#e7e5df] p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50" title="Baixar">
                               <Download className="h-3.5 w-3.5" />
                             </button>
                           )}

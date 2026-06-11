@@ -66,7 +66,7 @@ const PublicPermalinkRedirect: React.FC = () => {
   if (error) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-md w-full text-center">
+        <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6 max-w-md w-full text-center">
           <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-6 h-6 text-rose-600" />
           </div>
@@ -82,7 +82,7 @@ const PublicPermalinkRedirect: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-md w-full text-center">
+      <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6 max-w-md w-full text-center">
         <Loader2 className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-4" />
         <h1 className="text-lg font-semibold text-slate-900 mb-2">Preparando formulário...</h1>
         <p className="text-sm text-slate-600">Aguarde um momento</p>

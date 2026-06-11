@@ -2164,7 +2164,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <div>
                         <label className="text-sm font-medium text-slate-700">Tribunal Padrão</label>
                         <select
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={djenConfig.default_tribunal}
                           onChange={(e) => setDjenConfig({ ...djenConfig, default_tribunal: e.target.value })}
                         >
@@ -2247,7 +2247,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           type="number"
                           min="1"
                           max="168"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={djenConfig.sync_interval_hours}
                           onChange={(e) => setDjenConfig({ ...djenConfig, sync_interval_hours: parseInt(e.target.value) || 24 })}
                         />
@@ -2258,7 +2258,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           type="number"
                           min="1"
                           max="90"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={djenConfig.search_days_back}
                           onChange={(e) => setDjenConfig({ ...djenConfig, search_days_back: parseInt(e.target.value) || 30 })}
                         />
@@ -2269,7 +2269,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           type="number"
                           min="10"
                           max="120"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={djenConfig.api_timeout_seconds}
                           onChange={(e) => setDjenConfig({ ...djenConfig, api_timeout_seconds: parseInt(e.target.value) || 30 })}
                         />
@@ -2313,7 +2313,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         <div className="relative flex-1">
                           <input
                             type={datajudKeyVisible ? 'text' : 'password'}
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono pr-10"
+                            className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm font-mono pr-10"
                             value={datajudKeyConfig.key}
                             onChange={(e) => setDatajudKeyConfig({ ...datajudKeyConfig, key: e.target.value, invalid: false, invalid_since: null })}
                             placeholder="Cole aqui a chave pública do CNJ"
@@ -2347,12 +2347,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-6">
+                    <div className="border-t border-[#e7e5df] pt-6">
                       <h3 className="text-sm font-semibold text-slate-900 mb-3">Advogados Monitorados</h3>
                       <p className="text-xs text-slate-500 mb-4">Nomes que serão buscados nas publicações do DJEN (use o nome exato como aparece no diário).</p>
                       <div className="space-y-2">
                         {djenConfig.lawyers_to_monitor.map((name, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
+                          <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-[#e7e5df]">
                             <span className="text-sm font-medium text-slate-700">{name}</span>
                             <button
                               onClick={() => setDjenConfig({ ...djenConfig, lawyers_to_monitor: djenConfig.lawyers_to_monitor.filter((_, i) => i !== idx) })}
@@ -2366,7 +2366,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           <input
                             type="text"
                             placeholder="Nome completo do advogado"
-                            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            className="flex-1 rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                                 setDjenConfig({ ...djenConfig, lawyers_to_monitor: [...djenConfig.lawyers_to_monitor, e.currentTarget.value.trim()] });
@@ -2443,7 +2443,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <label className="text-sm font-medium text-slate-700">Lembrete de Prazos (dias antes)</label>
                       <input
                         type="text"
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                         value={notificationConfig.deadline_reminder_days.join(', ')}
                         onChange={(e) => setNotificationConfig({ ...notificationConfig, deadline_reminder_days: e.target.value.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) })}
                         placeholder="1, 3, 7"
@@ -2452,7 +2452,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     </div>
 
                     {/* ── RESUMO SEMANAL ── */}
-                    <div className={`rounded-2xl border-2 transition-colors duration-200 overflow-hidden ${notificationConfig.weekly_digest ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className={`rounded-2xl border-2 transition-colors duration-200 overflow-hidden ${notificationConfig.weekly_digest ? 'border-amber-300 bg-amber-50/60' : 'border-[#e7e5df] bg-slate-50'}`}>
                       {/* Cabeçalho do card */}
                       <div className="flex items-center justify-between p-5">
                         <div className="flex items-center gap-3">
@@ -2481,7 +2481,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             <div>
                               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Dia de envio</label>
                               <select
-                                className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                className="mt-1.5 w-full rounded-xl border border-amber-200 bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
                                 value={notificationConfig.weekly_digest_day}
                                 onChange={(e) => setNotificationConfig({ ...notificationConfig, weekly_digest_day: Number(e.target.value) })}
                               >
@@ -2494,7 +2494,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Horário</label>
                               <input
                                 type="time"
-                                className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                className="mt-1.5 w-full rounded-xl border border-amber-200 bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
                                 value={notificationConfig.weekly_digest_hour}
                                 onChange={(e) => setNotificationConfig({ ...notificationConfig, weekly_digest_hour: e.target.value })}
                               />
@@ -2521,7 +2521,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           )}
 
                           {/* O que será enviado */}
-                          <div className="rounded-xl bg-white border border-amber-200 p-4">
+                          <div className="rounded-xl bg-[#f8f7f5] border border-amber-200 p-4">
                             <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
                               <Send className="w-3.5 h-3.5 text-amber-500" />
                               O que cada membro recebe (conforme permissões):
@@ -2587,7 +2587,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
                         </div>
                         <select
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.timezone}
                           onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
                         >
@@ -2603,7 +2603,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
                         </div>
                         <select
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.date_format}
                           onChange={(e) => setPreferences({ ...preferences, date_format: e.target.value })}
                         >
@@ -2618,7 +2618,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           type="number"
                           min="1"
                           max="90"
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.default_deadline_days}
                           onChange={(e) => setPreferences({ ...preferences, default_deadline_days: parseInt(e.target.value) || 15 })}
                         />
@@ -2629,7 +2629,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
                         </div>
                         <select
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.currency}
                           onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
                         >
@@ -2645,7 +2645,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                         <input
                           type="time"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.business_hours_start}
                           onChange={(e) => setPreferences({ ...preferences, business_hours_start: e.target.value })}
                         />
@@ -2657,7 +2657,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                         <input
                           type="time"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                           value={preferences.business_hours_end}
                           onChange={(e) => setPreferences({ ...preferences, business_hours_end: e.target.value })}
                         />
@@ -2712,7 +2712,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             key={key}
                             onClick={() => setPortalModules((p) => ({ ...p, [key]: !p[key] }))}
                             className={`flex items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${
-                              enabled ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white opacity-60'
+                              enabled ? 'border-orange-200 bg-orange-50/50' : 'border-[#e7e5df] bg-[#f8f7f5] opacity-60'
                             }`}
                           >
                             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -2724,7 +2724,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             </div>
                             {/* Toggle */}
                             <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
-                              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                             </div>
                           </button>
                         );
@@ -2776,7 +2776,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             type="number"
                             min="1"
                             max="60"
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                             value={securityConfig.pin_session_minutes ?? 5}
                             onChange={(e) => setSecurityConfig({ ...securityConfig, pin_session_minutes: Math.max(1, parseInt(e.target.value) || 5) })}
                           />
@@ -2789,7 +2789,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             min="1"
                             max="12"
                             step="0.5"
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
                             value={securityConfig.financial_view_hours ?? 2}
                             onChange={(e) => setSecurityConfig({ ...securityConfig, financial_view_hours: Math.max(0.5, parseFloat(e.target.value) || 2) })}
                           />
@@ -3900,7 +3900,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 type="number" min={15} max={480} step={15}
                                 value={(draft.metadata?.duration_min as number) ?? 60}
                                 onChange={e => patch({ metadata: { ...draft.metadata, duration_min: Number(e.target.value) || 60 } })}
-                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 bg-white"
+                                className="w-full px-3 py-2 text-sm border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 bg-[#f8f7f5]"
                               />
                             </div>
                           )}
@@ -4283,7 +4283,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 }}
                                 className={`relative w-8 h-5 rounded-full transition ${publicAuthSignConfig[item.key] ? 'bg-orange-500' : 'bg-slate-300'}`}
                               >
-                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${publicAuthSignConfig[item.key] ? 'translate-x-3' : 'translate-x-0'}`} />
+                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-[#f8f7f5] rounded-full shadow transition-transform ${publicAuthSignConfig[item.key] ? 'translate-x-3' : 'translate-x-0'}`} />
                               </button>
                               {item.label}
                             </label>
@@ -5311,7 +5311,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <img
                     src={avatarPreview || selectedUser?.avatar_url || 'https://api.dicebear.com/7.x/initials/svg?seed=' + userFormData.name}
                     alt={userFormData.name}
-                    className="h-20 w-20 rounded-full object-cover border border-slate-200"
+                    className="h-20 w-20 rounded-full object-cover border border-[#e7e5df]"
                   />
                   <label className="absolute -bottom-1 -right-1 inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-amber-500 text-white shadow-lg">
                     {avatarUploading ? (
@@ -5342,7 +5342,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Nome completo *</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.name}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, name: e.target.value }))}
                   />
@@ -5352,7 +5352,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <input
                     type="email"
                     disabled
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
                     value={userFormData.email}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, email: e.target.value }))}
                   />
@@ -5361,7 +5361,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 <div>
                   <label className="text-xs font-semibold text-slate-500">Papel *</label>
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.role}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, role: e.target.value }))}
                   >
@@ -5376,7 +5376,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">CPF</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.cpf}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, cpf: formatCpf(e.target.value) }))}
                     placeholder="000.000.000-00"
@@ -5387,7 +5387,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Telefone</label>
                   <input
                     type="tel"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.phone}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, phone: e.target.value }))}
                   />
@@ -5396,7 +5396,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">OAB</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.oab}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, oab: e.target.value }))}
                   />
@@ -5405,7 +5405,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Nome completo no DJEN</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={userFormData.lawyer_full_name}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, lawyer_full_name: e.target.value }))}
                   />

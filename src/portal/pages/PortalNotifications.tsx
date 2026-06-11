@@ -157,7 +157,7 @@ export const PortalNotifications: React.FC = () => {
         {unreadCount > 0 && (
           <button
             onClick={() => markAllRead()}
-            className="mt-1 shrink-0 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            className="mt-1 shrink-0 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-[#f8f7f5] px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
           >
             <CheckCheck className="h-3.5 w-3.5" />
             Marcar todas como lidas
@@ -211,7 +211,7 @@ export const PortalNotifications: React.FC = () => {
                       key={n.id}
                       onClick={() => handleClick(n)}
                       disabled={!isClickable}
-                      className={`group relative flex w-full items-start gap-3 rounded-xl border bg-white p-4 text-left transition ${
+                      className={`group relative flex w-full items-start gap-3 rounded-xl border bg-[#f8f7f5] p-4 text-left transition ${
                         isClickable ? 'cursor-pointer hover:border-slate-300' : 'cursor-default'
                       } ${isNew
                           ? 'border-l-[3px] border-l-orange-500 border-orange-100 bg-orange-50/40'

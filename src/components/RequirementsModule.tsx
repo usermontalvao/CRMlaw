@@ -3123,11 +3123,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     const hasReplies = note.replies && note.replies.length > 0;
 
     return (
-      <div key={note.id} className={`${depth > 0 ? 'ml-10 pl-4 border-l-2 border-slate-200 dark:border-zinc-600' : ''} mb-3`}>
+      <div key={note.id} className={`${depth > 0 ? 'ml-10 pl-4 border-l-2 border-[#e7e5df] dark:border-zinc-600' : ''} mb-3`}>
         <div className="flex items-start gap-3 group">
           {/* Avatar do usuário */}
           <div
-            className="flex-shrink-0 w-8 h-8 rounded-full border border-slate-200 dark:border-zinc-700 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium text-sm flex items-center justify-center overflow-hidden"
+            className="flex-shrink-0 w-8 h-8 rounded-full border border-[#e7e5df] dark:border-zinc-700 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium text-sm flex items-center justify-center overflow-hidden"
             style={note.author_avatar ? { backgroundImage: `url(${note.author_avatar})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
             title={authorName}
           >
@@ -3136,7 +3136,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           
           {/* Conteúdo do comentário */}
           <div className="flex-1 min-w-0">
-            <div className="bg-white dark:bg-zinc-800 rounded-xl p-3 border border-slate-200 dark:border-zinc-700">
+            <div className="bg-[#f8f7f5] dark:bg-zinc-800 rounded-xl p-3 border border-[#e7e5df] dark:border-zinc-700">
               {/* Cabeçalho com nome e data */}
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
@@ -3183,7 +3183,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             {/* Formulário de resposta */}
             {isReplying && (
               <div className="mt-3 pl-2">
-                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden transition-all duration-200">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-800 rounded-xl border border-[#e7e5df] dark:border-zinc-700 overflow-hidden transition-all duration-200">
                   {replyError && (
                     <div className="px-4 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-sm">
                       {replyError}
@@ -3194,7 +3194,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       value={replyDraft}
                       onChange={(e) => setReplyDraft(e.target.value)}
                       rows={2}
-                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors resize-none"
+                      className="w-full bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors resize-none"
                       placeholder="Digite sua resposta..."
                     />
                     <div className="flex items-center justify-end gap-2 mt-2">
@@ -3256,9 +3256,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         aria-hidden="true"
       />
       <div className="relative w-full max-w-4xl">
-        <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 overflow-hidden">
+        <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-[#e7e5df] overflow-hidden">
           <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-          <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-3">
+          <div className="px-6 py-5 border-b border-[#e7e5df] bg-white flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Formulário</div>
               <h2 className="mt-1 text-lg font-semibold text-slate-900">Novo Cliente</h2>
@@ -3276,7 +3276,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </button>
           </div>
 
-          <div className="bg-white">
+          <div className="bg-[#f8f7f5]">
             <ClientForm
               client={null}
               prefill={clientFormPrefill}
@@ -3307,9 +3307,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     document.body,
   );
 
-  const inputClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all";
-  const selectClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer";
-  const textareaClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none min-h-[80px]";
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all";
+  const selectClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer";
+  const textareaClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none min-h-[80px]";
   const labelClass = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5";
 
   const requirementModal = (
@@ -3382,7 +3382,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       <Loader2 className="w-4 h-4 text-orange-500 absolute right-3.5 top-1/2 -translate-y-1/2 animate-spin" />
                     )}
                     {showBeneficiarySuggestions && (
-                      <div className="absolute mt-1.5 w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20">
+                      <div className="absolute mt-1.5 w-full bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20">
                         {clientsLoading ? (
                           <div className="px-4 py-3 text-sm text-slate-500">Buscando...</div>
                         ) : clients.length === 0 ? (
@@ -3571,9 +3571,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const exigencyDeadlineModal = exigencyModal && (
     <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
       <div className="absolute inset-0" onClick={handleCloseExigencyModal} aria-hidden="true" />
-      <div className="pericia-light-modal__panel relative w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl bg-white dark:bg-zinc-900">
+      <div className="pericia-light-modal__panel relative w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl bg-[#f8f7f5] dark:bg-zinc-900">
         <div className="h-2 w-full bg-orange-500" />
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
+        <div className="px-6 py-4 border-b border-[#e7e5df] dark:border-zinc-800 flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <div className="mt-0.5 h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
               <ClipboardList className="w-5 h-5 text-orange-600 dark:text-orange-400" />
@@ -3699,7 +3699,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
+        <div className="px-6 py-4 border-t border-[#e7e5df] dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
           <button
             type="button"
             onClick={handleCloseExigencyModal}
@@ -3981,7 +3981,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         }
       >
         {/* Abas de navegação — pinned above scroll */}
-        <div className="px-5 sm:px-6 py-2 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 flex items-center gap-1 overflow-x-auto shrink-0">
+        <div className="px-5 sm:px-6 py-2 bg-white dark:bg-zinc-900 border-b border-[#e7e5df] dark:border-zinc-800 flex items-center gap-1 overflow-x-auto shrink-0">
             {[
               { key: 'overview', label: 'Visão Geral', icon: ClipboardList },
               { key: 'notes', label: 'Notas', icon: MessageSquare, count: noteThreads.length },
@@ -4023,7 +4023,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Coluna Esquerda - Informações do Cliente */}
                 <div className="space-y-5">
-                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Cliente</h3>
                     </div>
@@ -4073,7 +4073,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     </dl>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Processos Vinculados</h3>
                       <span className="text-xs text-slate-400 dark:text-slate-500">Controle rápido</span>
@@ -4137,7 +4137,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                 {/* Coluna Direita - Informações do Requerimento */}
                 <div className="space-y-5">
-                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Requerimento</h3>
                     </div>
@@ -4303,7 +4303,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     };
 
                     return (
-                      <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                      <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
                         <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                           <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias</h3>
                         </div>
@@ -4321,7 +4321,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             {/* ABA: NOTAS */}
             {activeDetailTab === 'notes' && (
               <div className="space-y-4">
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden">
                   {noteThreads.length === 0 ? (
                     <div className="text-center py-12">
                       <MessageSquare className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
@@ -4335,7 +4335,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   )}
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl p-4 border border-[#e7e5df] dark:border-zinc-800">
                   {noteError && (
                     <div className="mb-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40 rounded-lg px-3 py-2">
                       {noteError}
@@ -4343,7 +4343,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   )}
                   <div className="flex items-start gap-3">
                     <div
-                      className="flex-shrink-0 w-9 h-9 rounded-full border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-200 font-semibold text-sm flex items-center justify-center overflow-hidden"
+                      className="flex-shrink-0 w-9 h-9 rounded-full border border-[#e7e5df] dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-200 font-semibold text-sm flex items-center justify-center overflow-hidden"
                       style={user?.user_metadata?.avatar_url ? { backgroundImage: `url(${String(user.user_metadata.avatar_url)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
                     >
                       {!user?.user_metadata?.avatar_url && String(user?.email || 'U').charAt(0).toUpperCase()}
@@ -4354,7 +4354,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         onChange={(e) => setNoteDraft(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddNote(); } }}
                         rows={2}
-                        className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/50 transition resize-none"
+                        className="w-full bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/50 transition resize-none"
                         placeholder="Adicione uma nota..."
                       />
                       <div className="mt-2 flex justify-end">
@@ -4377,7 +4377,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             {/* ABA: OBSERVAÇÕES */}
             {activeDetailTab === 'observations' && (
               <div className="space-y-4">
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl p-4 border border-[#e7e5df] dark:border-zinc-800">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
                       <NotebookPen className="w-5 h-5 text-orange-600 dark:text-orange-300" />
@@ -4394,7 +4394,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl p-4 border border-[#e7e5df] dark:border-zinc-800">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Última atualização</p>
                   <p className="text-sm font-medium text-slate-900 dark:text-white">
                     {selectedRequirementForView.updated_at
@@ -4423,7 +4423,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </button>
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden">
                   {requirementDocumentsLoading ? (
                     <div className="px-4 py-12 text-sm text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -4466,7 +4466,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             {/* ABA: HISTÓRICO */}
             {activeDetailTab === 'history' && (
-              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+              <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden">
                 {statusHistoryLoading ? (
                   <div className="px-4 py-12 text-sm text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -4494,7 +4494,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                 type="datetime-local"
                                 value={editingHistoryDate}
                                 onChange={(e) => setEditingHistoryDate(e.target.value)}
-                                className="text-xs px-2 py-1 rounded-lg border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="text-xs px-2 py-1 rounded-lg border border-slate-300 dark:border-zinc-600 bg-[#f8f7f5] dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                               <button
                                 type="button"
@@ -4565,7 +4565,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {/* ── Painel de controle ─────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="relative overflow-hidden rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] shadow-sm">
         {/* Barra de acento laranja no topo */}
         <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400" />
 
@@ -4599,13 +4599,13 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold leading-none transition-all duration-150 ${
                     activeStatusTab === 'todos'
                       ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
-                      : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                      : 'border border-[#e7e5df] bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
                   }`}
                 >
                   <ClipboardList className="h-3 w-3" />
                   Todos
                   <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-black px-1.5 min-w-[1.25rem] h-4 ${
-                    activeStatusTab === 'todos' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                    activeStatusTab === 'todos' ? 'bg-[#f8f7f5]/20 text-white' : 'bg-slate-200 text-slate-700'
                   }`}>{statusCounts.todos}</span>
                 </button>
                 {statusOptions.map((status) => (
@@ -4615,7 +4615,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold leading-none transition-all duration-150 ${
                       activeStatusTab === status.key
                         ? `${status.badge} shadow-md`
-                        : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                        : 'border border-[#e7e5df] bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
                     }`}
                   >
                     {status.icon && <status.icon className="h-3 w-3" />}
@@ -4623,7 +4623,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     <span className="whitespace-nowrap sm:hidden">{status.label.split(' ')[0]}</span>
                     {statusCounts[status.key] > 0 && (
                       <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-black px-1.5 min-w-[1.25rem] h-4 ${
-                        activeStatusTab === status.key ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'
+                        activeStatusTab === status.key ? 'bg-[#f8f7f5]/25 text-white' : 'bg-slate-200 text-slate-700'
                       }`}>{statusCounts[status.key]}</span>
                     )}
                   </button>
@@ -4670,7 +4670,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar por beneficiário, protocolo ou CPF..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 focus:bg-white transition-all"
+                className="w-full rounded-xl border border-[#e7e5df] bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 focus:bg-white transition-all"
               />
               {searchTerm ? (
                 <button
@@ -4723,7 +4723,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         type="text"
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-7 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
+                        className="w-full rounded-lg border border-[#e7e5df] bg-white py-1.5 pl-7 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
                         placeholder={placeholder}
                       />
                     </div>
@@ -4731,14 +4731,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <select
                     value={filterBenefitType}
                     onChange={(e) => setFilterBenefitType(e.target.value as BenefitType | '')}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
+                    className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all"
                   >
                     <option value="">Todos os tipos</option>
                     {benefitTypes.map((type) => (
                       <option key={type.key} value={type.key}>{type.label}</option>
                     ))}
                   </select>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                  <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
                     <input
                       type="checkbox"
                       checked={filterOnlyMsRisk}
@@ -4747,7 +4747,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     />
                     Somente risco MS (90+ dias)
                   </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                  <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
                     <input
                       type="checkbox"
                       checked={filterNoPhone}
@@ -4756,7 +4756,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     />
                     Sem telefone
                   </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
+                  <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs text-slate-600 cursor-pointer hover:border-orange-300 transition-all">
                     <input
                       type="checkbox"
                       checked={filterNoCpf}
@@ -4787,7 +4787,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               onChange={(e) => { if (e.target.value) void handleBulkStatusChange(e.target.value as RequirementStatus); e.target.value = ''; }}
               disabled={isBulkActioning}
               defaultValue=""
-              className="rounded-xl border border-orange-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 transition-all"
+              className="rounded-xl border border-orange-300 bg-[#f8f7f5] px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 transition-all"
             >
               <option value="" disabled>Alterar status para…</option>
               {statusOptions.map((opt) => (
@@ -4797,7 +4797,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <button
               onClick={() => void handleBulkArchive()}
               disabled={isBulkActioning}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-all"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-[#f8f7f5] text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-all"
             >
               {isBulkActioning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
               Arquivar
@@ -4827,7 +4827,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       {loading ? (
         /* Skeleton loader */
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+        <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] overflow-hidden shadow-sm">
           <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400 animate-pulse" />
           <div className="divide-y divide-slate-100">
             {[...Array(5)].map((_, i) => (
@@ -4845,7 +4845,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       ) : filteredRequirements.length === 0 ? (
         /* Empty state */
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-4 text-center">
+        <div className="rounded-2xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-16 flex flex-col items-center gap-4 text-center">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
             <ClipboardList className="w-8 h-8 text-slate-400" />
           </div>
@@ -4859,7 +4859,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <button
               type="button"
               onClick={() => setSearchTerm('')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#e7e5df] text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
             >
               <X className="w-4 h-4" /> Limpar busca
             </button>
@@ -4868,7 +4868,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       ) : (
         <React.Fragment>
         {/* ── Desktop: Tabela ─────────────────────────────────────────────── */}
-        <div className="hidden lg:block rounded-2xl border border-slate-200/80 bg-white overflow-hidden">
+        <div className="hidden lg:block rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] divide-y divide-slate-100">
               <thead>
@@ -4891,7 +4891,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <th className="px-5 py-3.5 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ações</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-slate-100">
+              <tbody className="bg-[#f8f7f5] divide-y divide-slate-100">
                 {paginatedRequirements.map((requirement) => {
                   const isUpdating = statusUpdatingId === requirement.id;
                   const statusConfig = getStatusConfig(requirement.status);
@@ -5054,8 +5054,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                   <Scale className="w-2.5 h-2.5 shrink-0" />
                                   MS
                                   <span className="relative flex h-1.5 w-1.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f8f7f5] opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
                                   </span>
                                 </span>
                                 {/* Tooltip: pt-2 cria ponte invisível entre badge e painel */}
@@ -5177,7 +5177,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             return (
               <div
                 key={requirement.id}
-                className={`bg-white border rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ${isCardSelected ? 'border-orange-300 ring-1 ring-orange-200' : 'border-slate-200'}`}
+                className={`bg-[#f8f7f5] border rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ${isCardSelected ? 'border-orange-300 ring-1 ring-orange-200' : 'border-[#e7e5df]'}`}
               >
                 {/* Barra de acento no topo */}
                 <div className={`h-1 w-full rounded-t-2xl ${cardAccentColor}`} />
@@ -5206,8 +5206,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                 <Scale className="w-2.5 h-2.5 shrink-0" />
                                 MS
                                 <span className="relative flex h-1.5 w-1.5">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f8f7f5] opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
                                 </span>
                               </span>
                               {/* pt-2 = invisible bridge to keep hover alive when moving to tooltip */}
@@ -5339,7 +5339,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       value={requirement.status}
                       onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
                       disabled={isUpdating}
-                      className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 transition-all"
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 transition-all"
                     >
                       {statusOptions.map((opt) => (
                         <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -5379,7 +5379,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {filteredRequirements.length > pageSize && (
-        <div className="flex items-center justify-between gap-3 bg-white rounded-2xl px-4 py-3 border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between gap-3 bg-[#f8f7f5] rounded-2xl px-4 py-3 shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
@@ -5414,7 +5414,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       {/* ── Seção Arquivados ──────────────────────────────────────────────── */}
       {archivedRequirements.length > 0 && (
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+        <div className="rounded-2xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
           <button
             type="button"
             onClick={() => setArchivedExpanded((prev) => !prev)}
@@ -5473,7 +5473,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                           <button
                             type="button"
                             onClick={() => handleViewRequirement(req)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:bg-slate-50 transition"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-[#e7e5df] hover:border-slate-300 hover:text-slate-700 hover:bg-slate-50 transition"
                             title="Ver detalhes"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -5483,7 +5483,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             type="button"
                             onClick={() => handleArchiveRequirement(req.id, false)}
                             disabled={archivingId === req.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50 transition disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-[#e7e5df] hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50 transition disabled:opacity-50"
                             title="Restaurar"
                           >
                             {archivingId === req.id ? (
@@ -5513,9 +5513,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {msTemplateModalOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={handleCloseMsTemplateModal} />
-          <div className="relative w-full max-w-2xl max-h-[90vh] min-h-[70vh] !bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-2xl max-h-[90vh] min-h-[70vh] !bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
             <div className="h-1 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600" />
-            <div className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
+            <div className="px-5 sm:px-6 py-4 border-b border-[#e7e5df] flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Template</p>
                 <h3 className="text-lg font-semibold text-slate-900">Template MS (Word/DOCX)</h3>
@@ -5540,7 +5540,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <select
                     value={msTemplateId}
                     onChange={(e) => setMsTemplateId(e.target.value)}
-                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="flex-1 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   >
                     <option value="">(selecionar um template)</option>
                     {msTemplates.map((t) => (
@@ -5587,7 +5587,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4">
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Enviar novo modelo Word (.docx)
                 </label>
@@ -5596,7 +5596,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     type="file"
                     accept=".docx"
                     onChange={(e) => setMsTemplateUploadFile(e.target.files?.[0] ?? null)}
-                    className="flex-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-50"
+                    className="flex-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#f8f7f5] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-50"
                   />
                   <button
                     type="button"
@@ -5610,7 +5610,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4">
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Placeholders Disponíveis
                 </label>
@@ -5627,7 +5627,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </div>
             </div>
 
-            <div className="px-5 sm:px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shrink-0 bg-white sticky bottom-0">
+            <div className="px-5 sm:px-6 py-4 border-t border-[#e7e5df] flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shrink-0 bg-white sticky bottom-0">
               <button
                 type="button"
                 onClick={handleCloseMsTemplateModal}
@@ -5667,9 +5667,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {msSelectTemplateModalOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={() => setMsSelectTemplateModalOpen(false)} />
-          <div className="relative w-full max-w-md !bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-md !bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
             <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
-            <div className="px-5 py-4 border-b border-slate-200">
+            <div className="px-5 py-4 border-b border-[#e7e5df]">
               <h3 className="text-lg font-semibold text-slate-900">Selecionar Modelo MS</h3>
               <p className="text-xs text-slate-500 mt-1">Escolha o modelo para gerar o Mandado de Segurança</p>
             </div>
@@ -5738,7 +5738,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         }
                       }}
                       disabled={generatingMsPdf}
-                      className="w-full text-left px-4 py-3 rounded-lg border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full text-left px-4 py-3 rounded-lg border border-[#e7e5df] hover:border-amber-400 hover:bg-amber-50/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <div className="flex items-center gap-3">
                         <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
@@ -5755,7 +5755,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               )}
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+            <div className="px-5 py-4 border-t border-[#e7e5df] flex items-center justify-between gap-3 bg-slate-50">
               <button
                 type="button"
                 onClick={() => {
@@ -5783,7 +5783,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {indeferidoConfirm && (
         <div className="fixed inset-0 z-[95] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIndeferidoConfirm(null)} />
-          <div className="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
+          <div className="relative w-full max-w-sm bg-[#f8f7f5] dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
             {/* Barra de atenção */}
             <div className="h-1 bg-amber-500" />
 
@@ -5835,7 +5835,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     setIndeferidoConfirm(null);
                     await doStatusChange(requirementId, 'indeferido', false);
                   }}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
+                  className="w-full px-4 py-2.5 rounded-xl border border-[#e7e5df] dark:border-zinc-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
                 >
                   Indeferir sem cancelar péricias
                 </button>
@@ -5865,12 +5865,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setWhatsappTemplateReq(null)} />
 
             {/* Card */}
-            <div className="relative w-full sm:max-w-2xl bg-white sm:rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[85vh]">
+            <div className="relative w-full sm:max-w-2xl bg-[#f8f7f5] sm:rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[85vh]">
 
               {/* ── Header ── */}
               <div className="bg-[#075E54] px-5 py-4 flex items-center gap-3.5 flex-shrink-0">
                 {/* Avatar */}
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-[#f8f7f5]/20 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-bold tracking-tight">{initials}</span>
                 </div>
                 {/* Info */}
@@ -5987,7 +5987,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </div>
 
                   {/* Send footer */}
-                  <div className="border-t border-slate-100 bg-white px-4 py-3 flex-shrink-0">
+                  <div className="border-t border-slate-100 bg-[#f8f7f5] px-4 py-3 flex-shrink-0">
                     <button
                       type="button"
                       disabled={!selectedWATemplate}

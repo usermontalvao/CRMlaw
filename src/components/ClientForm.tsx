@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Calendar } from 'lucide-react';
 import { clientService } from '../services/client.service';
+import { settingsService, CLIENT_MODULE_DEFAULTS } from '../services/settings.service';
 import type { Client, CreateClientDTO, ClientType, MaritalStatus } from '../types/client.types';
+import { useFormLayout } from '../hooks/useFormLayout';
 
 const inputClass =
-  'w-full px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 ' +
-  'bg-white dark:bg-zinc-800 text-sm text-slate-800 dark:text-zinc-100 ' +
+  'w-full px-3 py-1.5 rounded-md border border-[#e7e5df] dark:border-zinc-700 ' +
+  'bg-[#f8f7f5] dark:bg-zinc-800 text-sm text-slate-800 dark:text-zinc-100 ' +
   'placeholder-slate-400 focus:outline-0 focus:ring-1 focus:ring-orange-500 focus:border-orange-500';
 
 const labelClass = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5';
@@ -58,6 +60,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
   onSave,
   variant = 'standalone',
 }) => {
+  const [maritalStatuses, setMaritalStatuses] = useState(CLIENT_MODULE_DEFAULTS.marital_statuses.filter(ms => ms.active !== false));
+  const [clientStatuses, setClientStatuses] = useState(CLIENT_MODULE_DEFAULTS.statuses.filter(s => s.active !== false));
+
+  useEffect(() => {
+    settingsService.getClientModuleConfig().then(cfg => {
+      if (cfg.marital_statuses.length > 0) setMaritalStatuses(cfg.marital_statuses.filter(ms => ms.active !== false));
+      if (cfg.statuses.length > 0) setClientStatuses(cfg.statuses.filter(s => s.active !== false));
+    }).catch(() => {});
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [isCepLoading, setIsCepLoading] = useState(false);
   const [cepError, setCepError] = useState<string | null>(null);
@@ -284,13 +296,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const isPessoaFisica = formData.client_type === 'pessoa_fisica';
   const isModalVariant = variant === 'modal';
+  const fl = useFormLayout('clients');
 
   return (
-    <div className={`w-full bg-white font-display ${isModalVariant ? '' : 'min-h-full'}`}>
+    <div className={`w-full bg-[#f8f7f5] font-display ${isModalVariant ? '' : 'min-h-full'}`}>
       {!isModalVariant && (
         <>
           <div className="h-1 w-full bg-orange-500" />
-          <div className="px-4 py-3 border-b border-slate-200">
+          <div className="px-4 py-3 border-b border-[#e7e5df]">
             <h1 className="text-lg font-bold text-slate-900">
               {client ? 'Editar Cliente' : 'Novo Cliente'}
             </h1>
@@ -345,46 +358,56 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   <span className={labelClass}>Nome Completo</span>
                   <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
                 </label>
+                {!fl.isHidden('cpf') && (
                 <label className="flex flex-col col-span-2">
-                  <span className={labelClass}>CPF</span>
-                  <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', maskCpfInput(e.target.value))} maxLength={14} />
+                  <span className={labelClass}>{fl.fieldLabel('cpf', 'CPF')}</span>
+                  <input type="text" required={fl.isRequired('cpf')} className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', maskCpfInput(e.target.value))} maxLength={14} />
                 </label>
+                )}
                 <label className="flex flex-col col-span-2">
                   <span className={labelClass}>RG</span>
                   <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} />
                 </label>
+                {!fl.isHidden('birth_date') && (
                 <label className="flex flex-col col-span-2">
-                  <span className={labelClass}>Nascimento</span>
+                  <span className={labelClass}>{fl.fieldLabel('birth_date', 'Nascimento')}</span>
                   <input
                     type="date"
+                    required={fl.isRequired('birth_date')}
                     className={`${inputClass} appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-clear-button]:hidden`}
                     value={formData.birth_date}
                     onChange={(e) => handleChange('birth_date', e.target.value)}
                   />
                 </label>
+                )}
+                {!fl.isHidden('marital') && (
                 <label className="flex flex-col col-span-3">
-                  <span className={labelClass}>Estado Civil</span>
+                  <span className={labelClass}>{fl.fieldLabel('marital', 'Estado Civil')}</span>
                   <select
+                    required={fl.isRequired('marital')}
                     className={`${inputClass} appearance-none`}
                     value={formData.marital_status || ''}
                     onChange={(e) => handleChange('marital_status', e.target.value as MaritalStatus)}
                   >
                     <option value="">Selecione</option>
-                    <option value="solteiro">Solteiro(a)</option>
-                    <option value="casado">Casado(a)</option>
-                    <option value="divorciado">Divorciado(a)</option>
-                    <option value="viuvo">Viúvo(a)</option>
-                    <option value="uniao_estavel">União Estável</option>
+                    {maritalStatuses.map(ms => (
+                      <option key={ms.key} value={ms.key}>{ms.label}</option>
+                    ))}
                   </select>
                 </label>
+                )}
+                {!fl.isHidden('email') && (
                 <label className="flex flex-col col-span-6">
-                  <span className={labelClass}>Email</span>
-                  <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
+                  <span className={labelClass}>{fl.fieldLabel('email', 'Email')}</span>
+                  <input type="email" required={fl.isRequired('email')} className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
                 </label>
+                )}
+                {!fl.isHidden('phone') && (
                 <label className="flex flex-col col-span-3">
-                  <span className={labelClass}>Telefone</span>
-                  <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
+                  <span className={labelClass}>{fl.fieldLabel('phone', 'Telefone')}</span>
+                  <input type="tel" required={fl.isRequired('phone')} className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
                 </label>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-12 gap-x-3 gap-y-2">
@@ -392,25 +415,31 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   <span className={labelClass}>Razão Social</span>
                   <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
                 </label>
+                {!fl.isHidden('cpf') && (
                 <label className="flex flex-col col-span-5">
                   <span className={labelClass}>CNPJ</span>
-                  <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', applyCnpjMask(e.target.value))} maxLength={18} />
+                  <input type="text" required={fl.isRequired('cpf')} className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', applyCnpjMask(e.target.value))} maxLength={18} />
                 </label>
+                )}
+                {!fl.isHidden('email') && (
                 <label className="flex flex-col col-span-8">
-                  <span className={labelClass}>Email</span>
-                  <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
+                  <span className={labelClass}>{fl.fieldLabel('email', 'Email')}</span>
+                  <input type="email" required={fl.isRequired('email')} className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
                 </label>
+                )}
+                {!fl.isHidden('phone') && (
                 <label className="flex flex-col col-span-4">
-                  <span className={labelClass}>Telefone</span>
-                  <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
+                  <span className={labelClass}>{fl.fieldLabel('phone', 'Telefone')}</span>
+                  <input type="tel" required={fl.isRequired('phone')} className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} maxLength={16} />
                 </label>
+                )}
               </div>
             )}
           </div>
 
           {/* Endereço */}
-          <div className="space-y-1.5">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Endereço</h3>
+          {!fl.isHidden('address') && <div className="space-y-1.5">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">{fl.fieldLabel('address', 'Endereço')}</h3>
             {cepError && <span className="text-xs text-red-500 block">{cepError}</span>}
             <div className="grid grid-cols-12 gap-x-3 gap-y-2">
               <label className="flex flex-col col-span-2">
@@ -442,46 +471,49 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 <input type="text" className={`${inputClass} uppercase`} value={formData.address_state} onChange={(e) => handleChange('address_state', e.target.value)} maxLength={2} />
               </label>
             </div>
-          </div>
+          </div>}
 
           {/* Status e Observações */}
           <div className="space-y-1.5">
             <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Status e Observações</h3>
             <div className="grid grid-cols-12 gap-x-3 gap-y-2">
-              <div className="flex flex-col col-span-4">
-                <span className={labelClass}>Status</span>
+              {!fl.isHidden('status') && <div className="flex flex-col col-span-4">
+                <span className={labelClass}>{fl.fieldLabel('status', 'Status')}</span>
                 <div className="flex p-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 h-[calc(1.75rem+2px)]">
-                  {(['ativo', 'inativo', 'suspenso'] as const).map((s) => (
+                  {clientStatuses.map((s) => (
                     <button
-                      key={s}
+                      key={s.key}
                       type="button"
-                      onClick={() => handleChange('status', s)}
+                      onClick={() => handleChange('status', s.key)}
                       className={`flex-1 text-xs font-medium rounded transition-all capitalize ${
-                        formData.status === s
+                        formData.status === s.key
                           ? 'bg-orange-500 text-white'
                           : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10'
                       }`}
                     >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                      {s.label}
                     </button>
                   ))}
                 </div>
-              </div>
+              </div>}
+              {!fl.isHidden('notes') && (
               <label className="flex flex-col col-span-8">
-                <span className={labelClass}>Observações</span>
+                <span className={labelClass}>{fl.fieldLabel('notes', 'Observações')}</span>
                 <textarea
                   rows={2}
+                  required={fl.isRequired('notes')}
                   className={`${inputClass} resize-none`}
                   value={formData.notes}
                   onChange={(e) => handleChange('notes', e.target.value)}
                 />
               </label>
+              )}
             </div>
           </div>
         </div>
 
         <div
-          className={`w-full border-t border-slate-200 dark:border-zinc-800 px-5 py-3 flex justify-end gap-2 bg-white dark:bg-zinc-900 ${
+          className={`w-full border-t border-[#e7e5df] dark:border-zinc-800 px-5 py-3 flex justify-end gap-2 bg-[#f8f7f5] dark:bg-zinc-900 ${
             isModalVariant ? '' : 'sticky bottom-0 left-0'
           }`}
         >

@@ -139,7 +139,7 @@ const PublicVerificationPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header minimalista */}
-      <header className="bg-white border-b border-slate-200">
+      <header className="bg-[#f8f7f5] border-b border-[#e7e5df]">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <BrandLogo size="sm" showWordmark={false} showTagline={false} />
@@ -154,7 +154,7 @@ const PublicVerificationPage: React.FC = () => {
 
       <main className="max-w-3xl mx-auto px-6 py-10">
         {/* Card de busca */}
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 sm:p-8">
+        <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] shadow-sm p-6 sm:p-8">
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-slate-900 mb-1">Verificar autenticidade</h1>
             <p className="text-sm text-slate-500">
@@ -167,14 +167,14 @@ const PublicVerificationPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveMode('code')}
-              className={`px-4 py-2 rounded-md text-sm font-medium border transition ${activeMode === 'code' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium border transition ${activeMode === 'code' ? 'bg-slate-900 text-white border-slate-900' : 'bg-[#f8f7f5] text-slate-700 border-[#e7e5df] hover:bg-slate-50'}`}
             >
               Código
             </button>
             <button
               type="button"
               onClick={() => setActiveMode('file')}
-              className={`px-4 py-2 rounded-md text-sm font-medium border transition ${activeMode === 'file' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium border transition ${activeMode === 'file' ? 'bg-slate-900 text-white border-slate-900' : 'bg-[#f8f7f5] text-slate-700 border-[#e7e5df] hover:bg-slate-50'}`}
             >
               Arquivo (PDF)
             </button>
@@ -221,7 +221,7 @@ const PublicVerificationPage: React.FC = () => {
               {fileHash && (
                 <div className="text-xs text-slate-500">
                   <div className="font-medium text-slate-700">SHA-256</div>
-                  <div className="mt-1 font-mono break-all bg-slate-50 border border-slate-200 rounded-md p-3">{fileHash}</div>
+                  <div className="mt-1 font-mono break-all bg-slate-50 border border-[#e7e5df] rounded-md p-3">{fileHash}</div>
                 </div>
               )}
             </div>
@@ -232,7 +232,7 @@ const PublicVerificationPage: React.FC = () => {
         {searched && result && (
           <div className="mt-6">
             {result.valid ? (
-              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] shadow-sm overflow-hidden">
                 {/* Status bar */}
                 <div className="bg-emerald-600 px-6 py-4 flex items-center gap-3">
                   <CheckCircle className="w-5 h-5 text-white" />
@@ -295,7 +295,7 @@ const PublicVerificationPage: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] shadow-sm overflow-hidden">
                 {/* Header — blocked vs not found */}
                 {result.signer || result.request ? (
                   <div className="bg-amber-500 px-6 py-4 flex items-center gap-3">
@@ -320,8 +320,8 @@ const PublicVerificationPage: React.FC = () => {
 
                   {/* Audit data — shown even for blocked documents */}
                   {(result.signer || result.request) && (
-                    <div className="border border-slate-200 rounded-lg overflow-hidden mt-2">
-                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                    <div className="border border-[#e7e5df] rounded-lg overflow-hidden mt-2">
+                      <div className="bg-slate-50 px-4 py-2 border-b border-[#e7e5df]">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Registro de auditoria</p>
                       </div>
                       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">

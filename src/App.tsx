@@ -49,6 +49,7 @@ import OfflinePage from './components/OfflinePage';
 import { NotificationBell } from './components/NotificationBell';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import SessionWarning from './components/SessionWarning';
+import BlockedAccountOverlay from './components/BlockedAccountOverlay';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 
@@ -91,6 +92,7 @@ import { usePresence } from './hooks/usePresence';
 import { useAuth } from './contexts/AuthContext';
 import { events, SYSTEM_EVENTS } from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
+import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
@@ -104,6 +106,7 @@ import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
+import { settingsService, type ModulesConfig } from './services/settings.service';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -122,8 +125,8 @@ const dispatchCloudHeaderAction = (detail: CloudHeaderActionDetail) => {
 };
 
 const CloudModuleFallback = () => (
-  <div className="overflow-hidden rounded-[30px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_38%,#fffaf5_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
-    <div className="border-b border-slate-200/70 bg-white/90 px-4 py-3 sm:px-5">
+  <div className="overflow-hidden rounded-[30px] border border-[#e7e5df]/80 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_38%,#fffaf5_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+    <div className="border-b border-[#e7e5df]/70 bg-[#f8f7f5]/90 px-4 py-3 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="h-10 w-24 animate-pulse rounded-xl bg-orange-100" />
@@ -138,7 +141,7 @@ const CloudModuleFallback = () => (
     </div>
     <div className="px-4 py-5 sm:px-5 sm:py-6">
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="hidden rounded-[26px] border border-slate-200/80 bg-white/85 p-4 lg:block">
+        <div className="hidden rounded-[26px] border border-[#e7e5df]/80 bg-[#f8f7f5]/85 p-4 lg:block">
           <div className="h-11 animate-pulse rounded-2xl bg-slate-100" />
           <div className="mt-4 space-y-3">
             <div className="h-16 animate-pulse rounded-2xl bg-gradient-to-r from-orange-100 via-amber-50 to-orange-50" />
@@ -147,7 +150,7 @@ const CloudModuleFallback = () => (
             <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
           </div>
         </div>
-        <div className="rounded-[26px] border border-slate-200/80 bg-white/88 p-4 sm:p-5">
+        <div className="rounded-[26px] border border-[#e7e5df]/80 bg-[#f8f7f5]/88 p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <div className="h-6 w-40 animate-pulse rounded-lg bg-slate-200" />
@@ -160,7 +163,7 @@ const CloudModuleFallback = () => (
           </div>
           <div className="grid gap-3 pt-5 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf5_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+              <div key={index} className="rounded-[24px] border border-[#e7e5df]/80 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf5_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
                 <div className="flex items-start justify-between">
                   <div className="h-12 w-12 animate-pulse rounded-2xl bg-orange-100" />
                   <div className="h-7 w-24 animate-pulse rounded-full bg-emerald-100" />
@@ -294,7 +297,7 @@ const AccessDeniedScreen: React.FC<{
   const renderRightPanel = () => {
     // DENIED
     if (reqState === 'denied') return (
-      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+      <div className="flex-1 flex flex-col justify-center bg-[#f8f7f5] px-10 py-12">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-5 h-5 rounded-md bg-red-100 flex items-center justify-center">
             <ShieldOff className="w-3 h-3 text-red-500" />
@@ -351,7 +354,7 @@ const AccessDeniedScreen: React.FC<{
 
     // APPROVED EXPIRED
     if (reqState === 'approved_expired') return (
-      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+      <div className="flex-1 flex flex-col justify-center bg-[#f8f7f5] px-10 py-12">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center">
             <Clock className="w-3 h-3 text-amber-600" />
@@ -403,7 +406,7 @@ const AccessDeniedScreen: React.FC<{
 
     // PENDING
     if (reqState === 'pending') return (
-      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+      <div className="flex-1 flex flex-col justify-center bg-[#f8f7f5] px-10 py-12">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center">
             <Clock className="w-3 h-3 text-amber-600" />
@@ -450,7 +453,7 @@ const AccessDeniedScreen: React.FC<{
 
     // NONE / CHECKING — default
     return (
-      <div className="flex-1 flex flex-col justify-center bg-white px-10 py-12">
+      <div className="flex-1 flex flex-col justify-center bg-[#f8f7f5] px-10 py-12">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-5 h-5 rounded-md bg-red-100 flex items-center justify-center">
             <ShieldOff className="w-3 h-3 text-red-500" />
@@ -502,7 +505,7 @@ const AccessDeniedScreen: React.FC<{
   return (
     <>
     {/* ── Tela principal: split full-height ──────────────────────────── */}
-    <div className="flex min-h-[72vh] select-none overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+    <div className="flex min-h-[72vh] select-none overflow-hidden rounded-2xl border border-[#e7e5df] shadow-sm">
 
       {/* ══ Painel esquerdo — visual (45%) ═══════════════════════════════ */}
       <div className="relative hidden sm:flex flex-col items-center justify-center w-[45%] flex-shrink-0 overflow-hidden bg-[#0f172a]">
@@ -520,7 +523,7 @@ const AccessDeniedScreen: React.FC<{
 
         <div className="relative z-10 flex flex-col items-center gap-7 px-10">
           <div className="relative">
-            <div className="w-36 h-36 rounded-3xl border border-white/8 bg-white/4 flex items-center justify-center backdrop-blur-sm shadow-2xl">
+            <div className="w-36 h-36 rounded-3xl border border-white/8 bg-[#f8f7f5]/4 flex items-center justify-center backdrop-blur-sm shadow-2xl">
               <Icon className="w-16 h-16 text-white/20" />
             </div>
             <div className={`absolute -bottom-3 -right-3 w-10 h-10 rounded-full flex items-center justify-center shadow-xl border-[3px] border-[#0f172a] transition-colors duration-500 ${
@@ -546,14 +549,14 @@ const AccessDeniedScreen: React.FC<{
           </div>
 
           <div className="flex items-center gap-3 w-full px-4">
-            <div className="flex-1 h-px bg-white/8" />
+            <div className="flex-1 h-px bg-[#f8f7f5]/8" />
             <Lock className="w-3 h-3 text-white/20" />
-            <div className="flex-1 h-px bg-white/8" />
+            <div className="flex-1 h-px bg-[#f8f7f5]/8" />
           </div>
 
           <div className="text-center">
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Seu perfil</p>
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/8 border border-white/10 text-white/70 text-sm font-semibold">
+            <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#f8f7f5]/8 border border-white/10 text-white/70 text-sm font-semibold">
               {userRole}
             </span>
           </div>
@@ -563,7 +566,7 @@ const AccessDeniedScreen: React.FC<{
             reqState === 'denied' ? 'bg-red-500/10 border-red-500/20 text-red-400'
             : reqState === 'pending' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
             : reqState === 'approved_expired' ? 'bg-amber-400/10 border-amber-400/20 text-amber-400'
-            : 'bg-white/5 border-white/10 text-white/30'
+            : 'bg-[#f8f7f5]/5 border-white/10 text-white/30'
           }`}>
             {reqState === 'denied' ? '✕ Negado'
             : reqState === 'pending' ? '⏳ Em análise'
@@ -582,7 +585,7 @@ const AccessDeniedScreen: React.FC<{
       <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
         <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" />
         <div
-          className="relative bg-white rounded-3xl shadow-2xl w-full max-w-[400px] overflow-hidden"
+          className="relative bg-[#f8f7f5] rounded-3xl shadow-2xl w-full max-w-[400px] overflow-hidden"
           onClick={e => e.stopPropagation()}
           style={{ boxShadow: '0 32px 64px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.06)' }}
         >
@@ -619,7 +622,7 @@ const AccessDeniedScreen: React.FC<{
               Justificativa <span className="text-red-400">*</span>
             </label>
             <textarea
-              className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-3 text-sm text-slate-800 placeholder-slate-300 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300/50 focus:border-amber-400 transition-all leading-relaxed"
+              className="w-full bg-white border border-[#e7e5df] rounded-xl px-3.5 py-3 text-sm text-slate-800 placeholder-slate-300 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300/50 focus:border-amber-400 transition-all leading-relaxed"
               rows={4}
               placeholder={`Por que precisa acessar ${meta.label}?`}
               value={justification}
@@ -644,7 +647,7 @@ const AccessDeniedScreen: React.FC<{
           <div className="flex items-center gap-2.5 px-7 py-5">
             <button
               onClick={() => setShowModal(false)}
-              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-all"
+              className="flex-1 py-2.5 rounded-xl border border-[#e7e5df] text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-all"
             >
               Cancelar
             </button>
@@ -719,7 +722,7 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
   return (
     <button
       onClick={onClick}
-      className="hidden lg:flex items-center gap-3 w-80 xl:w-[440px] px-5 py-[10px] rounded-full bg-white border border-slate-200/70 shadow-[0_1px_6px_rgba(32,33,36,0.1)] hover:shadow-[0_2px_14px_rgba(251,146,60,0.16)] hover:border-amber-300/50 transition-all duration-300 group cursor-text select-none"
+      className="hidden lg:flex w-[300px] xl:w-[360px] flex-shrink-0 items-center gap-3 px-4 lg:px-5 py-[10px] rounded-full bg-[#f8f7f5] border border-[#e7e5df]/70 shadow-[0_1px_6px_rgba(32,33,36,0.1)] hover:shadow-[0_2px_14px_rgba(251,146,60,0.16)] hover:border-amber-300/50 transition-all duration-300 group cursor-text select-none"
       title="Busca global (⌘K / Ctrl+K)"
     >
       {/* Ícone */}
@@ -733,7 +736,7 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
       {/* Separador + atalho */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <span className="w-px h-4 bg-slate-200 group-hover:bg-amber-200/60 transition-colors" />
-        <kbd className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 group-hover:bg-amber-50 text-slate-400 group-hover:text-amber-600 border border-slate-200 group-hover:border-amber-200 font-mono transition-all duration-200 leading-none">
+        <kbd className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 group-hover:bg-amber-50 text-slate-400 group-hover:text-amber-600 border border-[#e7e5df] group-hover:border-amber-200 font-mono transition-all duration-200 leading-none">
           ⌘K
         </kbd>
       </div>
@@ -749,9 +752,13 @@ const SidebarModuleBtn: React.FC<{
   isActive: boolean;
   onClick: () => void;
   expiresAt?: string | null;
-}> = ({ label, Icon, isActive, onClick, expiresAt }) => {
+  badgeCount?: number;
+}> = ({ label, Icon, isActive, onClick, expiresAt, badgeCount }) => {
+  const { sidebarMode } = useSidebarMode();
+  const { theme } = useTheme();
   const [countdown, setCountdown] = useState<string | null>(null);
   const isTemporary = !!expiresAt;
+  const isDarkSidebar = theme === 'dark';
 
   useEffect(() => {
     if (!expiresAt) { setCountdown(null); return; }
@@ -770,43 +777,95 @@ const SidebarModuleBtn: React.FC<{
     return () => clearInterval(id);
   }, [expiresAt]);
 
+  if (sidebarMode === 'normal') {
+    return (
+      <button
+        onClick={onClick}
+        className={`group relative flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-[5px] transition-all duration-150 ${
+          isActive
+            ? 'bg-[#fef2e8]'
+            : isTemporary
+            ? (isDarkSidebar ? 'hover:bg-white/[0.05]' : 'hover:bg-[#f4f4f1]')
+            : (isDarkSidebar ? 'hover:bg-white/[0.05]' : 'hover:bg-[#f4f4f1]')
+        }`}
+      >
+        {/* Ícone */}
+        <div className="relative flex-shrink-0">
+          <Icon className={`h-[14px] w-[14px] transition-colors duration-150 ${
+            isActive
+              ? 'text-[#f27a23]'
+              : isTemporary
+              ? 'text-cyan-600/70'
+              : isDarkSidebar
+              ? 'text-[#8b8b80] group-hover:text-[#e7e2d8]'
+              : 'text-[#8b8b80] group-hover:text-[#3a3a35]'
+          }`} />
+          {isTemporary && !isActive && (
+            <span className={`absolute -top-px -right-px w-1.5 h-1.5 bg-cyan-500 rounded-full ring-1 ${isDarkSidebar ? 'ring-[#18181a]' : 'ring-white'}`} />
+          )}
+        </div>
+
+        {/* Texto */}
+        <span className={`flex-1 truncate text-left text-[12.5px] tracking-[-0.01em] transition-colors duration-150 ${
+          isActive
+            ? 'font-semibold text-[#f27a23]'
+            : isTemporary
+            ? 'font-medium text-cyan-700/70'
+            : isDarkSidebar
+            ? 'font-medium text-[#ddd8cf] group-hover:text-white'
+            : 'font-medium text-[#18181a] group-hover:text-[#18181a]'
+        }`}>{label}</span>
+
+        {isTemporary && countdown && (
+          <span className="text-[9px] font-mono flex-shrink-0 tabular-nums text-[#8b8b80]">
+            {countdown}
+          </span>
+        )}
+        {badgeCount !== undefined && badgeCount > 0 && (
+          <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-[#f27a23] text-white text-[10px] font-bold flex items-center justify-center leading-none">
+            {badgeCount > 9 ? '9+' : badgeCount}
+          </span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={onClick}
-      className={`relative flex flex-col items-center py-2 px-1 rounded-lg transition-colors ${
+      className={`relative flex flex-col items-center rounded-[10px] px-1 py-2 transition-colors ${
         isActive
-          ? 'text-amber-500'
+          ? 'bg-[#fef2e8] text-[#f27a23]'
           : isTemporary
-          ? 'text-cyan-400 hover:text-cyan-300 hover:bg-slate-800/50'
-          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+          ? isDarkSidebar
+            ? 'text-cyan-500 hover:bg-white/[0.05]'
+            : 'text-cyan-600 hover:bg-[#f4f4f1]'
+          : isDarkSidebar
+            ? 'text-[#8b8b80] hover:bg-white/[0.05] hover:text-[#e7e2d8]'
+            : 'text-[#8b8b80] hover:bg-[#f4f4f1] hover:text-[#3a3a35]'
       }`}
     >
-      {/* Barra lateral esquerda */}
       {isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />
+        <div className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-[#f27a23]" />
       )}
       {isTemporary && !isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-cyan-400 rounded-r" />
+        <div className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-cyan-500" />
       )}
-
-      {/* Ícone + ponto indicador */}
       <div className="relative">
-        <Icon className="w-5 h-5" />
+        <Icon className="h-[17px] w-[17px]" />
         {isTemporary && !isActive && (
-          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-cyan-400 rounded-full ring-1 ring-slate-900" />
+          <span className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-1 ${isDarkSidebar ? 'ring-[#18181a]' : 'ring-white'}`} />
         )}
       </div>
-
-      <span className="text-[9px] mt-0.5 leading-tight">{label}</span>
-
-      {/* Contagem regressiva */}
+      <span className="mt-0.5 text-[9px] leading-tight">{label}</span>
       {isTemporary && countdown && (
-        <span
-          className={`text-[8px] font-mono leading-tight ${
-            isActive ? 'text-amber-400/80' : 'text-cyan-400/80'
-          }`}
-        >
+        <span className={`text-[8px] font-mono leading-tight ${isActive ? 'text-[#f27a23]/80' : 'text-cyan-600/80'}`}>
           {countdown}
+        </span>
+      )}
+      {badgeCount !== undefined && badgeCount > 0 && (
+        <span className="absolute right-1 top-1 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[#f27a23] px-0.5 text-[9px] font-bold leading-none text-white">
+          {badgeCount > 9 ? '9+' : badgeCount}
         </span>
       )}
     </button>
@@ -816,7 +875,22 @@ const SidebarModuleBtn: React.FC<{
 const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
+  const { sidebarMode, setSidebarMode } = useSidebarMode();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
+
+  // Intercepta navegação direta para 'configuracoes' e abre como modal
+  useEffect(() => {
+    if (activeModule === 'configuracoes') {
+      const params = moduleParams['configuracoes'];
+      const section = params ? (JSON.parse(params).section as string) : undefined;
+      setSettingsInitialSection(section);
+      setShowSettings(true);
+      clearModuleParams('configuracoes');
+      safeNavigateTo('dashboard');
+    }
+  }, [activeModule]);
   const [cloudMobileSearchTerm, setCloudMobileSearchTerm] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
@@ -829,6 +903,31 @@ const MainApp: React.FC = () => {
     return ov?.expires_at ?? null;
   }, [isAdmin, overrides]);
   const [sidebarPendingCount, setSidebarPendingCount] = useState(0);
+  const [modulesConfig, setModulesConfig] = useState<ModulesConfig>({
+    leads_enabled: true,
+    financial_enabled: true,
+    requirements_enabled: true,
+    documents_enabled: true,
+    calendar_enabled: true,
+    tasks_enabled: true,
+  });
+
+  useEffect(() => {
+    settingsService.getModulesConfig().then(setModulesConfig).catch(() => {});
+  }, []);
+
+  const isModuleEnabled = useCallback((moduleKey: ModuleName): boolean => {
+    const map: Partial<Record<ModuleName, keyof ModulesConfig>> = {
+      leads: 'leads_enabled',
+      financeiro: 'financial_enabled',
+      requerimentos: 'requirements_enabled',
+      documentos: 'documents_enabled',
+      agenda: 'calendar_enabled',
+      tarefas: 'tasks_enabled',
+    };
+    const configKey = map[moduleKey];
+    return configKey ? modulesConfig[configKey] !== false : true;
+  }, [modulesConfig]);
 
   // Carregar contagem de solicitações pendentes para badge no sidebar
   useEffect(() => {
@@ -898,7 +997,7 @@ const MainApp: React.FC = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-  const { user, loading, signIn, signOut, resetPassword } = useAuth();
+  const { user, loading, signIn, signOut, resetPassword, isAccountBlocked } = useAuth();
 
   useEffect(() => {
     if (!user) return;
@@ -1651,7 +1750,8 @@ useEffect(() => {
 
   return (
     <CacheProvider>
-      <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
+      {isAccountBlocked && <BlockedAccountOverlay onLogout={signOut} />}
+      <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-black transition-colors duration-300">
         {/* Overlay de Login/Logout - Epic Animation */}
         {(loggingIn || loggingOut) && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black">
@@ -1709,7 +1809,7 @@ useEffect(() => {
 
               {/* Loading bar */}
               <div className="w-64 sm:w-80 mb-8">
-                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
+                <div className="h-1.5 bg-[#f8f7f5]/10 rounded-full overflow-hidden backdrop-blur-sm">
                   <div className="h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 rounded-full animate-loading-bar shadow-[0_0_24px_rgba(251,146,60,0.25)]" />
                 </div>
               </div>
@@ -1740,214 +1840,209 @@ useEffect(() => {
           onClick={() => setIsMobileNavOpen(false)}
         />
       )}
+      {/* ── App shell flex: spacer + main ──────────────── */}
+      <div className="flex min-h-screen">
+      {/* Spacer invisible que reserva a largura da sidebar no layout */}
+      <div
+        className={`hidden md:block flex-none transition-all duration-300 ${
+          sidebarMode === 'normal' ? 'w-[240px]' : 'w-[72px]'
+        }`}
+        aria-hidden="true"
+      />
+
       <aside
-        className={`fixed inset-y-0 left-0 bg-slate-900 text-white z-50 flex flex-col w-20 border-r border-slate-800 ${
-          isMobileNavOpen
-            ? 'translate-x-0'
-            : '-translate-x-full md:translate-x-0'
-        } transition-transform duration-300`}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col ${
+          sidebarMode === 'normal'
+            ? theme === 'dark'
+              ? 'w-[240px] border-r border-white/[0.08] bg-[#18181a] text-white'
+              : 'w-[240px] border-r border-[#e7e5df] bg-[#f7f7f5] text-[#18181a]'
+            : theme === 'dark'
+              ? 'w-[72px] border-r border-white/[0.08] bg-[#18181a] text-white'
+              : 'w-[72px] border-r border-[#e7e5df] bg-[#f7f7f5] text-[#18181a]'
+        } ${
+          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        } transition-all duration-300`}
       >
         {/* Logo */}
-        <div className="flex items-center justify-center py-5 border-b border-slate-800">
-          <div className="bg-amber-500 p-2.5 rounded-xl">
-            <Scale className="w-6 h-6 text-white" />
+        {sidebarMode === 'normal' ? (
+          <div className={`flex items-center gap-3 px-4 py-4 ${theme === 'dark' ? 'border-b border-white/[0.08]' : 'border-b border-[#e7e5df]'}`}>
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_6px_18px_-10px_rgba(242,122,35,0.55)]">
+              J
+            </div>
+            <span className={`select-none text-[14px] font-bold tracking-[-0.02em] ${theme === 'dark' ? 'text-white' : 'text-[#0f172a]'}`}>Jurius</span>
           </div>
-        </div>
+        ) : (
+          <div className={`flex items-center justify-center py-4 ${theme === 'dark' ? 'border-b border-white/[0.08]' : 'border-b border-[#e7e5df]'}`}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_6px_18px_-10px_rgba(242,122,35,0.55)]">
+              J
+            </div>
+          </div>
+        )}
 
         {/* Navigation */}
-        <nav className="flex-1 py-3 px-1.5 flex flex-col gap-0.5 overflow-y-auto scrollbar-hide">
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'dashboard' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'dashboard' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Layers className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Dashboard</span>
-          </button>
-
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'feed' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'feed' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Newspaper className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Feed</span>
-          </button>
-
-          {!permissionsLoading && canAccessModule('leads') && (
-            <SidebarModuleBtn
-              moduleKey="leads"
-              label="Leads"
-              Icon={Target}
-              isActive={activeModule === 'leads'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('leads'); }}
-              expiresAt={getOverrideExpiry('leads')}
-            />
+        <nav className={`flex-1 overflow-y-auto scrollbar-hide flex flex-col ${
+          sidebarMode === 'normal' ? 'px-2.5 py-2 gap-0' : 'px-2 py-2.5 gap-1'
+        }`}>
+          {/* ── PRINCIPAL ──────────────────────────────────────── */}
+          {sidebarMode === 'normal' && (
+            <p className={`px-2.5 pt-1 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Principal</p>
           )}
-
-          {!permissionsLoading && canAccessModule('clientes') && (
-            <SidebarModuleBtn
-              moduleKey="clientes"
-              label="Clientes"
-              Icon={Users}
-              isActive={activeModule === 'clientes'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
-              expiresAt={getOverrideExpiry('clientes')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('documentos') && (
-            <SidebarModuleBtn
-              moduleKey="documentos"
-              label="Documentos"
-              Icon={Library}
-              isActive={activeModule === 'documentos'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
-              expiresAt={getOverrideExpiry('documentos')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('cloud') && (
-            <SidebarModuleBtn
-              moduleKey="cloud"
-              label="Cloud"
-              Icon={Cloud}
-              isActive={activeModule === 'cloud'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
-              expiresAt={getOverrideExpiry('cloud')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('assinaturas') && (
-            <SidebarModuleBtn
-              moduleKey="assinaturas"
-              label="Assinaturas"
-              Icon={PenTool}
-              isActive={activeModule === 'assinaturas'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
-              expiresAt={getOverrideExpiry('assinaturas')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('processos') && (
-            <SidebarModuleBtn
-              moduleKey="processos"
-              label="Processos"
-              Icon={Scale}
-              isActive={activeModule === 'processos'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
-              expiresAt={getOverrideExpiry('processos')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('requerimentos') && (
-            <SidebarModuleBtn
-              moduleKey="requerimentos"
-              label="Requerimentos"
-              Icon={Briefcase}
-              isActive={activeModule === 'requerimentos'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
-              expiresAt={getOverrideExpiry('requerimentos')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('prazos') && (
-            <SidebarModuleBtn
-              moduleKey="prazos"
-              label="Prazos"
-              Icon={AlarmClock}
-              isActive={activeModule === 'prazos'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
-              expiresAt={getOverrideExpiry('prazos')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('intimacoes') && (
-            <SidebarModuleBtn
-              moduleKey="intimacoes"
-              label="Intimações"
-              Icon={Bell}
-              isActive={activeModule === 'intimacoes'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
-              expiresAt={getOverrideExpiry('intimacoes')}
-            />
-          )}
-
-
-          {!permissionsLoading && canAccessModule('financeiro') && (
-            <SidebarModuleBtn
-              moduleKey="financeiro"
-              label="Financeiro"
-              Icon={PiggyBank}
-              isActive={activeModule === 'financeiro'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
-              expiresAt={getOverrideExpiry('financeiro')}
-            />
-          )}
-
-          {!permissionsLoading && canAccessModule('agenda') && (
-            <SidebarModuleBtn
-              moduleKey="agenda"
-              label="Agenda"
-              Icon={Calendar}
+          <SidebarModuleBtn moduleKey="dashboard" label="Dashboard" Icon={Layers}
+            isActive={activeModule === 'dashboard'}
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }} />
+          <SidebarModuleBtn moduleKey="feed" label="Feed" Icon={Newspaper}
+            isActive={activeModule === 'feed'}
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }} />
+          {!permissionsLoading && canAccessModule('agenda') && isModuleEnabled('agenda') && (
+            <SidebarModuleBtn moduleKey="agenda" label="Agenda" Icon={Calendar}
               isActive={activeModule === 'agenda'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
-              expiresAt={getOverrideExpiry('agenda')}
-            />
+              expiresAt={getOverrideExpiry('agenda')} />
           )}
-
           {!permissionsLoading && canAccessModule('chat') && (
-            <SidebarModuleBtn
-              moduleKey="chat"
-              label="Chat"
-              Icon={MessageCircle}
+            <SidebarModuleBtn moduleKey="chat" label="Chat" Icon={MessageCircle}
               isActive={activeModule === 'chat'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
-              expiresAt={getOverrideExpiry('chat')}
-            />
+              expiresAt={getOverrideExpiry('chat')} />
           )}
 
+          {/* ── ATENDIMENTO ── Leads ────────────────────────────── */}
+          {sidebarMode === 'normal' && !permissionsLoading &&
+            canAccessModule('leads') && isModuleEnabled('leads') && (
+            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Atendimento</p>
+          )}
+          {!permissionsLoading && canAccessModule('leads') && isModuleEnabled('leads') && (
+            <SidebarModuleBtn moduleKey="leads" label="Leads" Icon={Target}
+              isActive={activeModule === 'leads'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('leads'); }}
+              expiresAt={getOverrideExpiry('leads')} />
+          )}
+
+          {/* ── GESTÃO ── Clientes, Processos, Req., Petições, Fin. */}
+          {sidebarMode === 'normal' && !permissionsLoading && (
+            canAccessModule('clientes') || canAccessModule('processos') ||
+            (canAccessModule('requerimentos') && isModuleEnabled('requerimentos')) ||
+            canAccessModule('peticoes') ||
+            (canAccessModule('financeiro') && isModuleEnabled('financeiro'))
+          ) && (
+            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Gestão</p>
+          )}
+          {!permissionsLoading && canAccessModule('clientes') && (
+            <SidebarModuleBtn moduleKey="clientes" label="Clientes" Icon={Users}
+              isActive={activeModule === 'clientes'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
+              expiresAt={getOverrideExpiry('clientes')} />
+          )}
+          {!permissionsLoading && canAccessModule('processos') && (
+            <SidebarModuleBtn moduleKey="processos" label="Processos" Icon={Scale}
+              isActive={activeModule === 'processos'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
+              expiresAt={getOverrideExpiry('processos')} />
+          )}
+          {!permissionsLoading && canAccessModule('requerimentos') && isModuleEnabled('requerimentos') && (
+            <SidebarModuleBtn moduleKey="requerimentos" label="Requerimentos" Icon={Briefcase}
+              isActive={activeModule === 'requerimentos'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
+              expiresAt={getOverrideExpiry('requerimentos')} />
+          )}
           {!permissionsLoading && canAccessModule('peticoes') && (
-            <button
-              onClick={() => {
-                setIsMobileNavOpen(false);
-                events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN);
-              }}
-              className="relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors text-slate-400 hover:text-white hover:bg-slate-800/50"
-              title="Abrir Editor de Petições (Widget Flutuante)"
-            >
-              <FileText className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Petições</span>
-            </button>
+            <SidebarModuleBtn moduleKey="peticoes" label="Petições" Icon={FileText}
+              isActive={false}
+              onClick={() => { setIsMobileNavOpen(false); events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN); }} />
+          )}
+          {!permissionsLoading && canAccessModule('financeiro') && isModuleEnabled('financeiro') && (
+            <SidebarModuleBtn moduleKey="financeiro" label="Financeiro" Icon={PiggyBank}
+              isActive={activeModule === 'financeiro'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
+              expiresAt={getOverrideExpiry('financeiro')} />
           )}
 
-          <div className="my-2 mx-2 h-px bg-slate-800" />
+          {/* ── OPERACIONAL ── Prazos, Intimações ──────────────── */}
+          {sidebarMode === 'normal' && !permissionsLoading && (
+            canAccessModule('prazos') || canAccessModule('intimacoes')
+          ) && (
+            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Operacional</p>
+          )}
+          {!permissionsLoading && canAccessModule('prazos') && (
+            <SidebarModuleBtn moduleKey="prazos" label="Prazos" Icon={AlarmClock}
+              isActive={activeModule === 'prazos'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
+              expiresAt={getOverrideExpiry('prazos')} />
+          )}
+          {!permissionsLoading && canAccessModule('intimacoes') && (
+            <SidebarModuleBtn moduleKey="intimacoes" label="Intimações" Icon={Bell}
+              isActive={activeModule === 'intimacoes'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
+              expiresAt={getOverrideExpiry('intimacoes')} />
+          )}
 
-          <button
+          {/* ── DOCS ── Documentos, Assinaturas, Cloud ─────────── */}
+          {sidebarMode === 'normal' && !permissionsLoading && (
+            (canAccessModule('documentos') && isModuleEnabled('documentos')) ||
+            canAccessModule('assinaturas') || canAccessModule('cloud')
+          ) && (
+            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Docs</p>
+          )}
+          {!permissionsLoading && canAccessModule('documentos') && isModuleEnabled('documentos') && (
+            <SidebarModuleBtn moduleKey="documentos" label="Documentos" Icon={Library}
+              isActive={activeModule === 'documentos'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
+              expiresAt={getOverrideExpiry('documentos')} />
+          )}
+          {!permissionsLoading && canAccessModule('assinaturas') && (
+            <SidebarModuleBtn moduleKey="assinaturas" label="Assinaturas" Icon={PenTool}
+              isActive={activeModule === 'assinaturas'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
+              expiresAt={getOverrideExpiry('assinaturas')} />
+          )}
+          {!permissionsLoading && canAccessModule('cloud') && (
+            <SidebarModuleBtn moduleKey="cloud" label="Cloud" Icon={Cloud}
+              isActive={activeModule === 'cloud'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
+              expiresAt={getOverrideExpiry('cloud')} />
+          )}
+
+          {/* Separador + Perfil */}
+          <div className={`h-px ${sidebarMode === 'normal' ? (theme === 'dark' ? 'mt-1.5 mb-0.5 bg-[#f8f7f5]/[0.08]' : 'mt-1.5 mb-0.5 bg-[#ebebeb]') : (theme === 'dark' ? 'my-2 mx-1.5 bg-[#f8f7f5]/[0.08]' : 'my-2 mx-1.5 bg-[#ebebeb]')}`} />
+          <SidebarModuleBtn moduleKey="perfil" label="Perfil" Icon={UserCog}
+            isActive={activeModule === 'perfil'}
             onClick={() => { setIsMobileNavOpen(false); navigateTo('perfil'); }}
-            className="relative flex flex-col items-center py-2.5 px-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors"
+            badgeCount={isAdmin && sidebarPendingCount > 0 ? sidebarPendingCount : undefined} />
+        </nav>
+
+          {/* Collapse / expand toggle */}
+        <div className={`${
+          sidebarMode === 'normal'
+            ? (theme === 'dark' ? 'border-t border-white/[0.08] px-2 py-1.5' : 'border-t border-[#e7e5df] px-2 py-1.5')
+            : (theme === 'dark' ? 'flex justify-center border-t border-white/[0.08] py-2.5' : 'flex justify-center border-t border-[#e7e5df] py-2.5')
+        }`}>
+          <button
+            onClick={() => setSidebarMode(sidebarMode === 'normal' ? 'compact' : 'normal')}
+            title={sidebarMode === 'normal' ? 'Recolher menu' : 'Expandir menu'}
+            className={`flex items-center gap-2.5 rounded-md transition-colors duration-100 ${
+              sidebarMode === 'normal'
+                ? theme === 'dark'
+                  ? 'w-full px-2.5 py-[6px] text-[#8b8b80] hover:bg-white/[0.05] hover:text-white'
+                  : 'w-full px-2.5 py-[6px] text-[#8b8b80] hover:text-[#3a3a35] hover:bg-[#f4f4f1]'
+                : theme === 'dark'
+                  ? 'h-8 w-8 justify-center text-[#8b8b80] hover:bg-white/[0.05] hover:text-white'
+                  : 'h-8 w-8 justify-center text-[#8b8b80] hover:bg-[#f4f4f1] hover:text-[#3a3a35]'
+            }`}
           >
-            <UserCog className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Perfil</span>
-            {isAdmin && sidebarPendingCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                {sidebarPendingCount > 9 ? '9+' : sidebarPendingCount}
-              </span>
+            <ArrowLeft className={`h-[14px] w-[14px] flex-shrink-0 transition-transform duration-300 ${sidebarMode === 'compact' ? 'rotate-180' : ''}`} />
+            {sidebarMode === 'normal' && (
+              <span className="text-[11px] font-medium tracking-wide">Recolher</span>
             )}
           </button>
-        </nav>
+        </div>
       </aside>
 
         {/* Main Content Area */}
-      <div className="md:ml-20 ml-0 transition-all duration-300 min-h-screen flex flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950">
         {/* Cloud Mobile Header - Pill-shaped navigation shell */}
         {activeModule === 'cloud' ? (
           <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
-            <div className="flex items-center justify-between gap-3 rounded-full border border-white/70 bg-white/95 backdrop-blur-xl px-3 py-2.5 shadow-[0px_12px_32px_rgba(44,47,48,0.08)]">
+            <div className="flex items-center justify-between gap-3 rounded-full border border-white/70 bg-[#f8f7f5]/95 backdrop-blur-xl px-3 py-2.5 shadow-[0px_12px_32px_rgba(44,47,48,0.08)]">
               {/* Menu button */}
               <button
                 onClick={() => setIsMobileNavOpen((prev) => !prev)}
@@ -1987,10 +2082,15 @@ useEffect(() => {
         ) : null}
         
         {/* Regular header for non-Cloud modules or desktop */}
-        <header className={`sticky top-0 z-30 ${activeModule === 'cloud' ? 'hidden md:block border-b border-slate-200/70 bg-slate-50/90 backdrop-blur-lg' : 'bg-white border-b border-gray-200'}`}>
-          <div className={`px-3 sm:px-4 lg:px-8 ${activeModule === 'cloud' ? 'py-3 sm:py-4' : 'py-3 sm:py-4'}`}>
-            <div className="flex items-center justify-between gap-3 sm:gap-4">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+        <header className={`sticky top-0 z-30 ${
+          activeModule === 'cloud'
+            ? `hidden md:block border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
+            : `border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
+        }`}>
+          <div className="px-4 lg:px-[18px] py-0">
+            <div className="flex h-[52px] items-center gap-3">
+              {/* LEFT: mobile menu + módulo como breadcrumb */}
+              <div className="min-w-0 flex flex-1 items-center gap-3">
                 <button
                   className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
                   onClick={() => setIsMobileNavOpen((prev) => !prev)}
@@ -1998,129 +2098,50 @@ useEffect(() => {
                 >
                   {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">
-                    {activeModule === 'dashboard' && 'Dashboard'}
-                    {activeModule === 'feed' && 'Feed'}
-                    {activeModule === 'leads' && 'Pipeline de Leads'}
-                    {activeModule === 'clientes' && 'Gestão de Clientes'}
-                    {activeModule === 'processos' && 'Gestão de Processos'}
-                    {activeModule === 'requerimentos' && 'Sistema de Requerimentos'}
-                    {activeModule === 'prazos' && 'Gestão de Prazos'}
-                    {activeModule === 'intimacoes' && 'Diário de Justiça Eletrônico'}
-                    {activeModule === 'financeiro' && 'Gestão Financeira'}
-                    {activeModule === 'agenda' && 'Agenda'}
-                    {activeModule === 'chat' && 'Chat da Equipe'}
-                    {activeModule === 'tarefas' && 'Tarefas'}
-                    {activeModule === 'documentos' && 'Documentos'}
-                    {activeModule === 'assinaturas' && 'Assinatura Digital'}
-                    {activeModule === 'configuracoes' && 'Configurações'}
-                  </h2>
-                  {activeModule !== 'cloud' ? (
-                    <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
-                      {activeModule === 'dashboard' && 'Visão geral do escritório e métricas'}
-                      {activeModule === 'feed' && 'Acompanhe as novidades e publicações da equipe'}
-                      {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
-                      {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
-                      {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
-                      {activeModule === 'requerimentos' && 'Gerencie requerimentos administrativos do INSS'}
-                      {activeModule === 'prazos' && 'Controle compromissos e prazos vinculados aos seus casos'}
-                      {activeModule === 'intimacoes' && 'Consulte comunicações processuais do DJEN'}
-                      {activeModule === 'financeiro' && 'Acompanhe acordos, parcelas e honorários do escritório'}
-                      {activeModule === 'agenda' && 'Organize compromissos e prazos'}
-                      {activeModule === 'chat' && 'Converse com a equipe em tempo real'}
-                      {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
-                      {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
-                      {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
-                      {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
-                    </p>
-                  ) : <div className="min-w-0" />}
-                </div>
+                <span className="hidden md:block text-[12.5px] text-slate-400 select-none truncate">
+                  {activeModule === 'cloud' && 'Cloud'}
+                  {activeModule === 'dashboard' && 'Dashboard'}
+                  {activeModule === 'feed' && 'Feed'}
+                  {activeModule === 'leads' && 'Leads'}
+                  {activeModule === 'clientes' && 'Clientes'}
+                  {activeModule === 'processos' && 'Processos'}
+                  {activeModule === 'requerimentos' && 'Requerimentos'}
+                  {activeModule === 'prazos' && 'Prazos'}
+                  {activeModule === 'intimacoes' && 'Intimações'}
+                  {activeModule === 'financeiro' && 'Financeiro'}
+                  {activeModule === 'agenda' && 'Agenda'}
+                  {activeModule === 'chat' && 'Chat'}
+                  {activeModule === 'tarefas' && 'Tarefas'}
+                  {activeModule === 'documentos' && 'Documentos'}
+                  {activeModule === 'assinaturas' && 'Assinaturas'}
+                  {activeModule === 'configuracoes' && 'Configurações'}
+                  {activeModule === 'perfil' && 'Perfil'}
+                </span>
               </div>
-              
-              {/* Botões do Cloud - aparecem apenas quando o módulo Cloud está ativo */}
-              {activeModule === 'cloud' && (
-                <div className="hidden lg:flex lg:w-auto lg:flex-row lg:items-center lg:gap-1.5">
-                  {/* Upload */}
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'upload' })}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-[13px] font-medium text-white hover:bg-orange-600 transition-colors"
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    Enviar
-                  </button>
-                  {/* Nova pasta */}
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'create-folder' })}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                  >
-                    <FolderPlus className="h-3.5 w-3.5" />
-                    Nova pasta
-                  </button>
-                  {/* Filtros */}
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'toggle-filters' })}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors ${cloudHeaderState.showFilters ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}
-                  >
-                    <Filter className="h-3.5 w-3.5" />
-                    Filtros
-                  </button>
 
-                  {/* Separador */}
-                  <div className="w-px h-5 bg-slate-200 mx-0.5" />
-
-                  {/* Lista / Cards / P·M·G — grupo único */}
-                  <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'list' })}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-all ${cloudHeaderState.viewMode === 'list' ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
-                    >
-                      <List className="w-3.5 h-3.5" />
-                      Lista
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'cards' })}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-all ${cloudHeaderState.viewMode === 'cards' ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                      Cards
-                    </button>
-                    {cloudHeaderState.viewMode === 'cards' && (
-                      <>
-                        <div className="w-px h-4 bg-slate-200 mx-0.5" />
-                        {(['small', 'medium', 'large'] as const).map((size, i) => (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: size })}
-                            className={`rounded-md w-7 h-7 text-[11px] font-bold transition-all ${cloudHeaderState.cardSize === size ? 'bg-orange-100 text-orange-700' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'}`}
-                          >
-                            {['P', 'M', 'G'][i]}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
-                {/* Busca global — barra com typewriter */}
-                <SearchBarTypewriter onClick={() => setGlobalSearchOpen(true)} />
-                {/* Botão mobile de busca global (sm e menores) */}
+              {/* RIGHT: busca compacta + ações */}
+              <div className="flex items-center gap-2">
+                {/* Pílula de busca — igual para todos os módulos */}
+                <button
+                  type="button"
+                  onClick={() => setGlobalSearchOpen(true)}
+                  className="hidden md:inline-flex items-center gap-2 rounded-[8px] bg-[#f4f4f1] px-3 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-[#eeede9] hover:text-slate-700"
+                  title="Pesquisa global (⌘K)"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Pesquisa global
+                  <span className="rounded bg-[#e8e8e3] px-1.5 py-0.5 text-[10px] text-slate-400">⌘K</span>
+                </button>
+                {/* Busca mobile */}
                 <button
                   onClick={() => setGlobalSearchOpen(true)}
-                  className="flex lg:hidden items-center justify-center p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  className="flex md:hidden items-center justify-center p-1.5 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                   title="Busca global (⌘K)"
                 >
-                  <Search className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <Search className="w-4 h-4" />
                 </button>
 
+                {activeModule !== 'cloud' && isModuleEnabled('tarefas') && canAccessModule('tarefas') && (
                 <button
                   onClick={() => navigateTo('tarefas')}
                   className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
@@ -2137,8 +2158,10 @@ useEffect(() => {
                     </span>
                   )}
                 </button>
+                )}
 
                 {/* Tracker de Solicitações de Documentos — discreto, ao lado de Tarefas */}
+                {activeModule !== 'cloud' && (
                 <button
                   onClick={() => setDocRequestsOpen(o => !o)}
                   className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
@@ -2155,6 +2178,7 @@ useEffect(() => {
                     </span>
                   )}
                 </button>
+                )}
 
                 <NotificationBell
                   onNavigateToModule={(moduleKey: string, params?: any) => {
@@ -2162,20 +2186,22 @@ useEffect(() => {
                   }}
                 />
                 
-                <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-gray-200">
+                <div className={`flex items-center gap-2 sm:gap-3 ${activeModule === 'cloud' ? '' : 'pl-2 sm:pl-3 border-l border-[#e7e5df]'}`}>
                   <div className="hidden lg:block text-right">
                     <p className="text-sm font-semibold text-slate-900 truncate max-w-[150px]">{profile.name}</p>
                     <p className="text-xs text-slate-600">{profile.role}</p>
                   </div>
                   
                   {/* Theme Toggle */}
-                  <button 
-                    onClick={toggleTheme}
-                    className="p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                    title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
-                  >
-                    {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
-                  </button>
+                  {activeModule !== 'cloud' && (
+                    <button 
+                      onClick={toggleTheme}
+                      className="p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                      title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+                    >
+                      {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    </button>
+                  )}
 
                   <div className="relative" ref={profileMenuRef}>
                     <button
@@ -2188,12 +2214,12 @@ useEffect(() => {
                       aria-expanded={profileMenuOpen}
                       title="Meu Perfil"
                     >
-                      <div className="relative w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden border border-amber-500 shadow-md">
+                      <div className="relative overflow-hidden rounded-full border border-amber-500 shadow-md h-9 w-9">
                         <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="w-full h-full object-cover" />
                       </div>
                     </button>
                     <div
-                      className={`absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-2 transition-all z-50 ${
+                      className={`absolute right-0 mt-2 w-44 bg-white border border-[#e7e5df] rounded-lg shadow-lg py-2 transition-all z-50 ${
                         profileMenuOpen
                           ? 'opacity-100 translate-y-0 pointer-events-auto'
                           : 'opacity-0 translate-y-2 pointer-events-none'
@@ -2203,7 +2229,8 @@ useEffect(() => {
                         <button
                           onClick={() => {
                             setProfileMenuOpen(false);
-                            navigateTo('configuracoes');
+                            setSettingsInitialSection(undefined);
+                            setShowSettings(true);
                           }}
                           className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-amber-50"
                         >
@@ -2223,14 +2250,16 @@ useEffect(() => {
                       </button>
                     </div>
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                    className="p-1.5 sm:p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                    title="Sair"
-                  >
-                    <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
+                  {activeModule !== 'cloud' && (
+                    <button
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 sm:p-2"
+                      title="Sair"
+                    >
+                      <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2391,16 +2420,7 @@ useEffect(() => {
                 onParamConsumed={() => clearModuleParams('assinaturas')}
               />
             )}
-            {activeModule === 'configuracoes' && (
-              <SettingsModule
-                initialSection={
-                  moduleParams['configuracoes']
-                    ? (JSON.parse(moduleParams['configuracoes']).section as any)
-                    : undefined
-                }
-                onParamConsumed={() => clearModuleParams('configuracoes')}
-              />
-            )}
+            {/* settings aberto como modal — não como módulo de página */}
             {activeModule === 'cron' && <CronEndpoint />}
             {activeModule === 'perfil' && (
               <UserProfilePage
@@ -2423,7 +2443,7 @@ useEffect(() => {
 
         {activeModule !== 'chat' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">
                 <span>© {new Date().getFullYear()} jurius.com.br</span>
               </div>
@@ -2447,6 +2467,7 @@ useEffect(() => {
       </div>
 
       {/* Widget flutuante do Editor de Petições - renderizado fora do fluxo de módulos */}
+      </div>
       <Suspense fallback={null}>
         <PetitionEditorWidget />
       </Suspense>
@@ -2461,6 +2482,15 @@ useEffect(() => {
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={(module, params) => safeNavigateTo(module as any, params as any)}
       />
+
+      {/* Modal de configurações — portal sobre qualquer módulo */}
+      <Suspense fallback={null}>
+        <SettingsModule
+          open={showSettings}
+          initialSection={settingsInitialSection as any}
+          onClose={() => setShowSettings(false)}
+        />
+      </Suspense>
     </div>
     </CacheProvider>
   );

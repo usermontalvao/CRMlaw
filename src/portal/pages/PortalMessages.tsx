@@ -95,8 +95,8 @@ const AudioPlayer: React.FC<{ src: string }> = ({ src }) => {
         {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
       </button>
       <div className="flex-1 flex flex-col gap-0.5">
-        <div className="h-1.5 rounded-full bg-white/20 overflow-hidden">
-          <div className="h-full rounded-full bg-white/70 transition-all" style={{ width: `${progress * 100}%` }} />
+        <div className="h-1.5 rounded-full bg-[#f8f7f5]/20 overflow-hidden">
+          <div className="h-full rounded-full bg-[#f8f7f5]/70 transition-all" style={{ width: `${progress * 100}%` }} />
         </div>
         <span className="text-[10px] opacity-60">{formatSeconds(dur)}</span>
       </div>
@@ -436,7 +436,7 @@ export const PortalMessages: React.FC = () => {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" download={attach.fileName}
         className={`flex items-center gap-2.5 py-1 group ${isClient ? 'text-white' : 'text-slate-800'}`}>
-        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${isClient ? 'bg-white/20' : 'bg-orange-100'}`}>
+        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${isClient ? 'bg-[#f8f7f5]/20' : 'bg-orange-100'}`}>
           <FileText className={`w-4 h-4 ${isClient ? 'text-white' : 'text-orange-500'}`} />
         </div>
         <div className="flex flex-col min-w-0">
@@ -469,10 +469,10 @@ export const PortalMessages: React.FC = () => {
         <p className="mt-0.5 text-sm text-slate-500">Fale diretamente com o escritório.</p>
       </header>
 
-      <div className="flex flex-col flex-1 min-h-0 rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-[0_8px_32px_rgba(15,23,42,0.10)]">
+      <div className="flex flex-col flex-1 min-h-0 rounded-2xl border border-slate-200 bg-[#f8f7f5] overflow-hidden shadow-[0_8px_32px_rgba(15,23,42,0.10)]">
         {/* Header da conversa — perfil do atendente */}
         {attendant ? (
-          <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-white">
+          <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-[#f8f7f5]">
             {/* Avatar */}
             <div className="relative shrink-0">
               {attendant.avatar_url ? (
@@ -561,7 +561,7 @@ export const PortalMessages: React.FC = () => {
                   if (m.is_system) {
                     return (
                       <div key={m.id} className="flex justify-center my-3">
-                        <div className="flex items-center gap-1.5 rounded-full bg-white border border-slate-200 shadow-sm px-4 py-1.5 text-[11px] font-medium text-slate-500">
+                        <div className="flex items-center gap-1.5 rounded-full bg-[#f8f7f5] border border-slate-200 shadow-sm px-4 py-1.5 text-[11px] font-medium text-slate-500">
                           <Lock className="h-3 w-3 text-slate-400 shrink-0" />
                           {m.content}
                         </div>
@@ -578,7 +578,7 @@ export const PortalMessages: React.FC = () => {
 
                   const bubbleColor = isClient
                     ? 'bg-orange-500 text-white'
-                    : 'bg-white text-slate-900 border border-slate-100';
+                    : 'bg-[#f8f7f5] text-slate-900 border border-slate-100';
                   const roundBase = isClient ? 'rounded-2xl rounded-br-sm' : 'rounded-2xl rounded-bl-sm';
                   const roundTop  = prevSame  ? (isClient ? 'rounded-tr-lg' : 'rounded-tl-lg') : '';
                   const roundBot  = nextSame  ? (isClient ? 'rounded-br-lg' : 'rounded-bl-lg') : '';
@@ -617,7 +617,7 @@ export const PortalMessages: React.FC = () => {
                 <span className="text-[11px] font-semibold text-orange-500 mb-1 ml-1">
                   {attendant ? (attendant.lawyer_full_name || attendant.name).split(' ')[0] : 'Escritório'}
                 </span>
-                <div className="bg-white border border-slate-100 shadow-sm rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-0.5">
+                <div className="bg-[#f8f7f5] border border-slate-100 shadow-sm rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-0.5">
                   <TypingDots />
                 </div>
               </div>
@@ -628,7 +628,7 @@ export const PortalMessages: React.FC = () => {
 
         {/* Área de input / conversa encerrada */}
         {isClosed ? (
-          <div className="shrink-0 border-t border-slate-100 p-4 bg-white">
+          <div className="shrink-0 border-t border-slate-100 p-4 bg-[#f8f7f5]">
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-center">
               <div className="flex items-center justify-center gap-1.5 text-[13px] font-semibold text-slate-700 mb-1">
                 <Lock className="h-3.5 w-3.5 text-slate-400" />
@@ -648,7 +648,7 @@ export const PortalMessages: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="shrink-0 bg-white border-t border-slate-100">
+          <div className="shrink-0 bg-[#f8f7f5] border-t border-slate-100">
             {/* Barra de escrevendo do atendente (compacta) */}
             {attendantTyping && (
               <div className="flex items-center gap-2 px-4 pt-2 pb-0">

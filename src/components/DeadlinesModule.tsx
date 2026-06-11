@@ -2317,7 +2317,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     reportPeriod === period.key
                       ? 'bg-indigo-600 text-white'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-300'
+                      : 'bg-[#f8f7f5] text-slate-600 border border-[#e7e5df] hover:border-indigo-300'
                   }`}
                 >
                   {period.label}
@@ -2333,7 +2333,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     type="date"
                     value={reportStartDate}
                     onChange={(e) => setReportStartDate(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="w-full mt-1 px-3 py-2 border border-[#e7e5df] rounded-lg text-sm"
                   />
                 </div>
                 <div className="flex-1">
@@ -2342,7 +2342,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     type="date"
                     value={reportEndDate}
                     onChange={(e) => setReportEndDate(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="w-full mt-1 px-3 py-2 border border-[#e7e5df] rounded-lg text-sm"
                   />
                 </div>
               </div>
@@ -2376,7 +2376,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           {/* Gráficos em Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Por Status */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <PieChart className="w-4 h-4 text-slate-400" />
                 Por Status
@@ -2400,7 +2400,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
 
             {/* Por Prioridade */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-slate-400" />
                 Por Prioridade
@@ -2424,7 +2424,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
 
             {/* Por Tipo */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-slate-400" />
                 Por Tipo
@@ -2449,7 +2449,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
 
             {/* Por Responsável */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Users className="w-4 h-4 text-slate-400" />
                 Por Responsável (Top 5)
@@ -2477,7 +2477,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {/* Top Clientes */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
             <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-slate-400" />
               Clientes com Mais Prazos (Top 10)
@@ -2631,7 +2631,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         ? completedOnTime ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
         : isOverdue ? 'bg-red-50 border-red-200'
         : isUrgent ? 'bg-orange-50 border-orange-200'
-        : 'bg-slate-50 border-slate-200';
+        : 'bg-slate-50 border-[#e7e5df]';
       const countdownColor = isCumprido
         ? completedOnTime ? 'text-emerald-600' : 'text-amber-600'
         : isOverdue ? 'text-red-600'
@@ -2664,11 +2664,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <div className="flex items-center justify-between gap-3 w-full">
               <div className="flex items-center gap-2 flex-wrap">
                 {isAdmin && (
-                  <button onClick={() => void handleCloneDeadline(d)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition">
+                  <button onClick={() => void handleCloneDeadline(d)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[#f8f7f5] border border-[#e7e5df] text-slate-600 hover:bg-slate-50 transition">
                     <Copy className="w-3.5 h-3.5" /> Duplicar
                   </button>
                 )}
-                <button onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50 transition">
+                <button onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[#f8f7f5] border border-red-200 text-red-600 hover:bg-red-50 transition">
                   <Trash2 className="w-3.5 h-3.5" /> Excluir
                 </button>
               </div>
@@ -2709,19 +2709,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   )}
                 </div>
                 {/* Due date */}
-                <div className="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Vencimento</span>
                   <span className="text-sm font-bold text-slate-800">{formatDate(d.due_date)}</span>
                 </div>
                 {/* Status */}
-                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Status</span>
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getStatusBadge(d.status)}`}>
                     {getStatusLabel(d.status)}
                   </span>
                 </div>
                 {/* Priority */}
-                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prioridade</span>
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getPriorityBadge(d.priority)}`}>
                     {getPriorityLabel(d.priority)}
@@ -2740,7 +2740,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     navigateTo('clientes', { mode: 'details', entityId: d.client_id } as any);
                   }}
                   className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
-                    d.client_id ? 'border-slate-200 hover:border-orange-300 hover:bg-orange-50 cursor-pointer group' : 'border-slate-200 cursor-default'
+                    d.client_id ? 'border-[#e7e5df] hover:border-orange-300 hover:bg-orange-50 cursor-pointer group' : 'border-[#e7e5df] cursor-default'
                   }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
@@ -2764,8 +2764,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   }}
                   className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
                     d.responsible_id && memberMap.get(d.responsible_id || '')?.user_id
-                      ? 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 cursor-pointer group'
-                      : 'border-slate-200 cursor-default'
+                      ? 'border-[#e7e5df] hover:border-emerald-300 hover:bg-emerald-50 cursor-pointer group'
+                      : 'border-[#e7e5df] cursor-default'
                   }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
@@ -2853,7 +2853,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 )}
                 <div className="flex gap-2 relative">
                   {mentionSuggestions.length > 0 && (
-                    <div className="absolute bottom-12 left-0 right-12 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-10 max-h-52 overflow-y-auto">
+                    <div className="absolute bottom-12 left-0 right-12 bg-white border border-[#e7e5df] rounded-xl shadow-lg overflow-hidden z-10 max-h-52 overflow-y-auto">
                       <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Mencionar</p>
                       {mentionSuggestions.map((mem) => {
                         const hue = getMemberHue(mem.name || '');
@@ -2888,7 +2888,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     onChange={(e) => handleCommentChange(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') { setMentionQuery(null); setReplyingTo(null); } }}
                     placeholder={replyingTo ? `Responder a ${replyingTo.name}...` : 'Escreva um comentário... use @ para mencionar'}
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                    className="flex-1 px-3 py-2 text-sm border border-[#e7e5df] rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
                   />
                   <button
                     onClick={() => void handleAddComment(d.id)}
@@ -2905,7 +2905,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       );
   })();
 
-  const inputStyle = 'w-full h-10 px-3 py-2 rounded-lg text-sm bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors';
+  const inputStyle = 'w-full h-10 px-3 py-2 rounded-lg text-sm bg-white border border-[#e7e5df] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors';
   const labelStyle = 'block text-xs font-semibold text-slate-500 mb-1.5';
 
   const deadlineModal = (
@@ -2948,7 +2948,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">Detalhes do Prazo</h3>
@@ -3071,7 +3071,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             )}
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-slate-200">
+          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-[#e7e5df]">
             <button
               onClick={() => handleOpenModal(selectedDeadlineForView)}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
@@ -3110,7 +3110,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {/* ── Comentários ─────────────────────────────────────────────── */}
-          <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="mt-8 pt-6 border-t border-[#e7e5df]">
             <button
               onClick={() => {
                 if (showCommentsFor === selectedDeadlineForView.id) {
@@ -3157,7 +3157,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     onChange={(e) => setCommentText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddComment(selectedDeadlineForView.id); } }}
                     placeholder="Escreva um comentário..."
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    className="flex-1 px-3 py-2 text-sm border border-[#e7e5df] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                   <button
                     onClick={() => void handleAddComment(selectedDeadlineForView.id)}
@@ -3237,8 +3237,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               active
                 ? `${bg} border-transparent ring-2 ${ring}`
                 : onClick
-                ? 'bg-white border-slate-200 hover:shadow-md hover:border-slate-300'
-                : 'bg-white border-slate-200 cursor-default'
+                ? 'bg-[#f8f7f5] border-[#e7e5df] hover:shadow-md hover:border-slate-300'
+                : 'bg-[#f8f7f5] border-[#e7e5df] cursor-default'
             }`}
           >
             <div className="flex items-center justify-between">
@@ -3272,7 +3272,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {/* Toolbar */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
         {/* Linha principal */}
         <div className="flex items-center gap-2 px-3 py-2">
           {/* Views */}
@@ -3284,7 +3284,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               { key: 'workload', icon: Users, label: 'Carga', action: () => setViewMode(viewMode === 'workload' ? 'list' : 'workload'), active: viewMode === 'workload' },
             ] as const).map(({ key, icon: Icon, label, action, active }) => (
               <button key={key} onClick={action} title={label}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${active ? 'bg-[#f8f7f5] text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                 <Icon className="w-4 h-4" />
               </button>
             ))}
@@ -3315,7 +3315,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
               placeholder="Buscar prazo..."
-              className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+              className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
             />
           </div>
 
@@ -3325,7 +3325,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             className={`flex items-center gap-1.5 h-8 px-3 rounded-xl border text-sm font-medium transition-all ${
               filtersExpanded || filterType || filterPriority || filterResponsible
                 ? 'bg-blue-50 border-blue-200 text-blue-700'
-                : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50'
             }`}
           >
             <Filter className="w-3.5 h-3.5" />
@@ -3364,14 +3364,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         {filtersExpanded && (
           <div className="border-t border-slate-100 px-3 py-2.5 flex flex-wrap items-center gap-2 bg-slate-50/60">
             <select value={filterType} onChange={(e) => setFilterType(e.target.value as DeadlineType | '')}
-              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
+              className="h-8 px-2 pr-7 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer">
               <option value="">Tipo</option>
               <option value="processo">Processo</option>
               <option value="requerimento">Requerimento</option>
               <option value="geral">Geral</option>
             </select>
             <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as DeadlinePriority | '')}
-              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
+              className="h-8 px-2 pr-7 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer">
               <option value="">Prioridade</option>
               <option value="urgente">Urgente</option>
               <option value="alta">Alta</option>
@@ -3379,14 +3379,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <option value="baixa">Baixa</option>
             </select>
             <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)}
-              className="h-8 px-2 pr-7 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer">
+              className="h-8 px-2 pr-7 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer">
               <option value="">Responsável</option>
               <option value={UNASSIGNED_FILTER_VALUE}>Sem responsável</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {(filterType || filterPriority || filterResponsible) && (
               <button onClick={() => { setFilterType(''); setFilterPriority(''); setFilterResponsible(''); }}
-                className="h-8 px-3 text-xs text-red-600 border border-red-200 bg-white rounded-lg hover:bg-red-50 transition">
+                className="h-8 px-3 text-xs text-red-600 border border-red-200 bg-[#f8f7f5] rounded-lg hover:bg-red-50 transition">
                 Limpar filtros
               </button>
             )}
@@ -3396,7 +3396,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
       {/* Calendário Mensal de Prazos - Retrátil */}
       {calendarExpanded && (
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
         <div className="p-4">
             {/* Navegação do mês */}
             <div className="flex items-center justify-between mb-3">
@@ -3576,7 +3576,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             const columnColors: Record<string, { bg: string; border: string; headerBg: string }> = {
               pendente: { bg: 'bg-blue-50/50', border: 'border-blue-200', headerBg: 'bg-blue-500' },
               vencido: { bg: 'bg-red-50/50', border: 'border-red-200', headerBg: 'bg-red-500' },
-              cancelado: { bg: 'bg-slate-50/50', border: 'border-slate-200', headerBg: 'bg-slate-500' },
+              cancelado: { bg: 'bg-slate-50/50', border: 'border-[#e7e5df]', headerBg: 'bg-slate-500' },
             };
             const colors = columnColors[statusOption.key] || columnColors.pendente;
             
@@ -3588,7 +3588,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     <StatusIcon className="w-4 h-4 text-white" />
                     <h4 className="text-sm font-semibold text-white">{statusOption.label}</h4>
                   </div>
-                  <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  <span className="bg-[#f8f7f5]/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                     {statusDeadlines.length}
                   </span>
                 </div>
@@ -3604,7 +3604,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     return (
                       <div
                         key={deadline.id}
-                        className={`bg-white rounded-xl p-3 shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 ${
+                        className={`bg-[#f8f7f5] rounded-xl p-3 shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 ${
                           dueSoon || daysUntil < 0
                             ? 'border-l-red-500'
                             : deadline.priority === 'urgente'
@@ -3675,7 +3675,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           })}
         </div>
       ) : viewMode === 'map' ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Mapa de Prazos: plano de ação</h4>
@@ -3721,7 +3721,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 : bucketDeadlines.length;
 
               return (
-                <div key={bucket.key} className="border border-slate-200 rounded-xl p-5 bg-slate-50/60">
+                <div key={bucket.key} className="border border-[#e7e5df] rounded-xl p-5 bg-slate-50/60">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
@@ -3804,8 +3804,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         return (
                           <div
                             key={deadline.id}
-                            className={`rounded-lg border bg-white p-4 hover:shadow-md transition cursor-pointer ${
-                              dueSoon ? 'border-red-300' : 'border-slate-200'
+                            className={`rounded-lg border bg-[#f8f7f5] p-4 hover:shadow-md transition cursor-pointer ${
+                              dueSoon ? 'border-red-300' : 'border-[#e7e5df]'
                             }`}
                             onClick={() => handleViewDeadline(deadline)}
                           >
@@ -3855,18 +3855,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload' && loading) ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-4">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-16 flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-slate-600">Carregando prazos...</p>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length === 0) ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-12 text-center">
           <p className="text-slate-600">Nenhum prazo encontrado.</p>
         </div>
       ) : (!isPastMonth && viewMode !== 'workload') ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
           {/* Mobile Cards */}
-          <div className="block lg:hidden divide-y divide-slate-200">
+          <div className="block lg:hidden divide-y divide-[#e7e5df]">
             {paginatedDeadlines.map((deadline) => {
               const priorityConfig = getPriorityConfig(deadline.priority);
               const typeConfig = getTypeConfig(deadline.type);
@@ -3967,7 +3967,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             disabled={bulkActionLoading}
                             defaultValue=""
                             onChange={(e) => { if (e.target.value) void handleBulkStatusChange(e.target.value as DeadlineStatus); e.target.value = ''; }}
-                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer"
+                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer"
                           >
                             <option value="" disabled>Alterar status...</option>
                             {statusOptions.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -3976,7 +3976,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             disabled={bulkActionLoading}
                             defaultValue=""
                             onChange={(e) => { if (e.target.value) void handleBulkResponsibleChange(e.target.value); e.target.value = ''; }}
-                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer"
+                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer"
                           >
                             <option value="" disabled>Alterar responsável...</option>
                             {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -3996,7 +3996,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   </tr>
                 </thead>
               )}
-              <thead className="border-b border-slate-200">
+              <thead className="border-b border-[#e7e5df]">
                 <tr>
                   <th className="pl-4 pr-2 py-3 w-8">
                     <input
@@ -4116,7 +4116,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           value={deadline.status}
                           onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
                           disabled={isUpdating}
-                          className="text-xs font-medium px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                          className="text-xs font-medium px-3 py-1.5 rounded-md border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 cursor-pointer"
                         >
                           {statusOptions.map((opt) => (
                             <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -4183,7 +4183,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {members.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-12 text-center">
               <p className="text-sm text-slate-400">Nenhum membro encontrado.</p>
             </div>
           ) : (() => {
@@ -4205,10 +4205,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   const initials = member.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?';
                   const pct = Math.round((total / maxTotal) * 100);
                   const barColor = overdue > 0 ? 'bg-red-500' : urgent > 0 ? 'bg-orange-400' : 'bg-blue-500';
-                  const cardBorder = overdue > 0 ? 'border-red-200' : 'border-slate-200';
+                  const cardBorder = overdue > 0 ? 'border-red-200' : 'border-[#e7e5df]';
 
                   return (
-                    <div key={member.id} className={`bg-white rounded-xl border ${cardBorder} p-4 hover:shadow-sm transition`}>
+                    <div key={member.id} className={`bg-[#f8f7f5] rounded-xl border ${cardBorder} p-4 hover:shadow-sm transition`}>
                       <div className="flex items-center gap-3 mb-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold ${
                           overdue > 0 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
@@ -4246,7 +4246,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length > pageSize && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center justify-between">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center justify-between">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
@@ -4272,7 +4272,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       {reportModal}
 
       {/* ── Histórico de Prazos Cumpridos ───────────────────────────────── */}
-      <div className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+      <div className="bg-[#f8f7f5] rounded-2xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
 
         {/* Header */}
         <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100">
@@ -4291,7 +4291,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 value={historySearch}
                 onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
                 placeholder="Buscar..."
-                className="h-7 pl-7 pr-3 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400/40 w-36"
+                className="h-7 pl-7 pr-3 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none focus:ring-1 focus:ring-emerald-400/40 w-36"
               />
             </div>
 
@@ -4299,7 +4299,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <select
               value={historyMonth === '' ? '' : String(historyMonth)}
               onChange={(e) => { setHistoryMonth(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
-              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600"
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600"
             >
               <option value="">Mês</option>
               {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
@@ -4311,7 +4311,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <select
               value={historyYear === '' ? '' : String(historyYear)}
               onChange={(e) => { setHistoryYear(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
-              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600"
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600"
             >
               <option value="">Ano</option>
               {historyYears.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -4323,7 +4323,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               className={`h-7 px-2.5 text-xs border rounded-lg font-medium transition flex items-center gap-1 ${
                 historyFiltersExpanded || historyType || historyPriority || historyResponsible
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                  : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50'
               }`}
             >
               <Filter className="w-3 h-3" />
@@ -4347,14 +4347,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         {historyFiltersExpanded && (
           <div className="px-5 py-2 border-b border-slate-100 bg-slate-50/60 flex flex-wrap gap-2">
             <select value={historyType} onChange={(e) => { setHistoryType(e.target.value as DeadlineType | ''); setHistoryPage(1); }}
-              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600">
               <option value="">Tipo</option>
               <option value="processo">Processo</option>
               <option value="requerimento">Requerimento</option>
               <option value="geral">Geral</option>
             </select>
             <select value={historyPriority} onChange={(e) => { setHistoryPriority(e.target.value as DeadlinePriority | ''); setHistoryPage(1); }}
-              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600">
               <option value="">Prioridade</option>
               <option value="urgente">Urgente</option>
               <option value="alta">Alta</option>
@@ -4362,7 +4362,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <option value="baixa">Baixa</option>
             </select>
             <select value={historyResponsible} onChange={(e) => { setHistoryResponsible(e.target.value); setHistoryPage(1); }}
-              className="h-7 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer text-slate-600">
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600">
               <option value="">Responsável</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
@@ -4437,12 +4437,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </p>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} disabled={historyPage === 1}
-                    className="h-7 px-3 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
+                    className="h-7 px-3 text-xs font-medium bg-[#f8f7f5] border border-[#e7e5df] rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
                     Anterior
                   </button>
                   <span className="text-xs text-slate-500 px-2">{historyPage} / {historyTotalPages}</span>
                   <button onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))} disabled={historyPage === historyTotalPages}
-                    className="h-7 px-3 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
+                    className="h-7 px-3 text-xs font-medium bg-[#f8f7f5] border border-[#e7e5df] rounded-lg hover:bg-slate-50 disabled:opacity-40 transition">
                     Próxima
                   </button>
                 </div>

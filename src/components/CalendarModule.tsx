@@ -21,6 +21,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
+import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { usePermissions } from '../hooks/usePermissions';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
@@ -47,6 +48,17 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   meeting: 'Reunião',
   pericia: 'Perícia',
   personal: 'Pessoal',
+};
+
+// Cores canônicas por tipo — usadas na legenda de filtros e nos chips do formulário
+const EVENT_TYPE_COLORS: Record<EventType, { badge: string; checkbox: string }> = {
+  deadline:    { badge: 'text-indigo-700 bg-indigo-100 border-indigo-500',   checkbox: 'text-indigo-600 focus:ring-indigo-500' },
+  hearing:     { badge: 'text-red-700 bg-red-100 border-red-500',             checkbox: 'text-red-600 focus:ring-red-500' },
+  requirement: { badge: 'text-orange-700 bg-orange-100 border-orange-500',   checkbox: 'text-orange-600 focus:ring-orange-500' },
+  payment:     { badge: 'text-sky-700 bg-sky-100 border-sky-500',             checkbox: 'text-sky-600 focus:ring-sky-500' },
+  pericia:     { badge: 'text-purple-700 bg-purple-100 border-purple-500',   checkbox: 'text-purple-600 focus:ring-purple-500' },
+  meeting:     { badge: 'text-emerald-700 bg-emerald-100 border-emerald-500', checkbox: 'text-emerald-600 focus:ring-emerald-500' },
+  personal:    { badge: 'text-fuchsia-700 bg-fuchsia-100 border-fuchsia-500', checkbox: 'text-fuchsia-600 focus:ring-fuchsia-500' },
 };
 
 type DeletionLogEntry = {
@@ -163,7 +175,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   focusEventId,
   onParamConsumed,
 }) => {
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const { user } = useAuth();
   const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
 
@@ -202,6 +214,50 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   };
 
   const calendarRef = useRef<FullCalendar | null>(null);
+  const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
+  const [eventTypeLabels, setEventTypeLabels] = useState<Record<string, string>>(EVENT_TYPE_LABELS);
+  const [eventTypeHexColors, setEventTypeHexColors] = useState<Record<string, string>>({});
+  const [inactiveEventTypeKeys, setInactiveEventTypeKeys] = useState<Set<string>>(new Set());
+  const [bufferMin, setBufferMin] = useState(0);
+  const [eventTypeDurations, setEventTypeDurations] = useState<Record<string, number>>({
+    deadline: 60, hearing: 120, requirement: 60, payment: 30, meeting: 60, pericia: 180, personal: 60,
+  });
+
+  useEffect(() => {
+    settingsService.getResponsibilityConfig().then(cfgs => {
+      const cfg = cfgs.find(c => c.module === 'calendar');
+      if (cfg) setResponsibilityConfig(cfg);
+    }).catch(() => {});
+    settingsService.getCalendarModuleConfig().then(cfg => {
+      if (cfg.event_types.length > 0) {
+        const labels: Record<string, string> = { ...EVENT_TYPE_LABELS };
+        const durations: Record<string, number> = { ...eventTypeDurations };
+        const hexColors: Record<string, string> = {};
+        const inactive = new Set<string>();
+        const newFilters: Record<string, boolean> = {};
+        cfg.event_types.forEach(et => {
+          if (et.active === false) { inactive.add(et.key); return; }
+          labels[et.key] = et.label;
+          if (et.duration_min > 0) durations[et.key] = et.duration_min;
+          if (et.color) hexColors[et.key] = et.color;
+          newFilters[et.key] = true;
+        });
+        setEventTypeLabels(labels);
+        setEventTypeHexColors(hexColors);
+        setEventTypeDurations(durations);
+        setInactiveEventTypeKeys(inactive);
+        // Sincronizar viewFilters: adicionar tipos novos da config, manter os canônicos
+        setViewFilters(prev => {
+          const merged: Record<string, boolean> = { ...prev };
+          Object.keys(newFilters).forEach(k => { if (!(k in merged)) merged[k] = true; });
+          // Tipos removidos da config ficam mas inativos não aparecem na UI — sem remoção para não perder estado de filtro
+          return merged as Record<EventType, boolean>;
+        });
+      }
+      setBufferMin(cfg.buffer_min ?? 0);
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
@@ -475,7 +531,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         description: '',
         client_id: '',
         client_name: '',
-        responsible_id: '',
+        responsible_id: (() => {
+          if (editingId) return '';
+          if (responsibilityConfig?.default_mode === 'creator') return user?.id ?? '';
+          if (responsibilityConfig?.default_mode === 'single' && responsibilityConfig.single_member_id)
+            return responsibilityConfig.single_member_id;
+          return '';
+        })(),
         is_private: false,
         shared_with_ids: [],
         process_id: '',
@@ -489,7 +551,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       setEditingEventId(editingId);
       setIsCreateModalOpen(true);
     },
-    [],
+    [responsibilityConfig, user],
   );
 
   const formatDateInputValue = useCallback((date: Date) => {
@@ -1410,11 +1472,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement')
         ? newEventForm.requirement_id : null;
 
+      const computedStartAt = computeStartAt(newEventForm.date, newEventForm.time);
+      const computedEndAt = newEventForm.time
+        ? (() => {
+            const durationMin = (eventTypeDurations[newEventForm.type] ?? 60) + bufferMin;
+            const endMs = new Date(computedStartAt).getTime() + durationMin * 60 * 1000;
+            return new Date(endMs).toISOString();
+          })()
+        : null;
+
       const basePayload = {
         title: newEventForm.title.trim(),
         description: newEventForm.description.trim() || null,
         event_type: newEventForm.type,
-        start_at: computeStartAt(newEventForm.date, newEventForm.time),
+        start_at: computedStartAt,
+        end_at: computedEndAt,
         notify_minutes_before: null as number | null,
         client_id: newEventForm.client_id || null,
         client_name: !newEventForm.client_id && newEventForm.client_name.trim()
@@ -1458,7 +1530,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
           const notifyBase = { appointment_id: updatedEvent.id, metadata: { event_type: updatedEvent.event_type, start_at: updatedEvent.start_at } };
           const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
-          const typeLabel = EVENT_TYPE_LABELS[updatedEvent.event_type as EventType] || 'Compromisso';
+          const typeLabel = eventTypeLabels[updatedEvent.event_type as EventType] || 'Compromisso';
           const typeEmojis: Record<string, string> = { hearing: '⚖️', meeting: '🤝', payment: '💰', pericia: '🔬', personal: '👤', requirement: '📋', deadline: '📅' };
           const typeEmoji = typeEmojis[updatedEvent.event_type] || '📅';
 
@@ -1502,7 +1574,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
           const notifyBase = { appointment_id: createdEvent.id, metadata: { event_type: newEventForm.type, start_at: createdEvent.start_at } };
           const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
-          const typeLabel = EVENT_TYPE_LABELS[newEventForm.type as EventType] || 'Compromisso';
+          const typeLabel = eventTypeLabels[newEventForm.type as EventType] || 'Compromisso';
           const typeEmojis: Record<string, string> = { hearing: '⚖️', meeting: '🤝', payment: '💰', pericia: '🔬', personal: '👤', requirement: '📋', deadline: '📅' };
           const typeEmoji = typeEmojis[newEventForm.type] || '📅';
 
@@ -1576,6 +1648,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         deleted_by: userName || 'Usuário',
       });
       await calendarService.deleteEvent(eventId);
+      notifyDeleted(eventTitle || undefined);
       setCalendarEventsData((prev) => prev.filter((e) => e.id !== eventId));
       const api = calendarRef.current?.getApi();
       api?.getEventById(`calendar-${eventId}`)?.remove();
@@ -1610,6 +1683,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         deleted_by: userName || 'Usuário',
       });
       await calendarService.deleteEvent(editingEventId);
+      notifyDeleted(newEventForm.title || undefined);
 
       setCalendarEventsData((prev) => prev.filter((event) => event.id !== editingEventId));
 
@@ -2405,23 +2479,23 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       )}
 
       {/* Toolbar responsiva */}
-      <div className="bg-white border border-slate-200 rounded-t-xl shadow-sm">
+      <div className="bg-[#f5f5f3] border-b border-[#e7e5df] rounded-xl mb-3">
         {/* Linha 1: nav + título + views + novo */}
         <div className="flex items-center gap-1.5 px-3 py-2 flex-wrap">
           {/* Navegação */}
-          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 shrink-0">
-            <button type="button" onClick={() => calendarRef.current?.getApi().prev()} className="p-1 hover:bg-white rounded-md text-slate-600 transition" aria-label="Anterior">
+          <div className="flex items-center bg-[#f8f7f5] ring-1 ring-black/[0.06] rounded-lg p-0.5 shrink-0">
+            <button type="button" onClick={() => calendarRef.current?.getApi().prev()} className="p-1 hover:bg-[#eeede9] rounded-md text-slate-600 transition" aria-label="Anterior">
               <span className="text-sm font-bold leading-none">‹</span>
             </button>
             <button type="button" onClick={() => calendarRef.current?.getApi().today()} className="px-2 text-xs font-medium text-slate-700">Hoje</button>
-            <button type="button" onClick={() => calendarRef.current?.getApi().next()} className="p-1 hover:bg-white rounded-md text-slate-600 transition" aria-label="Próximo">
+            <button type="button" onClick={() => calendarRef.current?.getApi().next()} className="p-1 hover:bg-[#eeede9] rounded-md text-slate-600 transition" aria-label="Próximo">
               <span className="text-sm font-bold leading-none">›</span>
             </button>
           </div>
           <h2 className="text-sm font-bold text-slate-800 capitalize shrink-0 min-w-0 truncate flex-1 sm:flex-none sm:w-28">{currentMonthName}</h2>
 
           {/* Views */}
-          <div className="flex bg-slate-100 p-0.5 rounded-lg shrink-0">
+          <div className="flex bg-[#f8f7f5] ring-1 ring-black/[0.06] p-0.5 rounded-lg shrink-0">
             {([
               { label: 'Mês', view: 'dayGridMonth' },
               { label: 'Semana', view: 'timeGridWeek' },
@@ -2432,14 +2506,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 type="button"
                 onClick={() => { setShowCronograma(false); handleChangeView(view); }}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
-                  !showCronograma && calendarView === view ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'
+                  !showCronograma && calendarView === view ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >{label}</button>
             ))}
             <button
               type="button"
               onClick={() => setShowCronograma(v => !v)}
-              className={`hidden sm:inline-flex px-2.5 py-1 text-xs font-medium rounded-md transition-all items-center gap-1 ${showCronograma ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+              className={`hidden sm:inline-flex px-2.5 py-1 text-xs font-medium rounded-md transition-all items-center gap-1 ${showCronograma ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               <LayoutList className="w-3 h-3" />Cronograma
             </button>
@@ -2449,11 +2523,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div className="hidden sm:block flex-1" />
 
           {/* Filtro responsável — desktop only na linha 1 */}
-          <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium shrink-0">
+          <div className="hidden sm:flex items-center bg-[#f8f7f5] ring-1 ring-black/[0.06] p-0.5 rounded-lg text-xs font-medium shrink-0">
             {(['todos', 'mim'] as const).map(opt => (
               <button key={opt} type="button"
                 onClick={() => { setCalendarResponsibleFilter(opt); setShowResponsiblePicker(false); }}
-                className={`px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter === opt ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter === opt ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >{opt === 'todos' ? 'Todos' : 'A mim'}</button>
             ))}
             <div ref={responsiblePickerRef}>
@@ -2463,7 +2537,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   if (rect) setResponsiblePickerPos({ top: rect.bottom + 6, left: rect.left });
                   setShowResponsiblePicker(v => !v);
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 {calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? (() => {
                   const m = members.find(m => (m.user_id || m.id) === calendarResponsibleFilter);
@@ -2486,19 +2560,19 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           {/* Ações secundárias — desktop only */}
           <div className="hidden sm:flex items-center gap-1 shrink-0">
             <button type="button" onClick={() => setLegendExpanded(v => !v)}
-              className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 hover:bg-slate-100 border-slate-200'}`}>
+              className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 hover:bg-slate-100 border-[#e7e5df]'}`}>
               <Filter className="w-3.5 h-3.5" />Filtros
             </button>
             <button type="button" onClick={() => setIsDeletionLogOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors">
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-slate-100 transition-colors">
               <History className="w-3.5 h-3.5" />Log
             </button>
             <button type="button" onClick={() => handleOpenExportModal('excel')}
-              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-emerald-600 hover:bg-emerald-50 transition-colors">
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-[#e7e5df] text-emerald-600 hover:bg-emerald-50 transition-colors">
               <FileSpreadsheet className="w-3.5 h-3.5" />Excel
             </button>
             <button type="button" onClick={() => handleOpenExportModal('pdf')}
-              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-red-500 hover:bg-red-50 transition-colors">
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-[#e7e5df] text-red-500 hover:bg-red-50 transition-colors">
               <FileText className="w-3.5 h-3.5" />PDF
             </button>
             <button type="button" onClick={() => setIsRepresentativesPanelOpen(true)}
@@ -2517,11 +2591,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         {/* Linha 2 mobile: filtro responsável + ações */}
         <div className="sm:hidden flex items-center gap-1.5 px-3 pb-2 overflow-x-auto scroll-hidden">
           {/* Filtro responsável */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium shrink-0">
+          <div className="flex items-center bg-[#f8f7f5] ring-1 ring-black/[0.06] p-0.5 rounded-lg text-xs font-medium shrink-0">
             {(['todos', 'mim'] as const).map(opt => (
               <button key={opt} type="button"
                 onClick={() => { setCalendarResponsibleFilter(opt); setShowResponsiblePicker(false); }}
-                className={`px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter === opt ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter === opt ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >{opt === 'todos' ? 'Todos' : 'A mim'}</button>
             ))}
             <div ref={responsiblePickerRef}>
@@ -2531,7 +2605,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   if (rect) setResponsiblePickerPos({ top: rect.bottom + 6, left: rect.left });
                   setShowResponsiblePicker(v => !v);
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? 'bg-white text-amber-600 shadow' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? 'bg-[#f5f5f3] text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 {calendarResponsibleFilter !== 'todos' && calendarResponsibleFilter !== 'mim' ? (() => {
                   const m = members.find(m => (m.user_id || m.id) === calendarResponsibleFilter);
@@ -2550,11 +2624,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>
           {/* Cronograma mobile */}
           <button type="button" onClick={() => setShowCronograma(v => !v)}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all shrink-0 ${showCronograma ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-slate-200'}`}>
+            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all shrink-0 ${showCronograma ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-[#e7e5df]'}`}>
             <LayoutList className="w-3 h-3" />Lista
           </button>
           <button type="button" onClick={() => setLegendExpanded(v => !v)}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors shrink-0 ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-slate-200'}`}>
+            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors shrink-0 ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-[#e7e5df]'}`}>
             <Filter className="w-3 h-3" />Filtros
           </button>
           <button type="button" onClick={() => setIsRepresentativesPanelOpen(true)}
@@ -2566,86 +2640,35 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
       {/* Filtros Expansíveis */}
       {legendExpanded && (
-        <div className="bg-slate-50 border-x border-slate-200 p-2 sm:p-4">
+        <div className="bg-slate-50 border-x border-[#e7e5df] p-2 sm:p-4">
           <h4 className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 sm:mb-3">Filtrar por Tipo</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.deadline}
-                onChange={() => setViewFilters((prev) => ({ ...prev, deadline: !prev.deadline }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-indigo-500">
-                Prazos
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.hearing}
-                onChange={() => setViewFilters((prev) => ({ ...prev, hearing: !prev.hearing }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-red-500">
-                Audiências
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.requirement}
-                onChange={() => setViewFilters((prev) => ({ ...prev, requirement: !prev.requirement }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-orange-700 bg-orange-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-orange-500">
-                Exigências
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.payment}
-                onChange={() => setViewFilters((prev) => ({ ...prev, payment: !prev.payment }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-sky-700 bg-sky-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-sky-500">
-                Recebimentos
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.pericia}
-                onChange={() => setViewFilters((prev) => ({ ...prev, pericia: !prev.pericia }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-purple-700 bg-purple-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-purple-500">
-                Perícias
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.meeting}
-                onChange={() => setViewFilters((prev) => ({ ...prev, meeting: !prev.meeting }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-emerald-700 bg-emerald-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-emerald-500">
-                Reuniões
-              </span>
-            </label>
-            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={viewFilters.personal}
-                onChange={() => setViewFilters((prev) => ({ ...prev, personal: !prev.personal }))}
-                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500"
-              />
-              <span className="text-xs sm:text-sm font-medium text-fuchsia-700 bg-fuchsia-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-fuchsia-500">
-                Pessoal
-              </span>
-            </label>
+            {Object.keys(viewFilters)
+              .filter(key => !inactiveEventTypeKeys.has(key))
+              .map(key => {
+                const canonical = EVENT_TYPE_COLORS[key as EventType];
+                const hex = eventTypeHexColors[key];
+                const badgeClass = canonical
+                  ? `text-xs sm:text-sm font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 ${canonical.badge}`
+                  : 'text-xs sm:text-sm font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 text-slate-700 bg-slate-100 border-slate-500';
+                const badgeStyle = !canonical && hex
+                  ? { borderLeftColor: hex, background: hex + '22', color: '#374151' }
+                  : undefined;
+                return (
+                  <label key={key} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!viewFilters[key as EventType]}
+                      onChange={() => setViewFilters(prev => ({ ...prev, [key]: !prev[key as EventType] }))}
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 ${canonical?.checkbox ?? 'text-slate-600 focus:ring-slate-500'}`}
+                    />
+                    <span className={badgeClass} style={badgeStyle}>
+                      {eventTypeLabels[key] ?? key}
+                    </span>
+                  </label>
+                );
+              })
+            }
           </div>
         </div>
       )}
@@ -2654,7 +2677,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {showResponsiblePicker && (
         <div
           ref={responsibleDropdownRef}
-          className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[200px]"
+          className="fixed z-[9999] bg-white border border-[#e7e5df] rounded-xl shadow-xl p-3 min-w-[200px]"
           style={{ top: responsiblePickerPos.top, left: responsiblePickerPos.left }}
         >
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Selecionar pessoa</p>
@@ -2701,11 +2724,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
       {/* ═══ CRONOGRAMA VIEW ═══ */}
       {showCronograma && (
-        <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden">
+        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
           {/* Controles do cronograma */}
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[#e7e5df] bg-[#f5f5f3]">
             {/* Período */}
-            <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 text-xs font-medium">
+            <div className="flex bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-0.5 text-xs font-medium">
               {([
                 { key: 'semana',  label: 'Esta semana' },
                 { key: 'proxima', label: 'Próx. semana' },
@@ -2734,14 +2757,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   type="date"
                   value={cronogramaStart}
                   onChange={e => setCronogramaStart(e.target.value)}
-                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                  className="text-xs border border-[#e7e5df] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
                 />
                 <span className="text-slate-400 text-xs">até</span>
                 <input
                   type="date"
                   value={cronogramaEnd}
                   onChange={e => setCronogramaEnd(e.target.value)}
-                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                  className="text-xs border border-[#e7e5df] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
                 />
               </div>
             )}
@@ -2836,14 +2859,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                         : null;
                       const client = ev.extendedProps?.clientName as string | undefined;
                       const resp   = getResponsavel(ev);
-                      const typeColor  = TYPE_COLORS[type]  || 'bg-slate-100 text-slate-600 border-slate-200';
+                      const typeColor  = TYPE_COLORS[type]  || 'bg-slate-100 text-slate-600 border-[#e7e5df]';
                       const borderColor = TYPE_BORDER[type] || 'border-l-slate-400';
                       const typeLabel  = TYPE_LABELS_LOCAL[type] || type;
 
                       return (
                         <div
                           key={idx}
-                          className={`flex items-start gap-3 p-3 rounded-lg border border-slate-100 border-l-4 ${borderColor} bg-white hover:bg-slate-50 transition-colors cursor-pointer`}
+                          className={`flex items-start gap-3 p-3 rounded-lg border border-slate-100 border-l-4 ${borderColor} bg-[#f8f7f5] hover:bg-slate-50 transition-colors cursor-pointer`}
                           onClick={() => {
                             // abre o detalhe do evento existente no calendário
                             const d = ev.extendedProps?.data as any;
@@ -2901,7 +2924,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       )}
 
       {/* Calendário */}
-      <div className={`bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden${showCronograma ? ' hidden' : ''}`}>
+      <div className={`bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden${showCronograma ? ' hidden' : ''}`}>
         <div className="calendar-container">
           <FullCalendar
               ref={calendarRef}
@@ -2997,9 +3020,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 selectedEvent.extendedProps.type === 'meeting'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                 selectedEvent.extendedProps.type === 'pericia'     ? 'bg-purple-50 text-purple-700 border-purple-200' :
                 selectedEvent.extendedProps.type === 'personal'    ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' :
-                'bg-slate-100 text-slate-600 border-slate-200'
+                'bg-slate-100 text-slate-600 border-[#e7e5df]'
               }`}>
-                {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
+                {eventTypeLabels[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
               </span>
             )}
             {selectedEvent.extendedProps.status && (
@@ -3013,7 +3036,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </span>
             )}
             {selectedEventModuleLabel && (
-              <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+              <span className="inline-flex items-center rounded-full bg-slate-100 border border-[#e7e5df] px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                 {selectedEventModuleLabel}
               </span>
             )}
@@ -3240,7 +3263,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                             'border-slate-100';
 
             return (
-              <div className={`rounded-xl border bg-white px-3 py-2.5 space-y-2 ${borderColor}`}>
+              <div className={`rounded-xl border bg-[#f8f7f5] px-3 py-2.5 space-y-2 ${borderColor}`}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -3364,7 +3387,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
                       Ver trecho da intimação
                     </summary>
-                    <div className="mt-1.5 max-h-32 overflow-y-auto rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-2">
+                    <div className="mt-1.5 max-h-32 overflow-y-auto rounded-lg bg-slate-50 border border-[#e7e5df] px-2.5 py-2">
                       <p className="text-[11px] text-slate-600 leading-relaxed">
                         {(() => {
                           const snippet = selectedEventDjenData.texto.slice(0, 800);
@@ -3427,7 +3450,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       )}
                     </div>
                     {appointment.diligence_location && (
-                      <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                      <div className="mt-2 flex items-center gap-2 border-t border-[#e7e5df] pt-2 text-xs text-slate-500">
                         <MapPin className="w-3 h-3" />
                         <span className="truncate">{appointment.diligence_location}</span>
                       </div>
@@ -3508,8 +3531,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         size="lg"
         zIndex={70}
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <div>
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-h-10 items-center">
               {editingEventId && (
                 <button
                   type="button"
@@ -3521,11 +3544,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={handleCloseCreateModal}
-                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
+                className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 sm:w-auto"
                 disabled={savingEvent}
               >
                 Cancelar
@@ -3533,7 +3556,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={handleSubmitEvent}
-                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition disabled:opacity-60 shadow-sm shadow-amber-200"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-amber-200 transition hover:bg-amber-600 disabled:opacity-60 sm:w-auto"
                 disabled={savingEvent}
               >
                 {savingEvent && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -3544,24 +3567,24 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         }
       >
         <ModalBody>
-          <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-6 lg:grid-cols-12">
 
                 {/* Título — coluna inteira */}
-                <div className="col-span-12">
+                <div className="col-span-1 sm:col-span-6 lg:col-span-12">
                   <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Título <span className="text-red-400">*</span>
                   </label>
                   <input
                     value={newEventForm.title}
                     onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                     placeholder="Ex: Reunião com cliente"
                     autoFocus
                   />
                 </div>
 
                 {/* Data */}
-                <div className="col-span-3">
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3">
                   <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Data <span className="text-red-400">*</span>
                   </label>
@@ -3569,13 +3592,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     type="date"
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                     required
                   />
                 </div>
 
                 {/* Horário */}
-                <div className="col-span-3">
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3">
                   <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Horário
                   </label>
@@ -3583,12 +3606,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     type="time"
                     value={newEventForm.time}
                     onChange={(e) => setNewEventForm({ ...newEventForm, time: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                   />
                 </div>
 
                 {/* Modalidade — select compacto ao lado de Data/Horário */}
-                <div className="col-span-6">
+                <div className="col-span-1 sm:col-span-2 lg:col-span-6">
                   {(['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
                     <>
                       <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
@@ -3597,7 +3620,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       <select
                         value={newEventForm.event_mode}
                         onChange={(e) => setNewEventForm(prev => ({ ...prev, event_mode: e.target.value as '' | 'presencial' | 'online' }))}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                       >
                         <option value="">Não definida</option>
                         <option value="presencial">Presencial</option>
@@ -3608,20 +3631,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
 
                 {/* Tipo — coluna inteira */}
-                <div className="col-span-12">
+                <div className="col-span-1 sm:col-span-6 lg:col-span-12">
                   <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Tipo
                   </label>
-                  <div className="grid grid-cols-7 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
                     {([
-                      { value: 'meeting',     label: 'Reunião',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400 hover:text-emerald-600' },
-                      { value: 'deadline',    label: 'Prazo',       active: 'bg-indigo-500 text-white border-indigo-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400 hover:text-indigo-600' },
-                      { value: 'hearing',     label: 'Audiência',   active: 'bg-red-500 text-white border-red-500',           idle: 'bg-white text-slate-600 border-slate-200 hover:border-red-400 hover:text-red-600' },
-                      { value: 'pericia',     label: 'Perícia',     active: 'bg-purple-500 text-white border-purple-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-purple-400 hover:text-purple-600' },
-                      { value: 'payment',     label: 'Recebimento', active: 'bg-sky-500 text-white border-sky-500',           idle: 'bg-white text-slate-600 border-slate-200 hover:border-sky-400 hover:text-sky-600' },
-                      { value: 'requirement', label: 'Exigência',   active: 'bg-orange-500 text-white border-orange-500',     idle: 'bg-white text-slate-600 border-slate-200 hover:border-orange-400 hover:text-orange-600' },
-                      { value: 'personal',    label: 'Pessoal',     active: 'bg-fuchsia-500 text-white border-fuchsia-500',   idle: 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-400 hover:text-fuchsia-600' },
-                    ] as const).map(({ value, label, active, idle }) => (
+                      { value: 'meeting',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
+                      { value: 'deadline',    active: 'bg-indigo-500 text-white border-indigo-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-indigo-400 hover:text-indigo-600' },
+                      { value: 'hearing',     active: 'bg-red-500 text-white border-red-500',           idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
+                      { value: 'pericia',     active: 'bg-purple-500 text-white border-purple-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400 hover:text-purple-600' },
+                      { value: 'payment',     active: 'bg-sky-500 text-white border-sky-500',           idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-sky-400 hover:text-sky-600' },
+                      { value: 'requirement', active: 'bg-orange-500 text-white border-orange-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-orange-400 hover:text-orange-600' },
+                      { value: 'personal',    active: 'bg-fuchsia-500 text-white border-fuchsia-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-fuchsia-400 hover:text-fuchsia-600' },
+                    ] as const).filter(({ value }) => !inactiveEventTypeKeys.has(value)).map(({ value, active, idle }) => (
                       <button
                         key={value}
                         type="button"
@@ -3637,18 +3660,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           newEventForm.type === value ? active : idle
                         }`}
                       >
-                        {label}
+                        {eventTypeLabels[value] ?? value}
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Cliente | Processo | Responsável — linha fixa */}
-                <div className="col-span-12 pt-1 border-t border-slate-100">
-                  <div className="grid grid-cols-12 gap-x-3">
+                <div className="col-span-1 border-t border-slate-100 pt-1 sm:col-span-6 lg:col-span-12">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
 
                     {/* ── Cliente ── */}
-                    <div className="col-span-4">
+                    <div className="col-span-1">
                       <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                         Cliente <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                       </label>
@@ -3691,11 +3714,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                 }}
                                 onFocus={() => { if (clientSearchTerm.trim()) setClientSearchOpen(true); }}
                                 placeholder="Nome ou buscar..."
-                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                               />
                             </div>
                             {clientSearchOpen && (clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 1) && (
-                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#e7e5df] rounded-xl shadow-lg z-50 overflow-hidden">
                                 {clientSearchResults.length > 0 && (
                                   <>
                                     <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Clientes cadastrados</p>
@@ -3754,17 +3777,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       const selectedReq = clientRequirements.find(r => r.id === newEventForm.requirement_id);
                       const showReq = newEventForm.type === 'pericia' && newEventForm.pericia_link_type === 'requirement';
                       return (
-                        <div className="col-span-4">
+                        <div className="col-span-1">
                           {/* Toggle Processo / Requerimento — apenas para Perícia com cliente selecionado */}
                           {newEventForm.type === 'pericia' && newEventForm.client_id && (
-                            <div className="flex gap-1.5 mb-1.5">
+                            <div className="mb-1.5 grid grid-cols-2 gap-1.5">
                               <button
                                 type="button"
                                 onClick={() => setNewEventForm(prev => ({ ...prev, pericia_link_type: 'process', requirement_id: '' }))}
                                 className={`flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
                                   newEventForm.pericia_link_type === 'process'
                                     ? 'bg-purple-500 text-white border-purple-500'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                                    : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400'
                                 }`}
                               >
                                 Processo jud.
@@ -3775,7 +3798,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                 className={`flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
                                   newEventForm.pericia_link_type === 'requirement'
                                     ? 'bg-purple-500 text-white border-purple-500'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:border-purple-400'
+                                    : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400'
                                 }`}
                               >
                                 Req. adm.
@@ -3789,7 +3812,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           {!newEventForm.client_id ? (
                             <select
                               disabled
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-400 opacity-60 cursor-not-allowed"
+                              className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-400 opacity-60 cursor-not-allowed"
                             >
                               <option>— Sem vínculo —</option>
                             </select>
@@ -3810,7 +3833,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                               <select
                                 value={newEventForm.requirement_id}
                                 onChange={e => setNewEventForm(prev => ({ ...prev, requirement_id: e.target.value }))}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
+                                className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
                               >
                                 <option value="">— Sem vínculo —</option>
                                 {clientRequirements.length === 0 && (
@@ -3839,7 +3862,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             <select
                               value={newEventForm.process_id}
                               onChange={e => setNewEventForm(prev => ({ ...prev, process_id: e.target.value }))}
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                              className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
                             >
                               <option value="">— Sem vínculo —</option>
                               {clientProcesses.length === 0 && (
@@ -3858,8 +3881,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                     {/* ── Responsável — oculto para eventos pessoais ── */}
                     {newEventForm.type !== 'personal' && (
-                      <div className="col-span-4">
-                        <div className="flex items-center justify-between mb-1">
+                      <div className="col-span-1">
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
                           <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
                             Responsável <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                           </label>
@@ -3869,7 +3892,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-1.5 bg-slate-50 rounded-xl border border-slate-200 px-2 py-2 min-h-[42px] items-center">
+                        <div className="flex flex-wrap gap-1.5 bg-slate-50 rounded-xl border border-[#e7e5df] px-2 py-2 min-h-[42px] items-center">
                           {[...members].sort((a, b) => {
                             const rank = (m: Profile) => {
                               const r = (m.role || '').toLowerCase();
@@ -3936,7 +3959,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
 
                 {/* Privacidade / Compartilhamento — coluna inteira */}
-                <div className="col-span-12 border-t border-slate-100 pt-3">
+                <div className="col-span-1 border-t border-slate-100 pt-3 sm:col-span-6 lg:col-span-12">
                   {newEventForm.type === 'personal' ? (
                     /* Pessoal: sempre privado, pergunta só quem compartilhar */
                     <div>
@@ -4028,7 +4051,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                         className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all duration-300 active:scale-[.98] ${
                           newEventForm.is_private
                             ? 'bg-amber-50 border-amber-200 shadow-[0_0_0_3px_rgba(251,191,36,.15)]'
-                            : 'bg-slate-50 border-slate-200 shadow-[0_0_0_3px_rgba(148,163,184,.10)]'
+                            : 'bg-slate-50 border-[#e7e5df] shadow-[0_0_0_3px_rgba(148,163,184,.10)]'
                         }`}
                       >
                         {/* Ícone + texto */}
@@ -4061,7 +4084,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                         {/* Toggle pill */}
                         <div className="flex flex-col items-center gap-0.5 shrink-0">
                           <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 ${newEventForm.is_private ? 'bg-amber-400' : 'bg-slate-300'}`}>
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${newEventForm.is_private ? 'translate-x-6' : 'translate-x-1'}`} />
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-[#f8f7f5] shadow-md transition-transform duration-300 ${newEventForm.is_private ? 'translate-x-6' : 'translate-x-1'}`} />
                           </div>
                           <span className={`text-[9px] font-semibold whitespace-nowrap ${newEventForm.is_private ? 'text-amber-400' : 'text-slate-400'}`}>
                             {newEventForm.is_private ? 'Tornar público' : 'Tornar privado'}
@@ -4138,7 +4161,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
 
                 {/* Observações — coluna inteira */}
-                <div className="col-span-12">
+                <div className="col-span-1 sm:col-span-6 lg:col-span-12">
                   <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
                     Observações <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                   </label>
@@ -4146,7 +4169,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     value={newEventForm.description}
                     onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
                     rows={2}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
                     placeholder="Anotações, detalhes adicionais..."
                   />
                 </div>
@@ -4591,7 +4614,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     className={`px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all ${
                       exportPeriod === option.value
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                        : 'border-[#e7e5df] text-slate-700 hover:border-slate-300'
                     }`}
                   >
                     {option.label}
@@ -4605,7 +4628,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 className={`w-full px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all ${
                   exportPeriod === 'custom'
                     ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-600'
-                    : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-zinc-600'
+                    : 'border-[#e7e5df] dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-zinc-600'
                 }`}
               >
                 📆 Período Personalizado
@@ -4641,7 +4664,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             )}
 
             {/* Informação */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-3">
               <p className="text-xs text-slate-600">
                 💡 <strong>Dica:</strong> A exportação incluirá todos os compromissos visíveis (prazos, audiências, reuniões, etc.) dentro do período selecionado.
               </p>
@@ -4655,7 +4678,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
                   exportPrivate
                     ? 'border-red-500 bg-red-50 dark:bg-red-900/20 dark:border-red-600'
-                    : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
+                    : 'border-[#e7e5df] dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -4675,7 +4698,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
                 {/* Pill indicator */}
                 <div className={`w-10 h-5 rounded-full flex-shrink-0 transition-colors relative ${exportPrivate ? 'bg-red-500' : 'bg-slate-300 dark:bg-zinc-600'}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${exportPrivate ? 'left-5' : 'left-0.5'}`} />
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-[#f8f7f5] shadow transition-all ${exportPrivate ? 'left-5' : 'left-0.5'}`} />
                 </div>
               </button>
             )}
@@ -4742,7 +4765,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   };
                   if (filtered.length === 0) {
                     return (
-                      <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/40 p-6 text-sm text-slate-600 dark:text-slate-400">
+                      <div className="rounded-xl border border-[#e7e5df] dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/40 p-6 text-sm text-slate-600 dark:text-slate-400">
                         Nenhuma exclusão nos últimos 30 dias.
                       </div>
                     );
@@ -4763,7 +4786,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             {groups[key].map((entry) => (
                               <div
                                 key={`${entry.id}-${entry.deleted_at}`}
-                                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
+                                className="rounded-xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 p-4"
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
@@ -4780,7 +4803,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                       Por: {entry.deleted_by}
                                     </p>
                                   </div>
-                                  <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200">
+                                  <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-[#f8f7f5]/10 text-slate-700 dark:text-slate-200">
                                     {entry.type}
                                   </span>
                                 </div>

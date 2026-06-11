@@ -221,14 +221,14 @@ export const PortalAppInstall: React.FC = () => {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('dashboard')}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-[#f8f7f5] text-slate-500 transition hover:bg-slate-50"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
         <h1 className="text-lg font-semibold text-slate-900">Aplicativo</h1>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
+      <div className="overflow-hidden rounded-[24px] bg-[#f8f7f5] shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
         <div className="bg-[radial-gradient(circle_at_top_left,_rgba(249,115,22,0.16),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_35%),linear-gradient(180deg,_#ffffff_0%,_#fffaf6_100%)] p-5">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-orange-500 shadow-[0_10px_24px_rgba(249,115,22,0.30)]">
@@ -312,7 +312,7 @@ export const PortalAppInstall: React.FC = () => {
 
       {!isInstalled && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
+          <div className="rounded-[24px] bg-[#f8f7f5] p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
               <div className="mb-3 flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
                   <Share2 className="h-4 w-4" />
@@ -339,7 +339,7 @@ export const PortalAppInstall: React.FC = () => {
               </ol>
           </div>
 
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
+          <div className="rounded-[24px] bg-[#f8f7f5] p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
               <div className="mb-3 flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
                   <Smartphone className="h-4 w-4" />
@@ -393,7 +393,7 @@ export const PortalAppInstall: React.FC = () => {
       )}
 
       {isInstalled && isIos && !pushEnabled && !pushDone && (
-        <div className="rounded-[24px] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
+        <div className="rounded-[24px] bg-[#f8f7f5] p-5 shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
           <p className="mb-1 text-sm font-bold text-slate-900">Como funcionam as notificações no iPhone</p>
           <p className="text-sm leading-relaxed text-slate-500">
             No iOS, notificações push só funcionam quando o portal está instalado como app.

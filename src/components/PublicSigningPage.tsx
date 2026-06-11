@@ -70,7 +70,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ url, onLoad }) => {
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full bg-white">
+    <div ref={containerRef} className="w-full bg-[#f8f7f5]">
       <Document
         file={url}
         onLoadSuccess={({ numPages: n }) => { setNumPages(n); onLoad?.(); }}
@@ -112,7 +112,7 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
               // DOCX: div preenchida pelo renderAsync
               <div
                 ref={el => { attachmentRefs.current[idx] = el; }}
-                className="bg-white docx-responsive"
+                className="bg-[#f8f7f5] docx-responsive"
                 style={{ width: '100%', overflow: 'auto' }}
               />
             ) : isPdf ? (
@@ -2122,7 +2122,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-white" />
+        <div className="min-h-[100dvh] bg-[#f8f7f5]" />
       </>
     );
   }
@@ -2137,7 +2137,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-orange-400/10 blur-3xl" />
           <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
 
-          <div className="relative bg-white/90 backdrop-blur rounded-3xl border border-orange-100 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
+          <div className="relative bg-[#f8f7f5]/90 backdrop-blur rounded-3xl border border-orange-100 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-amber-500" />
 
             <div className="p-6 sm:p-8">
@@ -2161,7 +2161,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-6 rounded-2xl border border-[#e7e5df] bg-slate-50 p-4">
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Token</div>
                 <div className="mt-1 font-mono text-xs text-slate-700 break-all">{token}</div>
               </div>
@@ -2185,7 +2185,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       toast.error('Não foi possível copiar o token.');
                     }
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
                 >
                   <Copy className="w-4 h-4" />
                   Copiar token
@@ -2206,7 +2206,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 <button
                   type="button"
                   onClick={() => window.location.assign('/')}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
                 >
                   <ExternalLink className="w-4 h-4" />
                   Voltar ao início
@@ -2226,7 +2226,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       return (
         <>
           {loadingPortal}
-          <div className="min-h-[100dvh] bg-white" />
+          <div className="min-h-[100dvh] bg-[#f8f7f5]" />
         </>
       );
     }
@@ -2314,7 +2314,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         <div className="min-h-[100dvh] flex flex-col items-center justify-center p-4" style={{ background: '#f8fafc' }}>
         <div className="w-full max-w-md">
 
-          <div className="bg-white rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
+          <div className="bg-[#f8f7f5] rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
 
             {/* Cabeçalho esmeralda — documento já processado */}
             <div className="relative px-6 pt-10 pb-8 flex flex-col items-center overflow-hidden"
@@ -2588,7 +2588,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         <div className="w-full max-w-md">
 
           {/* ── Card principal ── */}
-          <div className="bg-white rounded-[28px] overflow-hidden" style={{ boxShadow: '0 24px 70px -20px rgba(234,88,12,0.25), 0 8px 24px -12px rgba(15,23,42,0.12), 0 0 0 1px rgba(15,23,42,0.04)' }}>
+          <div className="bg-[#f8f7f5] rounded-[28px] overflow-hidden" style={{ boxShadow: '0 24px 70px -20px rgba(234,88,12,0.25), 0 8px 24px -12px rgba(15,23,42,0.12), 0 0 0 1px rgba(15,23,42,0.04)' }}>
 
             {/* Cabeçalho — gradiente laranja vivo + brilho radial */}
             <div className="relative px-6 pt-11 pb-9 flex flex-col items-center overflow-hidden"
@@ -2744,7 +2744,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       {/* Header compacto */}
       <header className="bg-gradient-to-r from-orange-700 via-orange-800 to-orange-900 px-3 py-2 flex items-center justify-between border-b border-orange-900/40 safe-area-top">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center ring-1 ring-white/20">
+          <div className="w-7 h-7 bg-[#f8f7f5]/15 rounded-lg flex items-center justify-center ring-1 ring-white/20">
             <Scale className="w-4 h-4 text-white" />
           </div>
           <div className="leading-tight">
@@ -2769,13 +2769,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       </header>
 
       {/* Document Viewer - Ocupa toda a tela */}
-      <main className="flex-1 min-h-0 relative overflow-y-auto bg-white">
+      <main className="flex-1 min-h-0 relative overflow-y-auto bg-[#f8f7f5]">
         {pdfUrl ? (
           isDocx ? (
             // Renderizar DOCX com docx-preview
-            <div className="w-full bg-white pb-24">
+            <div className="w-full bg-[#f8f7f5] pb-24">
               {docxLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80 z-10">
                   <div className="flex flex-col items-center gap-3">
                     <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
                     <p className="text-sm text-slate-600">Carregando documento...</p>
@@ -2799,7 +2799,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
           ) : (
             // PDF: canvas via react-pdf, sem iframe, scroll único no <main>
-            <div className="w-full bg-white pb-24">
+            <div className="w-full bg-[#f8f7f5] pb-24">
               <PdfRenderer
                 url={pdfUrl!}
                 onLoad={() => setPdfFrameLoaded(true)}
@@ -2813,7 +2813,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
           )
         ) : (
-          <div className="w-full h-full bg-white" />
+          <div className="w-full h-full bg-[#f8f7f5]" />
         )}
       </main>
 
@@ -2857,7 +2857,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       {/* Modal - Full screen no mobile */}
       {isSignModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-100 md:bg-slate-100/80 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
-          <div className="bg-white w-full h-full md:h-auto md:max-w-lg md:rounded-2xl md:shadow-2xl overflow-hidden md:max-h-[90vh] flex flex-col">
+          <div className="bg-[#f8f7f5] w-full h-full md:h-auto md:max-w-lg md:rounded-2xl md:shadow-2xl overflow-hidden md:max-h-[90vh] flex flex-col">
             {/* Header */}
              <div 
                className="flex-shrink-0 px-5 py-4 flex items-center justify-between md:rounded-t-2xl"
@@ -2885,7 +2885,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 bg-white">
+            <div className="flex-1 overflow-y-auto p-5 bg-[#f8f7f5]">
               {/* Etapa 1: Autenticação / Identificação */}
               {modalStep === 'google_auth' && (
                 <div className="text-center">
@@ -2945,9 +2945,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         {authConfig.google && (authConfig.email || authConfig.phone) && (
                           <div className="relative py-2 flex items-center justify-center">
                             <div className="absolute inset-0 flex items-center">
-                              <div className="w-full border-t border-slate-200" />
+                              <div className="w-full border-t border-[#e7e5df]" />
                             </div>
-                            <div className="relative bg-white px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            <div className="relative bg-[#f8f7f5] px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                               OU
                             </div>
                           </div>
@@ -2957,7 +2957,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <button
                             type="button"
                             onClick={() => setModalStep('email_otp')}
-                            className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/5 transition-all duration-200 active:scale-[0.98]"
+                            className="w-full bg-white border border-[#e7e5df] hover:bg-slate-50 text-slate-800 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/5 transition-all duration-200 active:scale-[0.98]"
                           >
                             <Mail className="w-5 h-5" />
                             Continuar com E-mail
@@ -3024,7 +3024,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.phone}
                         onChange={(e) => setSignerData((d) => ({ ...d, phone: e.target.value }))}
                         placeholder="(11) 98888-7777"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
 
@@ -3047,7 +3047,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           value={phoneOtp}
                           onChange={(e) => setPhoneOtp(e.target.value)}
                           placeholder="000000"
-                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
+                          className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
                         />
                         {phoneOtpExpiresAt && (
                           <div className="text-xs text-slate-500 mt-2">
@@ -3073,7 +3073,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       type="button"
                       onClick={() => setModalStep('google_auth')}
-                      className="w-full py-3 bg-white border border-orange-200 rounded-xl font-semibold text-orange-700 hover:bg-orange-50 transition"
+                      className="w-full py-3 bg-[#f8f7f5] border border-orange-200 rounded-xl font-semibold text-orange-700 hover:bg-orange-50 transition"
                     >
                       Voltar
                     </button>
@@ -3105,7 +3105,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={emailToVerify}
                         onChange={(e) => setEmailToVerify(e.target.value)}
                         placeholder="seuemail@exemplo.com"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
 
@@ -3161,7 +3161,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           value={emailOtp}
                           onChange={(e) => setEmailOtp(e.target.value)}
                           placeholder="000000"
-                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
+                          className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
                         />
                         {emailOtpExpiresAt && (
                           <div className="text-xs text-slate-500 mt-2">
@@ -3194,7 +3194,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       type="button"
                       onClick={() => setModalStep('google_auth')}
-                      className="w-full py-3 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
                     >
                       Voltar
                     </button>
@@ -3222,7 +3222,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.name}
                         onChange={(e) => setSignerData((d) => ({ ...d, name: e.target.value }))}
                         placeholder="Digite seu nome completo"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
 
@@ -3235,7 +3235,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.cpf}
                         onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
                         placeholder="000.000.000-00"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
                   </div>
@@ -3259,7 +3259,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <div className="w-full space-y-6">
                     {/* Área de assinatura */}
                     <div className="relative group">
-                      <div className="w-full h-56 bg-white rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] border-2 border-dashed border-gray-300 hover:border-orange-400 transition-colors overflow-hidden relative">
+                      <div className="w-full h-56 bg-[#f8f7f5] rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] border-2 border-dashed border-gray-300 hover:border-orange-400 transition-colors overflow-hidden relative">
                         <canvas
                           ref={canvasRef}
                           className="absolute inset-0 w-full h-full touch-none cursor-crosshair"
@@ -3473,7 +3473,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           setFacialValidation(null);
                           startCamera();
                         }}
-                        className="w-full py-3 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
+                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
                       >
                         <RotateCcw className="w-4 h-4" />
                         Tirar novamente
@@ -3508,7 +3508,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   ) : (
                     <div className="space-y-4">
                       {!cameraActive ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-5">
                           <div className="flex items-start gap-3">
                             <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
                               <Camera className="w-5 h-5 text-orange-600" />
@@ -3540,7 +3540,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                             <button
                               type="button"
                               onClick={() => setModalStep('signature')}
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
                             >
                               <ChevronLeft className="w-4 h-4" />
                               Voltar
@@ -3565,10 +3565,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                                 <div className="absolute inset-2 rounded-full border-[3px] border-white shadow-lg" />
 
                                 {/* Marcadores de alinhamento */}
-                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
-                                <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
-                                <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
-                                <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
+                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#f8f7f5] rounded-full" />
+                                <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#f8f7f5] rounded-full" />
+                                <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-1 h-6 bg-[#f8f7f5] rounded-full" />
+                                <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-1 h-6 bg-[#f8f7f5] rounded-full" />
                               </div>
                             </div>
 
@@ -3607,8 +3607,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       {/* Histórico (overlay) */}
       {activeTab === 'history' && (
         <div className="fixed inset-0 z-[60] bg-black/50 flex items-end md:items-center md:justify-center p-0 md:p-6">
-          <div className="w-full md:max-w-2xl bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div className="w-full md:max-w-2xl bg-[#f8f7f5] rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e7e5df] flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-900">Histórico da assinatura</div>
                 <div className="text-xs text-slate-500 truncate max-w-[70vw] md:max-w-[520px]">{request?.document_name}</div>

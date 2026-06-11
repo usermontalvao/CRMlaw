@@ -823,7 +823,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   if (!bundle) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-4 max-w-sm w-full">
+        <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 max-w-sm w-full">
           <p className="text-sm font-medium text-slate-900">Link indisponível</p>
           <p className="mt-1 text-xs text-slate-500">{error || 'Não foi possível carregar.'}</p>
         </div>
@@ -835,7 +835,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="max-w-lg mx-auto px-4 py-8">
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-4">
             <div className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
               <p className="text-sm font-medium text-slate-900">Redirecionando para assinatura...</p>
@@ -873,7 +873,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-4">
           {(error || stepError) && (
             <div className="mb-4 bg-rose-50 border border-rose-200 rounded p-3 text-xs text-rose-700">
               {stepError || error}
@@ -881,7 +881,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
           )}
 
           {(cepLookupLoading || cepLookupError) && (
-            <div className={`mb-4 border rounded p-3 text-xs ${cepLookupError ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+            <div className={`mb-4 border rounded p-3 text-xs ${cepLookupError ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-[#e7e5df] text-slate-600'}`}>
               {cepLookupError ? cepLookupError : 'Buscando endereço pelo CEP...'}
             </div>
           )}
@@ -899,7 +899,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     type="button"
                     onClick={goBack}
                     disabled={submitting}
-                    className="w-full px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
+                    className="w-full px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
                   >
                     Voltar
                   </button>
@@ -919,7 +919,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                       value={signerName}
                       onKeyDown={onKeyDownAdvance}
                       onChange={(e) => setSignerName(e.target.value.toUpperCase())}
-                      className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder="Ex: João da Silva"
                     />
                   )}
@@ -930,7 +930,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     type="button"
                     onClick={goBack}
                     disabled={safeStepIndex === 0}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
                   >
                     Voltar
                   </button>
@@ -962,7 +962,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                       setHasQuadra(null);
                       setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: formatCep(e.target.value) }));
                     }}
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                     placeholder="00000-000"
                     inputMode="numeric"
                   />
@@ -974,7 +974,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     type="button"
                     onClick={goBack}
                     disabled={safeStepIndex === 0}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
                   >
                     Voltar
                   </button>
@@ -993,7 +993,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
               <div>
                 <p className="text-sm font-medium text-slate-900 mb-2">Endereço correto?</p>
 
-                <div className="mb-4 border border-slate-200 rounded p-3 bg-slate-50">
+                <div className="mb-4 border border-[#e7e5df] rounded p-3 bg-slate-50">
                   <p className="text-xs text-slate-600">{addressPreview || 'Endereço não localizado automaticamente.'}</p>
                 </div>
 
@@ -1024,7 +1024,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
                       setStepIndex((prev) => Math.max(0, prev - 1));
                     }}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
                   >
                     Não
                   </button>
@@ -1054,7 +1054,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     value={values[activeStep.field.placeholder] ?? ''}
                     onKeyDown={onKeyDownAdvance}
                     onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
 
@@ -1062,7 +1062,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                   <button
                     type="button"
                     onClick={goBack}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
                   >
                     Voltar
                   </button>
@@ -1089,7 +1089,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                       setStepError(null);
                       setStepIndex((prev) => Math.min(prev + 2, steps.length - 1));
                     }}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
                   >
                     Não
                   </button>
@@ -1119,7 +1119,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     value={values[activeStep.field.placeholder] ?? ''}
                     onKeyDown={onKeyDownAdvance}
                     onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
 
@@ -1127,7 +1127,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                   <button
                     type="button"
                     onClick={goBack}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
                   >
                     Voltar
                   </button>
@@ -1154,7 +1154,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                       }}
                       value={values[activeStep.field.placeholder] ?? ''}
                       onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                      className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
                       rows={3}
                     />
                   ) : activeStep.field.type === 'select' ? (
@@ -1170,7 +1170,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                               setStepError(null);
                               setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
                             }}
-                            className={`w-full text-left px-3 py-2 rounded border text-sm transition ${selected ? 'border-orange-600 bg-orange-50 text-orange-900' : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'}`}
+                            className={`w-full text-left px-3 py-2 rounded border text-sm transition ${selected ? 'border-orange-600 bg-orange-50 text-orange-900' : 'border-[#e7e5df] bg-[#f8f7f5] text-slate-900 hover:bg-slate-50'}`}
                           >
                             {o.label}
                           </button>
@@ -1201,7 +1201,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                                 : e.target.value;
                         setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: nextValue }));
                       }}
-                      className="w-full px-3 py-2 border border-slate-200 rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder={activeStep.field.type === 'cep' || normalizeKey(activeStep.field.placeholder) === 'CEP' ? '00000-000' : ''}
                       inputMode={
                         activeStep.field.type === 'cep' || activeStep.field.type === 'cpf' || activeStep.field.type === 'phone'
@@ -1220,7 +1220,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                   <button
                     type="button"
                     onClick={goBack}
-                    className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50"
                   >
                     Voltar
                   </button>

@@ -128,13 +128,13 @@ const pageConfig: Record<PageType, PageConfig> = {
 };
 
 const Toolbar: React.FC<{ formattedDate: string }> = ({ formattedDate }) => (
-  <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur print:hidden">
+  <div className="sticky top-0 z-30 border-b border-[#e7e5df] bg-[#f8f7f5]/95 backdrop-blur print:hidden">
     <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <button
         onClick={() => {
           window.location.hash = '/login';
         }}
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 transition"
+        className="inline-flex items-center gap-2 rounded-xl border border-[#e7e5df] px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 transition"
       >
         <ArrowLeft className="h-4 w-4" />
         Voltar
@@ -162,10 +162,10 @@ const DocumentCard: React.FC<{
   config: PageConfig;
   currentYear: number;
 }> = ({ config, currentYear }) => (
-  <article className="relative rounded-3xl border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.09)] overflow-hidden print:shadow-none print:border-0">
+  <article className="relative rounded-3xl border border-[#e7e5df] bg-[#f8f7f5] shadow-[0_30px_90px_rgba(15,23,42,0.09)] overflow-hidden print:shadow-none print:border-0">
     <header className="px-10 pt-12 pb-10 border-b border-slate-100 space-y-6">
       <div className="flex items-center gap-4">
-        <div className="h-12 w-12 rounded-xl border border-slate-200 bg-slate-900 text-white font-semibold flex items-center justify-center tracking-tight">
+        <div className="h-12 w-12 rounded-xl border border-[#e7e5df] bg-slate-900 text-white font-semibold flex items-center justify-center tracking-tight">
           J
         </div>
         <div className="flex flex-col">
@@ -197,7 +197,7 @@ const DocumentCard: React.FC<{
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {config.highlights.map((item) => (
-          <div key={item} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <div key={item} className="flex items-center gap-3 rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <CheckCircle2 className="h-4 w-4 text-slate-500" />
             {item}
           </div>
@@ -224,7 +224,7 @@ const DocumentCard: React.FC<{
         </section>
       ))}
       <div className="px-10 py-8 bg-slate-50 print:bg-transparent">
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 flex flex-wrap items-center gap-4 text-sm text-slate-600 print:border print:bg-transparent">
+        <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-6 py-5 flex flex-wrap items-center gap-4 text-sm text-slate-600 print:border print:bg-transparent">
           <ShieldCheck className="h-5 w-5 text-slate-500" />
           <div className="flex-1">
             <p className="font-semibold text-slate-800">Assinatura & conformidade</p>
@@ -232,7 +232,7 @@ const DocumentCard: React.FC<{
           </div>
           <a
             href="mailto:pedro@advcuiaba.com"
-            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition print:hidden"
+            className="rounded-xl border border-[#e7e5df] px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition print:hidden"
           >
             Solicitar via e-mail
           </a>
@@ -257,14 +257,14 @@ const DocumentCard: React.FC<{
 
 const Sidebar: React.FC<{ sections: DocumentSection[] }> = ({ sections }) => (
   <aside className="space-y-5 lg:sticky lg:top-28 lg:self-start print:hidden">
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 shadow-sm">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-[0.3em] mb-4">Resumo</p>
       <p className="text-sm text-slate-600 leading-relaxed">
         Documento alinhado às melhores práticas de compliance jurídico, com foco em segurança da informação e responsabilidade digital do escritório.
       </p>
     </div>
 
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+    <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 shadow-sm space-y-4">
       <div className="flex items-center gap-3">
         <Bookmark className="h-4 w-4 text-slate-500" />
         <p className="text-sm font-semibold text-slate-800">Sumário</p>
@@ -284,7 +284,7 @@ const Sidebar: React.FC<{ sections: DocumentSection[] }> = ({ sections }) => (
       </ol>
     </div>
 
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+    <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 shadow-sm space-y-3">
       <p className="text-sm font-semibold text-slate-800">Compromissos</p>
       <ul className="space-y-2 text-xs text-slate-500">
         <li className="flex items-center gap-2">
@@ -302,7 +302,7 @@ const Sidebar: React.FC<{ sections: DocumentSection[] }> = ({ sections }) => (
       </ul>
     </div>
 
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+    <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 shadow-sm space-y-3">
       <p className="text-sm font-semibold text-slate-800">Contato</p>
       <p className="text-xs text-slate-500 leading-relaxed">
         Solicite histórico de versões, ata de aprovação ou checklist de conformidade enviando um e-mail para{' '}

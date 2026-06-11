@@ -4,12 +4,13 @@ import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
-  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen, Phone,
+  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, FolderOpen, Phone,
   ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { signatureService } from '../services/signature.service';
 import { processService } from '../services/process.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
@@ -57,6 +58,7 @@ interface DraftField {
 interface SignatureSettings {
   requireCpf: boolean; requireBirthdate: boolean; allowRefusal: boolean;
   blockAfterDeadline: boolean; expiresAt: string; signatureAppearance: string;
+  authMethod: SignerAuthMethod;
 }
 
 const FIELD_PRESETS: Record<SignatureFieldType, { w: number; h: number; label: string; icon: React.ElementType }> = {
@@ -171,6 +173,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
+  const { requirePin } = useSecurityPin();
 
   const toastRef = useRef(toast);
 
@@ -178,17 +181,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     toastRef.current = toast;
   }, [toast]);
 
-  const [showPublicAuthSettings, setShowPublicAuthSettings] = useState(false);
-  const [publicAuthLoading, setPublicAuthLoading] = useState(false);
-  const [publicAuthSaving, setPublicAuthSaving] = useState(false);
-  const [publicAuthConfig, setPublicAuthConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({
-    google: true,
-    email: true,
-    phone: true,
-  });
-  const publicAuthSaveTimerRef = useRef<number | null>(null);
-
   const [loading, setLoading] = useState(true);
+  const [signerRoles, setSignerRoles] = useState<string[]>(['Signatário','Contratante','Contratado','Testemunha','Fiador','Cônjuge','Representante Legal']);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [cloudSyncStatusByRequestId, setCloudSyncStatusByRequestId] = useState<Record<string, boolean>>({});
@@ -366,7 +360,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [settings, setSettings] = useState<SignatureSettings>({
     requireCpf: false, requireBirthdate: false, allowRefusal: true,
     blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only',
+    authMethod: 'signature_only',
   });
+  const [availableAuthMethods, setAvailableAuthMethods] = useState<Array<{ value: SignerAuthMethod; label: string }>>([
+    { value: 'signature_only', label: 'Só assinatura' },
+    { value: 'signature_facial', label: 'Assinatura + Validação Facial' },
+    { value: 'signature_facial_document', label: 'Assinatura + Facial + Documento' },
+  ]);
 
   const [createdRequest, setCreatedRequest] = useState<SignatureRequestWithSigners | null>(null);
   const [detailsRequest, setDetailsRequest] = useState<SignatureRequestWithSigners | null>(null);
@@ -524,6 +524,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   useEffect(() => { void loadData(); }, [loadData]);
 
+  useEffect(() => {
+    settingsService.getSignatureModuleConfig().then(cfg => {
+      if (cfg.signer_roles?.length) setSignerRoles(cfg.signer_roles);
+    }).catch(() => {});
+  }, []);
+
   // Supabase Realtime - atualização automática da lista
   useEffect(() => {
     const channel = supabase
@@ -589,72 +595,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       }
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        setPublicAuthLoading(true);
-        const [g, e, p] = await Promise.all([
-          settingsService.getSetting<boolean>('public_signature_auth_google'),
-          settingsService.getSetting<boolean>('public_signature_auth_email'),
-          settingsService.getSetting<boolean>('public_signature_auth_phone'),
-        ]);
-
-        if (cancelled) return;
-        setPublicAuthConfig({
-          google: g ?? true,
-          email: e ?? true,
-          phone: p ?? true,
-        });
-      } catch (err) {
-        if (!cancelled) {
-          console.warn('Não foi possível carregar configuração de autenticação pública:', err);
-        }
-      } finally {
-        if (!cancelled) setPublicAuthLoading(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-      if (publicAuthSaveTimerRef.current) {
-        window.clearTimeout(publicAuthSaveTimerRef.current);
-        publicAuthSaveTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const savePublicAuthConfig = async (config: { google: boolean; email: boolean; phone: boolean }) => {
-    if (!config.google && !config.email && !config.phone) {
-      toast.error('Ative pelo menos um método de autenticação.');
-      return;
-    }
-
-    try {
-      setPublicAuthSaving(true);
-      await Promise.all([
-        settingsService.updateSetting('public_signature_auth_google', config.google, user?.email || undefined),
-        settingsService.updateSetting('public_signature_auth_email', config.email, user?.email || undefined),
-        settingsService.updateSetting('public_signature_auth_phone', config.phone, user?.email || undefined),
-      ]);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || 'Erro ao salvar configurações');
-    } finally {
-      setPublicAuthSaving(false);
-    }
-  };
-
-  const queueSavePublicAuthConfig = (config: { google: boolean; email: boolean; phone: boolean }) => {
-    if (publicAuthSaveTimerRef.current) {
-      window.clearTimeout(publicAuthSaveTimerRef.current);
-    }
-    publicAuthSaveTimerRef.current = window.setTimeout(() => {
-      publicAuthSaveTimerRef.current = null;
-      void savePublicAuthConfig(config);
-    }, 500);
-  };
 
   const loadDocumentPreview = useCallback(async (doc: ViewerDocument) => {
     try {
@@ -1660,7 +1600,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 </div>
 
                 <div
-                  className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-[#f8f7f5]/90 backdrop-blur-sm border border-[#e7e5df] shadow-sm opacity-0 group-hover:opacity-100 transition"
                   onDragOver={(e) => {
                     if (draggingExplorer?.type === 'folder') return;
                     handleAllowDrop(e);
@@ -1836,7 +1776,26 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     docxRenderedRef.current = false; // Resetar flag de renderização do DOCX
     docxHtmlContentRef.current = ''; // Resetar HTML do DOCX
     prefillProcessedRef.current = false; // Resetar flag de prefill
-    setSettings({ requireCpf: false, requireBirthdate: false, allowRefusal: true, blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only' });
+    setSettings({ requireCpf: false, requireBirthdate: false, allowRefusal: true, blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only', authMethod: 'signature_only' });
+    settingsService.getSignatureModuleConfig().then(cfg => {
+      const map: Record<string, SignerAuthMethod> = {
+        'Só assinatura': 'signature_only',
+        'Assinatura + Validação Facial': 'signature_facial',
+        'Assinatura + Facial + Documento': 'signature_facial_document',
+        signature_only: 'signature_only', signature_facial: 'signature_facial', signature_facial_document: 'signature_facial_document',
+      };
+      const m = map[cfg.default_auth_method];
+      if (m) setSettings(prev => ({ ...prev, authMethod: m }));
+      if (Array.isArray(cfg.auth_methods) && cfg.auth_methods.length > 0) {
+        const all: Array<{ value: SignerAuthMethod; label: string }> = [
+          { value: 'signature_only',          label: 'Só assinatura' },
+          { value: 'signature_facial',         label: 'Assinatura + Validação Facial' },
+          { value: 'signature_facial_document',label: 'Assinatura + Facial + Documento' },
+        ];
+        const enabled = all.filter(opt => cfg.auth_methods.includes(opt.label) || cfg.auth_methods.includes(opt.value));
+        if (enabled.length > 0) setAvailableAuthMethods(enabled);
+      }
+    }).catch(() => {/* mantém fallback */});
   };
 
   const handleFileSelect = (file: File) => {
@@ -2334,7 +2293,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       </div>
 
                       {isSignature ? (
-                        <div className="w-full h-full rounded-[16px] border border-white/70 bg-white/92 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1 flex items-center gap-3">
+                        <div className="w-full h-full rounded-[16px] border border-white/70 bg-[#f8f7f5]/92 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1 flex items-center gap-3">
                           <div
                             className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center shadow-sm"
                             style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
@@ -2350,7 +2309,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             </span>
                           </div>
                           <div
-                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-semibold border bg-white/95"
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-semibold border bg-[#f8f7f5]/95"
                             style={{ color: signerColor, borderColor: `${signerColor}35` }}
                           >
                             Assinar
@@ -2363,7 +2322,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         </>
                       )}
 
-                      <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-white shadow-sm border border-slate-100" style={{ color: signerColor }}>
+                      <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-[#f8f7f5] shadow-sm border border-slate-100" style={{ color: signerColor }}>
                         {signer?.name || 'Signatário'}
                       </span>
                     </div>
@@ -2672,7 +2631,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         document_id: docId,
         document_name: selectedDocumentName, document_path: docPath,
         attachment_paths: attachPaths,
-        client_id: selectedClientId, client_name: selectedClientName, auth_method: 'signature_only' as SignerAuthMethod,
+        client_id: selectedClientId, client_name: selectedClientName, auth_method: settings.authMethod,
         expires_at: settings.expiresAt || null,
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || 'Signatário', order: i + 1 })),
       };
@@ -3010,6 +2969,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const confirmDeleteRequest = async () => {
     if (!deleteModalTarget) return;
+    const pinOk = await requirePin({
+      action: 'delete_signature_request',
+      resourceType: 'signature_request',
+      resourceId: deleteModalTarget.id,
+      sensitivity: 'critical',
+      title: 'Confirmar exclusão',
+      description: `Informe o PIN para remover "${deleteModalTarget.name}". Esta ação arquiva o documento e invalida o link público.`,
+      actionLabel: deleteAlsoBlock ? 'Remover e bloquear' : 'Remover documento',
+    });
+    if (!pinOk) return;
     try {
       setDeleteLoading(true);
       await signatureService.archiveRequest(deleteModalTarget.id);
@@ -3486,7 +3455,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Links de assinatura</h3>
             <div className="space-y-3">
               {createdRequest.signers.map((signer) => (
-                <div key={signer.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200">
+                <div key={signer.id} className="flex items-center justify-between gap-3 p-3 bg-[#f8f7f5] rounded-lg border border-[#e7e5df]">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-orange-600" /></div>
                     <div className="min-w-0"><p className="font-medium text-slate-800 truncate">{signer.name}</p><p className="text-xs text-slate-500 truncate">{signatureService.generatePublicSigningUrl(signer.public_token!)}</p></div>
@@ -3528,10 +3497,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     const currentStepIndex = steps.findIndex(s => s.key === wizardStep);
     
     return (
-      <div className="bg-slate-50">
+      <div className="bg-[#f5f5f3]">
         {/* Header simples */}
         {wizardStep !== 'position' && (
-          <div className="bg-white border-b border-slate-200 sticky top-0 z-20">
+          <div className="bg-[#f8f7f5] border-b border-[#e7e5df] sticky top-0 z-20">
             <div className="h-1 bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
               <button 
@@ -3588,7 +3557,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <p className="text-sm text-slate-500 mt-1">Selecione o documento e adicione os signatários</p>
               {selectedClientName ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-medium text-slate-700">
+                  <span className="inline-flex items-center rounded-full border border-[#e7e5df] bg-slate-50 px-3 py-1 text-sm font-medium text-slate-700">
                     {selectedClientName}
                   </span>
                   {selectedClientPhone ? (
@@ -3614,11 +3583,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
               {/* Upload */}
-              <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] p-6">
                 <h2 className="text-sm font-medium text-slate-700 mb-4">Documento</h2>
                 <div 
                   className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
-                    dragOver ? 'border-slate-400 bg-slate-50' : uploadedFiles.length > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
+                    dragOver ? 'border-slate-400 bg-slate-50' : uploadedFiles.length > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-[#e7e5df] hover:border-slate-300'
                   }`}
                   onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                   onDragLeave={() => setDragOver(false)}
@@ -3633,7 +3602,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {uploadedFiles.length > 1 && <p className="text-xs text-slate-500 mt-1">{uploadedFiles.length} arquivos selecionados</p>}
                       </div>
                       {uploadedFiles.length > 1 && (
-                        <div className="w-full max-w-sm text-left bg-white rounded border border-slate-200 p-3 mt-2 max-h-48 overflow-y-auto">
+                        <div className="w-full max-w-sm text-left bg-[#f8f7f5] rounded border border-[#e7e5df] p-3 mt-2 max-h-48 overflow-y-auto">
                           <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100">
                             <div className="flex items-center gap-2">
                               <button
@@ -3761,7 +3730,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         value={genDocsSearchTerm}
                         onChange={(e) => setGenDocsSearchTerm(e.target.value)}
                         placeholder="Buscar documento..."
-                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-slate-400"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#e7e5df] rounded focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-slate-400"
                       />
                     </div>
 
@@ -3789,7 +3758,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               className={`w-full flex items-center gap-2.5 p-2.5 rounded border text-left transition ${
                                 isSelected
                                   ? 'border-slate-900 bg-slate-50'
-                                  : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                  : 'border-[#e7e5df] hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
                               {/* Checkbox / número de ordem */}
@@ -3829,7 +3798,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
               
               {/* Signatários */}
-              <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-medium text-slate-700">Signatários</h2>
                   <div className="flex gap-1">
@@ -3842,17 +3811,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <div key={signer.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded">
                       <span className="w-6 h-6 bg-slate-900 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1">{index + 1}</span>
                       <div className="flex-1 space-y-2">
-                        <input type="text" value={signer.name} onChange={(e) => updateSigner(signer.id, 'name', e.target.value)} placeholder="Nome" className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="text" value={signer.name} onChange={(e) => updateSigner(signer.id, 'name', e.target.value)} placeholder="Nome" className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
                         <div className="flex gap-2">
-                          <input type="email" value={signer.email} onChange={(e) => updateSigner(signer.id, 'email', e.target.value)} placeholder="Email" className="flex-1 px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                          <select value={signer.role} onChange={(e) => updateSigner(signer.id, 'role', e.target.value)} className="px-3 py-2 border border-slate-200 rounded text-sm bg-white">
-                            <option value="Signatário">Signatário</option>
-                            <option value="Contratante">Contratante</option>
-                            <option value="Contratado">Contratado</option>
-                            <option value="Testemunha">Testemunha</option>
-                            <option value="Fiador">Fiador</option>
-                            <option value="Cônjuge">Cônjuge</option>
-                            <option value="Representante Legal">Representante Legal</option>
+                          <input type="email" value={signer.email} onChange={(e) => updateSigner(signer.id, 'email', e.target.value)} placeholder="Email" className="flex-1 px-3 py-2 border border-[#e7e5df] rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          <select value={signer.role} onChange={(e) => updateSigner(signer.id, 'role', e.target.value)} className="px-3 py-2 border border-[#e7e5df] rounded text-sm bg-white">
+                            {signerRoles.map(r => <option key={r} value={r}>{r}</option>)}
                           </select>
                         </div>
                       </div>
@@ -3874,7 +3837,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <h1 className="text-xl font-semibold text-slate-900">Confirmar signatários</h1>
               <p className="text-sm text-slate-500 mt-1">Revise os dados antes de continuar</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
+            <div className="bg-[#f8f7f5] rounded-lg border border-[#e7e5df] divide-y divide-slate-100">
               {signers.map((s, i) => (
                 <div key={s.id} className="flex items-center gap-4 p-4">
                   <span className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-sm font-medium text-slate-600">{i + 1}</span>
@@ -3892,7 +3855,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         {wizardStep === 'position' && (
           <div className="h-[calc(100vh-140px)] flex flex-col bg-gray-100">
             {/* Header do step position */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+            <div className="bg-[#f8f7f5] border-b border-[#e7e5df] px-6 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -3911,7 +3874,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <button
                   type="button"
                   onClick={resetWizard}
-                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm"
+                  className="px-4 py-2 bg-white border border-[#e7e5df] text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm"
                 >
                   Cancelar
                 </button>
@@ -3929,9 +3892,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             {/* Main content */}
             <main className="flex-1 p-6 flex gap-6 min-h-0 overflow-hidden bg-gray-100">
               {/* Sidebar (Ferramentas) */}
-              <aside className="w-80 flex-shrink-0 bg-white rounded-xl border border-gray-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
+              <aside className="w-80 flex-shrink-0 bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
                 {/* Header da sidebar */}
-                <div className="p-4 border-b border-gray-200">
+                <div className="p-4 border-b border-[#e7e5df]">
                   <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Ferramentas</h2>
                   <button
                     type="button"
@@ -4041,7 +4004,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         const signer = signers.find(s => s.id === field.signerId);
                         const signerIndex = signers.findIndex(s => s.id === field.signerId);
                         return (
-                          <div key={field.localId} className="flex items-center justify-between text-sm bg-white rounded-lg p-2 border border-gray-100">
+                          <div key={field.localId} className="flex items-center justify-between text-sm bg-[#f8f7f5] rounded-lg p-2 border border-gray-100">
                             <div className="flex items-center gap-2">
                               <span className="w-6 h-6 rounded-full bg-[#00C48C] text-white flex items-center justify-center text-xs font-bold">{signerIndex + 1}</span>
                               <span className="text-gray-600">{signer?.name || 'Signatário'}</span>
@@ -4066,7 +4029,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <div>
                       <h4 className="text-sm font-semibold text-amber-800">Dica Pro</h4>
                       <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-                        Se o template já possui <code className="bg-white/50 px-1 py-0.5 rounded text-amber-900 font-mono text-[10px]">[[assinatura_X]]</code>, o sistema posicionará automaticamente.
+                        Se o template já possui <code className="bg-[#f8f7f5]/50 px-1 py-0.5 rounded text-amber-900 font-mono text-[10px]">[[assinatura_X]]</code>, o sistema posicionará automaticamente.
                       </p>
                     </div>
                   </div>
@@ -4075,9 +4038,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </aside>
 
             {/* Área do PDF */}
-            <section className="flex-1 bg-gray-100 rounded-xl border border-gray-200 flex flex-col relative overflow-hidden">
+            <section className="flex-1 bg-gray-100 rounded-xl border border-[#e7e5df] flex flex-col relative overflow-hidden">
               {/* Toolbar flutuante centralizada */}
-              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white shadow-lg rounded-full px-4 py-2 flex items-center gap-4 z-10 border border-gray-200">
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white shadow-lg rounded-full px-4 py-2 flex items-center gap-4 z-10 border border-[#e7e5df]">
                 <div className="flex items-center gap-2">
                   <button 
                     type="button"
@@ -4175,7 +4138,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           />
 
                           {pdfLoading && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                            <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80 z-10">
                               <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
                             </div>
                           )}
@@ -4214,7 +4177,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                       {signerIndex + 1}
                                     </div>
                                     {isSignature ? (
-                                      <div className="w-full h-full rounded-[16px] border border-white/70 bg-white/90 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1.5 flex items-center gap-3">
+                                      <div className="w-full h-full rounded-[16px] border border-white/70 bg-[#f8f7f5]/90 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1.5 flex items-center gap-3">
                                         <div
                                           className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
                                           style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
@@ -4230,7 +4193,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                           </span>
                                         </div>
                                         <div
-                                          className="shrink-0 rounded-full px-2 py-0.5 text-[8px] font-semibold border bg-white/95"
+                                          className="shrink-0 rounded-full px-2 py-0.5 text-[8px] font-semibold border bg-[#f8f7f5]/95"
                                           style={{ color: signerColor, borderColor: `${signerColor}35` }}
                                         >
                                           Assinar
@@ -4243,7 +4206,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                       </>
                                     )}
 
-                                    <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-white shadow-sm border border-slate-100" style={{ color: signerColor }}>
+                                    <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-[#f8f7f5] shadow-sm border border-slate-100" style={{ color: signerColor }}>
                                       {signer?.name || 'Signatário'}
                                     </span>
                                   </div>
@@ -4279,7 +4242,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           onClick={handlePdfClick}
                         >
                           {pdfLoading && (
-                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-lg">
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#f8f7f5]/80 rounded-lg">
                               <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                             </div>
                           )}
@@ -4339,7 +4302,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           onClick={handlePdfClick}
                         >
                           {pdfLoading && (
-                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-lg">
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#f8f7f5]/80 rounded-lg">
                               <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                             </div>
                           )}
@@ -4366,12 +4329,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         )}
 
         {wizardStep === 'settings' && (
-          <div className="max-w-xl mx-auto p-6"><div className="bg-white rounded-xl border border-slate-200 p-6"><h3 className="text-lg font-semibold mb-6">Configurações</h3><div className="space-y-4">
-            <div><label className="block text-sm font-medium mb-2">Aparência</label><select value={settings.signatureAppearance} onChange={(e) => setSettings((s) => ({ ...s, signatureAppearance: e.target.value }))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="signature_only">Apenas assinatura</option><option value="signature_name">Assinatura + Nome</option></select></div>
+          <div className="max-w-xl mx-auto p-6"><div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6"><h3 className="text-lg font-semibold mb-6">Configurações</h3><div className="space-y-4">
+            <div><label className="block text-sm font-medium mb-2">Método de autenticação</label><select value={settings.authMethod} onChange={(e) => setSettings((s) => ({ ...s, authMethod: e.target.value as SignerAuthMethod }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm">{availableAuthMethods.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></div>
+            <div><label className="block text-sm font-medium mb-2">Aparência</label><select value={settings.signatureAppearance} onChange={(e) => setSettings((s) => ({ ...s, signatureAppearance: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm"><option value="signature_only">Apenas assinatura</option><option value="signature_name">Assinatura + Nome</option></select></div>
             <div className="space-y-3 pt-4 border-t">
-              {[{ key: 'requireCpf', label: 'Não exigir CPF' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label }) => <label key={key} className="flex items-center justify-between"><span className="text-sm">{label}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-white rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
+              {[{ key: 'requireCpf', label: 'Não exigir CPF' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label }) => <label key={key} className="flex items-center justify-between"><span className="text-sm">{label}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-[#f8f7f5] rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
             </div>
-            {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" /></div>}
+            {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm" /></div>}
           </div></div></div>
         )}
       </div>
@@ -4395,7 +4359,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   return (
     <div className="flex flex-col gap-3 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" style={{ background: 'transparent' }} data-signature-module>
       {selectionMode && selectedRequestIds.size > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
+        <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 sm:px-4 py-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="text-xs text-slate-600">
               <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
@@ -4406,14 +4370,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <button
                 type="button"
                 onClick={selectAllFilteredRequests}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Selecionar todos
               </button>
               <button
                 type="button"
                 onClick={clearSelectedIds}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Limpar seleção
               </button>
@@ -4432,7 +4396,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar Explorer */}
         <div className="hidden lg:block w-[260px] flex-shrink-0">
-          <div className="rounded-2xl bg-white p-3" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.06)' }}>
+          <div className="rounded-2xl bg-[#f8f7f5] p-3" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.06)' }}>
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="text-[11px] font-bold tracking-[0.18em] text-slate-500 uppercase">Pastas</div>
             <div className="flex items-center gap-1">
@@ -4537,7 +4501,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
           {/* Toolbar */}
-          <div className="rounded-xl bg-white overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
+          <div className="rounded-xl bg-[#f8f7f5] overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
 
             {/* Row 1: tabs + ações primárias */}
             <div className="flex items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -4571,19 +4535,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               {/* Ações primárias */}
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  type="button"
-                  onClick={() => setShowPublicAuthSettings((v) => !v)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                    showPublicAuthSettings
-                      ? 'border-orange-300 bg-orange-50 text-orange-600'
-                      : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                  }`}
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  Público
-                  {publicAuthSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-                </button>
-                <button
                   onClick={() => { resetWizard(); setWizardStep('upload'); }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white transition"
                 >
@@ -4603,7 +4554,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   placeholder="Buscar documentos..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10"
                 />
               </div>
 
@@ -4617,7 +4568,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
                   showFilters
                     ? 'border-slate-800 bg-slate-800 text-white'
-                    : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                    : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
                 <Filter className="w-3.5 h-3.5" />
@@ -4632,19 +4583,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition ${
                   selectionMode
                     ? 'border-orange-500 bg-orange-500 text-white'
-                    : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                    : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
                 <Check className="w-3.5 h-3.5" />
               </button>
 
               {/* View toggle */}
-              <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+              <div className="flex items-center rounded-lg border border-[#e7e5df] overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setViewMode('list')}
                   className={`flex items-center justify-center w-7 h-7 transition ${
-                    viewMode === 'list' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'
+                    viewMode === 'list' ? 'bg-slate-800 text-white' : 'bg-[#f8f7f5] text-slate-400 hover:bg-slate-50'
                   }`}
                 >
                   <LayoutList className="w-3.5 h-3.5" />
@@ -4653,7 +4604,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   type="button"
                   onClick={() => setViewMode('grid')}
                   className={`flex items-center justify-center w-7 h-7 transition ${
-                    viewMode === 'grid' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'
+                    viewMode === 'grid' ? 'bg-slate-800 text-white' : 'bg-[#f8f7f5] text-slate-400 hover:bg-slate-50'
                   }`}
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
@@ -4668,7 +4619,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 type="button"
                 onClick={openTrash}
                 title="Documentos excluídos"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Excluídas
@@ -4678,7 +4629,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
         {/* Painel de seleção em massa */}
         {selectionMode && (
-          <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
+          <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 sm:px-4 py-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-xs text-slate-600">
                 <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
@@ -4692,7 +4643,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <button
                     type="button"
                     onClick={selectAllInFolder}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     Selecionar tudo da pasta
                   </button>
@@ -4700,14 +4651,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <button
                   type="button"
                   onClick={selectAllFilteredRequests}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Selecionar todos
                 </button>
                 <button
                   type="button"
                   onClick={clearSelectedIds}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Limpar seleção
                 </button>
@@ -4725,51 +4676,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         )}
 
-        {/* Painel: Configuração de autenticação pública */}
-        {showPublicAuthSettings && (
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-4">
-            <span className="text-xs font-medium text-slate-500">Autenticação pública:</span>
-            {(
-              [
-                { key: 'google', label: 'Google', icon: '🔵' },
-                { key: 'email', label: 'E-mail', icon: '✉️' },
-                { key: 'phone', label: 'Telefone', icon: '📱' },
-              ] as const
-            ).map((item) => (
-              <label
-                key={item.key}
-                className="inline-flex items-center gap-2 cursor-pointer select-none"
-              >
-                <button
-                  type="button"
-                  disabled={publicAuthLoading}
-                  onClick={() =>
-                    setPublicAuthConfig((prev) => {
-                      const next = { ...prev, [item.key]: !prev[item.key] };
-                      if (!next.google && !next.email && !next.phone) {
-                        toast.error('Ative pelo menos um método.');
-                        return prev;
-                      }
-                      queueSavePublicAuthConfig(next);
-                      return next;
-                    })
-                  }
-                  className={`relative w-8 h-5 rounded-full transition ${
-                    publicAuthConfig[item.key] ? 'bg-orange-500' : 'bg-slate-300'
-                  } disabled:opacity-50`}
-                >
-                  <div
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                      publicAuthConfig[item.key] ? 'translate-x-3' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-                <span className="text-xs text-slate-700">{item.label}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
         {/* Painel: Filtros avançados */}
         {showFilters && (
           <div className="mt-3 pt-3 border-t border-slate-100">
@@ -4779,7 +4685,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <select
                   value={filterPeriod}
                   onChange={(e) => setFilterPeriod(e.target.value as any)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 >
                   <option value="all">Todos</option>
                   <option value="7d">7 dias</option>
@@ -4793,7 +4699,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   type="month"
                   value={filterMonth}
                   onChange={(e) => setFilterMonth(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
               <div className="flex-1 min-w-[120px]">
@@ -4802,7 +4708,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   type="date"
                   value={filterDateFrom}
                   onChange={(e) => setFilterDateFrom(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
               <div className="flex-1 min-w-[120px]">
@@ -4811,7 +4717,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   type="date"
                   value={filterDateTo}
                   onChange={(e) => setFilterDateTo(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
               <div className="flex-1 min-w-[120px]">
@@ -4819,7 +4725,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as any)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
+                  className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 >
                   <option value="newest">Recentes</option>
                   <option value="oldest">Antigos</option>
@@ -4834,7 +4740,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   setFilterDateTo('');
                   setSortOrder('newest');
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+                className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
                 Limpar
               </button>
@@ -4852,14 +4758,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <button
                 type="button"
                 onClick={selectAllFilteredRequests}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+                className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
                 Selecionar todos
               </button>
               <button
                 type="button"
                 onClick={clearSelectedIds}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+                className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
                 Limpar
               </button>
@@ -4877,7 +4783,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         )}
 
           {/* Lista de documentos */}
-          <div className="rounded-2xl bg-white" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+          <div className="rounded-2xl bg-[#f8f7f5]" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
         {filteredRequestsByFolder.length === 0 && filteredGeneratedDocumentsByFolder.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
@@ -5401,7 +5307,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         setContextMenu({ x: e.clientX, y: e.clientY, itemType: 'generated_document', itemId: doc.id, createdBy: explorerItem?.created_by });
                       }}
                       onClick={() => void handleSelectGeneratedDoc(doc)}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm ring-1 ring-black/5 hover:shadow-md hover:border-slate-300 transition cursor-grab active:cursor-grabbing"
+                      className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 text-left shadow-sm ring-1 ring-black/5 hover:shadow-md hover:border-slate-300 transition cursor-grab active:cursor-grabbing"
                     >
                       <div className="text-xs text-slate-500 truncate">{formatDate(doc.created_at)}</div>
                       <div className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2">{doc.file_name}</div>
@@ -5448,7 +5354,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 type="button"
                 onClick={() => void handleDeleteFolder({ folder: deleteFolderTarget, mode: 'move_root' })}
                 disabled={deleteFolderSaving !== null}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left hover:bg-slate-50 transition"
+                className="w-full rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-4 text-left hover:bg-slate-50 transition"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-slate-900">Mover itens para "Sem pasta"</div>
@@ -5511,7 +5417,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             onKeyDown={(e) => {
               if (e.key === 'Enter') void handleSubmitCreateFolder();
             }}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+            className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
             placeholder="Ex: Clientes, Contratos..."
           />
         </ModalBody>
@@ -5524,7 +5430,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-56 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+          <div className="w-56 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] shadow-xl overflow-hidden">
             <button
               type="button"
               onClick={() => {
@@ -5586,7 +5492,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       >
         <ModalBody>
           <div className="text-xs font-semibold text-slate-500 mb-2">Destino</div>
-          <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200">
+          <div className="max-h-72 overflow-y-auto rounded-2xl border border-[#e7e5df]">
             <button
               type="button"
               onClick={() => setMoveSelectedFolderId(null)}
@@ -5639,7 +5545,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           <div className="flex gap-2">
             <button
               onClick={() => setDeleteModalTarget(null)}
-              className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              className="flex-1 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
             >
               Cancelar
             </button>
@@ -5660,7 +5566,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </p>
 
           {/* Opção: bloquear também */}
-          <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-colors">
+          <label className="flex items-start gap-3 p-3 rounded-xl border border-[#e7e5df] bg-slate-50 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-colors">
             <input
               type="checkbox"
               checked={deleteAlsoBlock}
@@ -5694,7 +5600,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             onClick={() => void loadArchived()}
             disabled={archivedLoading}
             title="Atualizar"
-            className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-100 transition disabled:opacity-50"
+            className="w-8 h-8 rounded-lg border border-[#e7e5df] bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-100 transition disabled:opacity-50"
           >
             <RotateCcw style={{ width: 14, height: 14, animation: archivedLoading ? 'spin 1s linear infinite' : undefined }} />
           </button>
@@ -5953,7 +5859,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
             )}
 
-            <div className="bg-white overflow-hidden">
+            <div className="bg-[#f8f7f5] overflow-hidden">
 
               {/* ── Ações principais ── */}
               <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -6289,13 +6195,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     </div>
 
                     {showCreateProcess && !detailsRequest.process_id && (
-                      <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-[#e7e5df]">
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Novo Processo</p>
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                           <select
                             value={createProcessArea}
                             onChange={(e) => setCreateProcessArea(e.target.value as ProcessPracticeArea)}
-                            className="w-full sm:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                            className="w-full sm:w-auto px-3 py-2 border border-[#e7e5df] rounded-lg text-sm font-medium text-slate-700 bg-[#f8f7f5] focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                           >
                             <option value="trabalhista">Trabalhista</option>
                             <option value="familia">Família</option>
@@ -6510,7 +6416,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     const isSigned = signer.status === 'signed';
 
                     return (
-                      <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : 'border-slate-200'}`}>
+                      <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : 'border-[#e7e5df]'}`}>
                         {/* Card header */}
                         <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : signer.viewed_at ? 'bg-sky-50/60' : 'bg-slate-50'}`}>
                           {isSigned && facialUrl ? (
@@ -6580,7 +6486,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {!isSigned && (
                           <div className="px-3 py-2 bg-white border-t border-slate-100 flex flex-col gap-1.5">
                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
-                              <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
+                              <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-[#e7e5df] rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
                               <div className="flex gap-1 flex-shrink-0">
                                 <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
                                   <Copy className="w-3 h-3" />Copiar
@@ -6788,7 +6694,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               {signatureData && (
                 <div className="p-3 bg-slate-50 rounded mb-3">
                   <p className="text-xs text-slate-500 mb-1">Assinatura</p>
-                  <img src={signatureData} alt="Assinatura" className="max-w-full max-h-20 border border-slate-200 rounded bg-white" />
+                  <img src={signatureData} alt="Assinatura" className="max-w-full max-h-20 border border-[#e7e5df] rounded bg-[#f8f7f5]" />
                 </div>
               )}
               {facialData && (
@@ -6814,7 +6720,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <img
               src={zoomImageUrl}
               alt="Imagem ampliada"
-              className="max-w-full max-h-[70vh] sm:max-h-[75vh] object-contain rounded-xl border border-slate-200 bg-white"
+              className="max-w-full max-h-[70vh] sm:max-h-[75vh] object-contain rounded-xl border border-[#e7e5df] bg-[#f8f7f5]"
               style={{ transform: zoomImageUrl.includes('facial') ? 'scaleX(-1)' : 'none' }}
             />
           )}

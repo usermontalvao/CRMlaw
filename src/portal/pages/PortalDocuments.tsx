@@ -123,7 +123,7 @@ export const PortalDocuments: React.FC = () => {
               key={f.key}
               onClick={() => setFilter(f.key)}
               className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${
-                on ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+                on ? 'bg-slate-900 text-white' : 'bg-[#f8f7f5] text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
               }`}
             >
               {f.label}
@@ -151,7 +151,7 @@ export const PortalDocuments: React.FC = () => {
             const name = d.name || d.filename || 'Documento';
             return (
               <li key={d.id}>
-                <div className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+                <div className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-[#f8f7f5] p-4 transition hover:border-slate-300 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
                   {/* Ícone neutro — igual ao padrão do portal */}
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
                     <Icon className="h-4 w-4" />

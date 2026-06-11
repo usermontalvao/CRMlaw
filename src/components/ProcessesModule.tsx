@@ -38,7 +38,7 @@ import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { signatureService } from '../services/signature.service';
 import { profileService } from '../services/profile.service';
-import { settingsService } from '../services/settings.service';
+import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
@@ -63,6 +63,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { normalizeSearchText } from '../utils/search';
 import { ClientAvatar } from './shared/ClientAvatar';
 import { useClientPhotos } from '../hooks/useClientPhotos';
+import { useFormLayout } from '../hooks/useFormLayout';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -361,9 +362,63 @@ interface ProcessesModuleProps {
 
 const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusFilter, initialSearchQuery, onParamConsumed }) => {
   const { user } = useAuth();
-  const { confirmDelete } = useDeleteConfirm();
+  const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   
   // Sincronização DJEN removida - agora apenas via Edge Function (cron)
+  const [statusOptions, setStatusOptions] = useState(STATUS_OPTIONS);
+  const [practiceAreas, setPracticeAreas] = useState(PRACTICE_AREAS);
+  const [defaultProcessStatus, setDefaultProcessStatus] = useState<string | null>(null);
+
+  const makeEmptyForm = useCallback(() => {
+    const preferredStatus = (
+      defaultProcessStatus && statusOptions.some(s => s.key === defaultProcessStatus)
+        ? defaultProcessStatus
+        : statusOptions.some(s => s.key === emptyForm.status)
+          ? emptyForm.status
+          : statusOptions[0]?.key ?? emptyForm.status
+    ) as typeof emptyForm.status;
+    return {
+      ...emptyForm,
+      status: preferredStatus,
+      practice_area: (practiceAreas.some(a => a.key === emptyForm.practice_area) ? emptyForm.practice_area : practiceAreas[0]?.key ?? emptyForm.practice_area) as typeof emptyForm.practice_area,
+    };
+  }, [statusOptions, practiceAreas, defaultProcessStatus]);
+  const [timelineEventLimit, setTimelineEventLimit] = useState(30);
+  const [aiSummaryMaxTokens, setAiSummaryMaxTokens] = useState(1000);
+
+  useEffect(() => {
+    profileService.getMyProfile().then(p => setCurrentUserProfile(p)).catch(() => {});
+    settingsService.getResponsibilityConfig().then(cfgs => {
+      const cfg = cfgs.find(c => c.module === 'processes');
+      if (cfg) setResponsibilityConfig(cfg);
+    }).catch(() => {});
+    settingsService.getProcessModuleConfig().then(cfg => {
+      if (cfg.statuses.length > 0) {
+        const relabeled = STATUS_OPTIONS
+          .filter(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return !sv || sv.active !== false; })
+          .map(local => { const sv = cfg.statuses.find(s => s.key === (local.key as string)); return sv ? { ...local, label: sv.label, badge: sv.badge ?? local.badge } : local; });
+        const newItems = cfg.statuses.filter(s => !STATUS_OPTIONS.some(l => l.key === s.key) && s.active !== false);
+        const neutralized = newItems.map(s => ({
+          key: s.key as ProcessStatus,
+          label: s.label,
+          badge: s.badge ?? 'bg-gray-100 text-gray-700',
+        }));
+        setStatusOptions([...relabeled, ...neutralized]);
+        const defStatus = cfg.statuses.find(s => s.isDefault && s.active !== false);
+        if (defStatus) setDefaultProcessStatus(defStatus.key);
+      }
+      if (cfg.practice_areas.length > 0) {
+        setPracticeAreas(cfg.practice_areas.filter(a => a.active !== false).map(a => ({
+          key: a.key as ProcessPracticeArea,
+          label: a.label,
+          description: a.description,
+        })));
+      }
+      setTimelineEventLimit(cfg.timeline_event_limit ?? 30);
+      setAiSummaryMaxTokens(cfg.ai_summary_max_tokens ?? 1000);
+    }).catch(() => {});
+  }, []);
+
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -373,9 +428,12 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
+  const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
+  const fl = useFormLayout('processes');
   const [selectedProcess, setSelectedProcess] = useState<Process | null>(null);
   const [searchingDjen, setSearchingDjen] = useState(false);
   const [djenData, setDjenData] = useState<any>(null);
@@ -541,7 +599,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       const client = allClientsMap.get(process.client_id);
 
       const practiceAreaLabel =
-        PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
+        practiceAreas.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
 
       // Nota: responsible_lawyer propositalmente excluído do composite —
       // em escritórios monoadvo o nome do advogado está em todos os processos
@@ -659,7 +717,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       }
 
       const clientName = clientMap.get(proc.client_id)?.full_name || 'Não identificado';
-      const areaLabel  = PRACTICE_AREAS.find(a => a.key === proc.practice_area)?.label || proc.practice_area || 'Não informada';
+      const areaLabel  = practiceAreas.find(a => a.key === proc.practice_area)?.label || proc.practice_area || 'Não informada';
       const poloAtivo  = processParties?.polo_ativo  || clientName;
       const poloPassivo = processParties?.polo_passivo || 'Não identificado';
 
@@ -703,7 +761,7 @@ TAREFA: leia TODO o histórico acima, identifique a sequência real de fatos e g
 • [Ação concreta e adequada ao tipo de juízo (JE, Vara Cível, TJ etc.) — cite o fundamento legal se relevante]
 
 Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
-        1000
+        aiSummaryMaxTokens
       );
       setAiSummary(result);
     } catch { setAiSummary('Erro ao gerar resumo. Tente novamente.'); }
@@ -1018,9 +1076,9 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
       setFormData({
         client_id: processData.client_id,
         process_code: processData.process_code || '',
-        status: processData.status,
+        status: (statusOptions.some(s => s.key === processData.status) ? processData.status : statusOptions[0]?.key ?? processData.status) as typeof emptyForm.status,
         distributed_at: toDateInputValue(processData.distributed_at),
-        practice_area: processData.practice_area,
+        practice_area: (practiceAreas.some(a => a.key === processData.practice_area) ? processData.practice_area : practiceAreas[0]?.key ?? processData.practice_area) as typeof emptyForm.practice_area,
         court: processData.court || '',
         responsible_lawyer: processData.responsible_lawyer || '',
         responsible_lawyer_id: processData.responsible_lawyer_id || '',
@@ -1042,7 +1100,17 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
       }
     } else {
       setSelectedProcess(null);
-      setFormData(emptyForm);
+      let defaultLawyerId = '';
+      let defaultLawyerName = '';
+      if (responsibilityConfig?.default_mode === 'creator' && currentUserProfile) {
+        defaultLawyerId = currentUserProfile.id;
+        defaultLawyerName = currentUserProfile.name || '';
+      } else if (responsibilityConfig?.default_mode === 'single' && responsibilityConfig.single_member_id) {
+        const member = members.find(m => m.id === responsibilityConfig.single_member_id);
+        defaultLawyerId = responsibilityConfig.single_member_id;
+        defaultLawyerName = member?.name || '';
+      }
+      setFormData({ ...makeEmptyForm(), responsible_lawyer_id: defaultLawyerId, responsible_lawyer: defaultLawyerName });
       setClientSearchTerm('');
     }
 
@@ -1053,7 +1121,7 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
     if (saving) return;
     setIsModalOpen(false);
     setSelectedProcess(null);
-    setFormData(emptyForm);
+    setFormData(makeEmptyForm());
     setClientSearchTerm('');
     setDjenData(null);
   };
@@ -1441,7 +1509,7 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
       if (!updatedProcess) {
         setSelectedProcess(null);
       }
-      setFormData(emptyForm);
+      setFormData(makeEmptyForm());
       setClientSearchTerm('');
       setHearingResponsibleId('');
     } catch (err: any) {
@@ -1463,6 +1531,7 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
 
     try {
       await processService.deleteProcess(id);
+      notifyDeleted(proc?.process_code || undefined);
       await handleReload();
       setProcesses((prev) => prev.filter((item) => item.id !== id));
     } catch (err: any) {
@@ -1767,7 +1836,7 @@ Regras:
       }
       const events = timeline.length > 0 ? timeline : await processTimelineService.fetchProcessTimeline(selectedProcessForView.process_code);
       const timelineText = events
-        .slice(0, 30)
+        .slice(0, timelineEventLimit)
         .map((e) => {
           const date = e.date ? (e.date.includes('T') ? e.date.split('T')[0] : e.date) : '';
           const title = e.title || '';
@@ -1845,17 +1914,17 @@ Regras:
   };
 
   const getStatusBadge = (status: ProcessStatus) => {
-    const statusConfig = STATUS_OPTIONS.find((s) => s.key === status);
+    const statusConfig = statusOptions.find((s) => s.key === status);
     return statusConfig ? statusConfig.badge : 'bg-slate-100 text-slate-600';
   };
 
   const getStatusLabel = (status: ProcessStatus) => {
-    const statusConfig = STATUS_OPTIONS.find((s) => s.key === status);
+    const statusConfig = statusOptions.find((s) => s.key === status);
     return statusConfig ? statusConfig.label : status;
   };
 
   const getPracticeAreaLabel = (area: ProcessPracticeArea) => {
-    const areaConfig = PRACTICE_AREAS.find((item) => item.key === area);
+    const areaConfig = practiceAreas.find((item) => item.key === area);
     return areaConfig ? areaConfig.label : area;
   };
 
@@ -1974,6 +2043,7 @@ Regras:
       const updatedNotes = existingNotes.filter((note) => note.id !== noteId);
       const serialized = serializeNotes(updatedNotes);
       await processService.updateProcess(selectedProcessForView.id, { notes: serialized });
+      notifyDeleted();
 
       const refreshed = await processService.getProcessById(selectedProcessForView.id);
       if (refreshed) {
@@ -2084,7 +2154,7 @@ Regras:
       case 'baixa':
         return 'bg-green-100 text-green-800 border-green-200';
       default:
-        return 'bg-slate-100 text-slate-800 border-slate-200';
+        return 'bg-slate-100 text-slate-800 border-[#e7e5df]';
     }
   };
 
@@ -2292,7 +2362,7 @@ Regras:
 
           {/* Conteúdo */}
           <div className="flex-1 min-w-0 pb-4">
-            <div className="group rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition shadow-sm">
+            <div className="group rounded-xl border border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 transition shadow-sm">
               <div className="flex items-center justify-between gap-2 px-3.5 pt-2.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-xs font-semibold text-slate-900 truncate">{authorName}</span>
@@ -2335,7 +2405,7 @@ Regras:
                   onChange={(e) => setReplyDraft(e.target.value)}
                   rows={3}
                   autoFocus
-                  className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none transition"
+                  className="w-full text-sm rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none transition"
                   placeholder="Escreva uma resposta…"
                 />
                 <div className="flex justify-end gap-2 mt-2">
@@ -2413,7 +2483,7 @@ Regras:
 
     return base.filter((process) => {
       const client = allClientsMap.get(process.client_id);
-      const practiceAreaLabel = PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
+      const practiceAreaLabel = practiceAreas.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
       const composite = [
         process.process_code,
         process.court,
@@ -2435,7 +2505,7 @@ Regras:
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { todos: processes.length };
-    STATUS_OPTIONS.forEach((s) => {
+    statusOptions.forEach((s) => {
       counts[s.key] = 0;
     });
     processes.forEach((p) => {
@@ -2462,12 +2532,12 @@ Regras:
       size="xl"
       zIndex={80}
       footer={
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={handleCloseModal}
             disabled={saving}
-            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            className="w-full px-4 py-2 text-sm text-slate-600 transition hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white sm:w-auto"
           >
             Cancelar
           </button>
@@ -2475,7 +2545,7 @@ Regras:
             type="submit"
             onClick={handleSubmit}
             disabled={saving}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-600 sm:w-auto"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Salvar
@@ -2493,8 +2563,8 @@ Regras:
 
           {/* Linha 1 — Cliente | Número do Processo | Buscar */}
           <div>
-            <div className="grid grid-cols-12 gap-2 items-end">
-              <div className="col-span-5">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-end">
+              <div className="md:col-span-5">
                 <ClientSearchSelect
                   value={formData.client_id}
                   onChange={(clientId, clientName) => {
@@ -2507,7 +2577,7 @@ Regras:
                   allowCreate={true}
                 />
               </div>
-              <div className="col-span-6">
+              <div className="md:col-span-6">
                 <label className={labelStyle}>Número do Processo</label>
                 <input
                   value={formData.process_code}
@@ -2524,7 +2594,7 @@ Regras:
                   required
                 />
               </div>
-              <div className="col-span-1">
+              <div className="md:col-span-1">
                 <button
                   type="button"
                   onClick={() => handleSearchDjen()}
@@ -2553,32 +2623,38 @@ Regras:
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-600">Dados do Processo</p>
 
             {/* Linha 3 — Área | Status | Distribuição | Vara/Comarca */}
-            <div className="grid grid-cols-12 gap-2">
-              <div className="col-span-3">
-                <label className={labelStyle}>Área</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12">
+              {!fl.isHidden('practice_area') && (
+              <div className="xl:col-span-3">
+                <label className={labelStyle}>{fl.fieldLabel('practice_area', 'Área')}</label>
                 <select
                   value={formData.practice_area}
                   onChange={(e) => handleFormChange('practice_area', e.target.value as ProcessPracticeArea)}
                   className={inputStyle}
+                  required={fl.isRequired('practice_area')}
                 >
-                  {PRACTICE_AREAS.map((a) => (
+                  {practiceAreas.map((a) => (
                     <option key={a.key} value={a.key}>{a.label}</option>
                   ))}
                 </select>
               </div>
-              <div className="col-span-3">
-                <label className={labelStyle}>Status</label>
+              )}
+              {!fl.isHidden('status') && (
+              <div className="xl:col-span-3">
+                <label className={labelStyle}>{fl.fieldLabel('status', 'Status')}</label>
                 <select
                   value={formData.status}
                   onChange={(e) => handleFormChange('status', e.target.value as ProcessStatus)}
                   className={inputStyle}
+                  required={fl.isRequired('status')}
                 >
-                  {STATUS_OPTIONS.map((s) => (
+                  {statusOptions.map((s) => (
                     <option key={s.key} value={s.key}>{s.label}</option>
                   ))}
                 </select>
               </div>
-              <div className="col-span-3">
+              )}
+              <div className="xl:col-span-3">
                 <label className={labelStyle}>Distribuição</label>
                 <input
                   type="date"
@@ -2587,20 +2663,24 @@ Regras:
                   className={inputStyle}
                 />
               </div>
-              <div className="col-span-3">
-                <label className={labelStyle}>Vara / Comarca</label>
+              {!fl.isHidden('court') && (
+              <div className="xl:col-span-3">
+                <label className={labelStyle}>{fl.fieldLabel('court', 'Vara / Comarca')}</label>
                 <input
                   value={formData.court}
                   onChange={(e) => handleFormChange('court', e.target.value)}
                   className={inputStyle}
+                  required={fl.isRequired('court')}
                 />
               </div>
+              )}
             </div>
 
             {/* Linha 4 — Advogado | Audiência | Modo (quando sim) */}
-            <div className="grid grid-cols-12 gap-2">
-              <div className="col-span-5">
-                <label className={labelStyle}>Advogado do processo</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12">
+              {!fl.isHidden('responsible') && (
+              <div className="xl:col-span-5">
+                <label className={labelStyle}>{fl.fieldLabel('responsible', 'Advogado do processo')}</label>
                 <select
                   value={formData.responsible_lawyer_id}
                   onChange={(e) => {
@@ -2609,6 +2689,7 @@ Regras:
                     if (m) handleFormChange('responsible_lawyer', m.name);
                   }}
                   className={inputStyle}
+                  required={fl.isRequired('responsible')}
                 >
                   <option value="">Selecione</option>
                   {members.map((m) => (
@@ -2616,7 +2697,8 @@ Regras:
                   ))}
                 </select>
               </div>
-              <div className="col-span-3">
+              )}
+              <div className="xl:col-span-3">
                 <label className={labelStyle}>Audiência</label>
                 <select
                   value={formData.hearing_scheduled}
@@ -2628,7 +2710,7 @@ Regras:
                 </select>
               </div>
               {formData.hearing_scheduled === 'sim' && (
-                <div className="col-span-4">
+                <div className="xl:col-span-4">
                   <label className={labelStyle}>Modo</label>
                   <select
                     value={formData.hearing_mode}
@@ -2644,8 +2726,8 @@ Regras:
 
             {/* Linha 5 — Data | Hora | Responsável (só quando audiência = sim) */}
             {formData.hearing_scheduled === 'sim' && (
-              <div className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12 xl:items-end">
+                <div className="xl:col-span-3">
                   <label className={labelStyle}>Data</label>
                   <input
                     type="date"
@@ -2655,7 +2737,7 @@ Regras:
                     min={new Date().toISOString().split('T')[0]}
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="xl:col-span-3">
                   <label className={labelStyle}>Hora</label>
                   <input
                     type="time"
@@ -2664,7 +2746,7 @@ Regras:
                     className={inputStyle}
                   />
                 </div>
-                <div className="col-span-6">
+                <div className="xl:col-span-6">
                   <label className={labelStyle}>Responsável pela audiência</label>
                   <div className="flex flex-wrap items-center gap-1.5 min-h-9">
                     {members.map((m) => (
@@ -2707,15 +2789,18 @@ Regras:
           </div>
 
           {/* Linha 5 — Observações */}
+          {!fl.isHidden('description') && (
           <div>
-            <label className={labelStyle}>Observações</label>
+            <label className={labelStyle}>{fl.fieldLabel('description', 'Observações')}</label>
             <textarea
               value={formData.notes}
               onChange={(e) => handleFormChange('notes', e.target.value)}
               className={`${inputStyle} h-14 resize-none`}
               placeholder=""
+              required={fl.isRequired('description')}
             />
           </div>
+          )}
 
         </form>
       </ModalBody>
@@ -2725,7 +2810,7 @@ Regras:
   const detailsModal = (() => {
     if (!selectedProcessForView || viewMode !== 'details') return null;
     const client = clientMap.get(selectedProcessForView.client_id);
-    const practiceAreaInfo = PRACTICE_AREAS.find((area) => area.key === selectedProcessForView.practice_area);
+    const practiceAreaInfo = practiceAreas.find((area) => area.key === selectedProcessForView.practice_area);
     return (
       <Modal
         open
@@ -2775,7 +2860,7 @@ Regras:
       >
 
           {/* Identity strip — cliente + status + sync (com integração) */}
-          <div className="px-6 sm:px-8 py-4 border-b border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-x-5 gap-y-3 bg-white dark:bg-zinc-900">
+          <div className="px-6 sm:px-8 py-4 border-b border-[#e7e5df] dark:border-zinc-800 flex flex-wrap items-center gap-x-5 gap-y-3 bg-white dark:bg-zinc-900">
             <button
               type="button"
               onClick={() => {
@@ -2819,9 +2904,9 @@ Regras:
             </span>
           </div>
 
-          <div className="p-6 sm:p-8 bg-white dark:bg-zinc-900">
+          <div className="p-6 sm:p-8 bg-[#f8f7f5] dark:bg-zinc-900">
             {/* Grid de dados — card unificado com células divididas */}
-            <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden mb-6">
+            <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden mb-6">
               <div className="grid grid-cols-2 lg:grid-cols-3 divide-x divide-y divide-slate-100 dark:divide-zinc-800">
                 {/* Campos estáticos */}
                 {[
@@ -2854,7 +2939,7 @@ Regras:
                         value={courtDraft}
                         onChange={e => setCourtDraft(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') saveCourtEdit(); if (e.key === 'Escape') setEditingCourtFor(null); }}
-                        className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                        className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400 bg-[#f8f7f5]"
                         placeholder="Ex: Juizado Especial Cível - Nova Friburgo"
                       />
                       <button onClick={saveCourtEdit} disabled={savingCourt}
@@ -2884,7 +2969,7 @@ Regras:
             </div>
 
             {/* Partes do processo */}
-            <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+            <div className="mb-6 rounded-xl border border-[#e7e5df] bg-slate-50 overflow-hidden">
               <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Users className="w-3.5 h-3.5 text-slate-400" />
@@ -2944,7 +3029,7 @@ Regras:
                 </button>
               </div>
               {aiSummary && (
-                <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+                <div className="rounded-2xl border border-slate-100 bg-[#f8f7f5] shadow-sm overflow-hidden">
                   {/* Cabeçalho do bloco */}
                   <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700">
                     <Zap className="w-3 h-3 text-amber-400" />
@@ -3014,7 +3099,7 @@ Regras:
                   </div>
                 </div>
                 {noteThreads.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
+                  <div className="rounded-xl border border-dashed border-[#e7e5df] py-8 text-center">
                     <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="text-sm text-slate-400">Nenhum registro na linha do tempo ainda.</p>
                   </div>
@@ -3029,7 +3114,7 @@ Regras:
             </div>
 
             {/* Seção Prescrição Execução Sobrestada */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="mt-8 pt-6 border-t border-[#e7e5df]">
               <button
                 type="button"
                 onClick={() => setStaySectionExpanded((prev) => !prev)}
@@ -3053,7 +3138,7 @@ Regras:
                         type="date"
                         value={stayBaseDate}
                         onChange={(e) => setStayBaseDate(e.target.value)}
-                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white"
+                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-[#f8f7f5] dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 text-slate-900 dark:text-white"
                       />
                     </div>
                     <div>
@@ -3061,7 +3146,7 @@ Regras:
                       <select
                         value={stayReason}
                         onChange={(e) => setStayReason(e.target.value as 'prescricao' | 'acordo_pagamento' | 'outro')}
-                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white"
+                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-[#f8f7f5] dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 text-slate-900 dark:text-white"
                       >
                         <option value="prescricao">Prescrição</option>
                         <option value="acordo_pagamento">Cumprimento / Pagamento de acordo</option>
@@ -3140,7 +3225,7 @@ Regras:
             </div>
 
             {/* ── Assinaturas Digitais ────────────────────────────────────── */}
-            <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="mt-6 pt-6 border-t border-[#e7e5df]">
               <div className="flex items-center gap-2 mb-3">
                 <PenTool className="w-3.5 h-3.5 text-violet-500" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Assinaturas Digitais</span>
@@ -3154,12 +3239,12 @@ Regras:
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando assinaturas...
                 </div>
               ) : processSignatures.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center">
+                <div className="rounded-xl border border-dashed border-[#e7e5df] py-5 text-center">
                   <PenTool className="w-6 h-6 text-slate-300 mx-auto mb-2" />
                   <p className="text-xs text-slate-400">Nenhuma assinatura digital vinculada a este processo.</p>
                 </div>
               ) : (
-                <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                <div className="rounded-xl border border-[#e7e5df] overflow-hidden divide-y divide-slate-100">
                   {processSignatures.map(sig => {
                     const statusCfg: Record<string, { label: string; cls: string }> = {
                       pending:   { label: 'Pendente',  cls: 'bg-amber-100 text-amber-700' },
@@ -3255,10 +3340,10 @@ Regras:
                 <select
                   value={exportFilters.status}
                   onChange={(e) => setExportFilters({ ...exportFilters, status: e.target.value as ProcessStatus | 'todos' })}
-                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-[#e7e5df] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="todos">Todos os status</option>
-                  {STATUS_OPTIONS.map((status) => (
+                  {statusOptions.map((status) => (
                     <option key={status.key} value={status.key}>{status.label}</option>
                   ))}
                 </select>
@@ -3272,10 +3357,10 @@ Regras:
                 <select
                   value={exportFilters.practiceArea}
                   onChange={(e) => setExportFilters({ ...exportFilters, practiceArea: e.target.value as ProcessPracticeArea | 'todas' })}
-                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-[#e7e5df] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="todas">Todas as áreas</option>
-                  {PRACTICE_AREAS.map((area) => (
+                  {practiceAreas.map((area) => (
                     <option key={area.key} value={area.key}>{area.label}</option>
                   ))}
                 </select>
@@ -3289,7 +3374,7 @@ Regras:
                 <select
                   value={exportFilters.responsibleLawyer}
                   onChange={(e) => setExportFilters({ ...exportFilters, responsibleLawyer: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-[#e7e5df] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="todos">Todos os advogados</option>
                   {members.map((member) => (
@@ -3337,7 +3422,7 @@ Regras:
                 <select
                   value={exportFilters.orderBy}
                   onChange={(e) => setExportFilters({ ...exportFilters, orderBy: e.target.value as 'recent' | 'oldest' })}
-                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-[#e7e5df] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="recent">Mais recentes primeiro</option>
                   <option value="oldest">Mais antigos primeiro</option>
@@ -3345,7 +3430,7 @@ Regras:
               </div>
 
               {/* Prévia */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-3">
                 <p className="text-xs text-slate-600">
                   💡 <strong>Prévia:</strong> {filteredCount} processo{filteredCount !== 1 ? 's' : ''} será{filteredCount !== 1 ? 'ão' : ''} exportado{filteredCount !== 1 ? 's' : ''} com os filtros selecionados.
                 </p>
@@ -3381,7 +3466,7 @@ Regras:
                 {archivedWithDeadlines.map((alert) => (
                   <div
                     key={alert.processId}
-                    className="flex items-center justify-between gap-3 bg-white/70 rounded-lg px-3 py-2 border border-red-100"
+                    className="flex items-center justify-between gap-3 bg-[#f8f7f5]/70 rounded-lg px-3 py-2 border border-red-100"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-slate-800 truncate">
@@ -3414,7 +3499,7 @@ Regras:
       )}
 
       {/* KPI Strip — enterprise, clicável p/ filtrar */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
         <div className="grid grid-cols-2 md:grid-cols-5 divide-x divide-slate-100">
           {[
             { key: 'todos' as const, label: 'Total', value: statusCounts.todos, icon: Building2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
@@ -3451,7 +3536,7 @@ Regras:
       </div>
 
       {/* Barra de Sincronização DJEN — visível e acionável */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${syncingDjen ? 'bg-blue-100 text-blue-600' : djenStats.withData > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
             <RefreshCw className={`w-4 h-4 ${syncingDjen ? 'animate-spin' : ''}`} />
@@ -3484,7 +3569,7 @@ Regras:
         <button
           onClick={handleManualDjenSync}
           disabled={syncingDjen}
-          className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white text-xs font-semibold transition shadow-sm"
+          className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white text-xs font-semibold transition"
         >
           {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           {syncingDjen ? 'Sincronizando…' : 'Sincronizar agora'}
@@ -3493,7 +3578,7 @@ Regras:
 
       {/* Seção Aguardando Confecção - Compacta */}
       {statusFilter === 'todos' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
           {/* Header com botão de adicionar inline */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
@@ -3554,7 +3639,7 @@ Regras:
                   }}
                 />
                 {quickAddShowSuggestions && quickAddFilteredClients.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-[#e7e5df] rounded-lg shadow-lg max-h-40 overflow-y-auto">
                     {quickAddFilteredClients.map((client) => (
                       <button
                         key={client.id}
@@ -3578,7 +3663,7 @@ Regras:
                 onChange={(e) => setQuickAddArea(e.target.value as ProcessPracticeArea)}
                 className="px-2 py-1.5 text-xs border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
               >
-                {PRACTICE_AREAS.map((area) => (
+                {practiceAreas.map((area) => (
                   <option key={area.key} value={area.key}>{area.label}</option>
                 ))}
               </select>
@@ -3620,7 +3705,7 @@ Regras:
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
                       <div className="flex items-center gap-2">
-                        <p className="text-xs text-slate-500">{process.practice_area ? PRACTICE_AREAS.find(p => p.key === process.practice_area)?.label : 'Área não definida'}</p>
+                        <p className="text-xs text-slate-500">{process.practice_area ? practiceAreas.find(p => p.key === process.practice_area)?.label : 'Área não definida'}</p>
                         {process.priority === 'urgente' && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200 shadow-sm">
                             <AlertTriangle className="w-2.5 h-2.5" />
@@ -3659,19 +3744,19 @@ Regras:
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setKanbanMode(false)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!kanbanMode ? 'bg-[#f8f7f5] text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <List className="w-3.5 h-3.5" />
               Lista
             </button>
             <button
               onClick={() => setKanbanMode(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${kanbanMode ? 'bg-[#f8f7f5] text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               Kanban
@@ -3685,7 +3770,7 @@ Regras:
                 setStageMapSearch('');
                 setShowStageMapModal(true);
               }}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-[#e7e5df] hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
               title="Mapa de Fases"
             >
               <Clock className="w-3.5 h-3.5" />
@@ -3707,7 +3792,7 @@ Regras:
             )}
             <button
               onClick={() => setShowExportModal(true)}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-[#e7e5df] hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Exportar</span>
@@ -3727,7 +3812,7 @@ Regras:
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
+              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
               placeholder="Buscar por cliente, processo, vara…"
             />
           </div>
@@ -3736,10 +3821,10 @@ Regras:
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
-              className="px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
+              className="px-3 py-2 bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
             >
               <option value="todos">Todos os status</option>
-              {STATUS_OPTIONS.map((status) => (
+              {statusOptions.map((status) => (
                 <option key={status.key} value={status.key}>
                   {status.label}
                 </option>
@@ -3755,7 +3840,7 @@ Regras:
               /* ── Skeleton: Kanban ── */
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                 {[...Array(4)].map((_, colIdx) => (
-                  <div key={colIdx} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden flex flex-col">
+                  <div key={colIdx} className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 rounded-xl overflow-hidden flex flex-col">
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
                       <div className="h-3 w-28 skeleton rounded-full" />
                       <div className="h-3 w-5 skeleton opacity-60 rounded-full" />
@@ -3786,7 +3871,7 @@ Regras:
               </div>
             ) : (
               /* ── Skeleton: Lista ── */
-              <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl">
+              <div className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 rounded-xl">
                 {/* Mobile skeleton */}
                 <div className="block lg:hidden divide-y divide-slate-100 dark:divide-zinc-800">
                   {[...Array(5)].map((_, i) => (
@@ -3815,7 +3900,7 @@ Regras:
                 {/* Desktop skeleton */}
                 <div className="hidden lg:block overflow-x-auto w-full">
                   <table className="min-w-full divide-y divide-slate-100 dark:divide-zinc-800">
-                    <thead className="bg-slate-50/60 dark:bg-zinc-800/40 border-b border-slate-200 dark:border-zinc-700">
+                    <thead className="bg-slate-50/60 dark:bg-zinc-800/40 border-b border-[#e7e5df] dark:border-zinc-700">
                       <tr>
                         <th className="px-6 py-3.5 min-w-[180px]"><div className="h-2.5 w-12 skeleton rounded-full" /></th>
                         <th className="px-6 py-3.5 min-w-[200px]"><div className="h-2.5 w-28 skeleton rounded-full" /></th>
@@ -3824,7 +3909,7 @@ Regras:
                         <th className="px-6 py-3.5 w-[140px]" />
                       </tr>
                     </thead>
-                    <tbody className="bg-white dark:bg-zinc-900 divide-y divide-slate-100 dark:divide-zinc-800">
+                    <tbody className="bg-[#f8f7f5] dark:bg-zinc-900 divide-y divide-slate-100 dark:divide-zinc-800">
                       {[...Array(7)].map((_, i) => (
                         <tr key={i}>
                           <td className="px-6 py-4">
@@ -3872,10 +3957,10 @@ Regras:
             </div>
           ) : kanbanMode ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto">
-              {STATUS_OPTIONS.map((statusOption) => {
+              {statusOptions.map((statusOption) => {
                 const processesInColumn = processesByStatus[statusOption.key] || [];
                 return (
-                  <div key={statusOption.key} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+                  <div key={statusOption.key} className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden flex flex-col">
                     <div className={`px-4 py-3 font-semibold text-sm ${statusOption.badge}`}>
                       <div className="flex items-center justify-between">
                         <span>{statusOption.label}</span>
@@ -3905,7 +3990,7 @@ Regras:
                         return (
                           <div
                             key={process.id}
-                            className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] active:shadow-sm transition-all duration-150 cursor-pointer"
+                            className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-700 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] active:shadow-sm transition-all duration-150 cursor-pointer"
                             onClick={() => {
                               if (isDragging) return;
                               handleViewProcess(process);
@@ -3954,7 +4039,7 @@ Regras:
                                 className="text-xs px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                {STATUS_OPTIONS.map((opt) => (
+                                {statusOptions.map((opt) => (
                                   <option key={opt.key} value={opt.key}>
                                     {opt.label}
                                   </option>
@@ -3989,8 +4074,8 @@ Regras:
               })}
             </div>
           ) : (
-            <div className="bg-white border border-gray-200 rounded-xl">
-              <div className="block lg:hidden divide-y divide-gray-200">
+            <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
+              <div className="block lg:hidden divide-y divide-[#e7e5df]">
                 {filteredProcesses.map((process) => {
                   const client = clientMap.get(process.client_id);
                   return (
@@ -4055,7 +4140,7 @@ Regras:
               </div>
               <div className="hidden lg:block overflow-x-auto w-full">
                 <table className="min-w-full divide-y divide-slate-100">
-                  <thead className="bg-slate-50/60 border-b border-slate-200">
+                  <thead className="bg-slate-50/60 border-b border-[#e7e5df]">
                     <tr>
                       <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[180px]">Cliente</th>
                       <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[200px]">Código do Processo</th>
@@ -4064,7 +4149,7 @@ Regras:
                       <th className="px-3 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest w-[150px]">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-[#f8f7f5] divide-y divide-[#e7e5df]">
                     {filteredProcesses.map((process) => {
                       const client = clientMap.get(process.client_id);
                       const isTimelineExpanded = expandedTimelineProcessId === process.id;
@@ -4086,8 +4171,8 @@ Regras:
                                     {client?.full_name || 'Cliente removido'}
                                   </div>
                                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                                    <span className="text-[11px] text-gray-400 shrink-0 truncate max-w-[80px]" title={PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area ?? ''}>
-                                      {PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
+                                    <span className="text-[11px] text-gray-400 shrink-0 truncate max-w-[80px]" title={practiceAreas.find((area) => area.key === process.practice_area)?.label ?? process.practice_area ?? ''}>
+                                      {practiceAreas.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
                                     </span>
                                     {process.responsible_lawyer && (
                                       <>
@@ -4199,9 +4284,9 @@ Regras:
         size="xl"
       >
 
-              <div className="p-4 border-b border-slate-100 bg-white">
+              <div className="p-4 border-b border-slate-100 bg-[#f8f7f5]">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {STATUS_OPTIONS.map((statusOption) => {
+                  {statusOptions.map((statusOption) => {
                     const count = (processesByStatus[statusOption.key] || []).length;
                     const isActive = stageMapSelectedStatus === statusOption.key;
                     return (
@@ -4209,7 +4294,7 @@ Regras:
                         key={statusOption.key}
                         type="button"
                         onClick={() => setStageMapSelectedStatus(statusOption.key)}
-                        className={`text-left border rounded-xl px-3 py-3 transition ${isActive ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                        className={`text-left border rounded-xl px-3 py-3 transition ${isActive ? 'border-amber-500 bg-amber-50' : 'border-[#e7e5df] hover:bg-slate-50'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-xs font-semibold text-slate-900">{statusOption.label}</div>
@@ -4227,7 +4312,7 @@ Regras:
                   <div className="py-14 text-center text-slate-500">Selecione uma fase acima.</div>
                 ) : (
                   <div>
-                    <div className="p-4 border-b border-slate-100 bg-white">
+                    <div className="p-4 border-b border-slate-100 bg-[#f8f7f5]">
                       <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                         <div className="relative flex-1">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -4235,11 +4320,11 @@ Regras:
                             value={stageMapSearch}
                             onChange={(e) => setStageMapSearch(e.target.value)}
                             placeholder="Buscar processos nesta fase..."
-                            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                            className="w-full pl-9 pr-3 py-2 bg-white border border-[#e7e5df] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                             autoFocus
                           />
                         </div>
-                        <div className="text-xs font-medium text-slate-600 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
+                        <div className="text-xs font-medium text-slate-600 px-3 py-2 rounded-lg bg-slate-50 border border-[#e7e5df]">
                           {getStatusLabel(stageMapSelectedStatus)}: {filteredStageMapProcesses.length}
                         </div>
                       </div>

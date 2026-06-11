@@ -32,7 +32,7 @@ export const PortalHeader: React.FC<{ onMenuClick: () => void }> = ({ onMenuClic
       className="fixed inset-x-0 top-0 z-40 lg:hidden"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className="flex h-16 items-center justify-between bg-white/95 px-4 shadow-[0_1px_0_rgba(15,23,42,0.06)] backdrop-blur-xl">
+      <div className="flex h-16 items-center justify-between bg-[#f8f7f5]/95 px-4 shadow-[0_1px_0_rgba(15,23,42,0.06)] backdrop-blur-xl">
         {isDashboard ? (
           <>
             {/* Dashboard: avatar + saudação */}
