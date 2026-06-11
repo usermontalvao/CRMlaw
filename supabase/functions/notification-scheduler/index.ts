@@ -6,6 +6,136 @@ const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// Defaults usados quando system_settings não tem o valor
+const THRESHOLDS_DEFAULTS = {
+  requirement_alert_days: 90,
+  requirement_critical_days: 120,
+  requirement_batch_size: 200,
+  appointment_remind_minutes: 60,
+};
+
+// Chaves alinhadas com o que SettingsModule salva em portal_client_notifications_config
+interface PortalNotifConfig {
+  new_document:         boolean;
+  document_request:     boolean;
+  deadline_approaching: boolean;
+  process_update:       boolean;
+  payment_confirmed:    boolean;
+  new_message:          boolean;
+}
+
+const PORTAL_NOTIF_DEFAULTS: PortalNotifConfig = {
+  new_document:         true,
+  document_request:     true,
+  deadline_approaching: true,
+  process_update:       true,
+  payment_confirmed:    true,
+  new_message:          true,
+};
+
+async function loadPortalNotifConfig(): Promise<PortalNotifConfig> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "portal_client_notifications_config")
+      .single();
+    if (data?.value && typeof data.value === "object") {
+      return { ...PORTAL_NOTIF_DEFAULTS, ...data.value };
+    }
+  } catch { /* mantém defaults */ }
+  return { ...PORTAL_NOTIF_DEFAULTS };
+}
+
+async function loadAutomationThresholds(): Promise<typeof THRESHOLDS_DEFAULTS> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "automation_thresholds")
+      .single();
+    if (data?.value && typeof data.value === "object") {
+      return { ...THRESHOLDS_DEFAULTS, ...data.value };
+    }
+  } catch {
+    // mantém defaults
+  }
+  return { ...THRESHOLDS_DEFAULTS };
+}
+
+type NotificationChannel = "email" | "push" | "whatsapp";
+type NotificationRecipients = "responsible" | "admin" | "all_lawyers" | "specific_role";
+
+interface LoadedRule {
+  channels: NotificationChannel[];
+  recipients: NotificationRecipients;
+  specific_role?: string;
+  respect_business_hours: boolean;
+}
+
+interface LoadedRules {
+  enabled: Set<string> | null; // null = sem regras salvas → todos habilitados
+  byTrigger: Map<string, LoadedRule>;
+}
+
+interface RecipientRule {
+  recipients: NotificationRecipients;
+  specific_role?: string;
+}
+
+async function loadNotificationRules(): Promise<LoadedRules> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "notification_rules")
+      .single();
+    if (Array.isArray(data?.value) && data.value.length > 0) {
+      const enabledSet = new Set<string>();
+      const byTrigger = new Map<string, LoadedRule>();
+      for (const rule of data.value) {
+        if (rule.enabled !== false) enabledSet.add(rule.trigger);
+        byTrigger.set(rule.trigger, {
+          channels: Array.isArray(rule.channels) && rule.channels.length > 0
+            ? rule.channels : ["push", "email"],
+          recipients: rule.recipients ?? "responsible",
+          specific_role: rule.specific_role,
+          respect_business_hours: rule.respect_business_hours === true,
+        });
+      }
+      return { enabled: enabledSet, byTrigger };
+    }
+  } catch { /* usa defaults */ }
+  return { enabled: null, byTrigger: new Map() };
+}
+
+function isEnabled(rules: LoadedRules, trigger: string): boolean {
+  return rules.enabled === null || rules.enabled.has(trigger);
+}
+
+// Horário comercial: 08:00–18:00 BRT (UTC-3)
+function isBusinessHoursNow(): boolean {
+  const now = new Date();
+  const brasiliaMinutes = ((now.getUTCHours() - 3 + 24) % 24) * 60 + now.getUTCMinutes();
+  return brasiliaMinutes >= 8 * 60 && brasiliaMinutes < 18 * 60;
+}
+
+function shouldSendTrigger(rules: LoadedRules, trigger: string): boolean {
+  if (!isEnabled(rules, trigger)) return false;
+  const rule = rules.byTrigger.get(trigger);
+  if (rule?.respect_business_hours && !isBusinessHoursNow()) return false;
+  return true;
+}
+
+function getRuleChannels(rules: LoadedRules, trigger: string): NotificationChannel[] {
+  return rules.byTrigger.get(trigger)?.channels ?? ["push", "email"];
+}
+
+function getRuleRecipients(rules: LoadedRules, trigger: string): RecipientRule {
+  const rule = rules.byTrigger.get(trigger);
+  return { recipients: rule?.recipients ?? "responsible", specific_role: rule?.specific_role };
+}
+
 interface NotificationPayload {
   user_id: string;
   title: string;
@@ -87,7 +217,7 @@ async function createNotification(payload: NotificationPayload) {
   return data;
 }
 
-async function checkDeadlineReminders() {
+async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, portalNotifConfig: PortalNotifConfig) {
   console.log("📅 Verificando prazos para lembrete...");
 
   const now = new Date();
@@ -96,7 +226,7 @@ async function checkDeadlineReminders() {
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
-    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, clients(full_name)")
+    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, client_id, clients(full_name)")
     .eq("status", "pendente")
     .gte("due_date", now.toISOString())
     .lte("due_date", windowEnd.toISOString());
@@ -150,67 +280,194 @@ async function checkDeadlineReminders() {
     const message = `${deadline.title}${clientName ? ` • ${clientName}` : ""} • Vence ${dueDate.toLocaleDateString("pt-BR")}`;
     const dedupeKey = `deadline_reminder_${deadline.id}_${daysUntilDue}`;
 
-    await createNotification({
-      user_id: responsibleUserId,
-      title,
-      message,
-      type: "deadline_reminder",
-      deadline_id: deadline.id,
-      process_id: deadline.process_id ?? undefined,
-      requirement_id: deadline.requirement_id ?? undefined,
-      metadata: {
-        days_until_due: daysUntilDue,
-        notify_days_before: notifyDaysBefore,
-        priority: deadline.priority,
-        dedupe_key: dedupeKey,
-      },
-    });
+    if (sendPush) {
+      await createNotification({
+        user_id: responsibleUserId,
+        title,
+        message,
+        type: "deadline_reminder",
+        deadline_id: deadline.id,
+        process_id: deadline.process_id ?? undefined,
+        requirement_id: deadline.requirement_id ?? undefined,
+        metadata: {
+          days_until_due: daysUntilDue,
+          notify_days_before: notifyDaysBefore,
+          priority: deadline.priority,
+          dedupe_key: dedupeKey,
+        },
+      });
+    }
 
-    // 📧 Email lembrete ao responsável (1 por prazo por janela, deduplicado)
-    const emailDedupeKey = `email_deadline_reminder_${deadline.id}_${daysUntilDue}`;
-    const { data: alreadySent } = await supabase
-      .from("user_notifications")
-      .select("id")
-      .eq("type", "deadline_email_reminder")
-      .eq("deadline_id", deadline.id)
-      .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
-      .limit(1);
+    if (sendEmail) {
+      // 📧 Email lembrete ao responsável (1 por prazo por janela, deduplicado)
+      const emailDedupeKey = `email_deadline_reminder_${deadline.id}_${daysUntilDue}`;
+      const { data: alreadySent } = await supabase
+        .from("user_notifications")
+        .select("id")
+        .eq("type", "deadline_email_reminder")
+        .eq("deadline_id", deadline.id)
+        .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
+        .limit(1);
 
-    if (!alreadySent || alreadySent.length === 0) {
-      try {
-        const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
-        const resp = await fetch(fnUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({ deadline_id: deadline.id, assigned_by_id: null, mode: "reminder" }),
-        });
-        const result = await resp.json();
-        if (result.success) {
-          console.log(`📧 Email lembrete enviado: ${deadline.title}`);
-          await supabase.from("user_notifications").insert({
-            user_id: responsibleUserId,
-            title: `📧 Email lembrete enviado`,
-            message: `${deadline.title} - ${daysUntilDue} dia(s)`,
-            type: "deadline_email_reminder",
-            deadline_id: deadline.id,
-            read: true,
-            metadata: { dedupe_key: emailDedupeKey, days_until_due: daysUntilDue },
-            created_at: new Date().toISOString(),
+      if (!alreadySent || alreadySent.length === 0) {
+        try {
+          const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
+          const resp = await fetch(fnUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ deadline_id: deadline.id, assigned_by_id: null, mode: "reminder" }),
           });
-        } else {
-          console.error(`❌ Falha email lembrete: ${result.error}`);
+          const result = await resp.json();
+          if (result.success) {
+            console.log(`📧 Email lembrete enviado: ${deadline.title}`);
+            await supabase.from("user_notifications").insert({
+              user_id: responsibleUserId,
+              title: `📧 Email lembrete enviado`,
+              message: `${deadline.title} - ${daysUntilDue} dia(s)`,
+              type: "deadline_email_reminder",
+              deadline_id: deadline.id,
+              read: true,
+              metadata: { dedupe_key: emailDedupeKey, days_until_due: daysUntilDue },
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            console.error(`❌ Falha email lembrete: ${result.error}`);
+          }
+        } catch (emailErr: any) {
+          console.error(`❌ Erro ao enviar email lembrete: ${emailErr?.message}`);
         }
-      } catch (emailErr: any) {
-        console.error(`❌ Erro ao enviar email lembrete: ${emailErr?.message}`);
+      }
+    }
+
+    // 📲 Notificação portal — cliente vinculado ao prazo
+    if (portalNotifConfig.deadline_approaching && (deadline as any).client_id) {
+      const clientId: string = (deadline as any).client_id;
+      if (await hasPortalAccount(clientId)) {
+        const portalDedupeKey = `portal_deadline_reminder_${deadline.id}_${daysUntilDue}`;
+        const dueLabel = daysUntilDue === 0 ? "hoje" : daysUntilDue === 1 ? "amanhã" : `em ${daysUntilDue} dias`;
+        await createPortalNotification({
+          client_id: clientId,
+          type: "deadline_approaching",
+          title: daysUntilDue <= 1 ? "🚨 Prazo urgente no seu processo" : "⚠️ Prazo se aproximando",
+          message: `${deadline.title} vence ${dueLabel} (${new Date(deadline.due_date).toLocaleDateString("pt-BR")}).`,
+          metadata: { deadline_id: deadline.id, days_until_due: daysUntilDue, dedupe_key: portalDedupeKey },
+        });
       }
     }
   }
 }
 
-async function checkAppointmentReminders() {
+async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
+  console.log("🚨 Verificando prazos vencidos...");
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  const { data: deadlines, error } = await supabase
+    .from("deadlines")
+    .select("id, title, due_date, status, priority, process_id, requirement_id, responsible_id, clients(full_name)")
+    .eq("status", "pendente")
+    .lt("due_date", now.toISOString());
+
+  if (error) {
+    console.error("Erro ao buscar prazos vencidos:", error);
+    return;
+  }
+
+  console.log(`📋 ${deadlines?.length || 0} prazos vencidos encontrados`);
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, user_id")
+    .eq("is_active", true);
+
+  const profileToUserId = new Map<string, string>();
+  for (const p of profiles || []) {
+    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
+  }
+
+  for (const deadline of deadlines || []) {
+    if (!deadline.responsible_id) continue;
+    const responsibleUserId = profileToUserId.get(deadline.responsible_id);
+    if (!responsibleUserId) continue;
+
+    const dueDate = new Date(deadline.due_date);
+    const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    const clientName = deadline.clients?.full_name || "";
+    const dedupeKey = `deadline_overdue_${deadline.id}_${today}`;
+
+    if (sendPush) {
+      const { data: alreadyPushed } = await supabase
+        .from("user_notifications")
+        .select("id")
+        .eq("type", "deadline_overdue")
+        .eq("deadline_id", deadline.id)
+        .filter("metadata->>dedupe_key", "eq", dedupeKey)
+        .limit(1);
+
+      if (!alreadyPushed || alreadyPushed.length === 0) {
+        await supabase.from("user_notifications").insert({
+          user_id: responsibleUserId,
+          title: `🚨 Prazo vencido há ${daysOverdue} dia(s)`,
+          message: `${deadline.title}${clientName ? ` • ${clientName}` : ""} • Venceu ${dueDate.toLocaleDateString("pt-BR")}`,
+          type: "deadline_overdue",
+          deadline_id: deadline.id,
+          process_id: deadline.process_id ?? undefined,
+          requirement_id: deadline.requirement_id ?? undefined,
+          metadata: { days_overdue: daysOverdue, dedupe_key: dedupeKey },
+        });
+      }
+    }
+
+    if (sendEmail) {
+      const emailDedupeKey = `email_deadline_overdue_${deadline.id}_${today}`;
+      const { data: alreadySent } = await supabase
+        .from("user_notifications")
+        .select("id")
+        .eq("type", "deadline_email_overdue")
+        .eq("deadline_id", deadline.id)
+        .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
+        .limit(1);
+
+      if (!alreadySent || alreadySent.length === 0) {
+        try {
+          const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
+          const resp = await fetch(fnUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ deadline_id: deadline.id, assigned_by_id: null, mode: "overdue" }),
+          });
+          const result = await resp.json();
+          if (result.success) {
+            console.log(`📧 Email overdue enviado: ${deadline.title}`);
+            await supabase.from("user_notifications").insert({
+              user_id: responsibleUserId,
+              title: `📧 Email prazo vencido enviado`,
+              message: `${deadline.title} - vencido há ${daysOverdue} dia(s)`,
+              type: "deadline_email_overdue",
+              deadline_id: deadline.id,
+              read: true,
+              metadata: { dedupe_key: emailDedupeKey, days_overdue: daysOverdue },
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            console.error(`❌ Falha email overdue: ${result.error}`);
+          }
+        } catch (emailErr: any) {
+          console.error(`❌ Erro ao enviar email overdue: ${emailErr?.message}`);
+        }
+      }
+    }
+  }
+}
+
+async function checkAppointmentReminders(thresholds: typeof THRESHOLDS_DEFAULTS) {
   console.log("📅 Verificando compromissos para lembrete...");
 
   const now = new Date();
@@ -243,7 +500,7 @@ async function checkAppointmentReminders() {
         ? notifyMinutesBeforeRaw
         : Number.isFinite(Number(notifyMinutesBeforeRaw))
           ? Number(notifyMinutesBeforeRaw)
-          : 24 * 60;
+          : thresholds.appointment_remind_minutes;
 
     if (minutesUntilStart < 0) continue;
     if (minutesUntilStart > notifyMinutesBefore) continue;
@@ -275,7 +532,7 @@ async function checkAppointmentReminders() {
   }
 }
 
-async function checkUrgentIntimations() {
+async function checkUrgentIntimations(recipientRule: RecipientRule) {
   console.log("📄 Verificando intimações urgentes...");
 
   // Buscar intimações não lidas com análise de urgência alta
@@ -292,8 +549,7 @@ async function checkUrgentIntimations() {
 
   console.log(`📋 ${analyses?.length || 0} intimações urgentes encontradas`);
 
-  // Apenas usuários com acesso ao módulo intimacoes (respeita role_permissions + overrides)
-  const userIds = await getUsersWithModuleAccess("intimacoes");
+  const userIds = await getUsersWithModuleAccess("intimacoes", recipientRule);
   if (userIds.length === 0) return;
 
   for (const analysis of analyses || []) {
@@ -325,11 +581,10 @@ async function checkUrgentIntimations() {
   }
 }
 
-async function checkRequirementAlerts() {
+async function checkRequirementAlerts(thresholds: typeof THRESHOLDS_DEFAULTS, recipientRule: RecipientRule) {
   console.log("📌 Verificando alertas de requerimentos (MS / tempo em análise)...");
 
-  // Apenas usuários com acesso ao módulo requerimentos (respeita role_permissions + overrides)
-  const userIds = await getUsersWithModuleAccess("requerimentos");
+  const userIds = await getUsersWithModuleAccess("requerimentos", recipientRule);
   if (userIds.length === 0) return;
 
   const { data: requirements, error } = await supabase
@@ -337,7 +592,7 @@ async function checkRequirementAlerts() {
     .select("id, protocol, beneficiary, status, analysis_started_at, entry_date, created_at")
     .eq("status", "em_analise")
     .order("updated_at", { ascending: false })
-    .limit(200);
+    .limit(thresholds.requirement_batch_size);
 
   if (error) {
     console.error("Erro ao buscar requerimentos:", error);
@@ -345,7 +600,10 @@ async function checkRequirementAlerts() {
   }
 
   const now = Date.now();
-  const milestones = [60, 90, 120];
+  // Marcos intermediário fixo (60) + configuráveis (alert + critical)
+  const milestones = [60, thresholds.requirement_alert_days, thresholds.requirement_critical_days]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => a - b);
 
   for (const req of requirements || []) {
     const base = req.analysis_started_at || req.entry_date || req.created_at;
@@ -356,14 +614,14 @@ async function checkRequirementAlerts() {
     const hit = milestones.filter((m) => analysisDays >= m);
     if (hit.length === 0) continue;
 
-    // Dispara apenas o maior marco atingido (ex: se passou de 120, só manda 120)
+    // Dispara apenas o maior marco atingido (ex: se passou do crítico, só manda crítico)
     const milestone = hit[hit.length - 1];
 
     const title =
-      milestone >= 120
-        ? "🚨 MS: prazo crítico (120 dias)"
-        : milestone >= 90
-          ? "⚠️ MS RISK: requerimento há 90+ dias"
+      milestone >= thresholds.requirement_critical_days
+        ? `🚨 MS: prazo crítico (${thresholds.requirement_critical_days} dias)`
+        : milestone >= thresholds.requirement_alert_days
+          ? `⚠️ MS RISK: requerimento há ${thresholds.requirement_alert_days}+ dias`
           : "🟠 Atenção: requerimento há 60+ dias";
 
     const messageParts = [
@@ -383,7 +641,7 @@ async function checkRequirementAlerts() {
         type: "requirement_alert",
         requirement_id: req.id,
         metadata: {
-          urgency: milestone >= 120 ? "critica" : milestone >= 90 ? "alta" : "media",
+          urgency: milestone >= thresholds.requirement_critical_days ? "critica" : milestone >= thresholds.requirement_alert_days ? "alta" : "media",
           analysis_days: analysisDays,
           milestone_days: milestone,
           protocol: req.protocol,
@@ -397,8 +655,29 @@ async function checkRequirementAlerts() {
 
 // Retorna os user_ids de todos os usuários ativos com acesso (can_view) ao módulo,
 // respeitando role_permissions e user_module_overrides individuais.
-async function getUsersWithModuleAccess(module: string): Promise<string[]> {
-  // 1. Roles que têm can_view no módulo
+// Quando recipientRule especifica 'admin' ou 'specific_role', filtra por role sem checar permissões de módulo.
+async function getUsersWithModuleAccess(module: string, recipientRule?: RecipientRule): Promise<string[]> {
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, role")
+    .eq("is_active", true);
+
+  const activeProfiles = profiles || [];
+
+  // Filtro por role explícito (admin ou specific_role): ignora permissões de módulo
+  if (recipientRule?.recipients === "admin") {
+    return activeProfiles
+      .filter((p: any) => (p.role || "").toLowerCase() === "admin" && p.user_id)
+      .map((p: any) => p.user_id as string);
+  }
+  if (recipientRule?.recipients === "specific_role" && recipientRule.specific_role) {
+    const targetRole = recipientRule.specific_role.toLowerCase();
+    return activeProfiles
+      .filter((p: any) => (p.role || "").toLowerCase() === targetRole && p.user_id)
+      .map((p: any) => p.user_id as string);
+  }
+
+  // Comportamento padrão: checar role_permissions + overrides individuais
   const { data: rolePerms } = await supabase
     .from("role_permissions")
     .select("role")
@@ -407,15 +686,7 @@ async function getUsersWithModuleAccess(module: string): Promise<string[]> {
 
   const allowedRoles = new Set((rolePerms || []).map((r: any) => r.role.toLowerCase()));
 
-  // 2. Usuários ativos cuja role está na lista permitida
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, role")
-    .eq("is_active", true);
-
   const now = new Date().toISOString();
-
-  // 3. Overrides individuais não expirados
   const { data: overrides } = await supabase
     .from("user_module_overrides")
     .select("user_id, can_view")
@@ -426,11 +697,10 @@ async function getUsersWithModuleAccess(module: string): Promise<string[]> {
   for (const o of overrides || []) overrideMap.set(o.user_id, o.can_view);
 
   const userIds: string[] = [];
-  for (const p of profiles || []) {
+  for (const p of activeProfiles) {
     if (!p.user_id) continue;
     const roleMatch = allowedRoles.has((p.role || "").toLowerCase());
     const override = overrideMap.get(p.user_id);
-    // Override tem prioridade sobre a role
     const hasAccess = override !== undefined ? override : roleMatch;
     if (hasAccess) userIds.push(p.user_id);
   }
@@ -440,6 +710,16 @@ async function getUsersWithModuleAccess(module: string): Promise<string[]> {
 
 // Busca o client_id do portal pelo email ou CPF do signatário.
 // Emails do portal seguem o padrão: public+{auth_user_id}@crm.local
+async function hasPortalAccount(clientId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("client_portal_users")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("is_active", true)
+    .maybeSingle();
+  return !!data;
+}
+
 async function findPortalClientId(email: string, cpf?: string | null): Promise<string | null> {
   const match = email?.match(/^public\+([0-9a-f-]{36})@crm\.local$/i);
   if (match) {
@@ -508,7 +788,7 @@ async function createPortalNotification(payload: {
   return data;
 }
 
-async function checkPendingSignatures() {
+async function checkPendingSignatures(portalNotifConfig: PortalNotifConfig) {
   console.log("✍️ Verificando assinaturas pendentes...");
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -570,7 +850,7 @@ async function checkPendingSignatures() {
     // 2. Signatário é cliente com conta no portal?
     //    Lembra o cliente de que ele ainda precisa assinar.
     const portalClientId = await findPortalClientId(signer.email, signer.cpf);
-    if (portalClientId) {
+    if (portalClientId && portalNotifConfig.document_request) {
       await createPortalNotification({
         client_id: portalClientId,
         type: "signature_pending",
@@ -589,16 +869,50 @@ async function checkPendingSignatures() {
 }
 
 Deno.serve(async (req: Request) => {
+  const startedAt = new Date().toISOString();
+  let logId: string | null = null;
   try {
+    const { data: logRow } = await supabase
+      .from("cron_job_logs")
+      .insert({ job_name: "notification-scheduler", status: "running", started_at: startedAt })
+      .select("id")
+      .single();
+    logId = logRow?.id ?? null;
+
     console.log("🔔 Iniciando verificação de notificações...");
 
-    await Promise.all([
-      checkDeadlineReminders(),
-      checkAppointmentReminders(),
-      checkUrgentIntimations(),
-      checkRequirementAlerts(),
-      checkPendingSignatures(),
+    const [thresholds, rules, portalNotifConfig] = await Promise.all([
+      loadAutomationThresholds(),
+      loadNotificationRules(),
+      loadPortalNotifConfig(),
     ]);
+
+    const checks: Promise<void>[] = [];
+
+    if (shouldSendTrigger(rules, "deadline_due")) {
+      const ch = getRuleChannels(rules, "deadline_due");
+      if (ch.includes("push") || ch.includes("email"))
+        checks.push(checkDeadlineReminders(ch.includes("push"), ch.includes("email"), portalNotifConfig));
+    }
+    if (shouldSendTrigger(rules, "deadline_overdue")) {
+      const ch = getRuleChannels(rules, "deadline_overdue");
+      if (ch.includes("push") || ch.includes("email"))
+        checks.push(checkOverdueDeadlines(ch.includes("push"), ch.includes("email")));
+    }
+    if (shouldSendTrigger(rules, "appointment_reminder") && getRuleChannels(rules, "appointment_reminder").includes("push"))
+      checks.push(checkAppointmentReminders(thresholds));
+    if (shouldSendTrigger(rules, "new_intimation") && getRuleChannels(rules, "new_intimation").includes("push"))
+      checks.push(checkUrgentIntimations(getRuleRecipients(rules, "new_intimation")));
+    if (shouldSendTrigger(rules, "requirement_alert") && getRuleChannels(rules, "requirement_alert").includes("push"))
+      checks.push(checkRequirementAlerts(thresholds, getRuleRecipients(rules, "requirement_alert")));
+    if (shouldSendTrigger(rules, "signature_pending") && getRuleChannels(rules, "signature_pending").includes("push"))
+      checks.push(checkPendingSignatures(portalNotifConfig));
+
+    await Promise.all(checks);
+
+    if (logId) {
+      await supabase.from("cron_job_logs").update({ status: "success", finished_at: new Date().toISOString() }).eq("id", logId);
+    }
 
     console.log("✅ Verificação concluída!");
 
@@ -608,6 +922,9 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("Erro:", error);
+    if (logId) {
+      await supabase.from("cron_job_logs").update({ status: "failed", finished_at: new Date().toISOString(), error: String(error) }).eq("id", logId);
+    }
     return new Response(
       JSON.stringify({ success: false, error: String(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } }

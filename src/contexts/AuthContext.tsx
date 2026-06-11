@@ -12,6 +12,7 @@ interface AuthContextType {
   sessionWarning: boolean;
   extendSession: () => void;
   sessionStart: number | null;
+  isAccountBlocked: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,6 +25,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [sessionWarning, setSessionWarning] = useState(false);
+  const [isAccountBlocked, setIsAccountBlocked] = useState(false);
   const [sessionStart, setSessionStart] = useState<number | null>(() => {
     if (typeof window === 'undefined') return null;
     const stored = localStorage.getItem(SESSION_START_STORAGE_KEY);
@@ -44,7 +46,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      // Verifica is_active antes de qualquer coisa — impede burlar com F5
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_active')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.is_active === false) {
+          await supabase.auth.signOut();
+          persistSessionStart(null);
+          setLoading(false);
+          return;
+        }
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
       if (session) {
@@ -113,6 +131,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Watch profile is_active — Realtime + polling de 30s como fallback
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const checkBlocked = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('is_active')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (data?.is_active === false) setIsAccountBlocked(true);
+      } catch { /* silencia erros de rede */ }
+    };
+
+    // Realtime: notificação instantânea quando o campo mudar
+    const channel = supabase
+      .channel(`profile-blocked:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if ((payload.new as { is_active?: boolean }).is_active === false) {
+            setIsAccountBlocked(true);
+          }
+        }
+      )
+      .subscribe();
+
+    // Polling a cada 30s: fallback caso Realtime seja bloqueado por RLS
+    const interval = setInterval(checkBlocked, 30_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [user?.id]);
 
   // Verificação de inatividade e logout automático
   useEffect(() => {
@@ -262,16 +318,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      session, 
-      loading, 
-      signIn, 
-      signOut, 
-      resetPassword, 
-      sessionWarning, 
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading,
+      signIn,
+      signOut,
+      resetPassword,
+      sessionWarning,
       extendSession,
-      sessionStart 
+      sessionStart,
+      isAccountBlocked,
     }}>
       {children}
     </AuthContext.Provider>

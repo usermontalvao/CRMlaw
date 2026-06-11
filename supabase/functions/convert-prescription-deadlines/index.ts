@@ -16,6 +16,16 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const startedAt = new Date().toISOString();
+    let logId: string | null = null;
+    try {
+      const { data: logRow } = await supabase
+        .from("cron_job_logs")
+        .insert({ job_name: "convert-prescription-deadlines", status: "running", started_at: startedAt })
+        .select("id").single();
+      logId = logRow?.id ?? null;
+    } catch (_) { /* log não é crítico */ }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayISO = today.toISOString().split("T")[0];
@@ -33,6 +43,7 @@ Deno.serve(async (req: Request) => {
 
     if (fetchError) {
       console.error("Erro ao buscar eventos de prescrição:", fetchError);
+      if (logId) await supabase.from("cron_job_logs").update({ status: "failed", finished_at: new Date().toISOString(), error: fetchError.message }).eq("id", logId);
       return new Response(
         JSON.stringify({ error: fetchError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -40,6 +51,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!prescriptionEvents || prescriptionEvents.length === 0) {
+      if (logId) await supabase.from("cron_job_logs").update({ status: "success", finished_at: new Date().toISOString(), result: { converted: 0 } }).eq("id", logId);
       return new Response(
         JSON.stringify({ message: "Nenhum evento de prescrição para converter", converted: 0 }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -123,6 +135,14 @@ Deno.serve(async (req: Request) => {
         console.error(`❌ Erro ao processar evento ${event.id}:`, err);
         errors.push(`Evento ${event.id}: ${err.message}`);
       }
+    }
+
+    if (logId) {
+      await supabase.from("cron_job_logs").update({
+        status: "success",
+        finished_at: new Date().toISOString(),
+        result: { total: prescriptionEvents.length, converted: convertedCount, errors: errors.length },
+      }).eq("id", logId);
     }
 
     return new Response(

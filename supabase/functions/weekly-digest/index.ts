@@ -61,6 +61,36 @@ const normalizeRole = (role: string) =>
 
 const firstName = (full: string) => (full || '').trim().split(/\s+/)[0] || 'Equipe';
 
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+async function loadEmailTemplate(
+  sb: any,
+  trigger: string,
+): Promise<{ subject: string; bodyHtml: string } | null> {
+  try {
+    const { data } = await sb.from('system_settings').select('value').eq('key', 'email_templates').single();
+    if (!Array.isArray(data?.value)) return null;
+    const tpl = data.value.find((t: any) => t.trigger === trigger && t.is_custom === true);
+    if (!tpl?.body_html) return null;
+    return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html };
+  } catch {
+    return null;
+  }
+}
+
+function applyTemplateVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+}
+
+async function loadOfficeName(sb: any): Promise<string> {
+  try {
+    const { data } = await sb.from('system_settings').select('value').eq('key', 'office_identity').single();
+    return data?.value?.name ?? 'Escritório';
+  } catch {
+    return 'Escritório';
+  }
+}
+
 // ── Permissões ───────────────────────────────────────────────────────────────
 
 function makeChecker(
@@ -254,6 +284,15 @@ function buildHtml(opts: {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  const startedAt = new Date().toISOString();
+  let logId: string | null = null;
+  const { data: logRow } = await supabase
+    .from('cron_job_logs')
+    .insert({ job_name: 'weekly-digest', status: 'running', started_at: startedAt })
+    .select('id')
+    .single();
+  logId = logRow?.id ?? null;
+
   try {
     const now    = new Date();
     const week   = weekRange();
@@ -290,7 +329,7 @@ Deno.serve(async (req) => {
     // O cron roda a cada hora; a função decide se envia baseada nas settings da UI.
     // Timezone do escritório: America/Cuiaba (UTC-4, sem horário de verão)
     if (!forceRun) {
-      const digestEnabled: boolean = config.weekly_digest_enabled !== false; // padrão: true
+      const digestEnabled: boolean = config.weekly_digest === true;
       if (!digestEnabled) {
         return new Response(JSON.stringify({ skipped: true, reason: 'Digest desabilitado nas configurações.' }), { status: 200 });
       }
@@ -316,19 +355,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: officeRow } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'office_identity')
-      .single();
+    const [{ data: officeRow }, { data: emailCfgRow }] = await Promise.all([
+      supabase.from('system_settings').select('value').eq('key', 'office_identity').single(),
+      supabase.from('system_settings').select('value').eq('key', 'email_integration_config').single(),
+    ]);
     const officeName: string = officeRow?.value?.name ?? 'Escritório';
+    const configuredFromName: string = emailCfgRow?.value?.from_name ?? '';
+    const configuredFromEmail: string = emailCfgRow?.value?.from_email ?? '';
+    const senderFrom = (configuredFromName && configuredFromEmail)
+      ? `${configuredFromName} <${configuredFromEmail}>`
+      : 'Jurius CRM <noreply@jurius.com.br>';
+
+    const customTpl = await loadEmailTemplate(supabase, 'weekly_digest');
 
     // ── Profiles
     let profilesQuery = supabase
       .from('profiles')
       .select('user_id, name, role, email')
       .not('email', 'is', null)
-      .eq('role', 'Administrador'); // digest enviado apenas para administradores
+      .eq('is_active', true); // digest enviado para todos os membros ativos
 
     if (onlyTo) profilesQuery = profilesQuery.eq('email', onlyTo);
 
@@ -600,13 +645,25 @@ Deno.serve(async (req) => {
         ? `Esta semana você tem ${introParts.slice(0, -1).join(', ')}${introParts.length > 1 ? ' e ' : ''}${introParts[introParts.length - 1]}. Aqui está o que merece sua atenção.`
         : 'Aqui está o resumo da sua semana.';
 
-      const html = buildHtml({
-        userFirstName: firstName(profile.name || ''),
-        officeName,
-        weekLabel: week.label,
-        intro,
-        sections,
-      });
+      const userFirstName = firstName(profile.name || '');
+      let emailHtml: string;
+      let emailSubject: string;
+
+      if (customTpl) {
+        const vars: Record<string, string> = {
+          nome:            userFirstName,
+          escritorio_nome: officeName,
+          semana:          week.label,
+          intro,
+        };
+        emailHtml    = applyTemplateVars(customTpl.bodyHtml, vars);
+        emailSubject = customTpl.subject
+          ? applyTemplateVars(customTpl.subject, vars)
+          : `Resumo da semana · ${week.label}`;
+      } else {
+        emailHtml    = buildHtml({ userFirstName, officeName, weekLabel: week.label, intro, sections });
+        emailSubject = `Resumo da semana · ${week.label}`;
+      }
 
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -615,10 +672,10 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from:    'Jurius CRM <noreply@jurius.com.br>',
+          from:    senderFrom,
           to:      [profile.email],
-          subject: `Resumo da semana · ${week.label}`,
-          html,
+          subject: emailSubject,
+          html:    emailHtml,
         }),
       });
 
@@ -631,6 +688,10 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (logId) {
+      await supabase.from('cron_job_logs').update({ status: 'success', finished_at: new Date().toISOString(), result: { sent: sent.length, errors: errors.length } }).eq('id', logId);
+    }
+
     return new Response(
       JSON.stringify({ ok: true, sent: sent.length, sent_to: sent, errors }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -638,6 +699,9 @@ Deno.serve(async (req) => {
 
   } catch (err: any) {
     console.error('weekly-digest fatal error:', err);
+    if (logId) {
+      await supabase.from('cron_job_logs').update({ status: 'failed', finished_at: new Date().toISOString(), error: err.message }).eq('id', logId);
+    }
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 });

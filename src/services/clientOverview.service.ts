@@ -139,12 +139,7 @@ class ClientOverviewService {
     if (!cpu) return { portalUser: null, chatRooms: [], pushActive: false };
 
     const [{ data: rooms }, { data: pushResult }] = await Promise.all([
-      supabase
-        .from('chat_rooms')
-        .select('id, name, type, is_public, created_by, created_at, last_message_at, portal_client_id, session_start_at, accepted_by')
-        .eq('type', 'portal_client')
-        .eq('portal_client_id', (cpu as PortalUserSummary).id)
-        .order('last_message_at', { ascending: false, nullsFirst: false }),
+      supabase.rpc('get_portal_client_rooms', { p_portal_client_id: (cpu as PortalUserSummary).id }),
       supabase.rpc('admin_portal_push_active', { p_client_id: clientId }),
     ]);
 
@@ -156,13 +151,8 @@ class ClientOverviewService {
   }
 
   private async countPendingUploads(clientId: string): Promise<number> {
-    const { count } = await supabase
-      .from('document_uploads')
-      .select('id', { count: 'exact', head: true })
-      .eq('client_id', clientId)
-      .eq('review_status', 'pending')
-      .eq('processing_status', 'ready');
-    return count ?? 0;
+    const { data } = await supabase.rpc('count_pending_uploads', { p_client_id: clientId });
+    return typeof data === 'number' ? data : 0;
   }
 }
 

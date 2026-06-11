@@ -145,6 +145,32 @@ function buildMentionEmailHtml(data: {
 </html>`;
 }
 
+async function loadEmailTemplate(
+  supabase: any,
+  trigger: string,
+): Promise<{ subject: string; bodyHtml: string } | null> {
+  try {
+    const { data } = await supabase
+      .from('system_settings').select('value').eq('key', 'email_templates').single();
+    if (!Array.isArray(data?.value)) return null;
+    const tpl = data.value.find((t: any) => t.trigger === trigger && t.is_custom === true);
+    if (!tpl?.body_html) return null;
+    return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html };
+  } catch { return null; }
+}
+
+function applyTemplateVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+}
+
+async function loadOfficeName(supabase: any): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('system_settings').select('value').eq('key', 'office_identity').single();
+    return data?.value?.name ?? 'Escritório';
+  } catch { return 'Escritório'; }
+}
+
 async function sendMentionEmail(
   supabase: any,
   deadlineId: string,
@@ -161,21 +187,49 @@ async function sendMentionEmail(
   const { data: recipientEmail } = await supabase.rpc('get_email_by_profile_id', { p_profile_id: mentionedProfileId });
   if (!recipientEmail) return { success: false, error: 'Email do mencionado não encontrado' };
 
-  const emailHtml = buildMentionEmailHtml({
-    mentionedName: mentioned.name,
-    authorName: authorName || 'Um colega',
-    deadlineTitle: deadline.title,
-    commentText,
-  });
+  const customTpl = await loadEmailTemplate(supabase, 'comment_mention');
+  let emailHtml: string;
+  let subjectLine: string;
+
+  if (customTpl) {
+    const officeName = await loadOfficeName(supabase);
+    const vars: Record<string, string> = {
+      mencionado: mentioned.name,
+      autor: authorName || 'Um colega',
+      prazo_titulo: deadline.title,
+      comentario: commentText,
+      escritorio_nome: officeName,
+    };
+    emailHtml = applyTemplateVars(customTpl.bodyHtml, vars);
+    subjectLine = customTpl.subject
+      ? applyTemplateVars(customTpl.subject, vars)
+      : 'Você foi mencionado em um comentário - Jurius';
+  } else {
+    emailHtml = buildMentionEmailHtml({
+      mentionedName: mentioned.name,
+      authorName: authorName || 'Um colega',
+      deadlineTitle: deadline.title,
+      commentText,
+    });
+    subjectLine = 'Voce foi mencionado em um comentario - Jurius';
+  }
+
+  const { data: emailCfgRow } = await supabase
+    .from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle();
+  const cfgFromName: string = emailCfgRow?.value?.from_name ?? '';
+  const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? '';
+  const fromSender = (cfgFromName && cfgFromEmail)
+    ? `${cfgFromName} <${cfgFromEmail}>`
+    : `${SMTP_FROM_NAME} <${SMTP_FROM}>`;
 
   const smtpClient = new SMTPClient({
     connection: { hostname: SMTP_HOST, port: SMTP_PORT, tls: true, auth: { username: SMTP_USER, password: SMTP_PASS } },
   });
 
   await smtpClient.send({
-    from: `${SMTP_FROM_NAME} <${SMTP_FROM}>`,
+    from: fromSender,
     to: recipientEmail,
-    subject: 'Voce foi mencionado em um comentario - Jurius',
+    subject: subjectLine,
     html: emailHtml,
     content: `${authorName || 'Alguem'} mencionou voce em um comentario no prazo "${deadline.title}": ${commentText}`,
   });

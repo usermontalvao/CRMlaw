@@ -3,6 +3,7 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 export type PresenceStatus = 'online' | 'away' | 'offline';
 export type ThemePreference = 'light' | 'dark' | 'system';
+export type SidebarMode = 'compact' | 'normal';
 
 export type ProfileBadge = 'advogado' | 'administrador' | 'estagiario' | 'secretario' | null;
 
@@ -24,6 +25,7 @@ export interface Profile {
   joined_at?: string | null;
   presence_status?: PresenceStatus;
   theme_preference?: ThemePreference;
+  sidebar_mode?: SidebarMode;
   last_seen_at?: string | null;
   updated_at: string;
   created_at: string;
@@ -97,6 +99,7 @@ class ProfileService {
     const { data, error } = await supabase
       .from(this.tableName)
       .select('*')
+      .eq('is_active', true)
       .order('name', { ascending: true });
 
     if (error) throw new Error(error.message);
@@ -134,6 +137,15 @@ class ProfileService {
     const { error } = await supabase
       .from(this.tableName)
       .update({ theme_preference: theme, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async updateSidebarMode(userId: string, mode: SidebarMode): Promise<void> {
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({ sidebar_mode: mode, updated_at: new Date().toISOString() })
       .eq('user_id', userId);
 
     if (error) throw new Error(error.message);

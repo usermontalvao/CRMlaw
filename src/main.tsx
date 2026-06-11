@@ -121,14 +121,18 @@ async function renderRoot() {
       { NavigationProvider },
       { AuthProvider },
       { ThemeProvider },
+      { SidebarModeProvider },
       { ToastProvider },
+      { SecurityPinProvider },
       { DeleteConfirmProvider },
     ] = await Promise.all([
       import('./App'),
       import('./contexts/NavigationContext'),
       import('./contexts/AuthContext'),
       import('./contexts/ThemeContext'),
+      import('./contexts/SidebarModeContext'),
       import('./contexts/ToastContext'),
+      import('./contexts/SecurityPinContext'),
       import('./contexts/DeleteConfirmContext'),
     ]);
 
@@ -136,11 +140,15 @@ async function renderRoot() {
       <NavigationProvider initialModule="dashboard">
         <AuthProvider>
           <ThemeProvider>
-            <ToastProvider>
-              <DeleteConfirmProvider>
-                <App />
-              </DeleteConfirmProvider>
-            </ToastProvider>
+            <SidebarModeProvider>
+              <ToastProvider>
+                <SecurityPinProvider>
+                  <DeleteConfirmProvider>
+                    <App />
+                  </DeleteConfirmProvider>
+                </SecurityPinProvider>
+              </ToastProvider>
+            </SidebarModeProvider>
           </ThemeProvider>
         </AuthProvider>
       </NavigationProvider>

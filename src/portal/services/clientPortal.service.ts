@@ -718,6 +718,24 @@ Escreva 4 a 6 frases em parágrafo corrido (sem listas), nesta ordem:
     return (data as Record<string, boolean>) || {};
   }
 
+  /** Personalização do portal (cor de destaque, mensagem, rodapé, contato) */
+  async getCustomizationConfig(): Promise<{
+    accent_color: string;
+    welcome_message: string;
+    footer_text: string;
+    support_contact: string;
+  }> {
+    const DEFAULTS = {
+      accent_color: '#ff8a00',
+      welcome_message: 'Bem-vindo ao Portal do Cliente',
+      footer_text: '',
+      support_contact: '',
+    };
+    const { data, error } = await supabase.rpc('portal_get_customization_config');
+    if (error) { handleRpcError('getCustomizationConfig', error); return DEFAULTS; }
+    return { ...DEFAULTS, ...(typeof data === 'object' && data !== null ? (data as object) : {}) };
+  }
+
   /**
    * Perfil completo do cliente (campos editáveis)
    */

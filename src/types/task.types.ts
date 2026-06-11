@@ -1,4 +1,4 @@
-export type TaskPriority = 'high' | 'medium' | 'low';
+export type TaskPriority = 'high' | 'medium' | 'low' | (string & {});
 export type TaskStatus = 'pending' | 'completed';
 
 export interface Task {

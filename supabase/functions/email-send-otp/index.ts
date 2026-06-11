@@ -37,6 +37,32 @@ function generateOtp6(): string {
   return String(n).padStart(6, '0')
 }
 
+async function loadEmailTemplate(
+  supabase: any,
+  trigger: string,
+): Promise<{ subject: string; bodyHtml: string } | null> {
+  try {
+    const { data } = await supabase
+      .from('system_settings').select('value').eq('key', 'email_templates').single()
+    if (!Array.isArray(data?.value)) return null
+    const tpl = data.value.find((t: any) => t.trigger === trigger && t.is_custom === true)
+    if (!tpl?.body_html) return null
+    return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html }
+  } catch { return null }
+}
+
+function applyTemplateVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '')
+}
+
+async function loadOfficeName(supabase: any): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('system_settings').select('value').eq('key', 'office_identity').single()
+    return data?.value?.name ?? 'Escritório'
+  } catch { return 'Escritório' }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -115,16 +141,24 @@ Deno.serve(async (req: Request) => {
       timestamp: new Date().toISOString()
     })
 
-    const subject = 'Código de verificação - Jurius'
-    const content = `Jurius - Assinatura Eletrônica
+    const customTpl = await loadEmailTemplate(supabase, 'signature_otp')
+    const officeName = customTpl ? await loadOfficeName(supabase) : ''
 
-Seu código de verificação é: ${code}
+    let subjectLine: string
+    let emailHtml: string
 
-Validade: 5 minutos.
-Se você não solicitou este código, ignore este e-mail.
-
----
-[Template v2 Orange]` // Assinatura visual para depurar
+    if (customTpl) {
+      const vars: Record<string, string> = {
+        codigo: code,
+        validade: '5 minutos',
+        escritorio_nome: officeName,
+      }
+      emailHtml = applyTemplateVars(customTpl.bodyHtml, vars)
+      subjectLine = customTpl.subject
+        ? applyTemplateVars(customTpl.subject, vars)
+        : 'Código de verificação - Jurius'
+    } else {
+      subjectLine = 'Código de verificação - Jurius'
 
     const brandOrange = '#f97316'
     const brandOrangeDark = '#ea580c'
@@ -233,6 +267,10 @@ Se você não solicitou este código, ignore este e-mail.
     </table>
   </body>
 </html>`
+      emailHtml = html
+    }
+
+    const content = `Jurius - Assinatura Eletrônica\n\nSeu código de verificação é: ${code}\n\nValidade: 5 minutos.\nSe você não solicitou este código, ignore este e-mail.`
 
     const client = new SMTPClient({
       connection: {
@@ -246,13 +284,21 @@ Se você não solicitou este código, ignore este e-mail.
       },
     })
 
+    // Remetente configurável via Configurações > Integração de E-mail
+    const { data: emailCfgRow } = await supabase.from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle()
+    const cfgFromName: string = emailCfgRow?.value?.from_name ?? ''
+    const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? ''
+    const fromSender = (cfgFromName && cfgFromEmail)
+      ? `${cfgFromName} <${cfgFromEmail}>`
+      : `${smtpFromName} <${smtpFrom}>`
+
     try {
       await client.send({
-        from: `${smtpFromName} <${smtpFrom}>`,
+        from: fromSender,
         to: email,
-        subject,
+        subject: subjectLine,
         content,
-        html,
+        html: emailHtml,
         replyTo: smtpFrom,
         headers: {
           'X-Mailer': 'Jurius Signature System',

@@ -34,6 +34,7 @@ export interface Requirement {
   pericia_social_at?: string | null;
   phone?: string | null;
   inss_password?: string | null;
+  inss_password_enc?: string | null;
   observations?: string | null;
   notes?: string | null;
   client_id?: string | null;
@@ -55,6 +56,7 @@ export interface CreateRequirementDTO {
   pericia_social_at?: string | null;
   phone?: string | null;
   inss_password?: string | null;
+  inss_password_enc?: string | null;
   observations?: string | null;
   notes?: string | null;
   client_id?: string | null;

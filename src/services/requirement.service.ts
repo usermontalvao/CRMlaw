@@ -41,6 +41,32 @@ class RequirementService {
     this._cache.clear();
   }
 
+  // ── Criptografia de senha INSS (AES-GCM via edge function inss-crypto) ──────
+
+  async encryptInssPassword(plaintext: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke('inss-crypto', {
+        body: { action: 'encrypt', plaintext },
+      });
+      if (error || !data?.result) return null;
+      return data.result as string;
+    } catch {
+      return null;
+    }
+  }
+
+  async decryptInssPassword(ciphertext: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke('inss-crypto', {
+        body: { action: 'decrypt', ciphertext },
+      });
+      if (error || !data?.result) return null;
+      return data.result as string;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Lista requerimentos com filtros opcionais.
    *
@@ -58,9 +84,12 @@ class RequirementService {
     if (this.isCacheValid(cacheKey)) {
       rows = this._cache.get(cacheKey)!.data;
     } else {
+      // Exclui inss_password (plain-text legado) da query de lista para não vazar em massa.
+      // inss_password_enc permanece para que a UI detecte se há senha configurada.
+      const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
       let query = supabase
         .from(this.tableName)
-        .select('*')
+        .select(SAFE_COLS)
         .order('created_at', { ascending: false });
 
       if (serverFilters.status) {
@@ -120,9 +149,10 @@ class RequirementService {
   }
 
   async getRequirementById(id: string): Promise<Requirement | null> {
+    const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
     const { data, error } = await supabase
       .from(this.tableName)
-      .select('*')
+      .select(SAFE_COLS)
       .eq('id', id)
       .single();
 

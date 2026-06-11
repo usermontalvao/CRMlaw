@@ -6,11 +6,15 @@
  * exatamente o mesmo nos dois lugares.
  */
 
-const LAWYER_DEFAULT = {
-  name: 'PEDRO RODRIGUES MONTALVAO NETO',
-  oab: '30.021',
-  state: 'MT',
-  email: 'pedro@advcuiaba.com',
+const OFFICE_DEFAULT = {
+  name: '',
+  oab: '',
+  state: '',
+  email: '',
+  cnpj: '',
+  phone: '',
+  address: '',
+  logoUrl: '',
 };
 
 function fmtBRL(value: number): string {
@@ -73,6 +77,17 @@ export interface ReceiptBreakdownRow {
   value: number;   // valor (honorários) da parcela
 }
 
+export interface ReceiptOffice {
+  name?: string;
+  oab?: string;
+  state?: string;
+  email?: string;
+  cnpj?: string;
+  phone?: string;
+  address?: string;
+  logoUrl?: string;
+}
+
 export interface ReceiptInput {
   clientName: string;
   clientCpf?: string;
@@ -83,12 +98,12 @@ export interface ReceiptInput {
   paymentDateDisplay: string;
   agreementTitle: string;
   breakdown?: ReceiptBreakdownRow[];
-  lawyer?: Partial<typeof LAWYER_DEFAULT>;
+  office?: ReceiptOffice;
 }
 
 export function buildReceiptHtml(input: ReceiptInput): string {
-  const lawyer = { ...LAWYER_DEFAULT, ...(input.lawyer || {}) };
-  const lawyerTitle = `Dr. ${lawyer.name}`;
+  const office = { ...OFFICE_DEFAULT, ...(input.office || {}) };
+  const lawyerTitle = office.name ? `Dr. ${office.name}` : 'Advogado Responsável';
   const issueDate = new Date();
   const issueDateFormatted = issueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   const receiptNumber = `REC-${issueDate.getFullYear()}-${String(issueDate.getMonth() + 1).padStart(2, '0')}-${String(issueDate.getDate()).padStart(2, '0')}-${String(issueDate.getHours()).padStart(2, '0')}${String(issueDate.getMinutes()).padStart(2, '0')}${String(issueDate.getSeconds()).padStart(2, '0')}`;
@@ -170,11 +185,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
   <div class="stripe-green"></div>
 
   <div class="header">
-    <div>
-      <div class="office-name">${lawyerTitle}</div>
-      <div class="office-meta">
-        Advogado &nbsp;|&nbsp; OAB/${lawyer.state} n° ${lawyer.oab}<br>
-        ${lawyer.email}
+    <div style="display:flex;align-items:flex-start;gap:1rem">
+      ${office.logoUrl ? `<img src="${office.logoUrl}" alt="Logo" style="height:48px;width:auto;object-fit:contain;flex-shrink:0" />` : ''}
+      <div>
+        <div class="office-name">${lawyerTitle}</div>
+        <div class="office-meta">
+          ${office.oab ? `OAB/${office.state || ''} n° ${office.oab}` : 'Advogado'}${office.email ? ` &nbsp;|&nbsp; ${office.email}` : ''}<br>
+          ${office.cnpj ? `CNPJ: ${office.cnpj}` : ''}${office.phone ? `${office.cnpj ? ' &nbsp;·&nbsp; ' : ''}${office.phone}` : ''}${office.address ? `<br>${office.address}` : ''}
+        </div>
       </div>
     </div>
     <div class="receipt-badge">
@@ -238,22 +256,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         <span class="detail-key">Valor Recebido</span>
         <span class="detail-val" style="font-weight:700;color:#1a2744;font-size:.9rem">${fmtBRL(amount)}</span>
       </div>
-      <div class="detail-row">
-        <span class="detail-key">Advogado Responsável</span>
-        <span class="detail-val">${lawyer.name} — OAB/${lawyer.state} ${lawyer.oab}</span>
-      </div>
+      ${office.name ? `<div class="detail-row"><span class="detail-key">Advogado Responsável</span><span class="detail-val">${office.name}${office.oab ? ` — OAB/${office.state || ''} ${office.oab}` : ''}</span></div>` : ''}
     </div>
   </div>
 
   <div class="signature-section">
     <div class="date-block">
-      Cuiabá/MT,<br>
+      ${office.address ? `${office.address},<br>` : ''}
       ${issueDateFormatted}
     </div>
     <div class="sig-block">
       <div class="sig-line"></div>
-      <div class="sig-name">${lawyer.name}</div>
-      <div class="sig-oab">OAB/${lawyer.state} n° ${lawyer.oab}</div>
+      <div class="sig-name">${office.name || 'Advogado Responsável'}</div>
+      ${office.oab ? `<div class="sig-oab">OAB/${office.state || ''} n° ${office.oab}</div>` : ''}
     </div>
   </div>
 

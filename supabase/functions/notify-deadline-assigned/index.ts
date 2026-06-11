@@ -57,7 +57,7 @@ function buildDeadlineEmailHtml(data: {
   type: string;
   clientName: string | null;
   processNumber: string | null;
-  mode: 'assigned' | 'reminder';
+  mode: 'assigned' | 'reminder' | 'overdue';
 }): string {
   const pc = getPriorityColor(data.priority);
   const pl = getPriorityLabel(data.priority);
@@ -74,10 +74,11 @@ function buildDeadlineEmailHtml(data: {
   else { daysText = `Faltam ${dd} dias`; daysColor = '#16a34a'; }
 
   const isReminder = data.mode === 'reminder';
+  const isOverdue = data.mode === 'overdue';
   const selfAssigned = data.assignedByName === data.responsibleName;
-  const headerTitle = isReminder ? 'Lembrete de Prazo' : 'Novo Prazo Atribuído';
-  const headerSub = isReminder ? 'Você tem um prazo se aproximando' : 'Você recebeu uma nova responsabilidade';
-  const headerIcon = isReminder ? '⏰' : '📅';
+  const headerTitle = isOverdue ? 'Prazo Vencido' : isReminder ? 'Lembrete de Prazo' : 'Novo Prazo Atribuído';
+  const headerSub = isOverdue ? 'Um prazo sob sua responsabilidade está vencido' : isReminder ? 'Você tem um prazo se aproximando' : 'Você recebeu uma nova responsabilidade';
+  const headerIcon = isOverdue ? '🚨' : isReminder ? '⏰' : '📅';
   const greeting = isReminder
     ? `Olá, <b>${data.responsibleName}</b>! Este é um lembrete sobre o prazo:`
     : selfAssigned
@@ -213,11 +214,50 @@ function buildDeadlineEmailHtml(data: {
 </html>`;
 }
 
+async function loadEmailTemplate(
+  supabase: any,
+  trigger: string,
+): Promise<{ subject: string; bodyHtml: string } | null> {
+  try {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'email_templates')
+      .single();
+    if (!Array.isArray(data?.value)) return null;
+    const tpl = data.value.find((t: any) => t.trigger === trigger && t.is_custom === true);
+    if (!tpl?.body_html) return null;
+    return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html };
+  } catch {
+    return null;
+  }
+}
+
+function applyTemplateVars(
+  template: string,
+  vars: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+}
+
+async function loadOfficeName(supabase: any): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'office_identity')
+      .single();
+    return data?.value?.name ?? 'Escritório';
+  } catch {
+    return 'Escritório';
+  }
+}
+
 async function sendDeadlineEmail(
   supabase: any,
   deadlineId: string,
   assignedById: string | null,
-  mode: 'assigned' | 'reminder',
+  mode: 'assigned' | 'reminder' | 'overdue',
 ) {
   const { data: deadline } = await supabase.from('deadlines').select('*').eq('id', deadlineId).single();
   if (!deadline?.responsible_id) return { success: false, error: 'Prazo sem responsável' };
@@ -246,29 +286,59 @@ async function sendDeadlineEmail(
     if (p) processNumber = p.process_number;
   }
 
-  const rawHtml = buildDeadlineEmailHtml({
-    responsibleName: responsible.name, assignedByName, title: deadline.title,
-    description: deadline.description || '', dueDate: deadline.due_date,
-    priority: deadline.priority, type: deadline.type, clientName, processNumber, mode,
-  });
-  // Remove trailing spaces per line to prevent quoted-printable =20 artifacts
-  const emailHtml = rawHtml.split('\n').map((l: string) => l.trimEnd()).join('\n');
+  const trigger = mode === 'overdue' ? 'deadline_overdue' : mode === 'reminder' ? 'deadline_due' : 'deadline_assigned';
+  const customTpl = await loadEmailTemplate(supabase, trigger);
+  const daysUntil = Math.ceil((new Date(deadline.due_date).getTime() - Date.now()) / 86400000);
 
-  const subjectLine = mode === 'reminder'
-    ? 'Lembrete de prazo - Jurius'
-    : 'Novo prazo cadastrado - Jurius';
+  let emailHtml: string;
+  let subjectLine: string;
+
+  if (customTpl) {
+    const officeName = await loadOfficeName(supabase);
+    const vars: Record<string, string> = {
+      responsavel: responsible.name,
+      prazo_descricao: deadline.title,
+      prazo_data: formatDate(deadline.due_date),
+      dias_restantes: String(Math.max(0, daysUntil)),
+      cliente_nome: clientName ?? 'Não definido',
+      escritorio_nome: officeName,
+    };
+    const raw = applyTemplateVars(customTpl.bodyHtml, vars);
+    emailHtml = raw.split('\n').map((l: string) => l.trimEnd()).join('\n');
+    subjectLine = customTpl.subject
+      ? applyTemplateVars(customTpl.subject, vars)
+      : mode === 'overdue' ? 'Prazo vencido - Jurius' : mode === 'reminder' ? 'Lembrete de prazo - Jurius' : 'Novo prazo cadastrado - Jurius';
+  } else {
+    const rawHtml = buildDeadlineEmailHtml({
+      responsibleName: responsible.name, assignedByName, title: deadline.title,
+      description: deadline.description || '', dueDate: deadline.due_date,
+      priority: deadline.priority, type: deadline.type, clientName, processNumber, mode,
+    });
+    emailHtml = rawHtml.split('\n').map((l: string) => l.trimEnd()).join('\n');
+    subjectLine = mode === 'overdue' ? 'Prazo vencido - Jurius' : mode === 'reminder'
+      ? 'Lembrete de prazo - Jurius'
+      : 'Novo prazo cadastrado - Jurius';
+  }
   console.log(`Enviando email (${mode}) para ${recipientEmail}`);
+
+  const { data: emailCfgRow } = await supabase
+    .from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle();
+  const cfgFromName: string = emailCfgRow?.value?.from_name ?? '';
+  const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? '';
+  const fromSender = (cfgFromName && cfgFromEmail)
+    ? `${cfgFromName} <${cfgFromEmail}>`
+    : `${SMTP_FROM_NAME} <${SMTP_FROM}>`;
 
   const smtpClient = new SMTPClient({
     connection: { hostname: SMTP_HOST, port: SMTP_PORT, tls: true, auth: { username: SMTP_USER, password: SMTP_PASS } },
   });
 
   await smtpClient.send({
-    from: `${SMTP_FROM_NAME} <${SMTP_FROM}>`,
+    from: fromSender,
     to: recipientEmail,
     subject: subjectLine,
     html: emailHtml,
-    content: `${mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo cadastrado'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
+    content: `${mode === 'overdue' ? 'Prazo vencido' : mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo cadastrado'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
   });
 
   await smtpClient.close();

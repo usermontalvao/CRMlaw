@@ -312,11 +312,40 @@ Deno.serve(async (req: Request) => {
     const publicLink = `${origin}/#/documento/${req_.public_token}`
     const signers    = (req_.signature_signers ?? []) as any[]
 
+    // Carrega template customizado (trigger: signature_link_sent)
+    const customTpl = await (async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings').select('value').eq('key', 'email_templates').single()
+        if (!Array.isArray(data?.value)) return null
+        const tpl = data.value.find((t: any) => t.trigger === 'signature_link_sent' && t.is_custom === true)
+        if (!tpl?.body_html) return null
+        return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html }
+      } catch { return null }
+    })()
+
+    const officeName: string = await (async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings').select('value').eq('key', 'office_identity').single()
+        return data?.value?.name ?? 'Escritório'
+      } catch { return 'Escritório' }
+    })()
+
     // If specific signer requested, send only to them; otherwise send to all signed
     let signedOnes = signers.filter((s: any) => s.status === 'signed')
     if (signerId) signedOnes = signedOnes.filter((s: any) => s.id === signerId)
 
     if (signedOnes.length === 0) return json({ success: false, error: 'Nenhum signatário assinou ainda' })
+
+    // Remetente configurável via Configurações > Integração de E-mail
+    const { data: emailCfgRow } = await supabase
+      .from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle()
+    const cfgFromName: string = emailCfgRow?.value?.from_name ?? ''
+    const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? ''
+    const fromSender = (cfgFromName && cfgFromEmail)
+      ? `${cfgFromName} <${cfgFromEmail}>`
+      : `${SMTP_FROM_NAME} <${SMTP_FROM}>`
 
     const sent: string[] = []
     const failed: { email: string; error: string }[] = []
@@ -340,16 +369,37 @@ Deno.serve(async (req: Request) => {
         ? `${origin}/#/verificar/${verificationCode}`
         : `${origin}/#/verificar`
 
-      const html = buildEmail({
-        documentName:     req_.document_name ?? 'Documento',
-        clientName:       req_.client_name   ?? signer.name ?? 'Cliente',
-        signerName:       signer.name        ?? 'Signatário',
-        signedAt:         signer.signed_at   ?? new Date().toISOString(),
-        publicLink,
-        verifyLink,
-        verificationCode,
-        origin,
-      })
+      let html: string
+      let subjectLine: string
+
+      if (customTpl) {
+        const vars: Record<string, string> = {
+          documento_nome:      req_.document_name  ?? 'Documento',
+          cliente_nome:        req_.client_name    ?? signer.name ?? 'Cliente',
+          signatario_nome:     signer.name         ?? 'Signatário',
+          data_assinatura:     fmtDate(signer.signed_at ?? new Date().toISOString()),
+          link_publico:        publicLink,
+          link_verificacao:    verifyLink,
+          codigo_verificacao:  verificationCode,
+          escritorio_nome:     officeName,
+        }
+        html = customTpl.bodyHtml.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? '')
+        subjectLine = customTpl.subject
+          ? customTpl.subject.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? '')
+          : `✅ ${req_.document_name} – documento assinado`
+      } else {
+        html = buildEmail({
+          documentName:     req_.document_name ?? 'Documento',
+          clientName:       req_.client_name   ?? signer.name ?? 'Cliente',
+          signerName:       signer.name        ?? 'Signatário',
+          signedAt:         signer.signed_at   ?? new Date().toISOString(),
+          publicLink,
+          verifyLink,
+          verificationCode,
+          origin,
+        })
+        subjectLine = `✅ ${req_.document_name} – documento assinado`
+      }
 
       const textContent = `Olá, ${signer.name}.\n\nSeu documento "${req_.document_name}" foi assinado digitalmente.\n\nAcesse o documento: ${publicLink}\nVerifique a autenticidade: ${verifyLink}\nCódigo de verificação: ${verificationCode}\n\n---\nJURIUS · Assinatura Digital Certificada`
 
@@ -364,9 +414,9 @@ Deno.serve(async (req: Request) => {
 
       try {
         await client.send({
-          from: `${SMTP_FROM_NAME} <${SMTP_FROM}>`,
+          from: fromSender,
           to: email,
-          subject: `✅ ${req_.document_name} – documento assinado`,
+          subject: subjectLine,
           content: textContent,
           html,
           replyTo: SMTP_FROM,

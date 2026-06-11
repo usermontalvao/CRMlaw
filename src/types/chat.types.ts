@@ -13,6 +13,7 @@ export interface ChatRoom {
   portal_client_id?: string | null;
   session_start_at?: string | null;
   accepted_by?: string | null;
+  last_is_system?: boolean | null;
 }
 
 export interface PortalChatMessage {

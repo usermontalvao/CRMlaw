@@ -558,7 +558,7 @@ const CHANGELOG_MODULES: ModuleConfig[] = [
     name: 'Sistema',
     description: 'Funcionalidades gerais e infraestrutura do sistema',
     icon: Settings,
-    color: { bg: 'bg-slate-600', text: 'text-slate-700', border: 'border-slate-200', light: 'bg-slate-50' },
+    color: { bg: 'bg-slate-600', text: 'text-slate-700', border: 'border-[#e7e5df]', light: 'bg-slate-50' },
   },
   {
     id: 'dev',
@@ -589,7 +589,7 @@ const getModuleConfig = (moduleId: string): ModuleConfig => {
     name: moduleId,
     description: '',
     icon: Zap,
-    color: { bg: 'bg-gray-600', text: 'text-gray-700', border: 'border-gray-200', light: 'bg-gray-50' },
+    color: { bg: 'bg-gray-600', text: 'text-gray-700', border: 'border-[#e7e5df]', light: 'bg-gray-50' },
   };
 };
 
@@ -878,6 +878,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.218',
+    date: '11/06/2026',
+    summary: 'Segurança com PIN, modo sidebar configurável, criptografia INSS, novas edge functions e expansão das configurações do sistema.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'PIN de segurança para dados sensíveis', description: 'Implementação de contexto e modal de PIN de segurança (SecurityPinContext, SecurityPinModal) para proteger visualização de dados confidenciais como valores financeiros.' },
+        { type: 'feature' as const, title: 'Modo sidebar configurável', description: 'Novo SidebarModeContext permite alternar entre modos de exibição do menu lateral, com persistência via migração sidebar_mode.' },
+        { type: 'feature' as const, title: 'Criptografia de senha INSS', description: 'Novas edge functions inss-crypto e inss-backfill para criptografar e migrar senhas INSS armazenadas, com migração de banco de dados correspondente.' },
+        { type: 'feature' as const, title: 'Novas edge functions administrativas', description: 'Adicionadas funções toggle-user-status, check-env-keys e email-send-test para gestão de usuários e diagnóstico do sistema.' },
+        { type: 'improvement' as const, title: 'Configurações do sistema expandidas', description: 'settings.service expandido com RPCs de contagem de referências; notification-scheduler, weekly-digest e send-signature-link refatorados.' },
+        { type: 'feature' as const, title: 'Novos componentes: BlockedAccountOverlay e SensitiveValue', description: 'Overlay para contas bloqueadas e componente para exibição mascarada de valores sensíveis com revelação por PIN.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.217',
     date: '08/06/2026',
@@ -2673,13 +2688,13 @@ const releases: ReleaseNote[] = [
   {
     version: '1.10.113',
     date: '18/05/2026',
-    summary: 'Chat: balão recebido branco corrigido — bg-white/10 incompatível com Tailwind v4 substituído por bg-slate-700 sólido.',
+    summary: 'Chat: balão recebido branco corrigido — bg-[#f8f7f5]/10 incompatível com Tailwind v4 substituído por bg-slate-700 sólido.',
     modules: [
       {
         moduleId: 'ChatFloatingWidget',
         changes: [
-          { type: 'fix', title: 'Texto invisível no balão recebido', description: 'O Tailwind v4 gerava bg-white/10 via color-mix OKLCH incompatível com alguns browsers, fazendo o balão ficar branco com text-white invisível. Substituído por bg-slate-700 (cor sólida opaca) que garante contraste correto.' },
-          { type: 'fix', title: 'Typing indicator cor corrigida', description: 'O indicador de digitação também usava bg-white/10 — atualizado para bg-slate-700 consistente com os demais balões.' },
+          { type: 'fix', title: 'Texto invisível no balão recebido', description: 'O Tailwind v4 gerava bg-[#f8f7f5]/10 via color-mix OKLCH incompatível com alguns browsers, fazendo o balão ficar branco com text-white invisível. Substituído por bg-slate-700 (cor sólida opaca) que garante contraste correto.' },
+          { type: 'fix', title: 'Typing indicator cor corrigida', description: 'O indicador de digitação também usava bg-[#f8f7f5]/10 — atualizado para bg-slate-700 consistente com os demais balões.' },
         ],
       },
     ],
@@ -21244,7 +21259,7 @@ const DocsChangesPage: React.FC = () => {
   return (
     <div className="min-h-[100dvh] bg-gradient-to-br from-slate-50 via-white to-orange-50/30">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-lg border-b border-slate-200/60">
+      <header className="sticky top-0 z-20 bg-[#f8f7f5]/95 backdrop-blur-lg border-b border-[#e7e5df]/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <a
@@ -21270,7 +21285,7 @@ const DocsChangesPage: React.FC = () => {
       </header>
 
       {/* Tabs Navigation */}
-      <div className="sticky top-16 z-10 bg-white border-b border-slate-200">
+      <div className="sticky top-16 z-10 bg-[#f8f7f5] border-b border-[#e7e5df]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex gap-1 py-2">
             <button
@@ -21326,7 +21341,7 @@ const DocsChangesPage: React.FC = () => {
                   placeholder="Buscar alterações..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition"
                 />
                 {searchQuery && (
                   <button
@@ -21386,11 +21401,11 @@ const DocsChangesPage: React.FC = () => {
                   const codename = getCodename(release.version);
                   return (
                     <article key={release.version} className="relative pl-12 sm:pl-16">
-                      <div className="absolute left-0 sm:left-2 top-1 w-8 h-8 rounded-full bg-white border-2 border-orange-400 flex items-center justify-center shadow-sm text-lg">
+                      <div className="absolute left-0 sm:left-2 top-1 w-8 h-8 rounded-full bg-[#f8f7f5] border-2 border-orange-400 flex items-center justify-center shadow-sm text-lg">
                         {codename.emoji}
                       </div>
 
-                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <div>
@@ -21482,9 +21497,9 @@ const DocsChangesPage: React.FC = () => {
             </div>
 
             {/* Footer Info */}
-            <div className="mt-12 pt-8 border-t border-slate-200">
+            <div className="mt-12 pt-8 border-t border-[#e7e5df]">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
                       <Coffee className="w-5 h-5 text-orange-600" />
@@ -21496,7 +21511,7 @@ const DocsChangesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                       <GitBranch className="w-5 h-5 text-blue-600" />
@@ -21508,7 +21523,7 @@ const DocsChangesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
                       <Shield className="w-5 h-5 text-emerald-600" />
@@ -21547,7 +21562,7 @@ const DocsChangesPage: React.FC = () => {
                 return (
                   <div
                     key={mod.id}
-                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+                    className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden"
                   >
                     <button
                       onClick={() => toggleModuleExpand(mod.id)}
@@ -21603,23 +21618,23 @@ const DocsChangesPage: React.FC = () => {
             </div>
 
             {/* Quick Stats */}
-            <div className="mt-8 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div className="mt-8 p-6 bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="bg-slate-50 rounded-xl p-4 border border-[#e7e5df]">
                   <div className="text-3xl font-bold text-slate-900">{SYSTEM_MODULES.length}</div>
                   <div className="text-sm text-slate-600 font-medium mt-1">Módulos</div>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="bg-slate-50 rounded-xl p-4 border border-[#e7e5df]">
                   <div className="text-3xl font-bold text-slate-900">
                     {SYSTEM_MODULES.reduce((acc, m) => acc + m.features.length, 0)}
                   </div>
                   <div className="text-sm text-slate-600 font-medium mt-1">Funcionalidades</div>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="bg-slate-50 rounded-xl p-4 border border-[#e7e5df]">
                   <div className="text-3xl font-bold text-slate-900">{releases.length}</div>
                   <div className="text-sm text-slate-600 font-medium mt-1">Versões</div>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="bg-slate-50 rounded-xl p-4 border border-[#e7e5df]">
                   <div className="text-3xl font-bold text-slate-900">
                     {releases.reduce((acc, r) => acc + r.modules.reduce((a, m) => a + m.changes.length, 0), 0)}
                   </div>

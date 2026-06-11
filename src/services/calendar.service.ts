@@ -121,6 +121,13 @@ class CalendarService {
       throw new Error(error.message);
     }
   }
+
+  async deleteEventsByRequirementId(requirementId: string, eventType?: string): Promise<void> {
+    let query = supabase.from(this.tableName).delete().eq('requirement_id', requirementId);
+    if (eventType) query = query.eq('event_type', eventType);
+    const { error } = await query;
+    if (error) throw new Error(error.message);
+  }
 }
 
 export const calendarService = new CalendarService();

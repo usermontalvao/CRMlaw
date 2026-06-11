@@ -113,6 +113,15 @@ serve(async (req) => {
   const startedAt = new Date().toISOString()
   console.log(`🚀 [${executionId}] DATAJUD SYNC — ${startedAt}`)
 
+  let logId: string | null = null
+  try {
+    const { data: logRow } = await supabase
+      .from('cron_job_logs')
+      .insert({ job_name: 'datajud-sync', status: 'running', started_at: startedAt })
+      .select('id').single()
+    logId = logRow?.id ?? null
+  } catch (_) { /* log não é crítico */ }
+
   let datajudApiKey = DATAJUD_DEFAULT_KEY
   try {
     const { data: settings } = await supabase
@@ -128,6 +137,7 @@ serve(async (req) => {
 
   if (procErr) {
     console.error('❌ Erro ao buscar processos:', procErr.message)
+    if (logId) await supabase.from('cron_job_logs').update({ status: 'failed', finished_at: new Date().toISOString(), error: procErr.message }).eq('id', logId)
     return new Response(JSON.stringify({ success: false, error: procErr.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500,
     })
@@ -220,6 +230,14 @@ serve(async (req) => {
   }
 
   console.log(`📈 [${executionId}] Processos: ${activeProcesses.length} | Movimentos: ${totalMovimentos} | Upserts: ${totalNovos} | Erros: ${errors}`)
+
+  if (logId) {
+    await supabase.from('cron_job_logs').update({
+      status: 'success',
+      finished_at: new Date().toISOString(),
+      result: { processes: activeProcesses.length, movimentos: totalMovimentos, upserts: totalNovos, errors },
+    }).eq('id', logId)
+  }
 
   return new Response(
     JSON.stringify({ success: true, stats: { processes: activeProcesses.length, movimentos: totalMovimentos, upserts: totalNovos, errors } }),

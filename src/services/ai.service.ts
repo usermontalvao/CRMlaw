@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { IntimationAnalysis, AIServiceConfig, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
+import { settingsService, type AiTaskConfig } from './settings.service';
 
 class AIService {
   private openai: OpenAI | null = null;
@@ -12,24 +13,25 @@ class AIService {
   private lastGroqError: number = 0; // Timestamp do último erro 429
   private groqCooldownMs: number = 60000; // 1 minuto de cooldown após 429
 
+  // Settings carregadas do banco (lazy)
+  private promptOverrides: Map<string, string> = new Map();
+  private taskConfigs: Map<string, AiTaskConfig> = new Map();
+  private holidayDates: Set<string> = new Set(); // 'YYYY-MM-DD'
+  private settingsPromise: Promise<void> | null = null;
+
   constructor() {
     this.initialize();
   }
 
-  /**
-   * Calcula data final considerando apenas dias úteis (exclui sábados e domingos)
-   * Nota: Não considera feriados (seria necessário API externa)
-   */
   private addBusinessDays(startDate: Date, daysToAdd: number): Date {
     const result = new Date(startDate);
     let remainingDays = daysToAdd;
 
     while (remainingDays > 0) {
       result.setDate(result.getDate() + 1);
-      
-      // Verifica se é dia útil (segunda a sexta)
       const dayOfWeek = result.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Domingo, 6 = Sábado
+      const dateStr = result.toISOString().slice(0, 10);
+      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !this.holidayDates.has(dateStr)) {
         remainingDays--;
       }
     }
@@ -76,8 +78,65 @@ class AIService {
     return this.enabled && (this.groqApiKey !== null || this.openai !== null);
   }
 
-  async generateText(systemPrompt: string, userPrompt: string, maxTokens: number = 800): Promise<string> {
+  /** Força recarga das settings do banco (útil após salvar Configurações). */
+  invalidateSettings(): void {
+    this.settingsPromise = null;
+  }
+
+  private ensureSettingsLoaded(): Promise<void> {
+    if (!this.settingsPromise) {
+      this.settingsPromise = this.loadFromSettings();
+    }
+    return this.settingsPromise;
+  }
+
+  private async loadFromSettings(): Promise<void> {
+    try {
+      const [providerCfg, taskCfgs, promptOverrides, holidays] = await Promise.all([
+        settingsService.getAiProviderConfig(),
+        settingsService.getAiTaskConfigs(),
+        settingsService.getAiPromptOverrides(),
+        settingsService.getHolidays(),
+      ]);
+
+      // Aplica provider config (respeita o que está configurado em Configurações)
+      if (providerCfg.enabled[providerCfg.primary]) {
+        if (providerCfg.primary === 'groq' && this.groqApiKey) {
+          this.useGroq = true;
+          this.useEdgeFunction = false;
+        } else if (providerCfg.primary === 'openai' && this.openaiApiKey) {
+          this.useGroq = false;
+          this.useEdgeFunction = true;
+        }
+      }
+      if (providerCfg.cooldown_ms > 0) {
+        this.groqCooldownMs = providerCfg.cooldown_ms;
+      }
+
+      this.taskConfigs = new Map(taskCfgs.map(t => [t.task_key, t]));
+      this.promptOverrides = new Map(promptOverrides.map(o => [o.key, o.system_prompt]));
+      this.holidayDates = new Set(holidays.map(h => h.date));
+    } catch {
+      // Mantém defaults em caso de falha
+    }
+  }
+
+  /** Retorna prompt customizado se houver override, senão o prompt padrão. */
+  private getPrompt(key: string, fallback: string): string {
+    return this.promptOverrides.get(key) || fallback;
+  }
+
+  /** Retorna parâmetros de tarefa configurados (model, temperature, max_tokens). */
+  private getTaskOpts(key: string): { model?: string; temperature: number; maxTokens: number } {
+    const cfg = this.taskConfigs.get(key);
+    return { model: cfg?.model, temperature: cfg?.temperature ?? 0.3, maxTokens: cfg?.max_tokens ?? 800 };
+  }
+
+  async generateText(systemPrompt: string, userPrompt: string, maxTokens: number = 800, taskKey?: string): Promise<string> {
     if (!this.isEnabled()) return '';
+    await this.ensureSettingsLoaded();
+    const taskOpts = taskKey ? this.getTaskOpts(taskKey) : undefined;
+    const resolvedTokens = taskOpts?.maxTokens ?? maxTokens;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -87,15 +146,15 @@ class AIService {
     // Usar OpenAI primeiro
     if (this.openai && this.openaiApiKey) {
       if (this.useEdgeFunction) {
-        return this.callOpenAIViaEdgeFunction(messages, 'gpt-4o-mini');
+        return this.callOpenAIViaEdgeFunction(messages, taskOpts?.model ?? 'gpt-4o-mini');
       } else {
-        return this.callOpenAIDirectly(messages, maxTokens);
+        return this.callOpenAIDirectly(messages, resolvedTokens, taskOpts);
       }
     }
 
     // Fallback para Groq
     if (this.useGroq && this.groqApiKey) {
-      return this.callGroqAPI(messages, maxTokens);
+      return this.callGroqAPI(messages, resolvedTokens, taskOpts);
     }
 
     throw new Error('Nenhum provedor de IA disponível');
@@ -140,7 +199,10 @@ class AIService {
       })
       .join('\n\n----------------\n\n');
 
-    const systemPrompt = `Você é um editor jurídico especialista em petições brasileiras.
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('edit_legal_text');
+
+    const defaultSystemPrompt = `Você é um editor jurídico especialista em petições brasileiras.
 
 Sua função é editar APENAS o trecho selecionado de um documento jurídico, seguindo a instrução do usuário e usando os blocos fornecidos como base de conhecimento de estilo, estrutura argumentativa e vocabulário técnico.
 
@@ -155,6 +217,8 @@ Regras obrigatórias:
 - Não adicione explicações, notas, títulos extras ou comentários.
 - Retorne somente o texto final editado.`;
 
+    const systemPrompt = this.getPrompt('edit_legal_text', defaultSystemPrompt);
+
     const userPrompt = [
       `Instrução do usuário:\n${instruction}`,
       `Trecho selecionado para edição:\n${selectedText}`,
@@ -162,7 +226,7 @@ Regras obrigatórias:
       'Retorne apenas a versão final editada do trecho selecionado.',
     ].join('\n\n');
 
-    const content = await this.generateText(systemPrompt, userPrompt, 1200);
+    const content = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'edit_legal_text');
     const output = String(content || '').trim();
 
     if (!output) {
@@ -192,7 +256,7 @@ Regras obrigatórias:
   /**
    * Chama a API do Groq com fallback para OpenAI
    */
-  private async callGroqAPI(messages: any[], maxTokens: number = 1000): Promise<string> {
+  private async callGroqAPI(messages: any[], maxTokens: number = 1000, opts?: { model?: string; temperature?: number }): Promise<string> {
     // Se Groq está em cooldown e temos OpenAI, usa fallback
     if (this.shouldUseFallback()) {
       console.log('🔄 Usando OpenAI (fallback) - Groq em cooldown');
@@ -207,9 +271,9 @@ Regras obrigatórias:
           'Authorization': `Bearer ${this.groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: opts?.model ?? 'llama-3.3-70b-versatile',
           messages,
-          temperature: 0.3,
+          temperature: opts?.temperature ?? 0.3,
           max_tokens: maxTokens,
         }),
       });
@@ -243,15 +307,15 @@ Regras obrigatórias:
   /**
    * Chama a OpenAI API diretamente (fallback)
    */
-  private async callOpenAIDirectly(messages: any[], maxTokens: number = 1000): Promise<string> {
+  private async callOpenAIDirectly(messages: any[], maxTokens: number = 1000, opts?: { model?: string; temperature?: number }): Promise<string> {
     if (!this.openai) {
       throw new Error('OpenAI não configurado para fallback');
     }
 
     const response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: opts?.model ?? 'gpt-4o-mini',
       messages,
-      temperature: 0.3,
+      temperature: opts?.temperature ?? 0.3,
       max_tokens: maxTokens,
     });
 
@@ -286,9 +350,11 @@ Regras obrigatórias:
     if (!this.isEnabled()) {
       throw new Error('Serviço de IA não está habilitado. Configure VITE_OPENAI_API_KEY.');
     }
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('analyze_intimation');
 
     try {
-      const systemPrompt = `Você é um advogado sênior experiente lendo intimações para outro advogado ocupado.
+      const defaultSystemPrompt = `Você é um advogado sênior experiente lendo intimações para outro advogado ocupado.
 Seu trabalho: extrair o que REALMENTE importa — o resultado, o impacto no cliente, o que fazer agora.
 Retorne APENAS JSON válido. Nenhum texto fora do JSON.
 
@@ -396,6 +462,8 @@ Tamanho: mínimo 20 palavras, máximo 120 palavras por trecho.
 NÃO copie: cabeçalho, partes, preâmbulo, jurisprudência citada como exemplo.
 Se o texto tiver "Ante o exposto" ou "Pelo exposto" — COPIE ESSA FRASE E O QUE VEM DEPOIS.`;
 
+      const systemPrompt = this.getPrompt('analyze_intimation', defaultSystemPrompt);
+
       const userPrompt = `Processo: ${numeroProcesso}
 Tipo de Documento: ${tipoDocumento || 'Não especificado'}
 Tipo de Comunicação: ${tipoComunicacao || 'Não especificado'}
@@ -412,17 +480,17 @@ ${texto}`;
           content = await this.callOpenAIViaEdgeFunction([
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
-          ], 'gpt-4o');
+          ], taskOpts.model ?? 'gpt-4o');
         } else {
           // Usa OpenAI diretamente
           const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o',
+            model: taskOpts.model ?? 'gpt-4o',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0.2,
-            max_tokens: 1200,
+            temperature: taskOpts.temperature,
+            max_tokens: taskOpts.maxTokens,
             response_format: { type: 'json_object' },
           });
           content = response.choices[0].message.content;
@@ -432,7 +500,7 @@ ${texto}`;
         content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
-        ], 1200);
+        ], taskOpts.maxTokens, taskOpts);
       }
       if (!content) {
         throw new Error('Resposta vazia da API');
@@ -467,9 +535,11 @@ ${texto}`;
     if (!this.isEnabled()) {
       return null;
     }
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('extract_deadline');
 
     try {
-      const systemPrompt = `Você é um especialista em extração de prazos processuais brasileiros.
+      const defaultSystemPrompt = `Você é um especialista em extração de prazos processuais brasileiros.
 Analise o texto e identifique se há algum prazo. Responda APENAS com JSON:
 
 {
@@ -481,24 +551,25 @@ Analise o texto e identifique se há algum prazo. Responda APENAS com JSON:
 
 Se não houver prazo, retorne null para days e dueDate.`;
 
+      const systemPrompt = this.getPrompt('extract_deadline', defaultSystemPrompt);
       let content: string | null = null;
-      
+
       // Usar OpenAI primeiro
       if (this.openai && this.openaiApiKey) {
         if (this.useEdgeFunction) {
           content = await this.callOpenAIViaEdgeFunction([
             { role: 'system', content: systemPrompt },
             { role: 'user', content: texto },
-          ], 'gpt-4o-mini');
+          ], taskOpts.model ?? 'gpt-4o-mini');
         } else {
           const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: taskOpts.model ?? 'gpt-4o-mini',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: texto },
             ],
-            temperature: 0.2,
-            max_tokens: 300,
+            temperature: taskOpts.temperature,
+            max_tokens: taskOpts.maxTokens,
             response_format: { type: 'json_object' },
           });
           content = response.choices[0].message.content;
@@ -507,7 +578,7 @@ Se não houver prazo, retorne null para days e dueDate.`;
         content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: texto },
-        ], 300);
+        ], taskOpts.maxTokens, taskOpts);
       }
 
       if (!content) return null;
@@ -540,43 +611,15 @@ Se não houver prazo, retorne null para days e dueDate.`;
    * Gera resumo rápido de um texto
    */
   async generateSummary(texto: string, maxWords: number = 50): Promise<string> {
-    if (!this.isEnabled()) {
-      return texto.substring(0, 200) + '...';
-    }
-
+    if (!this.isEnabled()) return texto.substring(0, 200) + '...';
     try {
-      const systemPrompt = `Você é um assistente que resume textos jurídicos de forma clara e objetiva em no máximo ${maxWords} palavras.`;
+      await this.ensureSettingsLoaded();
+      const taskOpts = this.getTaskOpts('summarize_text');
+      const defaultSystemPrompt = `Você é um assistente que resume textos jurídicos de forma clara e objetiva em no máximo ${maxWords} palavras.`;
+      const systemPrompt = this.getPrompt('summarize_text', defaultSystemPrompt);
       const userPrompt = `Resuma este texto:\n\n${texto}`;
-      
-      // Usar OpenAI primeiro
-      if (this.openai && this.openaiApiKey) {
-        if (this.useEdgeFunction) {
-          const content = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ], 'gpt-4o-mini');
-          return content || texto.substring(0, 200) + '...';
-        } else {
-          const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.3,
-            max_tokens: 200,
-          });
-          return response.choices[0].message.content || texto.substring(0, 200) + '...';
-        }
-      } else if (this.useGroq && this.groqApiKey) {
-        const content = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], 200);
-        return content || texto.substring(0, 200) + '...';
-      } else {
-        return texto.substring(0, 200) + '...';
-      }
+      const result = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'summarize_text');
+      return result || texto.substring(0, 200) + '...';
     } catch (error) {
       console.error('Erro ao gerar resumo:', error);
       return texto.substring(0, 200) + '...';
@@ -592,58 +635,23 @@ Se não houver prazo, retorne null para days e dueDate.`;
     tipoComunicacao?: string
   ): Promise<'baixa' | 'media' | 'alta' | 'critica'> {
     if (!this.isEnabled()) {
-      // Fallback: análise simples por palavras-chave
       const textoLower = texto.toLowerCase();
-      if (textoLower.includes('liminar') || textoLower.includes('tutela de urgência')) {
-        return 'critica';
-      }
-      if (textoLower.includes('sentença') || textoLower.includes('prazo de 5 dias')) {
-        return 'alta';
-      }
-      if (textoLower.includes('prazo')) {
-        return 'media';
-      }
+      if (textoLower.includes('liminar') || textoLower.includes('tutela de urgência')) return 'critica';
+      if (textoLower.includes('sentença') || textoLower.includes('prazo de 5 dias')) return 'alta';
+      if (textoLower.includes('prazo')) return 'media';
       return 'baixa';
     }
-
     try {
-      const systemPrompt = `Você é um especialista em classificar urgência de comunicações judiciais.
+      await this.ensureSettingsLoaded();
+      const taskOpts = this.getTaskOpts('classify_urgency');
+      const defaultSystemPrompt = `Você é um especialista em classificar urgência de comunicações judiciais.
 Classifique como: "critica", "alta", "media" ou "baixa".
 Responda APENAS com uma palavra.`;
+      const systemPrompt = this.getPrompt('classify_urgency', defaultSystemPrompt);
       const userPrompt = `Tipo: ${tipoDocumento || 'N/A'} | Comunicação: ${tipoComunicacao || 'N/A'}\nTexto: ${texto}`;
-      
-      let urgency: string;
-      
-      // Usar OpenAI primeiro
-      if (this.openai && this.openaiApiKey) {
-        if (this.useEdgeFunction) {
-          urgency = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ], 'gpt-4o-mini');
-        } else {
-          const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.2,
-            max_tokens: 10,
-          });
-          urgency = response.choices[0].message.content || 'media';
-        }
-      } else if (this.useGroq && this.groqApiKey) {
-        urgency = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], 10);
-      } else {
-        urgency = 'media';
-      }
-
-      const normalizedUrgency = urgency.toLowerCase().trim() as any;
-      return ['critica', 'alta', 'media', 'baixa'].includes(normalizedUrgency) ? normalizedUrgency : 'media';
+      const urgency = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'classify_urgency');
+      const normalized = (urgency || '').toLowerCase().trim() as any;
+      return ['critica', 'alta', 'media', 'baixa'].includes(normalized) ? normalized : 'media';
     } catch (error) {
       console.error('Erro ao analisar urgência:', error);
       return 'media';
@@ -654,53 +662,19 @@ Responda APENAS com uma palavra.`;
    * Gera sugestões de ações baseado na intimação
    */
   async suggestActions(texto: string, prazo?: string): Promise<string[]> {
-    if (!this.isEnabled()) {
-      return ['Analisar intimação', 'Verificar prazos', 'Tomar providências'];
-    }
-
+    if (!this.isEnabled()) return ['Analisar intimação', 'Verificar prazos', 'Tomar providências'];
     try {
-      const systemPrompt = `Você é um assistente jurídico. Sugira 3-5 ações práticas e específicas que o advogado deve tomar.
+      await this.ensureSettingsLoaded();
+      const taskOpts = this.getTaskOpts('suggest_actions');
+      const defaultSystemPrompt = `Você é um assistente jurídico. Sugira 3-5 ações práticas e específicas que o advogado deve tomar.
 Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
+      const systemPrompt = this.getPrompt('suggest_actions', defaultSystemPrompt);
       const userPrompt = `Intimação: ${texto}\nPrazo: ${prazo || 'Não especificado'}`;
-      
-      let content: string | null = null;
-      
-      // Usar OpenAI primeiro
-      if (this.openai && this.openaiApiKey) {
-        if (this.useEdgeFunction) {
-          content = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ], 'gpt-4o-mini');
-        } else {
-          const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.4,
-            max_tokens: 300,
-            response_format: { type: 'json_object' },
-          });
-          content = response.choices[0].message.content;
-        }
-      } else if (this.useGroq && this.groqApiKey) {
-        content = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], 300);
-      }
-
+      const content = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'suggest_actions');
       if (!content) return [];
-      
-      // Extrair JSON da resposta
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        content = jsonMatch[0];
-      }
-
-      const result = JSON.parse(content);
+      const json = jsonMatch ? jsonMatch[0] : content;
+      const result = JSON.parse(json);
       return result.actions || [];
     } catch (error) {
       console.error('Erro ao sugerir ações:', error);
@@ -713,11 +687,11 @@ Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
    * Detecta automaticamente o tipo de texto e aplica formatação apropriada
    */
   async formatQualification(rawText: string): Promise<string> {
-    if (!this.isEnabled()) {
-      throw new Error('Serviço de IA não está disponível');
-    }
+    if (!this.isEnabled()) throw new Error('Serviço de IA não está disponível');
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('format_qualification');
 
-    const systemPrompt = `Você é um assistente jurídico especializado em formatação e correção de documentos. Analise o texto fornecido e aplique as melhorias necessárias:
+    const defaultSystemPrompt = `Você é um assistente jurídico especializado em formatação e correção de documentos. Analise o texto fornecido e aplique as melhorias necessárias:
 
 TIPOS DE TEXTO E FORMATAÇÃO:
 
@@ -761,46 +735,12 @@ REGRAS GERAIS:
 
 Retorne APENAS o texto corrigido e formatado, sem explicações.`;
 
-    const userPrompt = `Texto para formatar:
-${rawText}`;
-
-    let content = '';
+    const systemPrompt = this.getPrompt('format_qualification', defaultSystemPrompt);
+    const userPrompt = `Texto para formatar:\n${rawText}`;
 
     try {
-      // Usar Groq primeiro (mais barato)
-      if (this.useGroq && this.groqApiKey) {
-        // Usa Groq API como principal
-        content = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], 300);
-      } else if (this.openai && this.openaiApiKey) {
-        // Usa OpenAI como fallback
-        if (this.useEdgeFunction) {
-          // Usa Edge Function para evitar CORS
-          content = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ], 'gpt-4o-mini');
-        } else {
-          // Usa OpenAI diretamente
-          const response = await this.openai!.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.1,
-            max_tokens: 300,
-          });
-          content = response.choices[0].message.content || '';
-        }
-      }
-
-      if (!content) {
-        throw new Error('IA não retornou resposta');
-      }
-
+      const content = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'format_qualification');
+      if (!content) throw new Error('IA não retornou resposta');
       return content.trim();
     } catch (error) {
       console.error('Erro ao formatar qualificação:', error);

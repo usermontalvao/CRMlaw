@@ -99,7 +99,16 @@ serve(async (req) => {
 
     // Registrar início da execução
     const syncStartTime = new Date().toISOString()
-    
+
+    let cronLogId: string | null = null
+    try {
+      const { data: cronRow } = await supabaseClient
+        .from('cron_job_logs')
+        .insert({ job_name: 'run-djen-sync', status: 'running', started_at: syncStartTime })
+        .select('id').single()
+      cronLogId = cronRow?.id ?? null
+    } catch (_) { /* log não é crítico */ }
+
     const { data: syncLog } = await supabaseClient
       .from('djen_sync_history')
       .insert({
@@ -386,6 +395,14 @@ serve(async (req) => {
     console.log(`   ⏱️ Duração: ${totalDuration}s`)
     console.log(`${'='.repeat(60)}\n`)
 
+    if (cronLogId) {
+      await supabaseClient.from('cron_job_logs').update({
+        status: 'success',
+        finished_at: new Date().toISOString(),
+        result: { found: totalFound, saved: totalSaved, analyzed: totalAnalyzed, notified: totalNotified },
+      }).eq('id', cronLogId)
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -409,7 +426,7 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('❌ Erro no endpoint de sincronização:', error)
-    
+
     return new Response(
       JSON.stringify({
         success: false,
