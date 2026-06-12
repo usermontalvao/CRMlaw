@@ -879,6 +879,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.222',
+    date: '11/06/2026',
+    summary: 'Fix TypeScript: tipo do ícone na sidebar aceita strokeWidth e style.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Tipo Icon em SidebarModuleBtn corrigido', description: 'Adicionados strokeWidth e style ao tipo do componente Icon para resolver erro de build TypeScript.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.221',
     date: '11/06/2026',
     summary: 'Redesign completo da sidebar e navbar: dark sidebar permanente, shimmer bar animado, header 3 colunas com search centralizado.',

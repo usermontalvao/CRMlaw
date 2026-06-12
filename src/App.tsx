@@ -748,7 +748,7 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
 const SidebarModuleBtn: React.FC<{
   moduleKey: string;
   label: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string; strokeWidth?: number; style?: React.CSSProperties }>;
   isActive: boolean;
   onClick: () => void;
   expiresAt?: string | null;
