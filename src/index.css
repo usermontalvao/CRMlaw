@@ -30,8 +30,8 @@
   --apple-text-primary: #1d1d1f;
   --apple-text-secondary: #86868b;
   --apple-text-tertiary: #aeaeb2;
-  --apple-accent: #0071e3;
-  --apple-accent-hover: #0077ed;
+  --apple-accent: #f27a23;
+  --apple-accent-hover: #e06b1f;
   --apple-success: #34c759;
   --apple-warning: #ff9f0a;
   --apple-danger: #ff3b30;
@@ -44,6 +44,24 @@
   --apple-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
   --apple-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
   --apple-shadow-xl: 0 20px 40px -4px rgba(0, 0, 0, 0.1), 0 8px 16px -4px rgba(0, 0, 0, 0.04);
+}
+
+/* Sidebar active bar shimmer */
+@keyframes bar-shimmer {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 0% 200%; }
+}
+.sidebar-bar-shimmer {
+  background: linear-gradient(
+    to bottom,
+    #f27a23 0%,
+    #ffb366 40%,
+    #f27a23 60%,
+    #f27a23 100%
+  );
+  background-size: 100% 200%;
+  animation: bar-shimmer 1.8s ease-in-out infinite;
+  box-shadow: 0 0 8px 2px rgba(242,122,35,0.55);
 }
 
 /* Scanner scan-line animation */
@@ -358,8 +376,8 @@
   --apple-text-primary: #f5f5f7;
   --apple-text-secondary: #98989d;
   --apple-text-tertiary: #636366;
-  --apple-accent: #0a84ff;
-  --apple-accent-hover: #409cff;
+  --apple-accent: #fb923c;
+  --apple-accent-hover: #f97316;
   --apple-success: #30d158;
   --apple-warning: #ffd60a;
   --apple-danger: #ff453a;
@@ -480,7 +498,7 @@ body,
 .apple-input:focus {
   outline: none;
   border-color: var(--apple-accent);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
+  box-shadow: 0 0 0 3px rgba(242, 122, 35, 0.15);
 }
 
 .apple-input::placeholder {
@@ -966,8 +984,8 @@ div[class*="fixed"][class*="z-50"] select:focus,
 div[class*="fixed"][class*="z-50"] textarea:focus,
 div[class*="fixed"][class*="z-50"] .input-field:focus {
   outline: none !important;
-  border-color: #0a84ff !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+  border-color: #f27a23 !important;
+  box-shadow: 0 0 0 3px rgba(242, 122, 35, 0.2) !important;
 }
 
 div[class*="fixed"][class*="z-50"] input::placeholder,
@@ -998,7 +1016,7 @@ div[class*="fixed"][class*="z-50"] h3 {
 div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
 div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
 div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="text-slate-400"]) {
-  background: #0a84ff !important;
+  background: #f27a23 !important;
   color: white !important;
   border: none !important;
   border-radius: 12px !important;
@@ -1011,7 +1029,7 @@ div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="text-slate
 div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover,
 div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"]:hover,
 div[class*="fixed"][class*="z-50"] button[type="submit"]:hover {
-  background: #409cff !important;
+  background: #e06b1f !important;
 }
 
 /* Botões secundários em modais - TAMANHO GRANDE */
@@ -1162,8 +1180,8 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 .dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input:focus,
 .dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select:focus,
 .dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea:focus {
-  border-color: #0a84ff !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+  border-color: #fb923c !important;
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.2) !important;
 }
 
 .dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input::placeholder,
@@ -1194,7 +1212,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   color: #71717a !important;
 }
 .client-search-dropdown button span.text-sky-600 {
-  color: #0ea5e9 !important;
+  color: #f27a23 !important;
 }
 
 /* ===== LIGHT MODE - MODAIS ===== */
@@ -1253,8 +1271,8 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 .dark div[class*="fixed"][class*="z-50"] input:focus,
 .dark div[class*="fixed"][class*="z-50"] select:focus,
 .dark div[class*="fixed"][class*="z-50"] textarea:focus {
-  border-color: #0a84ff !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+  border-color: #fb923c !important;
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.2) !important;
 }
 
 /* Seções internas */
@@ -1296,12 +1314,12 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 .dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
 .dark div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
 .dark div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="border"]) {
-  background: #0a84ff !important;
+  background: #fb923c !important;
   color: white !important;
 }
 
 .dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover {
-  background: #409cff !important;
+  background: #f97316 !important;
 }
 
 /* Botões secundários */
@@ -1354,7 +1372,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 /* Botões com bg-slate-900 */
 .dark button[class*="bg-slate-900"],
 .dark [class*="bg-slate-900"]:not(div[class*="fixed"]) {
-  background: #0a84ff !important;
+  background: #fb923c !important;
   color: white !important;
 }
 
@@ -1364,16 +1382,16 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 
 @theme {
-  --color-primary-50: #f0f9ff;
-  --color-primary-100: #e0f2fe;
-  --color-primary-200: #bae6fd;
-  --color-primary-300: #7dd3fc;
-  --color-primary-400: #38bdf8;
-  --color-primary-500: #0ea5e9;
-  --color-primary-600: #0284c7;
-  --color-primary-700: #0369a1;
-  --color-primary-800: #075985;
-  --color-primary-900: #0c4a6e;
+  --color-primary-50: #fff7ed;
+  --color-primary-100: #ffedd5;
+  --color-primary-200: #fed7aa;
+  --color-primary-300: #fdba74;
+  --color-primary-400: #fb923c;
+  --color-primary-500: #f97316;
+  --color-primary-600: #f27a23;
+  --color-primary-700: #e06b1f;
+  --color-primary-800: #c2410c;
+  --color-primary-900: #9a3412;
 }
 
 @keyframes rocket-crash {

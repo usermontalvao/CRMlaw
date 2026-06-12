@@ -879,6 +879,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.221',
+    date: '11/06/2026',
+    summary: 'Redesign completo da sidebar e navbar: dark sidebar permanente, shimmer bar animado, header 3 colunas com search centralizado.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Sidebar sempre escura com identidade própria', description: 'Sidebar agora usa bg #1e2028 permanente em ambos os temas, com largura 256px (normal) e 84px (compacto). Separação visual clara do conteúdo.' },
+        { type: 'improvement' as const, title: 'Barra ativa com shimmer sweep animado', description: 'Indicador de módulo ativo substituído por barra lateral com gradiente animado (laranja → dourado → laranja) em loop contínuo, sem fundo card.' },
+        { type: 'improvement' as const, title: 'Ícone ativo com drop-shadow laranja', description: 'Ícone do módulo ativo recebe filter drop-shadow laranja para destaque sutil sem fundo destacado.' },
+        { type: 'improvement' as const, title: 'Headers de seção com linha divisória', description: 'Labels PRINCIPAL, GESTÃO etc. agora usam padrão "texto + linha" horizontal em vez de texto simples.' },
+        { type: 'improvement' as const, title: 'Header 62px com search centralizado', description: 'Navbar reestruturada em 3 colunas: breadcrumb com ícone à esquerda, search centralizado (max 420px), ações à direita.' },
+        { type: 'improvement' as const, title: 'Logout movido para dropdown de perfil', description: 'Botão de sair saiu do header e foi para o dropdown do avatar, com cabeçalho de usuário (nome + cargo) no topo do menu.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.220',
     date: '11/06/2026',
     summary: 'Refatura visual completa: paleta cream/warm-gray em todos os módulos, cards com fundo #f8f7f5, bordas #e7e5df, fundo app #f5f5f3.',

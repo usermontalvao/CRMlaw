@@ -758,7 +758,7 @@ const SidebarModuleBtn: React.FC<{
   const { theme } = useTheme();
   const [countdown, setCountdown] = useState<string | null>(null);
   const isTemporary = !!expiresAt;
-  const isDarkSidebar = theme === 'dark';
+  const isDarkSidebar = true;
 
   useEffect(() => {
     if (!expiresAt) { setCountdown(null); return; }
@@ -781,14 +781,17 @@ const SidebarModuleBtn: React.FC<{
     return (
       <button
         onClick={onClick}
-        className={`group relative flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-[5px] transition-all duration-150 ${
+        className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] px-2.5 py-[6px] transition-all duration-150 ${
           isActive
-            ? 'bg-[#fef2e8]'
+            ? 'bg-[#f27a23]/[0.13]'
             : isTemporary
-            ? (isDarkSidebar ? 'hover:bg-white/[0.05]' : 'hover:bg-[#f4f4f1]')
-            : (isDarkSidebar ? 'hover:bg-white/[0.05]' : 'hover:bg-[#f4f4f1]')
+            ? 'hover:bg-white/[0.05]'
+            : 'hover:bg-white/[0.05]'
         }`}
       >
+        {isActive && (
+          <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r-[3px] bg-[#f27a23]" />
+        )}
         {/* Ícone */}
         <div className="relative flex-shrink-0">
           <Icon className={`h-[14px] w-[14px] transition-colors duration-150 ${
@@ -801,7 +804,7 @@ const SidebarModuleBtn: React.FC<{
               : 'text-[#8b8b80] group-hover:text-[#3a3a35]'
           }`} />
           {isTemporary && !isActive && (
-            <span className={`absolute -top-px -right-px w-1.5 h-1.5 bg-cyan-500 rounded-full ring-1 ${isDarkSidebar ? 'ring-[#18181a]' : 'ring-white'}`} />
+            <span className="absolute -top-px -right-px w-1.5 h-1.5 bg-cyan-500 rounded-full ring-1 ring-[#1e2028]" />
           )}
         </div>
 
@@ -833,31 +836,32 @@ const SidebarModuleBtn: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`relative flex flex-col items-center rounded-[10px] px-1 py-2 transition-colors ${
+      className={`relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
         isActive
-          ? 'bg-[#fef2e8] text-[#f27a23]'
+          ? 'text-[#f27a23]'
           : isTemporary
-          ? isDarkSidebar
-            ? 'text-cyan-500 hover:bg-white/[0.05]'
-            : 'text-cyan-600 hover:bg-[#f4f4f1]'
-          : isDarkSidebar
-            ? 'text-[#8b8b80] hover:bg-white/[0.05] hover:text-[#e7e2d8]'
-            : 'text-[#8b8b80] hover:bg-[#f4f4f1] hover:text-[#3a3a35]'
+          ? 'text-cyan-400 hover:bg-white/[0.06]'
+          : 'text-[#9a9bb8] hover:bg-white/[0.07] hover:text-[#d0d2e8]'
       }`}
     >
+      {/* Barra com shimmer sweep */}
       {isActive && (
-        <div className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-[#f27a23]" />
+        <div className="sidebar-bar-shimmer absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-[3px]" />
       )}
       {isTemporary && !isActive && (
-        <div className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-cyan-500" />
+        <div className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-cyan-500" />
       )}
       <div className="relative">
-        <Icon className="h-[17px] w-[17px]" />
+        <Icon
+          className="h-[18px] w-[18px]"
+          strokeWidth={1.75}
+          style={isActive ? { filter: 'drop-shadow(0 0 6px rgba(242,122,35,0.9))' } : undefined}
+        />
         {isTemporary && !isActive && (
-          <span className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-1 ${isDarkSidebar ? 'ring-[#18181a]' : 'ring-white'}`} />
+          <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-1 ring-[#1e2028]" />
         )}
       </div>
-      <span className="mt-0.5 text-[9px] leading-tight">{label}</span>
+      <span className="text-[9.5px] font-medium leading-none tracking-wide">{label}</span>
       {isTemporary && countdown && (
         <span className={`text-[8px] font-mono leading-tight ${isActive ? 'text-[#f27a23]/80' : 'text-cyan-600/80'}`}>
           {countdown}
@@ -1845,35 +1849,32 @@ useEffect(() => {
       {/* Spacer invisible que reserva a largura da sidebar no layout */}
       <div
         className={`hidden md:block flex-none transition-all duration-300 ${
-          sidebarMode === 'normal' ? 'w-[240px]' : 'w-[72px]'
+          sidebarMode === 'normal' ? 'w-[256px]' : 'w-[84px]'
         }`}
         aria-hidden="true"
       />
 
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex flex-col ${
-          sidebarMode === 'normal'
-            ? theme === 'dark'
-              ? 'w-[240px] border-r border-white/[0.08] bg-[#18181a] text-white'
-              : 'w-[240px] border-r border-[#e7e5df] bg-[#f7f7f5] text-[#18181a]'
-            : theme === 'dark'
-              ? 'w-[72px] border-r border-white/[0.08] bg-[#18181a] text-white'
-              : 'w-[72px] border-r border-[#e7e5df] bg-[#f7f7f5] text-[#18181a]'
-        } ${
+          sidebarMode === 'normal' ? 'w-[256px]' : 'w-[84px]'
+        } border-r border-white/[0.07] bg-[#1e2028] text-white shadow-[2px_0_16px_rgba(0,0,0,0.18)] ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         } transition-all duration-300`}
       >
         {/* Logo */}
         {sidebarMode === 'normal' ? (
-          <div className={`flex items-center gap-3 px-4 py-4 ${theme === 'dark' ? 'border-b border-white/[0.08]' : 'border-b border-[#e7e5df]'}`}>
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_6px_18px_-10px_rgba(242,122,35,0.55)]">
+          <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_0_20px_rgba(242,122,35,0.35)]">
               J
             </div>
-            <span className={`select-none text-[14px] font-bold tracking-[-0.02em] ${theme === 'dark' ? 'text-white' : 'text-[#0f172a]'}`}>Jurius</span>
+            <div className="min-w-0 flex flex-col gap-0.5">
+              <span className="select-none text-[15px] font-bold tracking-[-0.03em] text-white leading-none">Jurius</span>
+              <span className="text-[10.5px] font-medium text-white/45 tracking-[0.06em] uppercase leading-none">Plataforma Jurídica</span>
+            </div>
           </div>
         ) : (
-          <div className={`flex items-center justify-center py-4 ${theme === 'dark' ? 'border-b border-white/[0.08]' : 'border-b border-[#e7e5df]'}`}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_6px_18px_-10px_rgba(242,122,35,0.55)]">
+          <div className="flex items-center justify-center py-[17px] border-b border-white/[0.06]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#f27a23] text-[14px] font-bold text-white shadow-[0_0_20px_rgba(242,122,35,0.35)]">
               J
             </div>
           </div>
@@ -1881,11 +1882,14 @@ useEffect(() => {
 
         {/* Navigation */}
         <nav className={`flex-1 overflow-y-auto scrollbar-hide flex flex-col ${
-          sidebarMode === 'normal' ? 'px-2.5 py-2 gap-0' : 'px-2 py-2.5 gap-1'
+          sidebarMode === 'normal' ? 'pl-0 pr-2.5 py-2 gap-0' : 'px-2.5 py-3 gap-0.5'
         }`}>
           {/* ── PRINCIPAL ──────────────────────────────────────── */}
           {sidebarMode === 'normal' && (
-            <p className={`px-2.5 pt-1 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Principal</p>
+            <div className="flex items-center gap-2 pl-3 pr-0 pt-2 pb-1 select-none">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Principal</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           <SidebarModuleBtn moduleKey="dashboard" label="Dashboard" Icon={Layers}
             isActive={activeModule === 'dashboard'}
@@ -1909,7 +1913,10 @@ useEffect(() => {
           {/* ── ATENDIMENTO ── Leads ────────────────────────────── */}
           {sidebarMode === 'normal' && !permissionsLoading &&
             canAccessModule('leads') && isModuleEnabled('leads') && (
-            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Atendimento</p>
+            <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Atendimento</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           {!permissionsLoading && canAccessModule('leads') && isModuleEnabled('leads') && (
             <SidebarModuleBtn moduleKey="leads" label="Leads" Icon={Target}
@@ -1925,7 +1932,10 @@ useEffect(() => {
             canAccessModule('peticoes') ||
             (canAccessModule('financeiro') && isModuleEnabled('financeiro'))
           ) && (
-            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Gestão</p>
+            <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Gestão</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           {!permissionsLoading && canAccessModule('clientes') && (
             <SidebarModuleBtn moduleKey="clientes" label="Clientes" Icon={Users}
@@ -1961,7 +1971,10 @@ useEffect(() => {
           {sidebarMode === 'normal' && !permissionsLoading && (
             canAccessModule('prazos') || canAccessModule('intimacoes')
           ) && (
-            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Operacional</p>
+            <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Operacional</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           {!permissionsLoading && canAccessModule('prazos') && (
             <SidebarModuleBtn moduleKey="prazos" label="Prazos" Icon={AlarmClock}
@@ -1981,7 +1994,10 @@ useEffect(() => {
             (canAccessModule('documentos') && isModuleEnabled('documentos')) ||
             canAccessModule('assinaturas') || canAccessModule('cloud')
           ) && (
-            <p className={`px-2.5 pt-2.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] select-none ${theme === 'dark' ? 'text-[#f3efe6]' : 'text-[#b0b0a8]'}`}>Docs</p>
+            <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Docs</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           {!permissionsLoading && canAccessModule('documentos') && isModuleEnabled('documentos') && (
             <SidebarModuleBtn moduleKey="documentos" label="Documentos" Icon={Library}
@@ -2003,7 +2019,7 @@ useEffect(() => {
           )}
 
           {/* Separador + Perfil */}
-          <div className={`h-px ${sidebarMode === 'normal' ? (theme === 'dark' ? 'mt-1.5 mb-0.5 bg-[#f8f7f5]/[0.08]' : 'mt-1.5 mb-0.5 bg-[#ebebeb]') : (theme === 'dark' ? 'my-2 mx-1.5 bg-[#f8f7f5]/[0.08]' : 'my-2 mx-1.5 bg-[#ebebeb]')}`} />
+          <div className={`h-px bg-white/[0.06] ${sidebarMode === 'normal' ? 'mt-1.5 mb-0.5' : 'my-2 mx-1.5'}`} />
           <SidebarModuleBtn moduleKey="perfil" label="Perfil" Icon={UserCog}
             isActive={activeModule === 'perfil'}
             onClick={() => { setIsMobileNavOpen(false); navigateTo('perfil'); }}
@@ -2011,22 +2027,16 @@ useEffect(() => {
         </nav>
 
           {/* Collapse / expand toggle */}
-        <div className={`${
-          sidebarMode === 'normal'
-            ? (theme === 'dark' ? 'border-t border-white/[0.08] px-2 py-1.5' : 'border-t border-[#e7e5df] px-2 py-1.5')
-            : (theme === 'dark' ? 'flex justify-center border-t border-white/[0.08] py-2.5' : 'flex justify-center border-t border-[#e7e5df] py-2.5')
+        <div className={`border-t border-white/[0.06] ${
+          sidebarMode === 'normal' ? 'px-2 py-1.5' : 'flex justify-center py-2.5'
         }`}>
           <button
             onClick={() => setSidebarMode(sidebarMode === 'normal' ? 'compact' : 'normal')}
             title={sidebarMode === 'normal' ? 'Recolher menu' : 'Expandir menu'}
             className={`flex items-center gap-2.5 rounded-md transition-colors duration-100 ${
               sidebarMode === 'normal'
-                ? theme === 'dark'
-                  ? 'w-full px-2.5 py-[6px] text-[#8b8b80] hover:bg-white/[0.05] hover:text-white'
-                  : 'w-full px-2.5 py-[6px] text-[#8b8b80] hover:text-[#3a3a35] hover:bg-[#f4f4f1]'
-                : theme === 'dark'
-                  ? 'h-8 w-8 justify-center text-[#8b8b80] hover:bg-white/[0.05] hover:text-white'
-                  : 'h-8 w-8 justify-center text-[#8b8b80] hover:bg-[#f4f4f1] hover:text-[#3a3a35]'
+                ? 'w-full px-2.5 py-[6px] text-white/30 hover:bg-white/[0.05] hover:text-white/60'
+                : 'h-8 w-8 justify-center text-white/30 hover:bg-white/[0.05] hover:text-white/60'
             }`}
           >
             <ArrowLeft className={`h-[14px] w-[14px] flex-shrink-0 transition-transform duration-300 ${sidebarMode === 'compact' ? 'rotate-180' : ''}`} />
@@ -2087,10 +2097,11 @@ useEffect(() => {
             ? `hidden md:block border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
             : `border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
         }`}>
-          <div className="px-4 lg:px-[18px] py-0">
-            <div className="flex h-[52px] items-center gap-3">
-              {/* LEFT: mobile menu + módulo como breadcrumb */}
-              <div className="min-w-0 flex flex-1 items-center gap-3">
+          <div className="px-4 lg:px-6">
+            <div className="flex h-[62px] items-center gap-4">
+
+              {/* LEFT: mobile menu + breadcrumb */}
+              <div className="flex min-w-0 flex-none items-center gap-3 w-[190px]">
                 <button
                   className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
                   onClick={() => setIsMobileNavOpen((prev) => !prev)}
@@ -2098,45 +2109,59 @@ useEffect(() => {
                 >
                   {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
-                <span className="hidden md:block text-[12.5px] text-slate-400 select-none truncate">
-                  {activeModule === 'cloud' && 'Cloud'}
-                  {activeModule === 'dashboard' && 'Dashboard'}
-                  {activeModule === 'feed' && 'Feed'}
-                  {activeModule === 'leads' && 'Leads'}
-                  {activeModule === 'clientes' && 'Clientes'}
-                  {activeModule === 'processos' && 'Processos'}
-                  {activeModule === 'requerimentos' && 'Requerimentos'}
-                  {activeModule === 'prazos' && 'Prazos'}
-                  {activeModule === 'intimacoes' && 'Intimações'}
-                  {activeModule === 'financeiro' && 'Financeiro'}
-                  {activeModule === 'agenda' && 'Agenda'}
-                  {activeModule === 'chat' && 'Chat'}
-                  {activeModule === 'tarefas' && 'Tarefas'}
-                  {activeModule === 'documentos' && 'Documentos'}
-                  {activeModule === 'assinaturas' && 'Assinaturas'}
-                  {activeModule === 'configuracoes' && 'Configurações'}
-                  {activeModule === 'perfil' && 'Perfil'}
-                </span>
+                {(() => {
+                  const MODULE_META: Record<string, { label: string; Icon: React.ComponentType<{ className?: string }> }> = {
+                    cloud: { label: 'Cloud', Icon: Cloud },
+                    dashboard: { label: 'Dashboard', Icon: Layers },
+                    feed: { label: 'Feed', Icon: Newspaper },
+                    leads: { label: 'Leads', Icon: Target },
+                    clientes: { label: 'Clientes', Icon: Users },
+                    processos: { label: 'Processos', Icon: Scale },
+                    requerimentos: { label: 'Requerimentos', Icon: Briefcase },
+                    peticoes: { label: 'Petições', Icon: FileText },
+                    financeiro: { label: 'Financeiro', Icon: PiggyBank },
+                    prazos: { label: 'Prazos', Icon: AlarmClock },
+                    intimacoes: { label: 'Intimações', Icon: Bell },
+                    documentos: { label: 'Documentos', Icon: Library },
+                    assinaturas: { label: 'Assinaturas', Icon: PenTool },
+                    perfil: { label: 'Perfil', Icon: UserCog },
+                    configuracoes: { label: 'Configurações', Icon: Settings },
+                    agenda: { label: 'Agenda', Icon: Calendar },
+                    chat: { label: 'Chat', Icon: MessageCircle },
+                    tarefas: { label: 'Tarefas', Icon: CheckSquare },
+                  };
+                  const meta = MODULE_META[activeModule];
+                  if (!meta) return null;
+                  const { label, Icon: ModIcon } = meta;
+                  return (
+                    <div className="hidden md:flex items-center gap-2 select-none min-w-0">
+                      <ModIcon className="h-[15px] w-[15px] flex-shrink-0 text-slate-400" />
+                      <span className="truncate text-[13.5px] font-semibold text-slate-700">{label}</span>
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* RIGHT: busca compacta + ações */}
-              <div className="flex items-center gap-2">
-                {/* Pílula de busca — igual para todos os módulos */}
+              {/* CENTER: search */}
+              <div className="hidden md:flex flex-1 justify-center">
                 <button
                   type="button"
                   onClick={() => setGlobalSearchOpen(true)}
-                  className="hidden md:inline-flex items-center gap-2 rounded-[8px] bg-[#f4f4f1] px-3 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-[#eeede9] hover:text-slate-700"
+                  className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-[#e7e5df] bg-[#f7f6f3] px-4 py-2.5 text-[13px] text-slate-400 shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition hover:border-[#d4d2cc] hover:bg-[#f2f1ee] hover:text-slate-600"
                   title="Pesquisa global (⌘K)"
                 >
-                  <Search className="h-3.5 w-3.5" />
-                  Pesquisa global
-                  <span className="rounded bg-[#e8e8e3] px-1.5 py-0.5 text-[10px] text-slate-400">⌘K</span>
+                  <Search className="h-4 w-4 flex-shrink-0 text-slate-400" />
+                  <span className="flex-1 text-left">Pesquisa global...</span>
+                  <span className="rounded-md border border-[#e0ddd8] bg-white px-1.5 py-0.5 text-[11px] text-slate-400 shadow-sm">⌘K</span>
                 </button>
+              </div>
+
+              {/* RIGHT: ações */}
+              <div className="flex flex-none items-center gap-1">
                 {/* Busca mobile */}
                 <button
                   onClick={() => setGlobalSearchOpen(true)}
-                  className="flex md:hidden items-center justify-center p-1.5 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                  title="Busca global (⌘K)"
+                  className="flex md:hidden items-center justify-center h-9 w-9 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                 >
                   <Search className="w-4 h-4" />
                 </button>
@@ -2144,36 +2169,35 @@ useEffect(() => {
                 {activeModule !== 'cloud' && isModuleEnabled('tarefas') && canAccessModule('tarefas') && (
                 <button
                   onClick={() => navigateTo('tarefas')}
-                  className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
                     activeModule === 'tarefas'
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-gray-100'
+                      ? 'text-[#f27a23] bg-[#fff3e8]'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                   }`}
                   title="Tarefas"
                 >
-                  <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <CheckSquare className="w-[18px] h-[18px]" />
                   {safePendingTasksCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-emerald-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white flex items-center justify-center leading-none">
                       {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
                     </span>
                   )}
                 </button>
                 )}
 
-                {/* Tracker de Solicitações de Documentos — discreto, ao lado de Tarefas */}
                 {activeModule !== 'cloud' && (
                 <button
                   onClick={() => setDocRequestsOpen(o => !o)}
-                  className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
                     docRequestsOpen
-                      ? 'text-orange-600 bg-orange-50'
-                      : 'text-slate-500 hover:text-orange-600 hover:bg-orange-50/60'
+                      ? 'text-[#f27a23] bg-[#fff3e8]'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                   }`}
                   title="Solicitações de documentos"
                 >
-                  <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <FolderOpen className="w-[18px] h-[18px]" />
                   {docRequestsBadge > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-orange-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white flex items-center justify-center leading-none">
                       {docRequestsBadge > 99 ? '99+' : docRequestsBadge}
                     </span>
                   )}
@@ -2185,21 +2209,21 @@ useEffect(() => {
                     safeNavigateTo(moduleKey as any, params);
                   }}
                 />
-                
-                <div className={`flex items-center gap-2 sm:gap-3 ${activeModule === 'cloud' ? '' : 'pl-2 sm:pl-3 border-l border-[#e7e5df]'}`}>
+
+                <div className={`flex items-center gap-2 ${activeModule === 'cloud' ? '' : 'ml-1 pl-3 border-l border-[#e7e5df]'}`}>
                   <div className="hidden lg:block text-right">
-                    <p className="text-sm font-semibold text-slate-900 truncate max-w-[150px]">{profile.name}</p>
-                    <p className="text-xs text-slate-600">{profile.role}</p>
+                    <p className="text-[13px] font-semibold text-slate-800 truncate max-w-[140px] leading-tight">{profile.name}</p>
+                    <p className="text-[11px] text-slate-500 leading-tight">{profile.role}</p>
                   </div>
-                  
+
                   {/* Theme Toggle */}
                   {activeModule !== 'cloud' && (
-                    <button 
+                    <button
                       onClick={toggleTheme}
-                      className="p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                       title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
                     >
-                      {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+                      {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
                     </button>
                   )}
 
@@ -2219,47 +2243,61 @@ useEffect(() => {
                       </div>
                     </button>
                     <div
-                      className={`absolute right-0 mt-2 w-44 bg-white border border-[#e7e5df] rounded-lg shadow-lg py-2 transition-all z-50 ${
+                      className={`absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-[0_8px_32px_rgba(15,23,42,0.12)] transition-all z-50 ${
                         profileMenuOpen
                           ? 'opacity-100 translate-y-0 pointer-events-auto'
                           : 'opacity-0 translate-y-2 pointer-events-none'
                       }`}
                     >
-                      {canAccessConfig && (
+                      {/* User info header */}
+                      <div className="flex items-center gap-3 border-b border-[#f0ede8] px-4 py-3">
+                        <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-amber-200">
+                          <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="h-full w-full object-cover" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold text-slate-900">{profile.name}</p>
+                          <p className="truncate text-[11px] text-slate-500">{profile.role}</p>
+                        </div>
+                      </div>
+                      {/* Menu items */}
+                      <div className="py-1.5">
+                        {canAccessConfig && (
+                          <button
+                            onClick={() => {
+                              setProfileMenuOpen(false);
+                              setSettingsInitialSection(undefined);
+                              setShowSettings(true);
+                            }}
+                            className="flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] text-slate-700 transition-colors hover:bg-[#faf9f7]"
+                          >
+                            <Settings className="h-3.5 w-3.5 text-slate-400" />
+                            Configurações
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setProfileMenuOpen(false);
-                            setSettingsInitialSection(undefined);
-                            setShowSettings(true);
+                            openProfileModal();
                           }}
-                          className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-amber-50"
+                          className="flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] text-slate-700 transition-colors hover:bg-[#faf9f7]"
                         >
-                          <Settings className="w-4 h-4 text-amber-600" />
-                          Configurações
+                          <UserCog className="h-3.5 w-3.5 text-slate-400" />
+                          Meu Perfil
                         </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setProfileMenuOpen(false);
-                          openProfileModal();
-                        }}
-                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-amber-50"
-                      >
-                        <UserCog className="w-4 h-4 text-amber-600" />
-                        Meu Perfil
-                      </button>
+                      </div>
+                      {/* Logout */}
+                      <div className="border-t border-[#f0ede8] py-1.5">
+                        <button
+                          onClick={handleLogout}
+                          disabled={loggingOut}
+                          className="flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Sair da conta
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  {activeModule !== 'cloud' && (
-                    <button
-                      onClick={handleLogout}
-                      disabled={loggingOut}
-                      className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 sm:p-2"
-                      title="Sair"
-                    >
-                      <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
