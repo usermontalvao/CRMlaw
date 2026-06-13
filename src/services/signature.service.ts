@@ -115,18 +115,22 @@ class SignatureService {
 
     if (error) throw new Error(error.message);
 
-    const byRequest = new Map<string, { total: number; signed: number }>();
+    const byRequest = new Map<string, { total: number; signed: number; refused: number }>();
     for (const s of signers ?? []) {
       const key = (s as any).signature_request_id as string;
       const status = (s as any).status as string;
-      const curr = byRequest.get(key) ?? { total: 0, signed: 0 };
+      const curr = byRequest.get(key) ?? { total: 0, signed: 0, refused: 0 };
       curr.total += 1;
       if (status === 'signed') curr.signed += 1;
+      if (status === 'refused') curr.refused += 1;
       byRequest.set(key, curr);
     }
 
     return requests.map((r) => {
       const agg = byRequest.get(r.id);
+      if (agg && agg.refused > 0) {
+        return { ...r, status: 'refused' as const };
+      }
       if (agg && agg.total > 0 && agg.signed === agg.total) {
         return { ...r, status: 'signed', signed_at: r.signed_at ?? new Date().toISOString() };
       }
@@ -161,10 +165,11 @@ class SignatureService {
 
     return requests.map((r) => {
       const signers = signersByRequest.get(r.id) ?? [];
+      const anyRefused = signers.some((s) => s.status === 'refused');
       const allSigned = signers.length > 0 && signers.every((s) => s.status === 'signed');
       return {
         ...r,
-        status: allSigned ? 'signed' : r.status,
+        status: anyRefused ? 'refused' : (allSigned ? 'signed' : r.status),
         signed_at: allSigned ? (r.signed_at ?? new Date().toISOString()) : r.signed_at,
         signers,
       } as SignatureRequestWithSigners;
@@ -369,16 +374,15 @@ class SignatureService {
   }
 
   /**
-   * Soft delete: move o documento para a lixeira (não some, pode ser restaurado
-   * ou excluído definitivamente depois). Não apaga nada do storage.
+   * @deprecated Use {@link archiveRequest}. "Arquivar" e "remover do painel" são o
+   * mesmo conceito (lixeira restaurável). Este método antes gravava apenas
+   * `deleted_at`, que NÃO era lido pela lixeira ({@link listArchivedRequests} usa
+   * `archived_at`) — gerando um estado órfão e invisível na UI. Agora delega para
+   * `archiveRequest` para manter um único ciclo de vida consistente.
    */
   async deleteRequest(id: string, _deleteFilesFromServer: boolean = false): Promise<void> {
     void _deleteFilesFromServer; // compat — soft delete não apaga arquivos
-    const { error } = await supabase
-      .from(this.requestsTable)
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) throw new Error(error.message);
+    await this.archiveRequest(id);
   }
 
   /** Restaura um documento removido (lixeira) de volta ao painel. */
@@ -581,6 +585,8 @@ class SignatureService {
     creator?: { name: string; email: string };
     fields: SignatureField[];
     auth_config?: { google: boolean; email: boolean; phone: boolean };
+    /** Em ordem sequencial, nome do signatário anterior ainda pendente (null = é a vez deste signatário). */
+    waiting_for?: string | null;
   } | null> {
     const { data, error } = await supabase.rpc('get_public_signing_bundle', {
       p_token: token,
@@ -606,6 +612,7 @@ class SignatureService {
       creator,
       fields: (data.fields ?? []) as SignatureField[],
       auth_config: (data.auth_config ?? undefined) as any,
+      waiting_for: (data.waiting_for ?? null) as string | null,
     };
   }
 
@@ -775,13 +782,59 @@ class SignatureService {
 
     if (error) {
       console.error('[signDocumentPublic] Edge function error:', error);
-      throw new Error(error.message || 'Erro ao assinar documento');
+      // Em respostas não-2xx (ex.: 409 ordem sequencial, 403 CPF), o corpo com a
+      // mensagem amigável fica em error.context — extrair para exibir ao signatário.
+      const serverMessage = await this.extractEdgeErrorMessage(error);
+      throw new Error(serverMessage || error.message || 'Erro ao assinar documento');
     }
 
     if (!data?.success) {
       throw new Error(data?.error || 'Erro ao assinar documento');
     }
 
+    return data.signer as Signer;
+  }
+
+  /** Extrai a mensagem de erro do corpo JSON de uma resposta não-2xx de Edge Function. */
+  private async extractEdgeErrorMessage(error: any): Promise<string | null> {
+    try {
+      const res = error?.context;
+      if (res && typeof res.json === 'function') {
+        const body = await res.clone().json();
+        if (body?.error) return String(body.error);
+      }
+    } catch {
+      // ignore — cai no fallback do chamador
+    }
+    return null;
+  }
+
+  /**
+   * Recusa o documento via Edge Function (uso público sem sessão autenticada).
+   * Exige que a solicitação tenha allow_refusal = true. Registra motivo, audit e notifica o criador.
+   */
+  async refuseDocumentPublic(
+    publicToken: string,
+    reason: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<Signer> {
+    const { data, error } = await supabase.functions.invoke('public-refuse-document', {
+      body: {
+        token: publicToken,
+        reason,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      },
+    });
+
+    if (error) {
+      console.error('[refuseDocumentPublic] Edge function error:', error);
+      throw new Error(error.message || 'Erro ao recusar documento');
+    }
+    if (!data?.success) {
+      throw new Error(data?.error || 'Erro ao recusar documento');
+    }
     return data.signer as Signer;
   }
 
@@ -800,6 +853,41 @@ class SignatureService {
     const signer = await this.getSigner(signerId);
     if (!signer) throw new Error('Signatário não encontrado');
     if (signer.status !== 'pending') throw new Error('Este documento já foi assinado ou cancelado');
+
+    // Regras de negócio da solicitação — as MESMAS do fluxo público (edge function).
+    // Sem isso, o caminho interno do CRM contornaria require_cpf e signing_order,
+    // produzindo uma assinatura que o fluxo público corretamente rejeitaria.
+    const { data: reqRules } = await supabase
+      .from(this.requestsTable)
+      .select('require_cpf, signing_order')
+      .eq('id', signer.signature_request_id)
+      .maybeSingle();
+
+    if (reqRules?.signing_order === 'sequential') {
+      const myOrder = typeof signer.order === 'number' ? signer.order : 1;
+      const { data: priorSigners } = await supabase
+        .from(this.signersTable)
+        .select('name, order, status')
+        .eq('signature_request_id', signer.signature_request_id)
+        .lt('order', myOrder)
+        .neq('status', 'signed');
+      if (priorSigners && priorSigners.length > 0) {
+        const next = [...priorSigners].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))[0];
+        throw new Error(`Ordem sequencial: aguarde a assinatura de ${(next?.name || '').trim() || 'o signatário anterior'} antes deste signatário.`);
+      }
+    }
+
+    if (reqRules?.require_cpf) {
+      const onlyDigits = (v: unknown) => String(v ?? '').replace(/\D/g, '');
+      const submittedCpf = onlyDigits(payload.signer_cpf);
+      const expectedCpf = onlyDigits(signer.cpf);
+      if (submittedCpf.length !== 11) {
+        throw new Error('Este documento exige o CPF do signatário para assinar.');
+      }
+      if (expectedCpf.length === 11 && submittedCpf !== expectedCpf) {
+        throw new Error('O CPF informado não confere com o CPF cadastrado do signatário.');
+      }
+    }
 
     const updates: Partial<Signer> = {
       status: 'signed',

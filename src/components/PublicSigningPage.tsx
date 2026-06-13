@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
@@ -673,6 +673,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [step, setStep] = useState<SigningStep>('loading');
   const [signer, setSigner] = useState<Signer | null>(null);
   const [request, setRequest] = useState<SignatureRequest | null>(null);
+  // Ordem sequencial: nome do signatário anterior ainda pendente (null = é a vez deste).
+  const [waitingFor, setWaitingFor] = useState<string | null>(null);
   const [signatureFields, setSignatureFields] = useState<SignatureField[]>([]);
   const [signerData, setSignerData] = useState<SignerData>({ name: '', cpf: '', phone: '' });
   const [signatureData, setSignatureData] = useState<string | null>(null);
@@ -711,6 +713,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [auditLogError, setAuditLogError] = useState<string | null>(null);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState<ModalStep>('google_auth');
+  const [isRefuseModalOpen, setIsRefuseModalOpen] = useState(false);
+  const [refuseReason, setRefuseReason] = useState('');
+  const [refusing, setRefusing] = useState(false);
+  const [refuseError, setRefuseError] = useState<string | null>(null);
   const [creator, setCreator] = useState<{ name: string; email: string } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
@@ -1378,6 +1384,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       setSigner(data.signer);
       setRequest(data.request);
+      setWaitingFor(data.waiting_for ?? null);
       setSignatureFields(data.fields ?? []);
       if (data.auth_config) {
         setAuthConfig({
@@ -1970,6 +1977,37 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   };
 
+  // ========== RECUSA ==========
+  const handleRefuse = async () => {
+    if (!signer) return;
+    const reason = refuseReason.trim();
+    if (reason.length < 3) {
+      setRefuseError('Por favor, descreva o motivo da recusa.');
+      return;
+    }
+    try {
+      setRefusing(true);
+      setRefuseError(null);
+      const userAgent = navigator.userAgent;
+      let ipAddress: string | undefined;
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        ipAddress = ipData.ip;
+      } catch { /* não bloquear por IP */ }
+
+      const updated = await signatureService.refuseDocumentPublic(token, reason, ipAddress, userAgent);
+      setSigner(updated);
+      setIsRefuseModalOpen(false);
+      setStep('success');
+    } catch (err: any) {
+      console.error(err);
+      setRefuseError(err.message || 'Erro ao recusar o documento.');
+    } finally {
+      setRefusing(false);
+    }
+  };
+
   // ========== HELPERS ==========
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR', {
@@ -1981,7 +2019,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     });
   };
 
-  const canProceedFromData = signerData.name.trim().length >= 3 && signerData.cpf.replace(/\D/g, '').length === 11;
+  const requireCpfMatch = !!(request as any)?.require_cpf;
+  const expectedCpfDigits = (signer?.cpf || '').replace(/\D/g, '');
+  const enteredCpfDigits = signerData.cpf.replace(/\D/g, '');
+  const cpfMismatch = requireCpfMatch && expectedCpfDigits.length === 11 && enteredCpfDigits.length === 11 && enteredCpfDigits !== expectedCpfDigits;
+  const canProceedFromData = signerData.name.trim().length >= 3 && enteredCpfDigits.length === 11 && !cpfMismatch;
 
   const closeSignModal = () => {
     setIsSignModalOpen(false);
@@ -2132,13 +2174,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-5">
+        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
         <div className="w-full max-w-lg relative">
-          <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-orange-400/10 blur-3xl" />
-          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
 
-          <div className="relative bg-[#f8f7f5]/90 backdrop-blur rounded-3xl border border-orange-100 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
-            <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-amber-500" />
+          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
+            <div className="h-1 w-full bg-orange-500" />
 
             <div className="p-6 sm:p-8">
               <div className="flex items-start gap-4">
@@ -2481,7 +2521,65 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     );
   }
 
+  // Ordem sequencial: ainda não é a vez deste signatário (há signatário anterior pendente).
+  // Bloqueia a UI de assinatura e explica o motivo. O servidor (edge function) também
+  // recusa qualquer tentativa fora de ordem como backstop.
+  if (step === 'success' && signer?.status === 'pending' && waitingFor) {
+    return (
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-100 flex items-center justify-center">
+              <Clock className="w-8 h-8 text-slate-600" />
+            </div>
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Ainda não é a sua vez</h1>
+            <p className="text-sm text-slate-600 mb-2">
+              Este documento exige assinatura <span className="font-semibold">em ordem</span>.
+            </p>
+            <p className="text-sm text-slate-600">
+              Aguardando a assinatura de <span className="font-semibold">{waitingFor}</span>. Você
+              receberá um novo aviso quando for a sua vez de assinar
+              {request?.document_name ? <> <span className="font-semibold">{request.document_name}</span></> : null}.
+            </p>
+            <button
+              onClick={loadSignerData}
+              className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition"
+            >
+              Verificar novamente
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // Success (após assinar)
+  if (step === 'success' && signer?.status === 'refused') {
+    return (
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-rose-100 p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-rose-100 flex items-center justify-center">
+              <X className="w-8 h-8 text-rose-600" />
+            </div>
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Assinatura recusada</h1>
+            <p className="text-sm text-slate-600 mb-4">
+              Você recusou a assinatura de <span className="font-semibold">{request?.document_name}</span>. O responsável pelo documento foi notificado.
+            </p>
+            {signer?.refusal_reason && (
+              <div className="text-left bg-rose-50 border border-rose-100 rounded-xl p-4">
+                <div className="text-xs font-semibold text-rose-700 mb-1">Motivo informado</div>
+                <div className="text-sm text-slate-700 whitespace-pre-wrap">{signer.refusal_reason}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (step === 'success' && signer?.status === 'signed') {
     // Mostrar relatório de assinatura
     if (showReport && request) {
@@ -2742,24 +2840,24 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       {loadingPortal}
       <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
       {/* Header compacto */}
-      <header className="bg-gradient-to-r from-orange-700 via-orange-800 to-orange-900 px-3 py-2 flex items-center justify-between border-b border-orange-900/40 safe-area-top">
+      <header className="bg-gradient-to-r from-[#4a1f14] via-[#3f190f] to-[#2f120b] px-3 py-2 flex items-center justify-between border-b border-black/30 safe-area-top">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-[#f8f7f5]/15 rounded-lg flex items-center justify-center ring-1 ring-white/20">
-            <Scale className="w-4 h-4 text-white" />
+          <div className="w-7 h-7 bg-white/6 rounded-lg flex items-center justify-center ring-1 ring-white/10">
+            <PenTool className="w-3.5 h-3.5 text-white/90" />
           </div>
           <div className="leading-tight">
             <div className="text-white font-semibold text-sm">Jurius</div>
-            <div className="text-[11px] text-orange-100/90">Assinatura</div>
+            <div className="text-[11px] text-white/68">Assinatura</div>
           </div>
         </div>
         <div className="flex items-center gap-2 min-w-0">
-          <div className="text-xs text-orange-100/80 truncate max-w-[160px]">
+          <div className="text-xs text-white/62 truncate max-w-[160px]">
             {request?.document_name}
           </div>
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/8 text-white/88 text-xs font-medium transition border border-white/6"
             title="Histórico"
           >
             <Clock className="w-3.5 h-3.5" />
@@ -2777,7 +2875,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               {docxLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80 z-10">
                   <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+                    <Loader2 className="w-8 h-8 animate-spin text-slate-700" />
                     <p className="text-sm text-slate-600">Carregando documento...</p>
                   </div>
                 </div>
@@ -2829,29 +2927,84 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         (() => {
           const isWaiting = !canOpenSignModal || queuedOpenSignModal;
           const isButtonDisabled = loading || isSignModalOpen;
-          const buttonClass = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(234,88,12,0.4)] transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait' : 'bg-orange-600 hover:bg-orange-700 active:scale-95'}`;
+          const buttonClass = `fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-7 py-3.5 text-white font-bold text-sm rounded-full transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
 
           return (
-        <button
-          onClick={openSignModal}
-          disabled={isButtonDisabled}
-          className={buttonClass}
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-        >
-          {(!canOpenSignModal || queuedOpenSignModal) ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              CARREGANDO…
+              <div
+                aria-hidden
+                className="fixed inset-x-0 bottom-0 z-40 h-[5.25rem] bg-gradient-to-t from-slate-950/44 via-slate-950/26 to-transparent backdrop-blur-[1px] pointer-events-none"
+              />
+              <div
+                aria-hidden
+                className="fixed inset-x-0 bottom-0 z-40 h-px bg-white/10 pointer-events-none"
+              />
+              <button
+                onClick={openSignModal}
+                disabled={isButtonDisabled}
+                className={buttonClass}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                {(!canOpenSignModal || queuedOpenSignModal) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      CARREGANDO…
+                    </>
+                ) : (
+                    <>
+                      <PenTool className="w-4 h-4" />
+                      ASSINAR DOCUMENTO
+                    </>
+                )}
+              </button>
             </>
-          ) : (
-            <>
-              <PenTool className="w-4 h-4" />
-              ASSINAR DOCUMENTO
-            </>
-          )}
-        </button>
           );
         })()
+      )}
+
+      {/* Botão Recusar - secundário (acima do botão Assinar) */}
+      {signer?.status === 'pending' && (request as any)?.allow_refusal && !isSignModalOpen && (
+        <button
+          onClick={() => { setRefuseReason(''); setRefuseError(null); setIsRefuseModalOpen(true); }}
+          disabled={loading}
+          className="fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-2.5 text-rose-700 bg-white/90 backdrop-blur border border-rose-200 font-semibold text-xs rounded-full shadow-md transition-all duration-200 hover:bg-rose-50 active:scale-95 whitespace-nowrap disabled:opacity-50"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+        >
+          <X className="w-4 h-4" />
+          RECUSAR ASSINATURA
+        </button>
+      )}
+
+      {/* Modal de recusa */}
+      {isRefuseModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center"><X className="w-5 h-5 text-rose-600" /></div>
+                <div className="font-semibold text-slate-900">Recusar assinatura</div>
+              </div>
+              <button onClick={() => !refusing && setIsRefuseModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-slate-600">Descreva o motivo da recusa. O responsável pelo documento será notificado e esta ação ficará registrada.</p>
+              <textarea
+                value={refuseReason}
+                onChange={(e) => setRefuseReason(e.target.value)}
+                rows={4}
+                placeholder="Ex.: Os dados do documento estão incorretos."
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 resize-none"
+              />
+              {refuseError && <p className="text-xs text-rose-600">{refuseError}</p>}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 flex gap-2">
+              <button onClick={() => !refusing && setIsRefuseModalOpen(false)} disabled={refusing} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
+              <button onClick={handleRefuse} disabled={refusing || refuseReason.trim().length < 3} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {refusing ? <><Loader2 className="w-4 h-4 animate-spin" />Recusando…</> : 'Confirmar recusa'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal - Full screen no mobile */}
@@ -2933,7 +3086,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <div className="w-full">
                             <div className="flex justify-end mb-1">
                               <div
-                                className="pointer-events-none rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
+                                className="pointer-events-none rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200"
                               >
                                 Recomendado
                               </div>
@@ -3064,7 +3217,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         type="button"
                         onClick={handleVerifyPhoneOtp}
                         disabled={phoneOtpLoading || phoneOtp.length < 4}
-                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition"
+                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition"
                       >
                         {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
                       </button>
@@ -3073,7 +3226,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       type="button"
                       onClick={() => setModalStep('google_auth')}
-                      className="w-full py-3 bg-[#f8f7f5] border border-orange-200 rounded-xl font-semibold text-orange-700 hover:bg-orange-50 transition"
+                      className="w-full py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
                     >
                       Voltar
                     </button>
@@ -3178,7 +3331,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         type="button"
                         onClick={handleVerifyEmailOtp}
                         disabled={emailOtpLoading || emailOtp.replace(/\D/g, '').length < 4}
-                        className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                        className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
                       >
                         {emailOtpLoading ? (
                           <>
@@ -3235,15 +3388,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.cpf}
                         onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
                         placeholder="000.000.000-00"
-                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        className={`w-full px-4 py-3 border rounded-xl text-base focus:outline-none focus:ring-2 ${cpfMismatch ? 'border-red-400 focus:ring-red-500/20 focus:border-red-500' : 'border-[#e7e5df] focus:ring-orange-500/20 focus:border-orange-500'}`}
                       />
+                      {cpfMismatch && (
+                        <p className="mt-1.5 text-xs text-red-600">O CPF informado não confere com o CPF do cliente cadastrado para esta assinatura.</p>
+                      )}
                     </div>
                   </div>
 
                   <button
                     onClick={() => setModalStep('signature')}
                     disabled={!canProceedFromData}
-                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 disabled:opacity-50 transition-colors"
+                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 transition-colors"
                   >
                     Continuar
                   </button>
@@ -3272,8 +3428,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           onTouchEnd={stopDrawing}
                         />
                         {!hasSignature && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span className="text-orange-500/20 text-6xl transform -rotate-12">✍️</span>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+                            <PenTool className="w-8 h-8 text-slate-300" />
+                            <span className="text-xs font-medium text-slate-400">Assine no campo acima</span>
                           </div>
                         )}
                         <div className="absolute bottom-2 right-3 text-xs text-gray-400 pointer-events-none select-none">
@@ -3296,7 +3453,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           setModalStep('location');
                         }}
                         disabled={!hasSignature}
-                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
+                        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
                       >
                         Continuar
                       </button>
@@ -3349,7 +3506,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       onClick={requestLocation}
                       disabled={locationLoading || !!locationData}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:transform-none"
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:transform-none"
                     >
                       {locationLoading ? (
                         <>
@@ -3371,7 +3528,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     {locationData && (
                       <button
                         onClick={() => setModalStep('facial')}
-                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md transition-all"
+                        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md transition-all"
                       >
                         Continuar
                       </button>
@@ -3481,7 +3638,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       <button
                         onClick={handleSign}
                         disabled={loading || facialValidating || facialValidation?.valid === false}
-                        className={`w-full py-4 text-white rounded-xl font-bold text-lg shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
+                        className={`w-full py-4 text-white rounded-xl font-semibold text-base shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
                           (loading || facialValidating || facialValidation?.valid === false)
                             ? 'bg-slate-400 shadow-slate-400/20 cursor-not-allowed'
                             : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30'
@@ -3588,7 +3745,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                           <button
                             onClick={capturePhoto}
-                            className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 transition-all flex items-center justify-center gap-2"
+                            className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
                           >
                             <Camera className="w-5 h-5" />
                             Capturar foto

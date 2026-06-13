@@ -183,6 +183,18 @@ export const EMAIL_INTEGRATION_DEFAULTS: EmailIntegrationConfig = {
   from_email: '',
 };
 
+// ── Integração WhatsApp (Evolution API) ────────────────────────────────────
+// Servidor único; cada CANAL é uma instância nele (tabela whatsapp_instances).
+export interface WhatsAppEvolutionConfig {
+  base_url: string;       // ex: https://evolution.seudominio.com.br
+  api_key: string;        // header apikey (global do servidor)
+}
+
+export const WHATSAPP_EVOLUTION_DEFAULTS: WhatsAppEvolutionConfig = {
+  base_url: '',
+  api_key: '',
+};
+
 // ── Regras de notificação ──────────────────────────────────────────────────
 
 export type NotificationChannel = 'email' | 'push' | 'whatsapp';
@@ -1393,6 +1405,15 @@ class SettingsService {
     // manter weekly_digest_resend_key sincronizado para a edge function weekly-digest
     const notif = await this.getNotificationConfig();
     await this.updateSetting('notification_config', { ...notif, weekly_digest_resend_key: config.resend_key }, userName);
+  }
+
+  async getWhatsAppEvolutionConfig(): Promise<WhatsAppEvolutionConfig> {
+    const stored = await this.getSetting<WhatsAppEvolutionConfig>('whatsapp_evolution_config');
+    return { ...WHATSAPP_EVOLUTION_DEFAULTS, ...(stored || {}) };
+  }
+
+  async updateWhatsAppEvolutionConfig(config: WhatsAppEvolutionConfig, userName?: string): Promise<void> {
+    await this.updateSetting('whatsapp_evolution_config', config, userName);
   }
 
   async getNotificationRules(): Promise<NotificationRule[]> {

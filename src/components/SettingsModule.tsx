@@ -38,6 +38,7 @@ import {
   PiggyBank,
   Calendar,
   MessageCircle,
+  MessageSquare,
   User,
   Globe,
   MapPin,
@@ -67,6 +68,7 @@ import ConfigurableList, { normalizeItems, type ConfigurableItem } from './Confi
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
+import WhatsAppIntegrationSettings from './WhatsAppIntegrationSettings';
 import { AccessRequestsAdmin } from './AccessRequestsAdmin';
 import { accessRequestService } from '../services/accessRequest.service';
 import { aiService } from '../services/ai.service';
@@ -86,6 +88,7 @@ import {
   type ModulesConfig,
   type FinancialModuleConfig,
   type EmailIntegrationConfig,
+  type WhatsAppEvolutionConfig,
   type NotificationRule,
   type NotificationChannel,
   type ProcessModuleConfig,
@@ -93,6 +96,7 @@ import {
   PORTAL_MODULES_DEFAULT,
   FINANCIAL_MODULE_DEFAULTS,
   EMAIL_INTEGRATION_DEFAULTS,
+  WHATSAPP_EVOLUTION_DEFAULTS,
   PAYMENT_METHOD_LABELS,
   NOTIFICATION_TRIGGERS,
   DEFAULT_NOTIFICATION_RULES,
@@ -164,6 +168,7 @@ type SettingsSection =
   | 'modules_processes'
   | 'modules_deadlines'
   | 'integrations_email'
+  | 'integrations_whatsapp'
   | 'notifications_rules'
   | 'notifications_email_templates'
   | 'modules_leads'
@@ -245,6 +250,7 @@ const SETTINGS_GROUPS: {
     items: [
       { key: 'apps',                 label: 'Apps & Terceiros', icon: Globe,      description: 'Hub de todas as integrações' },
       { key: 'integrations_email',   label: 'E-mail (Resend)',  icon: Mail,       description: 'Remetente e API key' },
+      { key: 'integrations_whatsapp', label: 'WhatsApp (Evolution)', icon: MessageCircle, description: 'Servidor, canais e departamentos' },
       { key: 'djen',                 label: 'DJEN & DataJud',   icon: FileText,   description: 'Monitoramento jurídico' },
       { key: 'automations',          label: 'Jobs & Limiares',  icon: RefreshCw,  description: 'Painel de jobs agendados e limiares' },
       { key: 'holidays',             label: 'Feriados',         icon: Calendar,   description: 'Calendário de feriados para dias úteis' },
@@ -341,6 +347,7 @@ const MODULES = [
   { key: 'tarefas', label: 'Tarefas' },
   { key: 'peticoes', label: 'Petições' },
   { key: 'chat', label: 'Chat' },
+  { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -2940,6 +2947,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         { key: 'feed',          label: 'Feed',          desc: 'Mural e colaboração interna',     icon: Newspaper },
                         { key: 'agenda',        label: 'Agenda',        desc: 'Compromissos e audiências',       icon: Calendar },
                         { key: 'chat',          label: 'Chat',          desc: 'Mensagens entre a equipe',        icon: MessageCircle },
+                        { key: 'whatsapp',      label: 'WhatsApp',      desc: 'Atendimento via WhatsApp',        icon: MessageSquare },
                         { key: 'leads',         label: 'Leads',         desc: 'Funil de atendimento',            icon: Target },
                         { key: 'clientes',      label: 'Clientes',      desc: 'Cadastro de clientes',            icon: Users },
                         { key: 'processos',     label: 'Processos',     desc: 'Processos e andamentos',          icon: Scale },
@@ -3176,6 +3184,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </button>
                       </div>
                     </div>
+                )}
+
+                {/* ── Integrações → WhatsApp (Evolution) ── */}
+                {activeSection === 'integrations_whatsapp' && (
+                  <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
                 )}
 
                 {/* ── Módulos → Financeiro ── */}

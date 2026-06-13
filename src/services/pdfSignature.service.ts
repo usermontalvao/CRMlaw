@@ -1286,25 +1286,50 @@ class PdfSignatureService {
       signature: item.id === signer.id ? signatureImage : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
     })));
 
+    // Mapa signatário→imagem (apenas quem JÁ assinou possui imagem).
+    const signatureBySignerId = new Map<string, EmbeddedImage | null>(
+      signerDrawAssets.map((a) => [a.signer.id, a.signature]),
+    );
+    const knownSignerIds = new Set<string>(((requestSignersData as Signer[] | null) ?? []).map((s) => s.id));
+    // Imagem de reserva para campos SEM signer_id ou com signer_id órfão: a do
+    // signatário que está assinando agora (ou a 1ª disponível).
+    const fallbackSignature = signatureImage || signerDrawAssets.find((a) => a.signature)?.signature || null;
+
+    // IMPORTANTE: iteramos pelos CAMPOS (não por signatário) para garantir que
+    // cada assinatura caia exatamente na página marcada (page_number). O fallback
+    // de "última página" abaixo só dispara quando NÃO existe nenhum campo de
+    // assinatura — antes ele disparava sempre que o signer_id não casava, jogando
+    // a assinatura para a última página mesmo com campos posicionados.
     let drewAnySignature = false;
-    for (const asset of signerDrawAssets) {
-      if (!asset.signature) continue;
-      const assetFields = fields.filter((f) => f.field_type === 'signature' && (f.signer_id === asset.signer.id || (!f.signer_id && signerDrawAssets.length === 1)));
-      for (const f of assetFields) {
-        const docId = (f as any).document_id || 'main';
-        const offset = documentOffsets[docId] ?? 0;
-        const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
-        const page = pages[pageIndex];
-        if (!page) continue;
-        const { width, height } = page.getSize();
-        const { x, y, w, h } = this.percentToPdfRect(width, height, f);
-        const drawX = Math.max(0, Math.min(width, x));
-        const drawY = Math.max(0, Math.min(height, y));
-        const drawW = Math.max(1, Math.min(w, width - drawX));
-        const drawH = Math.max(1, Math.min(h, height - drawY));
-        page.drawImage(asset.signature, { x: drawX, y: drawY, width: drawW, height: drawH });
-        drewAnySignature = true;
+    const signatureFields = fields.filter((f) => f.field_type === 'signature');
+    for (const f of signatureFields) {
+      let img: EmbeddedImage | null = null;
+      if (f.signer_id) {
+        if (signatureBySignerId.has(f.signer_id)) {
+          img = signatureBySignerId.get(f.signer_id) ?? null; // signatário assinou
+        } else if (knownSignerIds.has(f.signer_id)) {
+          continue; // signatário existe mas ainda não assinou → não estampar imagem de outro
+        } else {
+          img = fallbackSignature; // signer_id órfão → reserva
+        }
+      } else {
+        img = fallbackSignature; // campo sem signer_id → signatário atual
       }
+      if (!img) continue;
+
+      const docId = (f as any).document_id || 'main';
+      const offset = documentOffsets[docId] ?? 0;
+      const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
+      const page = pages[pageIndex];
+      if (!page) continue;
+      const { width, height } = page.getSize();
+      const { x, y, w, h } = this.percentToPdfRect(width, height, f);
+      const drawX = Math.max(0, Math.min(width, x));
+      const drawY = Math.max(0, Math.min(height, y));
+      const drawW = Math.max(1, Math.min(w, width - drawX));
+      const drawH = Math.max(1, Math.min(h, height - drawY));
+      page.drawImage(img, { x: drawX, y: drawY, width: drawW, height: drawH });
+      drewAnySignature = true;
     }
 
     if (!drewAnySignature && signatureImage) {
@@ -1521,6 +1546,7 @@ class PdfSignatureService {
     const pdfPageWidth = 595.28; 
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
+    const A4_HEIGHT_PX = 1123; // A4 @ 96 DPI — mesma grade de página virtual usada no designer
     const FOOTER_RESERVED_H = 56; // strip height=52 + 4pt margem — conteúdo escala ~6% p/ rodapé limpo
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
@@ -1890,15 +1916,29 @@ class PdfSignatureService {
                 const fieldW = (field.w_percent / 100) * drawWPt;
 
                 if (typeof sliceStartPt === 'number' && typeof fullScaledHeightPt === 'number') {
-                  const fieldYTopFull = (field.y_percent / 100) * fullScaledHeightPt;
-                  const fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
                   const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
                   const manualSlicePage = Math.max(1, (field.page_number ?? 1));
-                  // Em documento de section única, o fatiamento corta por espaço em
-                  // branco, então o nº da página pode não bater com o page_number salvo.
-                  // Nesses casos a posição vertical (verificada abaixo) é a fonte de
-                  // verdade. Em múltiplas sections mantemos o filtro por page_number.
-                  if (!isAuto && !isSingleSection && manualSlicePage !== pageNumberForFields) continue;
+
+                  let fieldYTopFull: number;
+                  let fieldHFull: number;
+                  if (isSingleSection && !isAuto) {
+                    // Documento de section única: o docx-preview renderiza como bloco
+                    // contínuo, mas o designer posicionou o campo numa GRADE de páginas
+                    // A4 virtuais (page_number + y_percent relativo à página). Antes a
+                    // posição era calculada como y_percent × altura-total, o que ignorava
+                    // a página escolhida (colapsando todas as páginas numa só). Aqui
+                    // reconstruímos a posição absoluta com o MESMO modelo do designer,
+                    // de modo que a assinatura caia exatamente na página em que foi posta.
+                    const a4PageHeightPt = drawWPt * (A4_HEIGHT_PX / A4_WIDTH_PX);
+                    fieldYTopFull = (manualSlicePage - 1 + field.y_percent / 100) * a4PageHeightPt;
+                    fieldHFull = (field.h_percent / 100) * a4PageHeightPt;
+                  } else {
+                    // Múltiplas sections (cada section = 1 página real) ou placeholder
+                    // auto-detectado: a posição é relativa à altura real da section.
+                    if (!isAuto && !isSingleSection && manualSlicePage !== pageNumberForFields) continue;
+                    fieldYTopFull = (field.y_percent / 100) * fullScaledHeightPt;
+                    fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
+                  }
 
                   const sliceEndPt = sliceStartPt + drawHPt;
                   if (fieldYTopFull + fieldHFull < sliceStartPt || fieldYTopFull > sliceEndPt) continue;
@@ -1919,7 +1959,9 @@ class PdfSignatureService {
                     signatureImage: asset.signature,
                   });
                 } else {
-                  if (Math.max(1, (field.page_number ?? 1)) !== pageNumberForFields) continue;
+                  // Em multi-section cada page = 1 section; em section única só há 1
+                  // página A4, então não descartamos o campo por page_number aqui.
+                  if (!isSingleSection && Math.max(1, (field.page_number ?? 1)) !== pageNumberForFields) continue;
                   const fieldYTop = (field.y_percent / 100) * drawHPt;
                   const fieldH = (field.h_percent / 100) * drawHPt;
                   const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');

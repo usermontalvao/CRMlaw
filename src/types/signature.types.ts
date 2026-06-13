@@ -1,6 +1,6 @@
 // Tipos para o módulo de Assinatura Digital
 
-export type SignatureStatus = 'pending' | 'signed' | 'expired' | 'cancelled';
+export type SignatureStatus = 'pending' | 'signed' | 'expired' | 'cancelled' | 'refused';
 
 export type SignerAuthMethod = 'signature_only' | 'signature_facial' | 'signature_facial_document';
 
@@ -42,6 +42,13 @@ export interface SignatureRequest {
   blocked_reason?: string | null;
   // Limpeza de DOCX provisórios após assinatura
   provisional_cleaned_at?: string | null;
+  // Exige que o CPF informado na assinatura confira com o CPF cadastrado do signatário
+  require_cpf?: boolean | null;
+  // Permite que o signatário recuse a assinatura (com motivo) na página pública
+  allow_refusal?: boolean | null;
+  // Ordem de assinatura: 'parallel' (default) qualquer um a qualquer momento;
+  // 'sequential' cada signatário só assina após os de order menor terem assinado.
+  signing_order?: 'parallel' | 'sequential' | null;
 }
 
 export interface Signer {
@@ -57,6 +64,8 @@ export interface Signer {
   auth_method: SignerAuthMethod;
   viewed_at?: string | null;
   signed_at?: string | null;
+  refused_at?: string | null;
+  refusal_reason?: string | null;
   signature_image_path?: string | null;
   facial_image_path?: string | null;
   document_image_path?: string | null;
@@ -91,6 +100,9 @@ export interface CreateSignatureRequestDTO {
   requirement_number?: string | null;
   auth_method: SignerAuthMethod;
   expires_at?: string | null;
+  require_cpf?: boolean | null;
+  allow_refusal?: boolean | null;
+  signing_order?: 'parallel' | 'sequential' | null;
   signers: CreateSignerDTO[];
 }
 
@@ -147,7 +159,7 @@ export interface SignatureAuditLog {
   id: string;
   signature_request_id: string;
   signer_id?: string | null;
-  action: 'created' | 'sent' | 'viewed' | 'signed' | 'cancelled' | 'expired' | 'reminder_sent';
+  action: 'created' | 'sent' | 'viewed' | 'signed' | 'cancelled' | 'expired' | 'reminder_sent' | 'refused';
   description: string;
   ip_address?: string | null;
   user_agent?: string | null;

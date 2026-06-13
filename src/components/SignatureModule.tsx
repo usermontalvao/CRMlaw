@@ -5,7 +5,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, FolderOpen, Phone,
-  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw,
+  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw, Inbox,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -57,8 +57,8 @@ interface DraftField {
 }
 
 interface SignatureSettings {
-  requireCpf: boolean; requireBirthdate: boolean; allowRefusal: boolean;
-  blockAfterDeadline: boolean; expiresAt: string; signatureAppearance: string;
+  requireCpf: boolean; allowRefusal: boolean;
+  blockAfterDeadline: boolean; expiresAt: string;
   authMethod: SignerAuthMethod;
 }
 
@@ -360,8 +360,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [pdfNumPagesByDoc, setPdfNumPagesByDoc] = useState<Record<number, number>>({}); // Páginas por documento
 
   const [settings, setSettings] = useState<SignatureSettings>({
-    requireCpf: false, requireBirthdate: false, allowRefusal: true,
-    blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only',
+    requireCpf: false, allowRefusal: true,
+    blockAfterDeadline: false, expiresAt: '',
     authMethod: 'signature_only',
   });
   const [availableAuthMethods, setAvailableAuthMethods] = useState<Array<{ value: SignerAuthMethod; label: string }>>([
@@ -386,6 +386,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<string | null>(null);
   const [signStep, setSignStep] = useState<'signature' | 'facial' | 'confirm'>('signature');
+  const [signCpf, setSignCpf] = useState('');
   const [signLoading, setSignLoading] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
@@ -519,7 +520,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const { scheduleRefresh: scheduleDataRefresh, refreshTimerRef } = useSilentRefresh({
     enabled: wizardStep === 'list',
-    intervalMs: 5000,
+    // O Realtime (signature_requests/signers/generated_documents) já dispara um
+    // refresh com debounce de 150ms a cada mudança real. Este polling é apenas
+    // rede de segurança para eventos perdidos — 30s reduz em ~6x o custo das 6
+    // queries pesadas do loadData (requests + explorer + cloud folders/files)
+    // sem prejudicar a percepção de "ao vivo".
+    intervalMs: 30000,
     isVisible: () => document.visibilityState === 'visible' && wizardStep === 'list',
     onRefresh: loadData,
   });
@@ -1019,6 +1025,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return map;
   }, [explorerFolders, foldersById]);
 
+  // Lista achatada (DFS) das pastas na ordem da árvore — para as abas lado a lado.
+  const orderedFolders = useMemo(() => {
+    const out: SignatureExplorerFolder[] = [];
+    const walk = (pid: string | null) => {
+      for (const f of (foldersByParent.get(pid) ?? [])) { out.push(f); walk(f.id); }
+    };
+    walk(null);
+    return out;
+  }, [foldersByParent]);
+
   const folderDescendantsIndex = useMemo(() => {
     const descendants = new Map<string, Set<string>>();
 
@@ -1473,218 +1489,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return () => document.removeEventListener('click', onDocClick);
   }, []);
 
-  const renderFolderTree = (parentId: string | null, depth: number): React.ReactNode => {
-    const children = foldersByParent.get(parentId) ?? [];
-    if (!children.length) return null;
+  // Liga/desliga o modo "Organizar" (reordenar pastas via drag), limpando estados de drag.
+  const toggleFolderReorder = useCallback(() => {
+    setFolderReorderMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setIsDraggingExplorer(false);
+        setDraggingExplorer(null);
+        setDragOverFolderId(null);
+        setFolderReorderOver(null);
+      }
+      return next;
+    });
+  }, []);
 
-    return (
-      <div className={depth === 0 ? 'space-y-2' : 'space-y-2 mt-1'}>
-        {children.map((folder, index) => {
-          const isSelected = selectedFolderId === folder.id;
-          const isDraggingThisFolder = draggingExplorer?.type === 'folder' && draggingExplorer.id === folder.id;
-          const itemCount = folderItemCountById.get(folder.id) ?? 0;
-          const nextSiblingId = children[index + 1]?.id ?? null;
-          const isInsertLineHere =
-            folderReorderMode &&
-            isDraggingExplorer &&
-            folderReorderOver?.parentId === parentId &&
-            folderReorderOver?.beforeId === folder.id;
-          return (
-            <div key={folder.id}>
-              {folderReorderMode && (
-                <div className="px-1">
-                  <div className={`h-0.5 rounded-full transition ${isInsertLineHere ? 'bg-orange-500' : 'bg-transparent'}`} />
-                </div>
-              )}
 
-              <div
-                className={`group relative flex items-center rounded-xl transition ${
-                  isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40' : ''
-                }`}
-                onDragOver={(e) => {
-                  // Reordenação de pastas (modo organizar) usando midpoint do item
-                  if (folderReorderMode && draggingExplorer?.type === 'folder') {
-                    handleAllowDrop(e);
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const midpointY = rect.top + rect.height / 2;
-                    const beforeId = e.clientY < midpointY ? folder.id : nextSiblingId;
-                    setFolderReorderOver({ parentId, beforeId });
-                    return;
-                  }
-
-                  // Drop de itens (documentos) dentro de pasta
-                  if (draggingExplorer?.type === 'item') {
-                    handleAllowDrop(e);
-                    setDragOverFolderId(folder.id);
-                  }
-                }}
-                onDragEnter={() => {
-                  if (draggingExplorer?.type !== 'item') return;
-                  handleFolderDragEnter(folder.id);
-                }}
-                onDragLeave={(e) => {
-                  if (draggingExplorer?.type !== 'item') return;
-                  handleFolderDragLeave(e, folder.id);
-                }}
-                onDrop={(e) => {
-                  // Reordenação de pastas (modo organizar)
-                  if (folderReorderMode && draggingExplorer?.type === 'folder') {
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const midpointY = rect.top + rect.height / 2;
-                    const beforeId = e.clientY < midpointY ? folder.id : nextSiblingId;
-                    void handleReorderFolderDrop(e, parentId, beforeId);
-                    return;
-                  }
-
-                  // Drop de itens (documentos)
-                  if (draggingExplorer?.type === 'item') {
-                    void handleDropOnFolder(e, folder.id);
-                  }
-                }}
-              >
-                <div
-                  draggable={folderReorderMode}
-                  onDragStart={(e) => {
-                    if (!folderReorderMode) return;
-                    setExplorerDragData(e, { type: 'folder', id: folder.id }, e.currentTarget as HTMLElement);
-                  }}
-                  onDragEnd={() => {
-                    if (!folderReorderMode) return;
-                    setIsDraggingExplorer(false);
-                    setDragOverFolderId(null);
-                    setDraggingExplorer(null);
-                    if (dragImageElRef.current) {
-                      try {
-                        document.body.removeChild(dragImageElRef.current);
-                      } catch {
-                        // ignore
-                      }
-                      dragImageElRef.current = null;
-                    }
-                    releaseSuppressExplorerClick();
-                  }}
-                  onClick={() => setSelectedFolderId(folder.id)}
-                  className={`relative flex-1 w-full flex items-center justify-between rounded-xl px-3.5 py-2.5 pr-24 text-left text-[13px] font-semibold transition ${
-                    isSelected
-                      ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  } ${
-                    isDraggingThisFolder ? 'opacity-60 scale-[1.02] shadow-lg shadow-slate-900/10 bg-white ring-1 ring-slate-200' : ''
-                  } ${
-                    folderReorderMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                  } ${
-                    depth > 0 ? "before:content-[''] before:absolute before:left-[18px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200" : ''
-                  }`}
-                  style={depth > 0 ? { paddingLeft: `${14 + depth * 16}px` } : undefined}
-                  title={folder.name}
-                >
-                  {isSelected && (
-                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
-                  )}
-                  <span className="min-w-0 flex items-center gap-2.5">
-                    <FolderOpen className={`w-4 h-4 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
-                    <span
-                      className="text-left leading-snug"
-                      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                      title={folder.name}
-                    >
-                      {folder.name}
-                    </span>
-                  </span>
-                  <span
-                    className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                      isSelected ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
-                    }`}
-                    title="Itens nesta pasta"
-                  >
-                    {itemCount}
-                  </span>
-                </div>
-
-                <div
-                  className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-[#f8f7f5]/90 backdrop-blur-sm border border-[#e7e5df] shadow-sm opacity-0 group-hover:opacity-100 transition"
-                  onDragOver={(e) => {
-                    if (draggingExplorer?.type === 'folder') return;
-                    handleAllowDrop(e);
-                    setDragOverFolderId(folder.id);
-                  }}
-                  onDragEnter={() => {
-                    if (draggingExplorer?.type === 'folder') return;
-                    handleFolderDragEnter(folder.id);
-                  }}
-                  onDragLeave={(e) => {
-                    if (draggingExplorer?.type === 'folder') return;
-                    handleFolderDragLeave(e, folder.id);
-                  }}
-                  onDrop={(e) => {
-                    if (draggingExplorer?.type === 'folder') return;
-                    void handleDropOnFolder(e, folder.id);
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openCreateFolderModal(folder.id);
-                    }}
-                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
-                    title="Nova subpasta"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleRenameFolder(folder);
-                    }}
-                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
-                    title="Renomear"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteFolderTarget(folder);
-                    }}
-                    className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"
-                    title="Remover"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-              {renderFolderTree(folder.id, depth + 1)}
-            </div>
-          );
-        })}
-
-        <div
-          onDragOver={folderReorderMode ? handleAllowDrop : undefined}
-          onDragEnter={folderReorderMode ? () => setFolderReorderOver({ parentId, beforeId: null }) : undefined}
-          onDragLeave={
-            folderReorderMode
-              ? () => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === null ? null : prev))
-              : undefined
-          }
-          onDrop={folderReorderMode ? (e) => void handleReorderFolderDrop(e, parentId, null) : undefined}
-          className={`px-1 ${
-            folderReorderMode && isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null ? 'py-1' : folderReorderMode ? 'py-0.5' : 'hidden'
-          }`}
-        >
-          <div
-            className={`h-0.5 rounded-full transition ${
-              folderReorderMode && isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null
-                ? 'bg-orange-500'
-                : 'bg-transparent'
-            }`}
-          />
-        </div>
-      </div>
-    );
-  };
 
   useEffect(() => {
     pruneSelectedIds(filteredRequests.map((r) => r.id));
@@ -1770,6 +1589,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setGenDocsSearchTerm('');
     clearSelectedUploadFileIndexes();
     setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: 1, deliveryMethod: 'email' }]);
+    setSignerOrder('none');
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
     setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
     setIsDocxFile(false); setIsImageFile(false); setDocxBlob(null);
@@ -1778,7 +1598,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     docxRenderedRef.current = false; // Resetar flag de renderização do DOCX
     docxHtmlContentRef.current = ''; // Resetar HTML do DOCX
     prefillProcessedRef.current = false; // Resetar flag de prefill
-    setSettings({ requireCpf: false, requireBirthdate: false, allowRefusal: true, blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only', authMethod: 'signature_only' });
+    setSettings({ requireCpf: false, allowRefusal: true, blockAfterDeadline: false, expiresAt: '', authMethod: 'signature_only' });
     settingsService.getSignatureModuleConfig().then(cfg => {
       const map: Record<string, SignerAuthMethod> = {
         'Só assinatura': 'signature_only',
@@ -2635,6 +2455,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         attachment_paths: attachPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: settings.authMethod,
         expires_at: settings.expiresAt || null,
+        require_cpf: settings.requireCpf,
+        allow_refusal: settings.allowRefusal,
+        signing_order: signerOrder === 'sequential' ? 'sequential' : 'parallel',
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || 'Signatário', order: i + 1 })),
       };
       
@@ -3406,13 +3229,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }
   };
 
-  const openSignModal = (signer: Signer) => { setSigningSigner(signer); setSignatureData(null); setFacialData(null); setSignStep('signature'); setSignModalOpen(true); };
+  const openSignModal = (signer: Signer) => { setSigningSigner(signer); setSignatureData(null); setFacialData(null); setSignCpf(signer.cpf || ''); setSignStep('signature'); setSignModalOpen(true); };
+
+  // Solicitação do signatário em assinatura (para aplicar require_cpf no modal interno)
+  const signingRequest = signingSigner ? requests.find((r) => r.id === signingSigner.signature_request_id) : null;
+  const signRequiresCpf = !!(signingRequest as any)?.require_cpf;
+  const signCpfDigits = signCpf.replace(/\D/g, '');
 
   const confirmSignature = async () => {
     if (!signingSigner || !signatureData) return;
+    if (signRequiresCpf && signCpfDigits.length !== 11) { toast.error('Informe o CPF (11 dígitos) do signatário para assinar este documento.'); return; }
     try {
       setSignLoading(true);
-      await signatureService.signDocument(signingSigner.id, { signature_image: signatureData, facial_image: facialData });
+      await signatureService.signDocument(signingSigner.id, { signature_image: signatureData, facial_image: facialData, signer_cpf: signRequiresCpf ? signCpf : undefined });
       // Notificação já é criada automaticamente pelo signatureService quando todos assinarem
       toast.success('Assinado!'); setSignModalOpen(false); loadData();
       if (detailsRequest) openDetails(detailsRequest);
@@ -3422,6 +3251,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const getStatusBadge = (status: string) => {
     if (status === 'pending') return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded"><Clock className="w-3 h-3" />Aguardando</span>;
     if (status === 'signed') return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded"><CheckCircle className="w-3 h-3" />Assinado</span>;
+    if (status === 'refused') return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-rose-100 text-rose-700 rounded"><X className="w-3 h-3" />Recusado</span>;
     return null;
   };
 
@@ -4333,9 +4163,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         {wizardStep === 'settings' && (
           <div className="max-w-xl mx-auto p-6"><div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6"><h3 className="text-lg font-semibold mb-6">Configurações</h3><div className="space-y-4">
             <div><label className="block text-sm font-medium mb-2">Método de autenticação</label><select value={settings.authMethod} onChange={(e) => setSettings((s) => ({ ...s, authMethod: e.target.value as SignerAuthMethod }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm">{availableAuthMethods.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></div>
-            <div><label className="block text-sm font-medium mb-2">Aparência</label><select value={settings.signatureAppearance} onChange={(e) => setSettings((s) => ({ ...s, signatureAppearance: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm"><option value="signature_only">Apenas assinatura</option><option value="signature_name">Assinatura + Nome</option></select></div>
             <div className="space-y-3 pt-4 border-t">
-              {[{ key: 'requireCpf', label: 'Não exigir CPF' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label }) => <label key={key} className="flex items-center justify-between"><span className="text-sm">{label}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-[#f8f7f5] rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
+              {[{ key: 'requireCpf', label: 'Exigir CPF do cliente', hint: 'O CPF informado na assinatura deve conferir com o CPF cadastrado do signatário.' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label, hint }) => <label key={key} className="flex items-center justify-between gap-3"><span className="text-sm">{label}{hint && <span className="block text-xs text-slate-400 font-normal">{hint}</span>}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`shrink-0 w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-[#f8f7f5] rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
             </div>
             {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm" /></div>}
           </div></div></div>
@@ -4396,112 +4225,74 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       )}
 
       <div className="flex flex-1 min-h-0 gap-4">
-        {/* Sidebar Explorer */}
-        <div className="hidden lg:block w-[260px] flex-shrink-0">
-          <div className="rounded-2xl bg-[#f8f7f5] p-3" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.06)' }}>
-          <div className="flex items-center justify-between mb-2 px-1">
-            <div className="text-[11px] font-bold tracking-[0.18em] text-slate-500 uppercase">Pastas</div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setFolderReorderMode((prev) => {
-                    const next = !prev;
-                    if (!next) {
-                      setIsDraggingExplorer(false);
-                      setDraggingExplorer(null);
-                      setDragOverFolderId(null);
-                      setFolderReorderOver(null);
-                    }
-                    return next;
-                  });
-                }}
-                className={`p-1.5 rounded-lg transition ${
-                  folderReorderMode ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-500/20' : 'hover:bg-slate-100 text-slate-500'
-                }`}
-                title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
-              >
-                <ArrowUpDown className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => openCreateFolderModal(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                title="Nova pasta"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {explorerLoading ? (
-            <div className="flex items-center gap-2 text-xs text-slate-500 px-2 py-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Carregando...</span>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div
-                draggable={false}
-                onDragOver={(e) => {
-                  if (draggingExplorer?.type === 'folder') return;
-                  handleAllowDrop(e);
-                  setDragOverFolderId(null);
-                }}
-                onDragEnter={() => {
-                  if (draggingExplorer?.type === 'folder') return;
-                  handleFolderDragEnter(null);
-                }}
-                onDragLeave={(e) => {
-                  if (draggingExplorer?.type === 'folder') return;
-                  handleFolderDragLeave(e, null);
-                }}
-                onDrop={(e) => {
-                  if (draggingExplorer?.type === 'folder') return;
-                  void handleDropOnFolder(e, null);
-                }}
-                className={isDraggingExplorer && dragOverFolderId === null ? 'ring-2 ring-orange-500/40 rounded-xl bg-orange-50/40' : ''}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedFolderId(null)}
-                  className={`relative w-full flex items-center justify-between rounded-xl px-3.5 py-2.5 pr-10 text-left text-[13px] font-semibold transition ${
-                    selectedFolderId === null
-                      ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {selectedFolderId === null && (
-                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
-                  )}
-                  <span className="min-w-0 flex items-center gap-2.5">
-                    <FolderOpen className={`w-4 h-4 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
-                    <span
-                      className="text-left leading-snug"
-                      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                      title="Caixa de Entrada"
-                    >
-                      Caixa de Entrada
-                    </span>
-                  </span>
-                  <span
-                    className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                      selectedFolderId === null ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
-                    }`}
-                    title="Itens em Caixa de Entrada"
-                  >
-                    {rootItemCount}
-                  </span>
-                </button>
-              </div>
-
-              {renderFolderTree(null, 0)}
-            </div>
-          )}
-          </div>
-        </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+          {/* Pastas — abas lado a lado (mesmo estilo das abas de status). Arrastar documento -> aba move. */}
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f8f7f5] px-2 py-1.5" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide min-w-0 py-0.5">
+              {[{ id: null as string | null, label: 'Caixa de Entrada', count: rootItemCount, parentId: null as string | null }]
+                .concat(orderedFolders.map((f) => ({ id: f.id, label: f.name, count: folderItemCountById.get(f.id) ?? 0, parentId: f.parent_id ?? null })))
+                .map((tab) => {
+                  const isSel = selectedFolderId === tab.id;
+                  const isDropOver = isDraggingExplorer && draggingExplorer?.type === 'item' && dragOverFolderId === tab.id;
+                  return (
+                    <button
+                      key={tab.id ?? '__root__'}
+                      type="button"
+                      draggable={folderReorderMode && tab.id != null}
+                      onClick={() => setSelectedFolderId(tab.id)}
+                      onDragStart={(e) => {
+                        if (!folderReorderMode || tab.id == null) return;
+                        setExplorerDragData(e, { type: 'folder', id: tab.id }, e.currentTarget as HTMLElement);
+                      }}
+                      onDragEnd={() => { setIsDraggingExplorer(false); setDragOverFolderId(null); setDraggingExplorer(null); }}
+                      onDragOver={(e) => {
+                        if (draggingExplorer?.type === 'item') { handleAllowDrop(e); setDragOverFolderId(tab.id); }
+                        else if (folderReorderMode && draggingExplorer?.type === 'folder') { handleAllowDrop(e); }
+                      }}
+                      onDragLeave={(e) => { if (draggingExplorer?.type === 'item') handleFolderDragLeave(e, tab.id); }}
+                      onDrop={(e) => {
+                        if (draggingExplorer?.type === 'item') { void handleDropOnFolder(e, tab.id); }
+                        else if (folderReorderMode && draggingExplorer?.type === 'folder' && tab.id != null) { void handleReorderFolderDrop(e, tab.parentId, tab.id); }
+                      }}
+                      title={tab.id ? (folderPathLabelById.get(tab.id) || tab.label) : 'Caixa de Entrada'}
+                      className={`group shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        isSel ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                      } ${isDropOver ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-[#f8f7f5]' : ''} ${
+                        folderReorderMode && tab.id != null ? 'cursor-grab active:cursor-grabbing' : ''
+                      }`}
+                    >
+                      {tab.id === null
+                        ? <Inbox className={`w-3.5 h-3.5 ${isSel ? 'text-white' : 'text-slate-400'}`} />
+                        : <FolderOpen className={`w-3.5 h-3.5 ${isSel ? 'text-white' : 'text-slate-400'}`} />}
+                      <span className="max-w-[180px] truncate">{tab.label}</span>
+                      <span className={`tabular-nums ${isSel ? 'text-slate-300' : 'text-slate-400'}`}>{tab.count}</span>
+                    </button>
+                  );
+                })}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                type="button"
+                onClick={toggleFolderReorder}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition ${folderReorderMode ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-500/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Organizar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openCreateFolderModal(selectedFolderId)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+                title="Nova pasta"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Nova pasta</span>
+              </button>
+            </div>
+          </div>
+
           {/* Toolbar */}
           <div className="rounded-xl bg-[#f8f7f5] overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
 
@@ -4908,7 +4699,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           {req.document_name}
                         </span>
                         {req.process_id && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', whiteSpace: 'nowrap' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                             <FileText style={{ width: 9, height: 9 }} />Processo
                           </span>
                         )}
@@ -4933,7 +4724,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           </span>
                         )}
                         {hasViewedPending && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', whiteSpace: 'nowrap' }}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 5, fontSize: 10, fontWeight: 600, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}
                             title={lastViewedAt ? `Visualizado ${timeAgo(lastViewedAt)}` : 'Visualizado'}>
                             <Eye style={{ width: 9, height: 9 }} />Visto {lastViewedAt ? timeAgo(lastViewedAt) : ''}
                           </span>
@@ -5205,7 +4996,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {(req.process_id || req.requirement_id) && (
                           <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
                             {req.process_id && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                                 <FileText style={{ width: 9, height: 9 }} />Processo
                               </span>
                             )}
@@ -6416,11 +6207,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     const signatureUrl = signerImages[signer.id]?.signature || null;
                     const geoLocation = signer.geolocation || signer.signer_geolocation;
                     const isSigned = signer.status === 'signed';
+                    const isRefused = signer.status === 'refused';
 
                     return (
-                      <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : 'border-[#e7e5df]'}`}>
+                      <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : isRefused ? 'border-rose-200' : 'border-[#e7e5df]'}`}>
                         {/* Card header */}
-                        <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : signer.viewed_at ? 'bg-sky-50/60' : 'bg-slate-50'}`}>
+                        <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : isRefused ? 'bg-rose-50' : signer.viewed_at ? 'bg-sky-50/60' : 'bg-slate-50'}`}>
                           {isSigned && facialUrl ? (
                             <button onClick={() => setZoomImageUrl(facialUrl)} className="relative group flex-shrink-0" title="Ampliar foto">
                               <img src={facialUrl} alt="Foto facial" className="w-10 h-10 rounded-lg object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all" style={{ transform: 'scaleX(-1)' }} />
@@ -6445,11 +6237,23 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           </div>
                           <div className="flex-shrink-0 flex flex-col items-end gap-1">
                             {getStatusBadge(signer.status)}
-                            {!isSigned && signer.viewed_at && (
+                            {!isSigned && !isRefused && signer.viewed_at && (
                               <span className="text-[9px] text-sky-500 font-medium uppercase tracking-wide">Não assinou</span>
                             )}
                           </div>
                         </div>
+
+                        {/* Refused — motivo da recusa */}
+                        {isRefused && (
+                          <div className="px-3 py-2 bg-white border-t border-rose-100">
+                            <p className="text-[11px] font-semibold text-rose-700 flex items-center gap-1">
+                              <X className="w-3 h-3" />Recusou {signer.refused_at ? timeAgo(signer.refused_at) : ''}
+                            </p>
+                            {signer.refusal_reason && (
+                              <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-wrap">{signer.refusal_reason}</p>
+                            )}
+                          </div>
+                        )}
 
                         {/* Signed — auth info + signature image */}
                         {isSigned && (signer.auth_provider || signer.signer_user_agent || signer.device_info || signatureUrl) && (
@@ -6579,8 +6383,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         else if (log.action === 'signed') { iconBg = 'bg-emerald-100'; iconColor = 'text-emerald-600'; Icon = CheckCircle; }
                         else if (log.action === 'cancelled') { iconBg = 'bg-red-100'; iconColor = 'text-red-600'; Icon = X; }
                         else if (log.action === 'reminder_sent') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = Send; }
-                        const badgeCls = log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' : log.action === 'viewed' ? 'bg-sky-100 text-sky-700' : log.action === 'created' ? 'bg-orange-100 text-orange-700' : log.action === 'sent' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600';
-                        const badgeLabel = log.action === 'created' ? 'Criado' : log.action === 'sent' ? 'Enviado' : log.action === 'viewed' ? 'Visualizado' : log.action === 'signed' ? 'Assinado' : log.action === 'cancelled' ? 'Cancelado' : log.action === 'expired' ? 'Expirado' : log.action === 'reminder_sent' ? 'Lembrete' : log.action;
+                        else if (log.action === 'refused') { iconBg = 'bg-rose-100'; iconColor = 'text-rose-600'; Icon = X; }
+                        const badgeCls = log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' : log.action === 'viewed' ? 'bg-sky-100 text-sky-700' : log.action === 'created' ? 'bg-orange-100 text-orange-700' : log.action === 'sent' ? 'bg-purple-100 text-purple-700' : log.action === 'refused' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600';
+                        const badgeLabel = log.action === 'created' ? 'Criado' : log.action === 'sent' ? 'Enviado' : log.action === 'viewed' ? 'Visualizado' : log.action === 'signed' ? 'Assinado' : log.action === 'cancelled' ? 'Cancelado' : log.action === 'expired' ? 'Expirado' : log.action === 'reminder_sent' ? 'Lembrete' : log.action === 'refused' ? 'Recusado' : log.action;
                         // Parse user agent into readable device label
                         const parseDevice = (ua: string | null | undefined): string | null => {
                           if (!ua) return null;
@@ -6657,7 +6462,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             {signStep === 'confirm' ? (
               <button
                 onClick={confirmSignature}
-                disabled={signLoading}
+                disabled={signLoading || (signRequiresCpf && signCpfDigits.length !== 11)}
                 className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-900 text-white rounded text-xs sm:text-sm font-medium disabled:opacity-50"
               >
                 {signLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
@@ -6693,6 +6498,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           {signStep === 'confirm' && (
             <div>
               <p className="text-sm font-medium text-slate-700 mb-3">Confirmar dados</p>
+              {signRequiresCpf && (
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">CPF do signatário <span className="text-orange-600">*</span></label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={signCpf}
+                    onChange={(e) => setSignCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">Este documento exige CPF. Deve conferir com o CPF cadastrado do signatário.</p>
+                </div>
+              )}
               {signatureData && (
                 <div className="p-3 bg-slate-50 rounded mb-3">
                   <p className="text-xs text-slate-500 mb-1">Assinatura</p>

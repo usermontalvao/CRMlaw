@@ -37,6 +37,8 @@ interface SignaturePositionDesignerProps {
   onClose: () => void;
   template: DocumentTemplate;
   onSave: (config: SignatureFieldConfigValue) => void;
+  /** Quando informado, o designer abre já posicionado neste arquivo anexo (TemplateFile.id). */
+  initialFileId?: string | null;
 }
 
 const normalizeConfigToFields = (value: SignatureFieldConfigValue | undefined): LocalSignatureField[] => {
@@ -48,7 +50,7 @@ const normalizeConfigToFields = (value: SignatureFieldConfigValue | undefined): 
 const stripLocalIds = (fields: LocalSignatureField[]): SignatureFieldConfig[] =>
   fields.map(({ _id, ...rest }) => rest);
 
-const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ isOpen, onClose, template, onSave }) => {
+const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ isOpen, onClose, template, onSave, initialFileId }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,11 +142,14 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
         }
         
         setAllDocuments(docs);
-        setActiveDocIndex(0);
-        
+        // Se um arquivo específico foi solicitado, abrir já posicionado nele.
+        const requestedIndex = initialFileId ? docs.findIndex((d) => d.id === initialFileId) : -1;
+        const startIndex = requestedIndex >= 0 ? requestedIndex : 0;
+        setActiveDocIndex(startIndex);
+
         // Carregar campos do documento ativo
         if (docs.length > 0) {
-          setFields(normalizeConfigToFields(docs[0].signatureConfig));
+          setFields(normalizeConfigToFields(docs[startIndex].signatureConfig));
         } else {
           // Se não há documentos, usar a config do template diretamente
           setFields(normalizeConfigToFields(template.signature_field_config));
@@ -166,7 +171,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
     };
     
     loadTemplateFiles();
-  }, [isOpen, template]);
+  }, [isOpen, template, initialFileId]);
 
   // Documento ativo atual
   const activeDoc = allDocuments[activeDocIndex];

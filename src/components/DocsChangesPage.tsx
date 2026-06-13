@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.225': { name: 'Café Assinatura Orquestrada', emoji: '✍️' },
   '1.10.224': { name: 'Café Configuração Blindada', emoji: '🔐' },
   '1.10.223': { name: 'Café Processo Lúcido', emoji: '🧠' },
   '1.10.217': { name: 'Café Recibo Limpo', emoji: '🧾' },
@@ -880,6 +881,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.225',
+    date: '13/06/2026',
+    summary: 'Assinaturas: o fluxo público foi endurecido, a ordem de assinatura evoluiu e o ciclo de recusa ganhou suporte completo no banco, edge functions e interface.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'feature' as const, title: 'Recusa de assinatura com ciclo público completo', description: 'O módulo passou a suportar recusa explícita de assinatura com endpoint público dedicado, status compatíveis no banco e ações refletidas no fluxo operacional e de acompanhamento.' },
+        { type: 'feature' as const, title: 'Ordem de assinatura e espera pública refinadas', description: 'A experiência pública foi ajustada para respeitar melhor a ordem entre signatários, incluindo bundle de leitura voltado para estados de espera e progressão mais consistente do fluxo.' },
+        { type: 'improvement' as const, title: 'Validações e metadados reforçados na assinatura', description: 'Foram adicionados endurecimentos no lifecycle público, exigência/opções de CPF, melhorias em templates/posicionamento e ajustes de persistência para relatórios e documentos assinados.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.224',
     date: '13/06/2026',

@@ -771,6 +771,15 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
         }
       }
 
+      // Qualificações descritivas saem em minúsculo no documento gerado
+      // (ex.: "brasileiro(a), casado(a), advogado"), sem afetar nome/endereço.
+      const LOWERCASE_KEYS = new Set(['NACIONALIDADE', 'ESTADO CIVIL', 'PROFISSAO', 'OCUPACAO']);
+      for (const key of Object.keys(payloadValues)) {
+        if (LOWERCASE_KEYS.has(normalizeKey(key))) {
+          payloadValues[key] = (payloadValues[key] ?? '').toString().toLocaleLowerCase('pt-BR');
+        }
+      }
+
       const byKey = new Map<string, string>();
       for (const [k, v] of Object.entries(payloadValues)) {
         byKey.set(normalizeKey(k), (v ?? '').toString());

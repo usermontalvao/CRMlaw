@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { documentTemplateService } from '../services/documentTemplate.service';
+import SignaturePositionDesigner from './SignaturePositionDesigner';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
 
 interface TemplateFilesManagerProps {
@@ -25,6 +26,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [designerFileId, setDesignerFileId] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -166,6 +168,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
+    <>
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
       <div className="!bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e7e5df]">
@@ -290,7 +293,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                       )}
                     </button>
                     <button
-                      onClick={() => {/* TODO: Abrir designer de assinatura */}}
+                      onClick={() => setDesignerFileId(file.id)}
                       className="p-2 hover:bg-emerald-100 rounded-lg transition"
                       title="Configurar posição da assinatura"
                     >
@@ -324,7 +327,15 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           </button>
         </div>
       </div>
-    </div>,
+    </div>
+    <SignaturePositionDesigner
+      isOpen={!!designerFileId}
+      onClose={() => { setDesignerFileId(null); loadFiles(); onUpdate(); }}
+      template={template}
+      initialFileId={designerFileId}
+      onSave={() => { loadFiles(); onUpdate(); }}
+    />
+    </>,
     document.body
   );
 };
