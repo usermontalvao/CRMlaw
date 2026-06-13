@@ -1371,6 +1371,223 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setModalStep(allowSkipSignerDataStep && isSignerDataComplete(signerData) ? 'signature' : 'data');
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const ensureOffscreenDocxStyle = (styleId: string) => {
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .docx-wrapper {
+        background: #ffffff !important;
+        padding: 0 !important;
+      }
+      .docx-wrapper > section,
+      .docx-wrapper article,
+      .docx-wrapper .docx {
+        width: 794px !important;
+        min-width: 794px !important;
+        max-width: 794px !important;
+        background: #ffffff !important;
+      }
+      .docx-wrapper,
+      .docx-wrapper *,
+      .docx-wrapper p,
+      .docx-wrapper span {
+        overflow-wrap: normal !important;
+        word-wrap: normal !important;
+        word-break: normal !important;
+        hyphens: none !important;
+        -webkit-hyphens: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  };
+
+  const renderDocxOffscreen = async (docxUrl: string, styleId: string) => {
+    ensureOffscreenDocxStyle(styleId);
+    const res = await fetch(docxUrl);
+    if (!res.ok) throw new Error(`Falha ao baixar DOCX: HTTP ${res.status}`);
+    const blob = await res.blob();
+
+    const host = document.createElement('div');
+    host.style.position = 'fixed';
+    host.style.left = '-100000px';
+    host.style.top = '0';
+    host.style.width = '794px';
+    host.style.background = '#ffffff';
+    host.style.zIndex = '-1';
+    host.style.pointerEvents = 'none';
+    document.body.appendChild(host);
+
+    await renderAsync(blob, host, undefined, {
+      className: 'docx-wrapper',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      breakPages: true,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+    });
+
+    await sleep(500);
+    return host;
+  };
+
+  const generateSignedDocumentForSigner = async (
+    currentRequest: SignatureRequest,
+    currentSigner: Signer,
+  ): Promise<string | null> => {
+    let signedPdfPath: string;
+    let signedPdfSha256: string | null = null;
+
+    const attachmentPdfItems = attachments
+      .map((a, i) => ({ a, i }))
+      .filter((x) => x.a.url && x.a.name.toLowerCase().endsWith('.pdf'))
+      .map((x) => ({ documentId: `attachment-${x.i}`, url: x.a.url }));
+
+    let originalPdfUrlToUse = pdfUrl;
+    if (!originalPdfUrlToUse && currentRequest.document_path) {
+      originalPdfUrlToUse = await signatureService.getDocumentPreviewUrl(currentRequest.document_path);
+    }
+
+    const docPath = currentRequest.document_path?.toLowerCase() || '';
+    const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
+
+    if (originalPdfUrlToUse && !isDocxFile) {
+      const { filePath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
+        request: currentRequest,
+        signer: currentSigner,
+        originalPdfUrl: originalPdfUrlToUse,
+        creator,
+        attachmentPdfItems,
+      });
+      signedPdfPath = filePath;
+      signedPdfSha256 = sha256;
+    } else if (isDocxFile) {
+      const cleanupHosts: HTMLElement[] = [];
+      try {
+        const mainDocUrl = originalPdfUrlToUse || await signatureService.getDocumentPreviewUrl(currentRequest.document_path!);
+        if (!mainDocUrl) throw new Error('Erro ao obter URL do documento principal');
+
+        const mainHost = await renderDocxOffscreen(mainDocUrl, 'docx-offscreen-style-public-regenerate');
+        cleanupHosts.push(mainHost);
+
+        const attachmentDocxItems: { documentId: string; container: HTMLElement }[] = [];
+        const pdfAttachmentItems: { documentId: string; url: string }[] = [];
+
+        for (let i = 0; i < attachments.length; i++) {
+          const attach = attachments[i];
+          if (!attach.url) continue;
+          const lower = attach.name.toLowerCase();
+
+          if (lower.endsWith('.pdf')) {
+            pdfAttachmentItems.push({ documentId: `attachment-${i}`, url: attach.url });
+            continue;
+          }
+
+          if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
+            const host = await renderDocxOffscreen(attach.url, 'docx-offscreen-style-public-regenerate');
+            cleanupHosts.push(host);
+            attachmentDocxItems.push({ documentId: `attachment-${i}`, container: host });
+          }
+        }
+
+        const { filePath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
+          request: currentRequest,
+          signer: currentSigner,
+          creator,
+          docxContainer: mainHost,
+          attachmentDocxItems,
+          attachmentPdfItems: pdfAttachmentItems,
+          fieldsOverride: signatureFields,
+        });
+        signedPdfPath = filePath;
+        signedPdfSha256 = sha256;
+      } finally {
+        for (const el of cleanupHosts) {
+          try { el.remove(); } catch { /* noop */ }
+        }
+      }
+    } else {
+      const { filePath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+        request: currentRequest,
+        signer: currentSigner,
+        creator,
+      });
+      signedPdfPath = filePath;
+      signedPdfSha256 = sha256;
+    }
+
+    await signatureService.updateSignerSignedDocumentMeta(currentSigner.id, {
+      signed_document_path: signedPdfPath,
+      signed_pdf_sha256: signedPdfSha256,
+    });
+
+    const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+    if (signedUrl) {
+      setSignedDocumentUrl(signedUrl);
+      setSigner((prev) => (prev && prev.id === currentSigner.id
+        ? { ...prev, signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 ?? null }
+        : prev));
+    }
+    return signedUrl;
+  };
+
+  const waitForSignedDocumentUrl = async (options?: { attempts?: number; delayMs?: number }) => {
+    const attempts = options?.attempts ?? 8;
+    const delayMs = options?.delayMs ?? 1500;
+    let latestBundle: Awaited<ReturnType<typeof signatureService.getPublicSigningBundle>> | null = null;
+
+    // Tenta primeiro o que já está em memória.
+    if (signer?.signed_document_path) {
+      const directUrl = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
+      if (directUrl) {
+        if (!signedDocumentUrl) setSignedDocumentUrl(directUrl);
+        return directUrl;
+      }
+    }
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const data = await signatureService.getPublicSigningBundle(token);
+        latestBundle = data;
+        if (data?.signer) {
+          setSigner(data.signer);
+          setRequest(data.request);
+          setWaitingFor(data.waiting_for ?? null);
+
+          if (data.signer.signed_document_path) {
+            const readyUrl = await pdfSignatureService.getSignedPdfUrl(data.signer.signed_document_path);
+            if (readyUrl) {
+              setSignedDocumentUrl(readyUrl);
+              return readyUrl;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[PUBLIC SIGNING] Erro ao aguardar documento assinado:', err);
+      }
+
+      if (attempt < attempts - 1) {
+        await sleep(delayMs);
+      }
+    }
+
+    const fallbackSigner = latestBundle?.signer ?? signer;
+    const fallbackRequest = latestBundle?.request ?? request;
+    if (fallbackSigner?.status === 'signed' && fallbackRequest) {
+      try {
+        return await generateSignedDocumentForSigner(fallbackRequest, fallbackSigner);
+      } catch (err) {
+        console.error('[PUBLIC SIGNING] Falha ao regenerar documento assinado:', err);
+      }
+    }
+
+    return null;
+  };
+
   const loadSignerData = async () => {
     try {
       setStep('loading');
@@ -2286,18 +2503,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (!request || !signer) return;
       try {
         setDownloadingAlreadySigned(true);
-        
-        // Verificar se já existe PDF assinado salvo no bucket 'assinados'
-        if (signer.signed_document_path) {
-          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
-          if (signedUrl) {
-            console.log('[DOWNLOAD] Usando PDF já salvo:', signer.signed_document_path);
-            window.open(signedUrl, '_blank');
-            return;
-          }
+
+        const signedUrl = await waitForSignedDocumentUrl();
+        if (signedUrl) {
+          console.log('[DOWNLOAD] Documento assinado pronto para abertura');
+          window.open(signedUrl, '_blank');
+          return;
         }
 
-        toast.error('Documento assinado indisponível no momento. Tente novamente mais tarde.');
+        toast.error('O documento foi assinado, mas ainda está sendo finalizado. Tente novamente em alguns segundos.');
       } catch (e) {
         console.error('Erro ao baixar:', e);
         toast.error('Erro ao abrir documento assinado');
@@ -2598,14 +2812,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (!request || !signer) return;
       try {
         setDownloading(true);
-        if (!signer.signed_document_path) {
-          toast.error('Documento assinado indisponível no momento.');
-          return;
-        }
-
-        const url = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
+        const url = await waitForSignedDocumentUrl();
         if (!url) {
-          toast.error('Não foi possível abrir o documento assinado.');
+          toast.error('O documento foi assinado, mas ainda está sendo finalizado. Tente novamente em alguns segundos.');
           return;
         }
 
@@ -2619,15 +2828,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     const handleShare = async () => {
-      if (!request || !signer?.signed_document_path) {
+      if (!request || !signer) {
         toast.error('Documento assinado indisponível para compartilhamento no momento.');
         return;
       }
 
       try {
-        const url = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
+        const url = await waitForSignedDocumentUrl();
         if (!url) {
-          toast.error('Não foi possível obter o link do documento assinado.');
+          toast.error('O documento assinado ainda está sendo finalizado.');
           return;
         }
 

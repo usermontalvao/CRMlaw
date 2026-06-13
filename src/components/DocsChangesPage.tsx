@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.226': { name: 'Café Assinatura Resiliente', emoji: '🛡️' },
   '1.10.225': { name: 'Café Assinatura Orquestrada', emoji: '✍️' },
   '1.10.224': { name: 'Café Configuração Blindada', emoji: '🔐' },
   '1.10.223': { name: 'Café Processo Lúcido', emoji: '🧠' },
@@ -881,6 +882,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.226',
+    date: '13/06/2026',
+    summary: 'Assinaturas: a página pública passou a tolerar a janela entre o status assinado e a persistência final do PDF, reconsultando e regenerando o documento quando necessário.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'fix' as const, title: 'Abertura resiliente do documento assinado', description: 'Quando o cliente abria o link imediatamente após a assinatura, a página pública podia encontrar a solicitação como assinada, mas ainda sem `signed_document_path`. Agora o fluxo reconsulta o bundle e aguarda a disponibilidade real do PDF antes de falhar.' },
+        { type: 'fix' as const, title: 'Regeneração do PDF assinado como fallback', description: 'Se o documento estiver marcado como assinado e o arquivo final ainda não tiver sido persistido, a própria página pública tenta montar, salvar e publicar novamente o PDF assinado usando os dados já disponíveis do fluxo.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.225',
     date: '13/06/2026',
