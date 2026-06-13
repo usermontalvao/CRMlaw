@@ -52,6 +52,13 @@ import {
   Clock,
   CheckCircle,
   Circle,
+  Layers,
+  Newspaper,
+  Target,
+  Scale,
+  AlarmClock,
+  Cloud,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
@@ -64,6 +71,7 @@ import { AccessRequestsAdmin } from './AccessRequestsAdmin';
 import { accessRequestService } from '../services/accessRequest.service';
 import { aiService } from '../services/ai.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 import {
   settingsService,
   type AuditLogEntry,
@@ -75,6 +83,7 @@ import {
   type RolePermission,
   type SecurityConfig,
   type PortalModulesConfig,
+  type ModulesConfig,
   type FinancialModuleConfig,
   type EmailIntegrationConfig,
   type NotificationRule,
@@ -173,6 +182,7 @@ type SettingsSection =
   | 'secrets'
   | 'apps'
   | 'responsibility'
+  | 'menu_modules'
   | 'form_builder';
 
 type SettingsGroupKey = 'geral' | 'modulos' | 'notificacoes' | 'integracoes' | 'administracao';
@@ -251,6 +261,7 @@ const SETTINGS_GROUPS: {
     items: [
       { key: 'users',               label: 'Equipe',                   icon: Users,      description: 'Usuários e perfis' },
       { key: 'roles',               label: 'Permissões',               icon: Shield,     description: 'Papéis e módulos' },
+      { key: 'menu_modules',        label: 'Menu — Módulos',           icon: Layers,     description: 'Mostrar/ocultar módulos no menu lateral' },
       { key: 'access_requests',     label: 'Solicitações',             icon: ShieldCheck, description: 'Pedidos de acesso' },
       { key: 'portal',              label: 'Portal — Módulos',         icon: Smartphone, description: 'O que o cliente acessa' },
       { key: 'portal_customization', label: 'Portal — Aparência',      icon: Globe,      description: 'Cor, mensagem e rodapé do portal' },
@@ -576,6 +587,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [portalModules, setPortalModules] = useState<PortalModulesConfig>(PORTAL_MODULES_DEFAULT);
   const [portalSaving, setPortalSaving] = useState(false);
 
+  // Visibilidade dos módulos no menu lateral (independente da permissão de função)
+  const [modulesConfig, setModulesConfig] = useState<ModulesConfig | null>(null);
+  const [menuModulesSaving, setMenuModulesSaving] = useState(false);
+
   const [users, setUsers] = useState<UserWithProfile[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -664,6 +679,54 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     }
   };
 
+  const confirmSettingsMutation = useCallback(
+    async ({
+      action,
+      title,
+      description,
+      resourceType = 'setting',
+      resourceId,
+      sensitivity = 'critical',
+    }: {
+      action: string;
+      title: string;
+      description: string;
+      resourceType?: string;
+      resourceId?: string;
+      sensitivity?: 'medium' | 'high' | 'critical';
+    }) => {
+      return requirePin({
+        action,
+        resourceType,
+        resourceId,
+        sensitivity,
+        title,
+        description,
+      });
+    },
+    [requirePin],
+  );
+
+  const runWithSettingsPin = useCallback(
+    async (
+      options: {
+        action: string;
+        title: string;
+        description: string;
+        resourceType?: string;
+        resourceId?: string;
+        sensitivity?: 'medium' | 'high' | 'critical';
+      },
+      persist: () => Promise<void>,
+    ) => {
+      const pinOk = await confirmSettingsMutation(options);
+      if (!pinOk) return false;
+      await persist();
+      return true;
+    },
+    [confirmSettingsMutation],
+  );
+
   const loadProfile = useCallback(async () => {
     if (!user) return;
     try {
@@ -722,7 +785,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -747,6 +810,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getSetting<boolean>('public_signature_auth_google'),
         settingsService.getSetting<boolean>('public_signature_auth_email'),
         settingsService.getSetting<boolean>('public_signature_auth_phone'),
+        settingsService.getModulesConfig(),
       ]);
       setPortalModules(portalData);
       setFinancialConfig(finData);
@@ -770,6 +834,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setAutomationThresholds(autoThreshData);
       setResponsibilityConfig(respData);
       setFormLayouts(formLayoutData);
+      setModulesConfig(modulesConfigData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -910,6 +975,13 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const handleVerifySecrets = async () => {
     const envKeys = secrets.map(s => s.env_var_name).filter(Boolean) as string[];
     if (envKeys.length === 0) return;
+    const pinOk = await confirmSettingsMutation({
+      action: 'verify_secret_statuses',
+      title: 'Verificar status das chaves',
+      description: 'Confirme com seu PIN para atualizar o status das chaves registradas.',
+      resourceType: 'secret_registry',
+    });
+    if (!pinOk) return;
     setVerifyingSecrets(true);
     try {
       const { data, error } = await supabase.functions.invoke('check-env-keys', { body: { keys: envKeys } });
@@ -949,7 +1021,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         identity.address_cep,
       ].filter(Boolean);
       const derived = { ...identity, address: parts.join(', ') };
-      await settingsService.updateOfficeIdentity(derived, currentProfile?.name);
+      const persisted = await runWithSettingsPin(
+        {
+          action: 'update_office_identity',
+          title: 'Salvar identidade do escritório',
+          description: 'Confirme com seu PIN para salvar os dados da identidade do escritório.',
+          resourceType: 'office_identity',
+        },
+        () => settingsService.updateOfficeIdentity(derived, currentProfile?.name),
+      );
+      if (!persisted) return;
       setFeedback('success', 'Identidade atualizada com sucesso.');
     } catch (error: any) {
       setFeedback('error', error.message || 'Erro ao salvar identidade.');
@@ -1027,6 +1108,14 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   const handleAvatarUpload = async (file: File) => {
     if (!selectedUser) return;
+    const pinOk = await confirmSettingsMutation({
+      action: 'upload_user_avatar',
+      title: 'Alterar foto do usuário',
+      description: 'Confirme com seu PIN para alterar a foto do usuário.',
+      resourceType: 'user_profile',
+      resourceId: selectedUser.user_id,
+    });
+    if (!pinOk) return;
     setAvatarUploading(true);
     try {
       const url = await settingsService.uploadUserAvatar(selectedUser.user_id, file);
@@ -1046,7 +1135,15 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     }
     setSaving(true);
     try {
-      await settingsService.updateUserProfile(
+      const persisted = await runWithSettingsPin(
+        {
+          action: 'update_user_profile',
+          title: 'Salvar dados do usuário',
+          description: 'Confirme com seu PIN para salvar as alterações do usuário.',
+          resourceType: 'user_profile',
+          resourceId: selectedUser.user_id,
+        },
+        () => settingsService.updateUserProfile(
         selectedUser.user_id,
         {
           name: userFormData.name,
@@ -1059,7 +1156,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
           avatar_url: userFormData.avatar_url || undefined,
         },
         currentProfile?.name,
-      );
+      ));
+      if (!persisted) return;
       setFeedback('success', 'Usuário atualizado com sucesso.');
       setUserModalOpen(false);
       loadUsers();
@@ -1072,6 +1170,14 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   const confirmDeleteUser = async () => {
     if (!deleteTarget) return;
+    const pinOk = await confirmSettingsMutation({
+      action: 'delete_user_profile',
+      title: 'Remover usuário',
+      description: 'Confirme com seu PIN para remover o usuário do CRM.',
+      resourceType: 'user_profile',
+      resourceId: deleteTarget.user_id,
+    });
+    if (!pinOk) return;
     setDeleteLoading(true);
     try {
       await settingsService.deleteUserProfile(deleteTarget.user_id, currentProfile?.name);
@@ -1099,7 +1205,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       action: 'update_permission',
       resourceType: 'permission',
       resourceId: `${selectedRole}_${moduleKey}`,
-      sensitivity: 'high',
+      sensitivity: 'critical',
       title: 'Alterar permissões',
       description: 'Confirme com seu PIN para alterar as permissões de acesso.',
     });
@@ -2349,7 +2455,17 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setDatajudKeySaving(true);
                             try {
-                              await settingsService.setDatajudKey(datajudKeyConfig.key);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'set_datajud_key',
+                                  title: 'Salvar chave DataJud',
+                                  description: 'Confirme com seu PIN para salvar a chave do DataJud.',
+                                  resourceType: 'integration_key',
+                                  resourceId: 'datajud',
+                                },
+                                () => settingsService.setDatajudKey(datajudKeyConfig.key),
+                              );
+                              if (!persisted) return;
                               // Recarrega para refletir invalid=false
                               const fresh = await settingsService.getDatajudKeyConfig();
                               setDatajudKeyConfig(fresh);
@@ -2412,7 +2528,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         onClick={async () => {
                           setSaving(true);
                           try {
-                            await settingsService.updateDjenConfig(djenConfig, currentProfile?.name);
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'update_djen_config',
+                                title: 'Salvar configurações DJEN',
+                                description: 'Confirme com seu PIN para salvar as configurações do DJEN.',
+                                resourceType: 'djen_config',
+                              },
+                              () => settingsService.updateDjenConfig(djenConfig, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setFeedback('success', 'Configurações DJEN salvas!');
                           } catch (err: any) {
                             setFeedback('error', err.message || 'Erro ao salvar.');
@@ -2568,7 +2693,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         onClick={async () => {
                           setSaving(true);
                           try {
-                            await settingsService.updateNotificationConfig(notificationConfig, currentProfile?.name);
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'update_notification_config',
+                                title: 'Salvar notificações',
+                                description: 'Confirme com seu PIN para salvar as configurações de notificações.',
+                                resourceType: 'notification_config',
+                              },
+                              () => settingsService.updateNotificationConfig(notificationConfig, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setFeedback('success', 'Notificações salvas!');
                           } catch (err: any) {
                             setFeedback('error', err.message || 'Erro ao salvar.');
@@ -2686,7 +2820,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         onClick={async () => {
                           setSaving(true);
                           try {
-                            await settingsService.updatePreferences(preferences, currentProfile?.name);
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'update_preferences',
+                                title: 'Salvar preferências',
+                                description: 'Confirme com seu PIN para salvar as preferências do sistema.',
+                                resourceType: 'preferences',
+                              },
+                              () => settingsService.updatePreferences(preferences, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setFeedback('success', 'Preferências salvas!');
                           } catch (err: any) {
                             setFeedback('error', err.message || 'Erro ao salvar.');
@@ -2760,7 +2903,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         onClick={async () => {
                           setPortalSaving(true);
                           try {
-                            await settingsService.savePortalModulesConfig(portalModules, currentProfile?.name);
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'save_portal_modules',
+                                title: 'Salvar módulos do portal',
+                                description: 'Confirme com seu PIN para salvar as configurações do portal.',
+                                resourceType: 'portal_modules',
+                              },
+                              () => settingsService.savePortalModulesConfig(portalModules, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setFeedback('success', 'Configurações do portal salvas!');
                           } catch (err: any) {
                             setFeedback('error', err.message || 'Erro ao salvar.');
@@ -2772,6 +2924,91 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         {portalSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                         Salvar
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === 'menu_modules' && (
+                  <div className="px-8 py-6 space-y-6">
+                    <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                      <Layers className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+                      Controla o que aparece no <strong>menu lateral</strong> para todos os usuários, independente das permissões de função. Cada alteração é salva automaticamente e aplicada na hora. Esconder um módulo aqui não altera permissões nem apaga dados. <strong>Perfil</strong> e <strong>Configurações</strong> não podem ser ocultados.
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {([
+                        { key: 'feed',          label: 'Feed',          desc: 'Mural e colaboração interna',     icon: Newspaper },
+                        { key: 'agenda',        label: 'Agenda',        desc: 'Compromissos e audiências',       icon: Calendar },
+                        { key: 'chat',          label: 'Chat',          desc: 'Mensagens entre a equipe',        icon: MessageCircle },
+                        { key: 'leads',         label: 'Leads',         desc: 'Funil de atendimento',            icon: Target },
+                        { key: 'clientes',      label: 'Clientes',      desc: 'Cadastro de clientes',            icon: Users },
+                        { key: 'processos',     label: 'Processos',     desc: 'Processos e andamentos',          icon: Scale },
+                        { key: 'requerimentos', label: 'Requerimentos', desc: 'Requerimentos INSS',              icon: Briefcase },
+                        { key: 'peticoes',      label: 'Petições',      desc: 'Editor de petições',              icon: FileText },
+                        { key: 'financeiro',    label: 'Financeiro',    desc: 'Contratos, parcelas e pagamentos', icon: PiggyBank },
+                        { key: 'prazos',        label: 'Prazos',        desc: 'Prazos processuais',              icon: AlarmClock },
+                        { key: 'intimacoes',    label: 'Intimações',    desc: 'Intimações DJEN',                 icon: Bell },
+                        { key: 'documentos',    label: 'Documentos',    desc: 'Biblioteca de documentos',        icon: FolderOpen },
+                        { key: 'assinaturas',   label: 'Assinaturas',   desc: 'Assinatura eletrônica',           icon: PenTool },
+                        { key: 'cloud',         label: 'Cloud',         desc: 'Arquivos na nuvem',               icon: Cloud },
+                        { key: 'tarefas',       label: 'Tarefas',       desc: 'Tarefas da equipe',               icon: CheckSquare },
+                      ] as { key: string; label: string; desc: string; icon: React.ComponentType<any> }[]).map(({ key, label, desc, icon: Icon }) => {
+                        const hidden = (modulesConfig?.hidden_menu_modules ?? []).includes(key);
+                        const enabled = !hidden;
+                        const toggleMenuModule = async () => {
+                          if (menuModulesSaving) return;
+                          const willHide = !hidden;
+                          const pinOk = await requirePin({
+                            action: 'toggle_menu_module',
+                            resourceType: 'menu_module',
+                            resourceId: key,
+                            sensitivity: 'critical',
+                            title: willHide ? 'Ocultar módulo do menu' : 'Exibir módulo no menu',
+                            description: `Confirme com seu PIN para ${willHide ? 'ocultar' : 'exibir'} o módulo "${label}" no menu lateral.`,
+                          });
+                          if (!pinOk) return;
+                          const base: ModulesConfig = modulesConfig ?? {
+                            leads_enabled: true, financial_enabled: true, requirements_enabled: true,
+                            documents_enabled: true, calendar_enabled: true, tasks_enabled: true,
+                            hidden_menu_modules: [],
+                          };
+                          const current = new Set(base.hidden_menu_modules ?? []);
+                          if (current.has(key)) current.delete(key); else current.add(key);
+                          const next: ModulesConfig = { ...base, hidden_menu_modules: Array.from(current) };
+                          setModulesConfig(next);          // otimista
+                          setMenuModulesSaving(true);
+                          try {
+                            await settingsService.updateModulesConfig(next, currentProfile?.name);
+                            events.emit(SYSTEM_EVENTS.MODULES_CONFIG_UPDATED);
+                          } catch (err: any) {
+                            setModulesConfig(base);        // reverte em caso de falha
+                            setFeedback('error', err?.message || 'Erro ao salvar.');
+                          } finally {
+                            setMenuModulesSaving(false);
+                          }
+                        };
+                        return (
+                          <button
+                            key={key}
+                            onClick={toggleMenuModule}
+                            disabled={menuModulesSaving}
+                            className={`flex items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm disabled:cursor-wait ${
+                              enabled ? 'border-orange-200 bg-orange-50/50' : 'border-[#e7e5df] bg-[#f8f7f5] opacity-60'
+                            }`}
+                          >
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{label}</p>
+                              <p className="text-xs text-slate-500 truncate">{desc}</p>
+                            </div>
+                            <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2834,7 +3071,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           const pinOk = await requirePin({
                             action: 'update_security_config',
                             resourceType: 'setting',
-                            sensitivity: 'high',
+                            sensitivity: 'critical',
                             title: 'Salvar configurações de segurança',
                             description: 'Confirme com seu PIN para salvar as configurações de segurança.',
                           });
@@ -2917,7 +3154,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const pinOk = await requirePin({
                               action: 'update_email_integration',
                               resourceType: 'setting',
-                              sensitivity: 'high',
+                              sensitivity: 'critical',
                               title: 'Salvar integração de e-mail',
                               description: 'Confirme com seu PIN para salvar a chave de API.',
                             });
@@ -3033,7 +3270,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateFinancialModuleConfig(financialConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_financial_module',
+                                  title: 'Salvar configurações financeiras',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo financeiro.',
+                                  resourceType: 'financial_module',
+                                },
+                                () => settingsService.updateFinancialModuleConfig(financialConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações financeiras salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -3123,7 +3369,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       }
                     }
                     setNotifRules(updated);
-                    await settingsService.updateNotificationRules(updated, currentProfile?.name);
+                    const persisted = await runWithSettingsPin(
+                      {
+                        action: 'update_notification_rules',
+                        title: 'Salvar regras de notificação',
+                        description: 'Confirme com seu PIN para salvar as regras de notificação.',
+                        resourceType: 'notification_rules',
+                      },
+                      () => settingsService.updateNotificationRules(updated, currentProfile?.name),
+                    );
+                    if (!persisted) return;
                   };
 
                   return (
@@ -3332,7 +3587,23 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                           e.stopPropagation();
                                           const updated = emailTemplates.map(t => t.id === tmpl.id ? { ...t, enabled: !t.enabled } : t);
                                           setEmailTemplates(updated);
-                                          settingsService.updateEmailTemplates(updated, currentProfile?.name);
+                                          void runWithSettingsPin(
+                                            {
+                                              action: 'toggle_email_template',
+                                              title: 'Alterar template de e-mail',
+                                              description: 'Confirme com seu PIN para alterar o status do template de e-mail.',
+                                              resourceType: 'email_template',
+                                              resourceId: tmpl.id,
+                                            },
+                                            () => settingsService.updateEmailTemplates(updated, currentProfile?.name),
+                                          ).then((persisted) => {
+                                            if (!persisted) {
+                                              setEmailTemplates(emailTemplates);
+                                            }
+                                          }).catch((err: any) => {
+                                            setEmailTemplates(emailTemplates);
+                                            setFeedback('error', err?.message || 'Erro ao salvar.');
+                                          });
                                         }}
                                         aria-label="ativar/desativar template"
                                       />
@@ -3450,7 +3721,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                   onClick={async () => {
                                     setTemplateSaving(true);
                                     try {
-                                      await settingsService.updateEmailTemplates(emailTemplates, currentProfile?.name);
+                                      const persisted = await runWithSettingsPin(
+                                        {
+                                          action: 'update_email_templates',
+                                          title: 'Salvar templates de e-mail',
+                                          description: 'Confirme com seu PIN para salvar os templates de e-mail.',
+                                          resourceType: 'email_templates',
+                                        },
+                                        () => settingsService.updateEmailTemplates(emailTemplates, currentProfile?.name),
+                                      );
+                                      if (!persisted) return;
                                       setFeedback('success', 'Template salvo com sucesso!');
                                     } catch (err: any) {
                                       setFeedback('error', err.message || 'Erro ao salvar.');
@@ -3544,7 +3824,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_processes_by_practice_area', { p_area: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newAreas = items.map(item => ({
                               key:         item.id,
                               label:       item.label,
@@ -3553,10 +3833,19 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               isDefault:   item.isDefault ?? false,
                             }));
                             const newConfig = { ...processConfig, practice_areas: newAreas };
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'update_process_practice_areas',
+                                title: 'Alterar áreas do Direito',
+                                description: 'Confirme com seu PIN para salvar as áreas do módulo de Processos.',
+                                resourceType: 'process_module',
+                                resourceId: 'practice_areas',
+                              },
+                              () => settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setProcessConfig(newConfig);
-                            settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                            setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -3575,7 +3864,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_processes_by_status', { p_status: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newStatuses = items.map(item => ({
                               key:       item.id,
                               label:     item.label,
@@ -3584,10 +3873,19 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               isDefault: item.isDefault ?? false,
                             }));
                             const newConfig = { ...processConfig, statuses: newStatuses };
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'update_process_statuses',
+                                title: 'Alterar status de Processos',
+                                description: 'Confirme com seu PIN para salvar os status do módulo de Processos.',
+                                resourceType: 'process_module',
+                                resourceId: 'statuses',
+                              },
+                              () => settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name),
+                            );
+                            if (!persisted) return;
                             setProcessConfig(newConfig);
-                            settingsService.updateProcessModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                            setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -3616,7 +3914,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateProcessModuleConfig(processConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_process_module',
+                                  title: 'Salvar configurações de Processos',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Processos.',
+                                  resourceType: 'process_module',
+                                },
+                                () => settingsService.updateProcessModuleConfig(processConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Processos salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -3675,7 +3982,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_deadlines_by_status', { p_status: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newStatuses = items.map(item => ({
                               key:       item.id,
                               label:     item.label,
@@ -3683,11 +3990,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               active:    item.active,
                               isDefault: item.isDefault ?? false,
                             }));
-                            const newConfig = { ...deadlineConfig, statuses: newStatuses };
-                            setDeadlineConfig(newConfig);
-                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Status salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...deadlineConfig, statuses: newStatuses };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_deadline_statuses',
+                                  title: 'Alterar status de Prazos',
+                                  description: 'Confirme com seu PIN para salvar os status do módulo de Prazos.',
+                                  resourceType: 'deadline_module',
+                                  resourceId: 'statuses',
+                                },
+                                () => settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setDeadlineConfig(newConfig);
+                              setFeedback('success', 'Status salvo!');
                           }}
                         />
                       </div>
@@ -3707,7 +4023,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_deadlines_by_priority', { p_priority: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newPriorities = items.map(item => ({
                               key:    item.id,
                               label:  item.label,
@@ -3715,11 +4031,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               active:    item.active,
                               isDefault: item.isDefault ?? false,
                             }));
-                            const newConfig = { ...deadlineConfig, priorities: newPriorities };
-                            setDeadlineConfig(newConfig);
-                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...deadlineConfig, priorities: newPriorities };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_deadline_priorities',
+                                  title: 'Alterar prioridades de Prazos',
+                                  description: 'Confirme com seu PIN para salvar as prioridades do módulo de Prazos.',
+                                  resourceType: 'deadline_module',
+                                  resourceId: 'priorities',
+                                },
+                                () => settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setDeadlineConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -3740,13 +4065,22 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_deadlines_by_type', { p_type: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newTypes = items.map(item => ({ key: item.id, label: item.label, active: item.active }));
-                            const newConfig = { ...deadlineConfig, types: newTypes };
-                            setDeadlineConfig(newConfig);
-                            settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...deadlineConfig, types: newTypes };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_deadline_types',
+                                  title: 'Alterar tipos de Prazos',
+                                  description: 'Confirme com seu PIN para salvar os tipos do módulo de Prazos.',
+                                  resourceType: 'deadline_module',
+                                  resourceId: 'types',
+                                },
+                                () => settingsService.updateDeadlineModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setDeadlineConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -3756,7 +4090,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateDeadlineModuleConfig(deadlineConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_deadline_module',
+                                  title: 'Salvar configurações de Prazos',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Prazos.',
+                                  resourceType: 'deadline_module',
+                                },
+                                () => settingsService.updateDeadlineModuleConfig(deadlineConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Prazos salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -3799,7 +4142,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               const { data } = await supabase.rpc('count_leads_by_stage', { p_stage: item.id });
                               return Number(data ?? 0);
                             }}
-                            onChange={items => {
+                            onChange={async items => {
                               const newStages = items.map(item => ({
                                 key:         item.id,
                                 label:       item.label,
@@ -3808,11 +4151,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 active:      item.active,
                                 isDefault:   item.isDefault ?? false,
                               }));
-                              const newConfig = { ...leadConfig, stages: newStages };
-                              setLeadConfig(newConfig);
-                              settingsService.updateLeadModuleConfig(newConfig, currentProfile?.name)
-                                .then(() => setFeedback('success', 'Salvo!'))
-                                .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                                const newConfig = { ...leadConfig, stages: newStages };
+                                const persisted = await runWithSettingsPin(
+                                  {
+                                    action: 'update_lead_stages',
+                                    title: 'Alterar estágios de Leads',
+                                    description: 'Confirme com seu PIN para salvar os estágios do módulo de Leads.',
+                                    resourceType: 'lead_module',
+                                    resourceId: 'stages',
+                                  },
+                                  () => settingsService.updateLeadModuleConfig(newConfig, currentProfile?.name),
+                                );
+                                if (!persisted) return;
+                                setLeadConfig(newConfig);
+                                setFeedback('success', 'Salvo!');
                             }}
                           />
                         </div>
@@ -3859,7 +4211,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             onClick={async () => {
                               setSaving(true);
                               try {
-                                await settingsService.updateLeadModuleConfig(leadConfig, currentProfile?.name);
+                                const persisted = await runWithSettingsPin(
+                                  {
+                                    action: 'update_lead_module',
+                                    title: 'Salvar configurações de Leads',
+                                    description: 'Confirme com seu PIN para salvar as configurações do módulo de Leads.',
+                                    resourceType: 'lead_module',
+                                  },
+                                  () => settingsService.updateLeadModuleConfig(leadConfig, currentProfile?.name),
+                                );
+                                if (!persisted) return;
                                 setFeedback('success', 'Configurações de Leads salvas!');
                               } catch (err: any) {
                                 setFeedback('error', err.message || 'Erro ao salvar.');
@@ -3921,7 +4282,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               />
                             </div>
                           )}
-                          onChange={items => {
+                          onChange={async items => {
                             const newTypes = items.map(item => ({
                               key:          item.id,
                               label:        item.label,
@@ -3929,11 +4290,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               duration_min: (item.metadata?.duration_min as number) ?? 60,
                               active:       item.active,
                             }));
-                            const newConfig = { ...calendarConfig, event_types: newTypes };
-                            setCalendarConfig(newConfig);
-                            settingsService.updateCalendarModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...calendarConfig, event_types: newTypes };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_calendar_event_types',
+                                  title: 'Alterar tipos da Agenda',
+                                  description: 'Confirme com seu PIN para salvar os tipos de compromisso da Agenda.',
+                                  resourceType: 'calendar_module',
+                                  resourceId: 'event_types',
+                                },
+                                () => settingsService.updateCalendarModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setCalendarConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -3943,7 +4313,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateCalendarModuleConfig(calendarConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_calendar_module',
+                                  title: 'Salvar configurações da Agenda',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Agenda.',
+                                  resourceType: 'calendar_module',
+                                },
+                                () => settingsService.updateCalendarModuleConfig(calendarConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Agenda salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4034,7 +4413,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             onClick={async () => {
                               setSaving(true);
                               try {
-                                await settingsService.updateAiProviderConfig(aiProviderConfig, currentProfile?.name);
+                                const persisted = await runWithSettingsPin(
+                                  {
+                                    action: 'update_ai_providers',
+                                    title: 'Salvar provedores de IA',
+                                    description: 'Confirme com seu PIN para salvar a configuração dos provedores de IA.',
+                                    resourceType: 'ai_provider_config',
+                                  },
+                                  () => settingsService.updateAiProviderConfig(aiProviderConfig, currentProfile?.name),
+                                );
+                                if (!persisted) return;
                                 aiService.invalidateSettings();
                                 setFeedback('success', 'Configuração de provedores de IA salva!');
                               } catch (err: any) {
@@ -4095,7 +4483,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateAiTaskConfigs(aiTaskConfigs, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_ai_tasks',
+                                  title: 'Salvar parâmetros de IA',
+                                  description: 'Confirme com seu PIN para salvar os parâmetros das tarefas de IA.',
+                                  resourceType: 'ai_task_config',
+                                },
+                                () => settingsService.updateAiTaskConfigs(aiTaskConfigs, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Parâmetros de IA salvos!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4125,7 +4522,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_requirements_by_status', { p_status: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newStatuses = items.map(item => ({
                               key:       item.id,
                               label:     item.label,
@@ -4133,11 +4530,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               active:    item.active,
                               isDefault: item.isDefault ?? false,
                             }));
-                            const newConfig = { ...requirementConfig, statuses: newStatuses };
-                            setRequirementConfig(newConfig);
-                            settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...requirementConfig, statuses: newStatuses };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_requirement_statuses',
+                                  title: 'Alterar status de Requerimentos',
+                                  description: 'Confirme com seu PIN para salvar os status do módulo de Requerimentos.',
+                                  resourceType: 'requirement_module',
+                                  resourceId: 'statuses',
+                                },
+                                () => settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setRequirementConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -4155,13 +4561,22 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_requirements_by_benefit_type', { p_benefit_type: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newTypes = items.map(item => ({ key: item.id, label: item.label, active: item.active }));
-                            const newConfig = { ...requirementConfig, benefit_types: newTypes };
-                            setRequirementConfig(newConfig);
-                            settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...requirementConfig, benefit_types: newTypes };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_requirement_benefits',
+                                  title: 'Alterar tipos de benefício',
+                                  description: 'Confirme com seu PIN para salvar os tipos de benefício do módulo de Requerimentos.',
+                                  resourceType: 'requirement_module',
+                                  resourceId: 'benefit_types',
+                                },
+                                () => settingsService.updateRequirementModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setRequirementConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -4227,7 +4642,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateRequirementModuleConfig(requirementConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_requirement_module',
+                                  title: 'Salvar configurações de Requerimentos',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Requerimentos.',
+                                  resourceType: 'requirement_module',
+                                },
+                                () => settingsService.updateRequirementModuleConfig(requirementConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Requerimentos salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4357,14 +4781,23 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         <button className="settings-btn-primary" disabled={saving}
                           onClick={async () => {
                             setSaving(true);
-                            try {
-                              await Promise.all([
-                                settingsService.updateSignatureModuleConfig(signatureConfig, currentProfile?.name),
-                                settingsService.updateSetting('public_signature_auth_google', publicAuthSignConfig.google, currentProfile?.name),
-                                settingsService.updateSetting('public_signature_auth_email', publicAuthSignConfig.email, currentProfile?.name),
-                                settingsService.updateSetting('public_signature_auth_phone', publicAuthSignConfig.phone, currentProfile?.name),
-                              ]);
-                              setFeedback('success', 'Configurações de Assinaturas salvas!');
+                              try {
+                                const persisted = await runWithSettingsPin(
+                                  {
+                                    action: 'update_signature_module',
+                                    title: 'Salvar configurações de Assinaturas',
+                                    description: 'Confirme com seu PIN para salvar as configurações do módulo de Assinaturas.',
+                                    resourceType: 'signature_module',
+                                  },
+                                  () => Promise.all([
+                                    settingsService.updateSignatureModuleConfig(signatureConfig, currentProfile?.name),
+                                    settingsService.updateSetting('public_signature_auth_google', publicAuthSignConfig.google, currentProfile?.name),
+                                    settingsService.updateSetting('public_signature_auth_email', publicAuthSignConfig.email, currentProfile?.name),
+                                    settingsService.updateSetting('public_signature_auth_phone', publicAuthSignConfig.phone, currentProfile?.name),
+                                  ]).then(() => undefined),
+                                );
+                                if (!persisted) return;
+                                setFeedback('success', 'Configurações de Assinaturas salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
                             } finally { setSaving(false); }
@@ -4391,7 +4824,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_tasks_by_priority', { p_priority: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newPriorities = items.map(item => ({
                               key:       item.id,
                               label:     item.label,
@@ -4399,11 +4832,20 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               active:    item.active,
                               isDefault: item.isDefault ?? false,
                             }));
-                            const newConfig = { ...taskModConfig, priorities: newPriorities };
-                            setTaskModConfig(newConfig);
-                            settingsService.updateTaskModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...taskModConfig, priorities: newPriorities };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_task_priorities',
+                                  title: 'Alterar prioridades de Tarefas',
+                                  description: 'Confirme com seu PIN para salvar as prioridades do módulo de Tarefas.',
+                                  resourceType: 'task_module',
+                                  resourceId: 'priorities',
+                                },
+                                () => settingsService.updateTaskModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setTaskModConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -4412,7 +4854,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateTaskModuleConfig(taskModConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_task_module',
+                                  title: 'Salvar configurações de Tarefas',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Tarefas.',
+                                  resourceType: 'task_module',
+                                },
+                                () => settingsService.updateTaskModuleConfig(taskModConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Tarefas salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4441,18 +4892,27 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_clients_by_status', { p_status: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newStatuses = items.map(item => ({
                               key:    item.id,
                               label:  item.label,
                               badge:  clientConfig.statuses.find(s => s.key === item.id)?.badge ?? 'bg-slate-100 text-slate-700',
                               active: item.active,
                             }));
-                            const newConfig = { ...clientConfig, statuses: newStatuses };
-                            setClientConfig(newConfig);
-                            settingsService.updateClientModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...clientConfig, statuses: newStatuses };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_client_statuses',
+                                  title: 'Alterar status de Clientes',
+                                  description: 'Confirme com seu PIN para salvar os status do módulo de Clientes.',
+                                  resourceType: 'client_module',
+                                  resourceId: 'statuses',
+                                },
+                                () => settingsService.updateClientModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setClientConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -4470,13 +4930,22 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             const { data } = await supabase.rpc('count_clients_by_marital_status', { p_marital: item.id });
                             return Number(data ?? 0);
                           }}
-                          onChange={items => {
+                          onChange={async items => {
                             const newMarital = items.map(item => ({ key: item.id, label: item.label, active: item.active, isDefault: item.isDefault ?? false }));
-                            const newConfig = { ...clientConfig, marital_statuses: newMarital };
-                            setClientConfig(newConfig);
-                            settingsService.updateClientModuleConfig(newConfig, currentProfile?.name)
-                              .then(() => setFeedback('success', 'Salvo!'))
-                              .catch(err => setFeedback('error', err.message || 'Erro ao salvar.'));
+                              const newConfig = { ...clientConfig, marital_statuses: newMarital };
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_client_marital_statuses',
+                                  title: 'Alterar estado civil de Clientes',
+                                  description: 'Confirme com seu PIN para salvar os estados civis do módulo de Clientes.',
+                                  resourceType: 'client_module',
+                                  resourceId: 'marital_statuses',
+                                },
+                                () => settingsService.updateClientModuleConfig(newConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
+                              setClientConfig(newConfig);
+                              setFeedback('success', 'Salvo!');
                           }}
                         />
                       </div>
@@ -4486,7 +4955,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateClientModuleConfig(clientConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_client_module',
+                                  title: 'Salvar configurações de Clientes',
+                                  description: 'Confirme com seu PIN para salvar as configurações do módulo de Clientes.',
+                                  resourceType: 'client_module',
+                                },
+                                () => settingsService.updateClientModuleConfig(clientConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Configurações de Clientes salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4547,7 +5025,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updatePortalCustomizationConfig(portalCustom, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_portal_customization',
+                                  title: 'Salvar aparência do Portal',
+                                  description: 'Confirme com seu PIN para salvar a personalização do Portal.',
+                                  resourceType: 'portal_customization',
+                                },
+                                () => settingsService.updatePortalCustomizationConfig(portalCustom, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Personalização do Portal salva!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4591,7 +5078,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updatePortalClientNotificationsConfig(portalClientNotif, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_portal_client_notifications',
+                                  title: 'Salvar notificações do Portal',
+                                  description: 'Confirme com seu PIN para salvar as notificações do cliente no Portal.',
+                                  resourceType: 'portal_client_notifications',
+                                },
+                                () => settingsService.updatePortalClientNotificationsConfig(portalClientNotif, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Notificações ao cliente salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4646,7 +5142,24 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                       const updated = aiPromptOverrides.filter(o => o.key !== selectedPromptKey);
                                       setAiPromptOverrides(updated);
                                       setPromptDraft('');
-                                      settingsService.updateAiPromptOverrides(updated, currentProfile?.name);
+                                        void runWithSettingsPin(
+                                          {
+                                            action: 'remove_ai_prompt_override',
+                                            title: 'Remover customização de prompt',
+                                            description: 'Confirme com seu PIN para remover a customização do prompt.',
+                                            resourceType: 'ai_prompt_override',
+                                            resourceId: selectedPromptKey ?? undefined,
+                                          },
+                                          () => settingsService.updateAiPromptOverrides(updated, currentProfile?.name),
+                                        ).then((persisted) => {
+                                          if (!persisted) {
+                                            setAiPromptOverrides(aiPromptOverrides);
+                                            setPromptDraft(aiPromptOverrides.find(x => x.key === selectedPromptKey)?.system_prompt ?? '');
+                                          }
+                                        }).catch((err: any) => {
+                                          setAiPromptOverrides(aiPromptOverrides);
+                                          setFeedback('error', err?.message || 'Erro ao salvar.');
+                                        });
                                     }}>
                                     Remover customização
                                   </button>
@@ -4672,7 +5185,17 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                         ? [...filtered, { key: selectedPromptKey, system_prompt: promptDraft.trim(), updated_at: new Date().toISOString() }]
                                         : filtered;
                                       setAiPromptOverrides(updated);
-                                      await settingsService.updateAiPromptOverrides(updated, currentProfile?.name);
+                                      const persisted = await runWithSettingsPin(
+                                        {
+                                          action: 'update_ai_prompt_overrides',
+                                          title: 'Salvar prompt de IA',
+                                          description: 'Confirme com seu PIN para salvar a customização do prompt.',
+                                          resourceType: 'ai_prompt_override',
+                                          resourceId: selectedPromptKey ?? undefined,
+                                        },
+                                        () => settingsService.updateAiPromptOverrides(updated, currentProfile?.name),
+                                      );
+                                      if (!persisted) return;
                                       aiService.invalidateSettings();
                                       setFeedback('success', promptDraft.trim() ? 'Prompt salvo!' : 'Customização removida (usando padrão).');
                                     } catch (err: any) {
@@ -4776,7 +5299,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                   onClick={async () => {
                                     setSaving(true);
                                     try {
-                                      await settingsService.updateFormLayouts(formLayouts, currentProfile?.name);
+                                      const persisted = await runWithSettingsPin(
+                                        {
+                                          action: 'update_form_layouts',
+                                          title: 'Salvar layout de formulário',
+                                          description: 'Confirme com seu PIN para salvar o layout dos formulários.',
+                                          resourceType: 'form_layouts',
+                                        },
+                                        () => settingsService.updateFormLayouts(formLayouts, currentProfile?.name),
+                                      );
+                                      if (!persisted) return;
                                       setFeedback('success', 'Layout de formulário salvo!');
                                     } catch (err: any) {
                                       setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4857,7 +5389,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateResponsibilityConfig(responsibilityConfig, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_responsibility_config',
+                                  title: 'Salvar responsáveis por módulo',
+                                  description: 'Confirme com seu PIN para salvar a configuração de responsáveis por módulo.',
+                                  resourceType: 'responsibility_config',
+                                },
+                                () => settingsService.updateResponsibilityConfig(responsibilityConfig, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Responsáveis por módulo salvos!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -4966,7 +5507,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           onClick={async () => {
                             setSaving(true);
                             try {
-                              await settingsService.updateAutomationThresholds(automationThresholds, currentProfile?.name);
+                              const persisted = await runWithSettingsPin(
+                                {
+                                  action: 'update_automation_thresholds',
+                                  title: 'Salvar limiares de automação',
+                                  description: 'Confirme com seu PIN para salvar os limiares de automação.',
+                                  resourceType: 'automation_thresholds',
+                                },
+                                () => settingsService.updateAutomationThresholds(automationThresholds, currentProfile?.name),
+                              );
+                              if (!persisted) return;
                               setFeedback('success', 'Limiares de automação salvos!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
@@ -5082,8 +5632,18 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                   value={s.status}
                                   onChange={async e => {
                                     const newStatus = e.target.value as SecretEntry['status'];
-                                    await settingsService.updateSecretStatus(s.id, newStatus);
-                                    setSecrets(prev => prev.map(x => x.id === s.id ? { ...x, status: newStatus } : x));
+                                      const persisted = await runWithSettingsPin(
+                                        {
+                                          action: 'update_secret_status',
+                                          title: 'Alterar status da chave',
+                                          description: 'Confirme com seu PIN para alterar o status da chave registrada.',
+                                          resourceType: 'secret_registry',
+                                          resourceId: s.id,
+                                        },
+                                        () => settingsService.updateSecretStatus(s.id, newStatus),
+                                      );
+                                      if (!persisted) return;
+                                      setSecrets(prev => prev.map(x => x.id === s.id ? { ...x, status: newStatus } : x));
                                   }}
                                 >
                                   <option value="configured">Configurado</option>
@@ -5136,7 +5696,17 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               <span style={{ fontSize: '10px', color: '#ea6c00', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '1px 6px', flexShrink: 0 }}>{h.type}</span>
                               <button
                                 onClick={async () => {
-                                  await settingsService.deleteHoliday(h.id);
+                                  const persisted = await runWithSettingsPin(
+                                    {
+                                      action: 'delete_holiday',
+                                      title: 'Remover feriado',
+                                      description: 'Confirme com seu PIN para remover este feriado.',
+                                      resourceType: 'holiday',
+                                      resourceId: h.id,
+                                    },
+                                    () => settingsService.deleteHoliday(h.id),
+                                  );
+                                  if (!persisted) return;
                                   setHolidays(prev => prev.filter(x => x.id !== h.id));
                                 }}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#dc2626', flexShrink: 0 }}
@@ -5183,14 +5753,24 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             if (!holidayForm.date || !holidayForm.name.trim()) {
                               setFeedback('error', 'Data e nome são obrigatórios.'); return;
                             }
-                            await settingsService.upsertHoliday({
-                              date: holidayForm.date,
-                              name: holidayForm.name.trim(),
-                              type: holidayForm.type,
-                              state: holidayForm.state.trim() || null,
-                              city: holidayForm.city?.trim() || null,
-                              is_active: true,
-                            });
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'upsert_holiday',
+                                title: 'Salvar feriado',
+                                description: 'Confirme com seu PIN para salvar este feriado.',
+                                resourceType: 'holiday',
+                                resourceId: holidayForm.date,
+                              },
+                              () => settingsService.upsertHoliday({
+                                date: holidayForm.date,
+                                name: holidayForm.name.trim(),
+                                type: holidayForm.type,
+                                state: holidayForm.state.trim() || null,
+                                city: holidayForm.city?.trim() || null,
+                                is_active: true,
+                              }),
+                            );
+                            if (!persisted) return;
                             const updated = await settingsService.getHolidays();
                             setHolidays(updated);
                             setHolidayFormOpen(false);
@@ -5233,7 +5813,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 ? notifRules.map(r => r.id === rule.id ? rule : r)
                 : [...notifRules, { ...rule, id: Date.now().toString() }];
               setNotifRules(updated);
-              await settingsService.updateNotificationRules(updated, currentProfile?.name);
+              const persisted = await runWithSettingsPin(
+                {
+                  action: 'update_notification_rules',
+                  title: 'Salvar regra de notificação',
+                  description: 'Confirme com seu PIN para salvar a regra de notificação.',
+                  resourceType: 'notification_rules',
+                },
+                () => settingsService.updateNotificationRules(updated, currentProfile?.name),
+              );
+              if (!persisted) return;
               setRuleModal({ open: false, rule: null });
               setFeedback('success', 'Regra salva!');
             }}>

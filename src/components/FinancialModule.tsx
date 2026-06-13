@@ -68,7 +68,7 @@ import type {
 } from '../types/financial.types';
 import type { Client } from '../types/client.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, FinancialSkeleton } from './ui';
 
 interface FinancialModuleProps {
   entityId?: string;
@@ -2975,16 +2975,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
-            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
-          </div>
-          <p className="text-sm font-medium text-slate-500">Carregando dados financeiros…</p>
-        </div>
-      </div>
-    );
+    return <FinancialSkeleton />;
   }
 
   return (

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Modal, ModalBody, ModalFooter } from './ui';
+import { Modal, ModalBody, ModalFooter, ProcessesSkeleton } from './ui';
 import {
   Plus,
   Loader2,
@@ -64,6 +64,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { normalizeSearchText } from '../utils/search';
 import { ClientAvatar } from './shared/ClientAvatar';
 import { useClientPhotos } from '../hooks/useClientPhotos';
+import { useMinLoading } from '../hooks/useMinLoading';
 import { useFormLayout } from '../hooks/useFormLayout';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
@@ -422,6 +423,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
+  const showSkeleton = useMinLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
@@ -4067,116 +4069,8 @@ Regras:
 
         <div className="p-4">
 
-          {loading ? (
-            kanbanMode ? (
-              /* ── Skeleton: Kanban ── */
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-                {[...Array(4)].map((_, colIdx) => (
-                  <div key={colIdx} className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 rounded-xl overflow-hidden flex flex-col">
-                    <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-                      <div className="h-3 w-28 skeleton rounded-full" />
-                      <div className="h-3 w-5 skeleton opacity-60 rounded-full" />
-                    </div>
-                    <div className="p-3 space-y-3">
-                      {[...Array(colIdx === 0 ? 3 : colIdx === 1 ? 2 : 1)].map((_, cardIdx) => (
-                        <div key={cardIdx} className="bg-slate-50 dark:bg-zinc-800/60 border border-slate-100 dark:border-zinc-700/50 rounded-xl p-3 space-y-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full skeleton shrink-0" />
-                            <div className="flex-1 space-y-1.5">
-                              <div className="h-3 w-24 skeleton rounded-full" />
-                              <div className="h-2.5 w-32 skeleton opacity-60 rounded-full" />
-                            </div>
-                          </div>
-                          <div className="h-2.5 w-20 skeleton opacity-60 rounded-full" />
-                          <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-zinc-700/50">
-                            <div className="h-4 w-20 skeleton rounded" />
-                            <div className="flex gap-1.5">
-                              <div className="h-6 w-6 skeleton rounded-lg" />
-                              <div className="h-6 w-6 skeleton rounded-lg" />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              /* ── Skeleton: Lista ── */
-              <div className="bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 rounded-xl">
-                {/* Mobile skeleton */}
-                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-zinc-800">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="p-4">
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <div className="w-8 h-8 rounded-full skeleton shrink-0" />
-                          <div className="flex-1 space-y-1.5">
-                            <div className={`h-3 skeleton rounded-full ${i % 2 === 0 ? 'w-32' : 'w-40'}`} />
-                            <div className="h-2.5 w-36 skeleton opacity-60 rounded-full" />
-                          </div>
-                        </div>
-                        <div className="h-5 w-16 skeleton rounded-full" />
-                      </div>
-                      <div className="h-2.5 w-24 skeleton opacity-60 rounded-full mb-3" />
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-zinc-800">
-                        <div className="h-6 w-20 skeleton rounded" />
-                        <div className="flex gap-2">
-                          <div className="h-8 w-8 skeleton rounded-lg" />
-                          <div className="h-8 w-8 skeleton rounded-lg" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {/* Desktop skeleton */}
-                <div className="hidden lg:block overflow-x-auto w-full">
-                  <table className="min-w-full divide-y divide-slate-100 dark:divide-zinc-800">
-                    <thead className="bg-slate-50/60 dark:bg-zinc-800/40 border-b border-[#e7e5df] dark:border-zinc-700">
-                      <tr>
-                        <th className="px-6 py-3.5 min-w-[180px]"><div className="h-2.5 w-12 skeleton rounded-full" /></th>
-                        <th className="px-6 py-3.5 min-w-[200px]"><div className="h-2.5 w-28 skeleton rounded-full" /></th>
-                        <th className="px-6 py-3.5 min-w-[100px]"><div className="h-2.5 w-16 skeleton rounded-full" /></th>
-                        <th className="px-6 py-3.5 min-w-[160px]"><div className="h-2.5 w-10 skeleton rounded-full" /></th>
-                        <th className="px-6 py-3.5 w-[140px]" />
-                      </tr>
-                    </thead>
-                    <tbody className="bg-[#f8f7f5] dark:bg-zinc-900 divide-y divide-slate-100 dark:divide-zinc-800">
-                      {[...Array(7)].map((_, i) => (
-                        <tr key={i}>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full skeleton shrink-0" />
-                              <div className="space-y-2">
-                                <div className={`h-3.5 skeleton rounded-full ${i % 3 === 0 ? 'w-28' : i % 3 === 1 ? 'w-36' : 'w-32'}`} />
-                                <div className={`h-2.5 skeleton opacity-60 rounded-full ${i % 2 === 0 ? 'w-20' : 'w-24'}`} />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className={`h-3 skeleton rounded-full mb-2 ${i % 2 === 0 ? 'w-40' : 'w-48'}`} />
-                            <div className="h-2.5 w-24 skeleton opacity-60 rounded-full" />
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="h-3 w-16 skeleton rounded-full" />
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="h-6 w-28 skeleton rounded-full" />
-                          </td>
-                          <td className="px-4 py-4 w-[140px]">
-                            <div className="flex items-center justify-end gap-3">
-                              <div className="h-5 w-5 skeleton rounded" />
-                              <div className="h-5 w-5 skeleton rounded" />
-                              <div className="h-5 w-5 skeleton rounded" />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
+          {showSkeleton ? (
+            <ProcessesSkeleton kanban={kanbanMode} />
           ) : filteredProcesses.length === 0 ? (
             <div className="py-16 flex flex-col items-center gap-3 text-center">
               <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">

@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { Task, TaskPriority } from '../types/task.types';
 import { formatDate, formatTime } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { ModuleSkeleton } from './ui';
 
 interface TasksModuleProps {
   focusNewTask?: boolean;
@@ -319,9 +320,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
       {/* Task List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 animate-spin" />
-        </div>
+        <ModuleSkeleton variant="list" rows={7} />
       ) : filteredTasks.length === 0 ? (
         <div className="text-center py-8 sm:py-12 bg-[#f8f7f5] rounded-xl border border-[#e7e5df]">
           <AlertCircle className="w-8 h-8 sm:w-12 sm:h-12 text-slate-400 mx-auto mb-3" />

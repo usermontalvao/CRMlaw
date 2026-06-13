@@ -61,6 +61,7 @@ import { DashboardHeader } from './dashboard/DashboardHeader';
 import { profileService } from '../services/profile.service';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import SensitiveValue from './SensitiveValue';
+import { ShimmerSweep } from './ui';
 
 // ── Modal rápido de ficha do cliente (abre sem sair do dashboard) ────────────
 const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; onNavigateToModule?: (k: string, p?: any) => void }> = ({ clientId, onClose, onNavigateToModule }) => {
@@ -781,11 +782,89 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   if (loading || permissionsLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-amber-600 border-t-transparent"></div>
-          <p className="text-slate-600">Carregando dashboard...</p>
-        </div>
+      <div className="bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
+        <ShimmerSweep>
+          {/* Header */}
+          <div className="mb-5 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="h-3 w-16 rounded-full bg-slate-200/90" />
+              <div className="h-7 w-44 rounded-lg bg-slate-200" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-4 w-20 rounded-full bg-slate-200/80" />
+              <div className="h-4 w-20 rounded-full bg-slate-200/80" />
+              <div className="h-4 w-20 rounded-full bg-slate-200/80" />
+              <div className="h-9 w-32 rounded-lg bg-slate-200" />
+            </div>
+          </div>
+
+          {/* Main grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            {/* Agenda (7 cols) */}
+            <div className="lg:col-span-7 bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+                <div className="space-y-2">
+                  <div className="h-3 w-40 rounded-full bg-slate-200" />
+                  <div className="h-2.5 w-24 rounded-full bg-slate-100" />
+                </div>
+                <div className="h-7 w-28 rounded-lg bg-amber-100/80" />
+              </div>
+              {/* Week strip */}
+              <div className="px-5 py-3 border-b border-slate-200 flex justify-between gap-2">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
+                    <div className="h-2 w-5 rounded-full bg-slate-100" />
+                    <div className={`w-7 h-7 rounded-full ${i === 0 ? 'bg-amber-200/80' : 'bg-slate-100'}`} />
+                  </div>
+                ))}
+              </div>
+              {/* Event rows */}
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-100/70"
+                  style={{ opacity: Math.max(0.3, 1 - i * 0.13) }}
+                >
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${i % 2 === 0 ? 'bg-amber-200' : 'bg-slate-200'}`} />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="h-2.5 rounded-full bg-slate-200" style={{ width: `${48 + (i * 13) % 32}%` }} />
+                    <div className="h-2 rounded-full bg-slate-100" style={{ width: `${26 + (i * 7) % 20}%` }} />
+                  </div>
+                  <div className="h-5 w-16 rounded-full bg-slate-100 flex-shrink-0" />
+                </div>
+              ))}
+            </div>
+
+            {/* Right column (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Financeiro card */}
+              <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">
+                <div className="h-3 w-28 rounded-full bg-slate-200" />
+                <div className="grid grid-cols-2 gap-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="rounded-lg bg-slate-50 border border-slate-100 p-3 space-y-2">
+                      <div className="h-2.5 w-16 rounded-full bg-slate-100" />
+                      <div className="h-4 w-20 rounded bg-slate-200" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Prazos card */}
+              <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-3">
+                <div className="h-3 w-24 rounded-full bg-slate-200" />
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3" style={{ opacity: Math.max(0.4, 1 - i * 0.2) }}>
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-2.5 rounded-full bg-slate-200" style={{ width: `${55 + (i * 9) % 25}%` }} />
+                      <div className="h-2 w-1/3 rounded-full bg-slate-100" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </ShimmerSweep>
       </div>
     );
   }

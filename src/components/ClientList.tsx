@@ -2,6 +2,8 @@ import React from 'react';
 import { Eye, Edit, Trash2, User, Building2, MessageCircle, AlertTriangle, Clock, Search } from 'lucide-react';
 import type { Client } from '../types/client.types';
 import { formatCPF, formatCNPJ } from '../utils/formatters';
+import { ClientsSkeleton } from './ui';
+import { useMinLoading } from '../hooks/useMinLoading';
 
 /* ───── Avatar com iniciais determinísticas ─────
  * Para PF: gera fundo pastel + texto contrastante a partir do hash do nome.
@@ -83,6 +85,7 @@ interface ClientListProps {
 }
 
 const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected, photoUrls }) => {
+  const showSkeleton = useMinLoading(loading);
   const formatCpfCnpj = (client: Client) => {
     const raw = client.cpf_cnpj || '';
     const digits = raw.replace(/\D/g, '');
@@ -95,15 +98,8 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
     return formatCPF(digits);
   };
 
-  if (loading) {
-    return (
-      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-12">
-        <div className="flex flex-col items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mb-4"></div>
-          <p className="text-slate-600">Carregando clientes...</p>
-        </div>
-      </div>
-    );
+  if (showSkeleton) {
+    return <ClientsSkeleton rows={9} />;
   }
 
   if (clients.length === 0) {

@@ -80,7 +80,7 @@ import type { CreateCalendarEventDTO } from '../types/calendar.types';
 import type { Process, CreateProcessDTO, RequirementRole } from '../types/process.types';
 import type { RequirementDocument } from '../types/requirementDocument.types';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
-import { Modal, ModalBody, ModalFooter } from './ui';
+import { Modal, ModalBody, ModalFooter, ModuleSkeleton } from './ui';
 import { useFormLayout } from '../hooks/useFormLayout';
 
 const STATUS_OPTIONS: {
@@ -4836,23 +4836,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       </div>
 
       {loading ? (
-        /* Skeleton loader */
-        <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] overflow-hidden shadow-sm">
-          <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400 animate-pulse" />
-          <div className="divide-y divide-slate-100">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-6 py-4 animate-pulse">
-                <div className="w-24 h-4 bg-slate-200 rounded-full" style={{ opacity: 1 - i * 0.15 }} />
-                <div className="flex-1 h-4 bg-slate-100 rounded-full" />
-                <div className="w-28 h-6 bg-slate-200 rounded-full" />
-                <div className="w-20 h-4 bg-slate-100 rounded-full" />
-                <div className="flex gap-2">
-                  {[...Array(4)].map((_, j) => <div key={j} className="w-7 h-7 bg-slate-100 rounded-lg" />)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ModuleSkeleton variant="list" rows={6} />
       ) : filteredRequirements.length === 0 ? (
         /* Empty state */
         <div className="rounded-2xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-16 flex flex-col items-center gap-4 text-center">

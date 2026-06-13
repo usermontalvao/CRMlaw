@@ -51,6 +51,7 @@ import {
   ChevronsUpDown,
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
+import { ModuleSkeleton } from './ui';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
@@ -3988,10 +3989,7 @@ Regras:
                 </div>
 
                 {savedPetitionsLoading ? (
-                  <div className="px-3 py-6 text-sm text-slate-500 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                    <span>Carregando...</span>
-                  </div>
+                  <div className="px-3 py-3"><ModuleSkeleton variant="list" rows={5} /></div>
                 ) : savedPetitions.length === 0 ? (
                   <div className="px-3 py-4 text-sm text-slate-500">Nenhuma petição recente</div>
                 ) : (

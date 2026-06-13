@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, TrendingUp, Clock, FileCheck, Target, Edit2, Save } from 'lucide-react';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, LeadsSkeleton } from './ui';
 import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
 import { settingsService } from '../services/settings.service';
@@ -213,11 +213,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
   const awaitingDocsLeads = leads.filter((lead) => lead.stage === 'aguardando_documentos').length;
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-8 h-8 text-amber-600 animate-spin" />
-      </div>
-    );
+    return <LeadsSkeleton />;
   }
 
   return (

@@ -70,4 +70,6 @@ export const SYSTEM_EVENTS = {
   NAVIGATE_REQUEST: 'navigate_request',
   // Presence: widget broadcasts online user IDs so other components can read them
   PRESENCE_UPDATED: 'presence_updated',
+  // Admin alterou quais módulos aparecem no menu lateral
+  MODULES_CONFIG_UPDATED: 'modules_config_updated',
 };

@@ -18,6 +18,7 @@ import {
   PenTool,
   PiggyBank,
 } from 'lucide-react';
+import { ModuleSkeleton } from './ui';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import usePermissions from '../hooks/usePermissions';
@@ -564,12 +565,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
         {/* Lista de Notificações */}
         <div className="space-y-3">
           {loading ? (
-            <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-8">
-              <div className="flex items-center justify-center gap-3 text-slate-600">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm">Carregando notificações...</span>
-              </div>
-            </div>
+            <ModuleSkeleton variant="list" rows={7} />
           ) : filteredNotifications.length === 0 ? (
             <div className="bg-[#f8f7f5] border border-slate-100 rounded-lg p-12 text-center">
               <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">

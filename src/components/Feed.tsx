@@ -72,6 +72,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { ShimmerSweep } from './ui';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
@@ -4798,29 +4799,29 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           {/* Feed de Posts */}
           <div className="flex flex-col gap-4 sm:gap-5">
             {loadingPosts ? (
-              <>
+              <ShimmerSweep className="flex flex-col gap-4 sm:gap-5">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-[#f8f7f5] rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div key={i} className="bg-[#f8f7f5] rounded-2xl border border-slate-100 shadow-sm overflow-hidden" style={{ opacity: Math.max(0.4, 1 - (i - 1) * 0.2) }}>
                     <div className="p-4 flex gap-3">
-                      <div className="w-12 h-12 rounded-full bg-slate-200 animate-pulse" />
+                      <div className="w-12 h-12 rounded-full bg-slate-200" />
                       <div className="flex-1 space-y-2">
-                        <div className="h-4 bg-slate-200 rounded w-32 animate-pulse" />
-                        <div className="h-3 bg-slate-100 rounded w-24 animate-pulse" />
+                        <div className="h-4 bg-slate-200 rounded w-32" />
+                        <div className="h-3 bg-slate-100 rounded w-24" />
                       </div>
                     </div>
                     <div className="px-4 pb-4 space-y-2">
-                      <div className="h-4 bg-slate-200 rounded animate-pulse" />
-                      <div className="h-4 bg-slate-200 rounded w-3/4 animate-pulse" />
-                      <div className="h-4 bg-slate-200 rounded w-1/2 animate-pulse" />
+                      <div className="h-4 bg-slate-200 rounded" />
+                      <div className="h-4 bg-slate-200 rounded w-3/4" />
+                      <div className="h-4 bg-slate-200 rounded w-1/2" />
                     </div>
                     <div className="px-4 py-3 border-t border-slate-100 flex gap-4">
-                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
-                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
-                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg" />
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg" />
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg" />
                     </div>
                   </div>
                 ))}
-              </>
+              </ShimmerSweep>
             ) : displayedFeedPosts.length === 0 ? (
               <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-10 text-center">
                 <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white mb-5 shadow-lg shadow-blue-500/25">

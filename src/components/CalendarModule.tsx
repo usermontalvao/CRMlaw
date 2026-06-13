@@ -30,7 +30,7 @@ import type { Client } from '../types/client.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, ModuleSkeleton } from './ui';
 
 declare global {
   interface Window {
@@ -2436,14 +2436,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-          <p className="text-slate-600">Carregando calendário...</p>
-        </div>
-      </div>
-    );
+    return <ModuleSkeleton variant="calendar" header />;
   }
 
   if (error) {

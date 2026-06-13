@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DeadlineFormModal } from './DeadlineFormModal';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, DeadlinesSkeleton } from './ui';
 import {
   Plus,
   Loader2,
@@ -56,6 +56,7 @@ import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { useMinLoading } from '../hooks/useMinLoading';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -442,6 +443,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
+  const showSkeleton = useMinLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3817,11 +3819,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             })}
           </div>
         </div>
-      ) : (!isPastMonth && viewMode !== 'workload' && loading) ? (
-        <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-16 flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-          <p className="text-slate-600">Carregando prazos...</p>
-        </div>
+      ) : (!isPastMonth && viewMode !== 'workload' && showSkeleton) ? (
+        <DeadlinesSkeleton rows={8} />
       ) : (!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length === 0) ? (
         <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-12 text-center">
           <p className="text-slate-600">Nenhum prazo encontrado.</p>

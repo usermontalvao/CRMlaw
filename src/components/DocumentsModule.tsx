@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import {
   Plus,
   FileText,
@@ -1668,9 +1668,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             </div>
 
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-              </div>
+              <ModuleSkeleton variant="list" rows={5} />
             ) : newDocTemplates.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-6 text-center">
                 <FileText className="mx-auto h-8 w-8 text-slate-300" />
@@ -2004,9 +2002,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
           {/* Lista de templates */}
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <ModuleSkeleton variant="cards" rows={6} />
           ) : manageTemplates.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-[#e7e5df] bg-slate-50 py-12 text-center">
               <FileText className="mx-auto h-10 w-10 text-slate-300" />

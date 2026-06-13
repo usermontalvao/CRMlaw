@@ -25,6 +25,7 @@ import { userNotificationService } from '../services/userNotification.service';
 import { signatureExplorerService } from '../services/signatureExplorer.service';
 import { clientService } from '../services/client.service';
 import { useSilentRefresh } from '../hooks/useSilentRefresh';
+import { useMinLoading } from '../hooks/useMinLoading';
 import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
 import { filterGeneratedDocumentsByFolder, filterSignatureRequests } from '../utils/signatureFilters';
@@ -39,7 +40,7 @@ import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
 import type { ProcessPracticeArea } from '../types/process.types';
 import type { Client } from '../types/client.types';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, SignatureSkeleton } from './ui';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -182,6 +183,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [toast]);
 
   const [loading, setLoading] = useState(true);
+  const showListSkeleton = useMinLoading(loading);
   const [signerRoles, setSignerRoles] = useState<string[]>(['Signatário','Contratante','Contratado','Testemunha','Fiador','Cônjuge','Representante Legal']);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
@@ -3439,7 +3441,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return `há ${weeks} semanas`;
   };
 
-  if (loading && wizardStep === 'list') return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>;
+  if (showListSkeleton && wizardStep === 'list') return <SignatureSkeleton rows={8} />;
 
   // SUCCESS
   if (wizardStep === 'success' && createdRequest) {

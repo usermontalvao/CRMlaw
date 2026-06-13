@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { securityPinService, type PinMeta } from '../services/securityPin.service';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, ModuleSkeleton } from './ui';
 
 interface Profile {
   id: string;
@@ -370,9 +370,7 @@ export const UserManagementModule: React.FC = () => {
       {/* User list */}
       <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto', padding: '12px 24px 16px' }}>
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-            <Loader2 size={20} className="animate-spin" style={{ color: '#ea6c00' }} />
-          </div>
+          <ModuleSkeleton variant="list" rows={7} />
         ) : filteredProfiles.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 24px', color: '#747878' }}>
             <Users size={32} style={{ margin: '0 auto 10px', color: '#d1d5db' }} />

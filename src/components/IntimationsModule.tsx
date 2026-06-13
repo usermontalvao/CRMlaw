@@ -39,7 +39,8 @@ import { djenLocalService } from '../services/djenLocal.service';
 import { DeadlineFormModal } from './DeadlineFormModal';
 import { clientService } from '../services/client.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, IntimationsSkeleton } from './ui';
+import { useMinLoading } from '../hooks/useMinLoading';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
@@ -156,6 +157,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialSnapshotLoaded, setInitialSnapshotLoaded] = useState(false);
+  const showInitialSkeleton = useMinLoading(!initialSnapshotLoaded);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
@@ -1547,15 +1549,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
   };
 
-  if (!initialSnapshotLoaded) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-          <p className="text-slate-600">Carregando intimações...</p>
-        </div>
-      </div>
-    );
+  if (showInitialSkeleton) {
+    return <IntimationsSkeleton rows={8} />;
   }
 
   // ── helpers de urgência ──────────────────────────────────────────────

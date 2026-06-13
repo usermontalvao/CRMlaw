@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { Modal, ModalBody } from './ui';
+import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import {
   Plus,
   FileText,
@@ -805,7 +805,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+            <ModuleSkeleton variant="cards" rows={6} />
           ) : filteredPetitions.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/40">
               <FolderOpen className="mx-auto h-10 w-10 text-slate-300 dark:text-zinc-700" />

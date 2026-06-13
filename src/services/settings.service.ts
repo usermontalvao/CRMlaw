@@ -75,6 +75,11 @@ export interface ModulesConfig {
   documents_enabled: boolean;
   calendar_enabled: boolean;
   tasks_enabled: boolean;
+  /**
+   * Módulos ocultados do menu lateral pelo administrador, independente da
+   * permissão de função. Lista de chaves de ModuleName (ex.: 'feed').
+   */
+  hidden_menu_modules?: string[];
 }
 
 export interface PortalModulesConfig {
@@ -1332,13 +1337,15 @@ class SettingsService {
    */
   async getModulesConfig(): Promise<ModulesConfig> {
     const value = await this.getSetting<ModulesConfig>('modules_config');
-    return value || {
+    return {
       leads_enabled: true,
       financial_enabled: true,
       requirements_enabled: true,
       documents_enabled: true,
       calendar_enabled: true,
       tasks_enabled: true,
+      hidden_menu_modules: [],
+      ...(value || {}),
     };
   }
 

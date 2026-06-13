@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
 import {
@@ -95,6 +95,7 @@ import { useTheme } from './contexts/ThemeContext';
 import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { profileService } from './services/profile.service';
+import { ShimmerSweep } from './components/ui';
 import { leadService } from './services/lead.service';
 import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
@@ -745,6 +746,42 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
 };
 
 // ── Sidebar module button with optional temporary-access countdown ────────────
+// Conjunto de módulos ocultados do menu pelo admin (config independente da permissão).
+const HiddenMenuModulesContext = createContext<Set<string>>(new Set());
+
+// Ordem dos itens no menu — usada para escalonar a animação de entrada (um por vez).
+const MENU_ORDER: Record<string, number> = {
+  dashboard: 0, feed: 1, agenda: 2, chat: 3,
+  leads: 4, clientes: 5, processos: 6, requerimentos: 7, peticoes: 8, financeiro: 9,
+  prazos: 10, intimacoes: 11, documentos: 12, assinaturas: 13, cloud: 14, perfil: 15,
+};
+const MENU_ENTER_STEP_MS = 70;
+
+// Placeholder com shimmer exibido enquanto as permissões carregam.
+const SidebarSkeletonBtn: React.FC<{ index?: number }> = ({ index = 0 }) => {
+  const { sidebarMode } = useSidebarMode();
+  const delay = { animationDelay: `${index * 90}ms` } as React.CSSProperties;
+
+  if (sidebarMode === 'normal') {
+    return (
+      <div className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-[7px]">
+        <div className="h-[15px] w-[15px] flex-shrink-0 rounded-[5px] bg-white/[0.08] animate-pulse" style={delay} />
+        <div
+          className="h-[9px] rounded-full bg-white/[0.06] animate-pulse"
+          style={{ ...delay, width: `${52 + ((index * 13) % 34)}%` }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full flex-col items-center gap-1.5 rounded-[10px] px-1 py-[11px]">
+      <div className="h-[18px] w-[18px] rounded-[6px] bg-white/[0.08] animate-pulse" style={delay} />
+      <div className="h-[5px] w-7 rounded-full bg-white/[0.06] animate-pulse" style={delay} />
+    </div>
+  );
+};
+
 const SidebarModuleBtn: React.FC<{
   moduleKey: string;
   label: string;
@@ -753,7 +790,8 @@ const SidebarModuleBtn: React.FC<{
   onClick: () => void;
   expiresAt?: string | null;
   badgeCount?: number;
-}> = ({ label, Icon, isActive, onClick, expiresAt, badgeCount }) => {
+}> = ({ moduleKey, label, Icon, isActive, onClick, expiresAt, badgeCount }) => {
+  const hiddenMenuModules = useContext(HiddenMenuModulesContext);
   const { sidebarMode } = useSidebarMode();
   const { theme } = useTheme();
   const [countdown, setCountdown] = useState<string | null>(null);
@@ -777,11 +815,26 @@ const SidebarModuleBtn: React.FC<{
     return () => clearInterval(id);
   }, [expiresAt]);
 
+  // Admin pode ocultar o módulo do menu — exceto Perfil/Configurações (evita lockout).
+  if (hiddenMenuModules.has(moduleKey) && moduleKey !== 'perfil' && moduleKey !== 'configuracoes') {
+    return null;
+  }
+
+  // Entrada escalonada: cada item surge depois do anterior.
+  // Perfil monta sempre (fora do ciclo de permissões), então não anima — evita quebrar a cascata.
+  const animatesEntry = moduleKey !== 'perfil';
+  const enterClass = animatesEntry ? 'sidebar-enter' : '';
+  const iconEnterClass = animatesEntry ? 'sidebar-icon-enter' : '';
+  const enterStyle = animatesEntry
+    ? { animationDelay: `${(MENU_ORDER[moduleKey] ?? 0) * MENU_ENTER_STEP_MS}ms` }
+    : undefined;
+
   if (sidebarMode === 'normal') {
     return (
       <button
         onClick={onClick}
-        className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] px-2.5 py-[6px] transition-all duration-150 ${
+        style={enterStyle}
+        className={`${enterClass} group relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] px-2.5 py-[6px] transition-all duration-150 ${
           isActive
             ? 'bg-[#f27a23]/[0.13]'
             : isTemporary
@@ -793,7 +846,7 @@ const SidebarModuleBtn: React.FC<{
           <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r-[3px] bg-[#f27a23]" />
         )}
         {/* Ícone */}
-        <div className="relative flex-shrink-0">
+        <div className={`relative flex-shrink-0 ${iconEnterClass}`} style={enterStyle}>
           <Icon className={`h-[14px] w-[14px] transition-colors duration-150 ${
             isActive
               ? 'text-[#f27a23]'
@@ -836,7 +889,8 @@ const SidebarModuleBtn: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
+      style={enterStyle}
+      className={`${enterClass} relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
         isActive
           ? 'text-[#f27a23]'
           : isTemporary
@@ -851,7 +905,7 @@ const SidebarModuleBtn: React.FC<{
       {isTemporary && !isActive && (
         <div className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-cyan-500" />
       )}
-      <div className="relative">
+      <div className={`relative ${iconEnterClass}`} style={enterStyle}>
         <Icon
           className="h-[18px] w-[18px]"
           strokeWidth={1.75}
@@ -914,11 +968,22 @@ const MainApp: React.FC = () => {
     documents_enabled: true,
     calendar_enabled: true,
     tasks_enabled: true,
+    hidden_menu_modules: [],
   });
 
   useEffect(() => {
     settingsService.getModulesConfig().then(setModulesConfig).catch(() => {});
+    // Recarrega a config de módulos quando o admin salvar em Configurações.
+    const off = events.on(SYSTEM_EVENTS.MODULES_CONFIG_UPDATED, () => {
+      settingsService.getModulesConfig().then(setModulesConfig).catch(() => {});
+    });
+    return off;
   }, []);
+
+  const hiddenMenuModules = useMemo(
+    () => new Set(modulesConfig.hidden_menu_modules ?? []),
+    [modulesConfig.hidden_menu_modules],
+  );
 
   const isModuleEnabled = useCallback((moduleKey: ModuleName): boolean => {
     const map: Partial<Record<ModuleName, keyof ModulesConfig>> = {
@@ -1080,6 +1145,7 @@ const MainApp: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileBanner, setProfileBanner] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -1245,6 +1311,7 @@ const MainApp: React.FC = () => {
               role: sanitizeRole(parsed?.role),
               cpf: parsed?.cpf || '',
             });
+            setProfileReady(true);
           } catch (error) {
             sessionStorage.removeItem(PROFILE_CACHE_KEY);
           }
@@ -1381,6 +1448,7 @@ const MainApp: React.FC = () => {
           }
         } finally {
           setProfileLoading(false);
+          setProfileReady(true);
         }
       };
 
@@ -1854,6 +1922,7 @@ useEffect(() => {
         aria-hidden="true"
       />
 
+      <HiddenMenuModulesContext.Provider value={hiddenMenuModules}>
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex flex-col ${
           sidebarMode === 'normal' ? 'w-[256px]' : 'w-[84px]'
@@ -1880,6 +1949,13 @@ useEffect(() => {
           </div>
         )}
 
+        {/* Barra de carregamento (enquanto resolve permissões) */}
+        {permissionsLoading && (
+          <div className="h-[2px] w-full overflow-hidden bg-white/[0.04]">
+            <div className="h-full rounded-full bg-[#f27a23] animate-loading-bar" />
+          </div>
+        )}
+
         {/* Navigation */}
         <nav className={`flex-1 overflow-y-auto scrollbar-hide flex flex-col ${
           sidebarMode === 'normal' ? 'pl-0 pr-2.5 py-2 gap-0' : 'px-2.5 py-3 gap-0.5'
@@ -1897,6 +1973,15 @@ useEffect(() => {
           <SidebarModuleBtn moduleKey="feed" label="Feed" Icon={Newspaper}
             isActive={activeModule === 'feed'}
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }} />
+
+          {/* Skeleton enquanto as permissões carregam */}
+          {permissionsLoading && (
+            <div className={`flex flex-col ${sidebarMode === 'normal' ? 'gap-0' : 'gap-0.5'}`} aria-hidden="true">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <SidebarSkeletonBtn key={i} index={i} />
+              ))}
+            </div>
+          )}
           {!permissionsLoading && canAccessModule('agenda') && isModuleEnabled('agenda') && (
             <SidebarModuleBtn moduleKey="agenda" label="Agenda" Icon={Calendar}
               isActive={activeModule === 'agenda'}
@@ -1912,7 +1997,7 @@ useEffect(() => {
 
           {/* ── ATENDIMENTO ── Leads ────────────────────────────── */}
           {sidebarMode === 'normal' && !permissionsLoading &&
-            canAccessModule('leads') && isModuleEnabled('leads') && (
+            canAccessModule('leads') && isModuleEnabled('leads') && !hiddenMenuModules.has('leads') && (
             <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Atendimento</span>
               <div className="h-px flex-1 bg-white/[0.06]" />
@@ -1927,10 +2012,11 @@ useEffect(() => {
 
           {/* ── GESTÃO ── Clientes, Processos, Req., Petições, Fin. */}
           {sidebarMode === 'normal' && !permissionsLoading && (
-            canAccessModule('clientes') || canAccessModule('processos') ||
-            (canAccessModule('requerimentos') && isModuleEnabled('requerimentos')) ||
-            canAccessModule('peticoes') ||
-            (canAccessModule('financeiro') && isModuleEnabled('financeiro'))
+            (canAccessModule('clientes') && !hiddenMenuModules.has('clientes')) ||
+            (canAccessModule('processos') && !hiddenMenuModules.has('processos')) ||
+            (canAccessModule('requerimentos') && isModuleEnabled('requerimentos') && !hiddenMenuModules.has('requerimentos')) ||
+            (canAccessModule('peticoes') && !hiddenMenuModules.has('peticoes')) ||
+            (canAccessModule('financeiro') && isModuleEnabled('financeiro') && !hiddenMenuModules.has('financeiro'))
           ) && (
             <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Gestão</span>
@@ -1969,7 +2055,8 @@ useEffect(() => {
 
           {/* ── OPERACIONAL ── Prazos, Intimações ──────────────── */}
           {sidebarMode === 'normal' && !permissionsLoading && (
-            canAccessModule('prazos') || canAccessModule('intimacoes')
+            (canAccessModule('prazos') && !hiddenMenuModules.has('prazos')) ||
+            (canAccessModule('intimacoes') && !hiddenMenuModules.has('intimacoes'))
           ) && (
             <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Operacional</span>
@@ -1991,8 +2078,9 @@ useEffect(() => {
 
           {/* ── DOCS ── Documentos, Assinaturas, Cloud ─────────── */}
           {sidebarMode === 'normal' && !permissionsLoading && (
-            (canAccessModule('documentos') && isModuleEnabled('documentos')) ||
-            canAccessModule('assinaturas') || canAccessModule('cloud')
+            (canAccessModule('documentos') && isModuleEnabled('documentos') && !hiddenMenuModules.has('documentos')) ||
+            (canAccessModule('assinaturas') && !hiddenMenuModules.has('assinaturas')) ||
+            (canAccessModule('cloud') && !hiddenMenuModules.has('cloud'))
           ) && (
             <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Docs</span>
@@ -2046,6 +2134,7 @@ useEffect(() => {
           </button>
         </div>
       </aside>
+      </HiddenMenuModulesContext.Provider>
 
         {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950">
@@ -2166,23 +2255,27 @@ useEffect(() => {
                   <Search className="w-4 h-4" />
                 </button>
 
-                {activeModule !== 'cloud' && isModuleEnabled('tarefas') && canAccessModule('tarefas') && (
-                <button
-                  onClick={() => navigateTo('tarefas')}
-                  className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
-                    activeModule === 'tarefas'
-                      ? 'text-[#f27a23] bg-[#fff3e8]'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-                  }`}
-                  title="Tarefas"
-                >
-                  <CheckSquare className="w-[18px] h-[18px]" />
-                  {safePendingTasksCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white flex items-center justify-center leading-none">
-                      {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
-                    </span>
-                  )}
-                </button>
+                {activeModule !== 'cloud' && (
+                  permissionsLoading ? (
+                    <div className="h-9 w-9 rounded-lg bg-slate-100 animate-pulse" aria-hidden="true" />
+                  ) : (isModuleEnabled('tarefas') && canAccessModule('tarefas') && !hiddenMenuModules.has('tarefas') && (
+                  <button
+                    onClick={() => navigateTo('tarefas')}
+                    className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                      activeModule === 'tarefas'
+                        ? 'text-[#f27a23] bg-[#fff3e8]'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                    }`}
+                    title="Tarefas"
+                  >
+                    <CheckSquare className="w-[18px] h-[18px]" />
+                    {safePendingTasksCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white flex items-center justify-center leading-none">
+                        {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
+                      </span>
+                    )}
+                  </button>
+                  ))
                 )}
 
                 {activeModule !== 'cloud' && (
@@ -2210,21 +2303,31 @@ useEffect(() => {
                   }}
                 />
 
-                <div className={`flex items-center gap-2 ${activeModule === 'cloud' ? '' : 'ml-1 pl-3 border-l border-[#e7e5df]'}`}>
-                  <div className="hidden lg:block text-right">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate max-w-[140px] leading-tight">{profile.name}</p>
-                    <p className="text-[11px] text-slate-500 leading-tight">{profile.role}</p>
-                  </div>
+                {/* Tema — junto das demais ações, antes do divisor de identidade */}
+                {activeModule !== 'cloud' && (
+                  <button
+                    onClick={toggleTheme}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                    title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+                  >
+                    {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+                  </button>
+                )}
 
-                  {/* Theme Toggle */}
-                  {activeModule !== 'cloud' && (
-                    <button
-                      onClick={toggleTheme}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                      title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
-                    >
-                      {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-                    </button>
+                {/* Identidade: nome + foto agrupados (foto à direita), tamanhos fixos */}
+                <div className={`flex items-center gap-3 ${activeModule === 'cloud' ? '' : 'ml-1.5 pl-3.5 border-l border-[#e7e5df]'}`}>
+                  {profileReady ? (
+                    <div className="hidden lg:block text-right leading-tight w-[190px]">
+                      <p className="text-[14.5px] font-semibold text-slate-900 truncate">{profile.name}</p>
+                      <p className="text-[12px] text-slate-500 truncate">{profile.role}</p>
+                    </div>
+                  ) : (
+                    <ShimmerSweep className="hidden lg:block w-[190px] rounded" aria-hidden="true">
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="h-3.5 w-32 rounded bg-slate-200" />
+                        <div className="h-2.5 w-20 rounded bg-slate-200" />
+                      </div>
+                    </ShimmerSweep>
                   )}
 
                   <div className="relative" ref={profileMenuRef}>
@@ -2238,8 +2341,14 @@ useEffect(() => {
                       aria-expanded={profileMenuOpen}
                       title="Meu Perfil"
                     >
-                      <div className="relative overflow-hidden rounded-full border border-amber-500 shadow-md h-9 w-9">
-                        <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="w-full h-full object-cover" />
+                      <div className="relative overflow-hidden rounded-full border border-amber-500 shadow-md h-11 w-11 bg-amber-100">
+                        {profileReady ? (
+                          <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} decoding="async" className="w-full h-full object-cover" />
+                        ) : (
+                          <ShimmerSweep className="h-full w-full">
+                            <div className="h-full w-full bg-slate-200 dark:bg-zinc-700" />
+                          </ShimmerSweep>
+                        )}
                       </div>
                     </button>
                     <div

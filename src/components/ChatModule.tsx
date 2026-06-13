@@ -8,6 +8,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { ModuleSkeleton } from './ui';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const DEFAULT_ROOM_NAME = 'Geral';
@@ -1522,7 +1523,7 @@ const ChatModule: React.FC = () => {
 
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             {loadingRooms && rooms.length === 0 && (
-              <div className="p-6 text-sm text-gray-500 dark:text-gray-400 text-center">Carregando conversas...</div>
+              <div className="p-3"><ModuleSkeleton variant="list" rows={6} /></div>
             )}
             {!loadingRooms && filteredRooms.length === 0 && (
               <div className="p-6 text-center">

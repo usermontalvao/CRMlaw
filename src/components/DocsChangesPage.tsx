@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.224': { name: 'Café Configuração Blindada', emoji: '🔐' },
   '1.10.223': { name: 'Café Processo Lúcido', emoji: '🧠' },
   '1.10.217': { name: 'Café Recibo Limpo', emoji: '🧾' },
   '1.10.216': { name: 'Café Componentes Padrão', emoji: '🎨' },
@@ -879,6 +880,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.224',
+    date: '13/06/2026',
+    summary: 'Configurações: alterações passaram a exigir PIN com cobertura ampliada de saves e autosaves; documentação e skeletons do futuro módulo WhatsApp foram adicionados.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'PIN expandido em Configurações', description: 'O módulo de Configurações ganhou uma camada centralizada de verificação por PIN para proteger gravações, exclusões e mudanças operacionais em múltiplas seções, incluindo fluxos antes salvos sem confirmação.' },
+        { type: 'improvement' as const, title: 'Skeletons e helpers visuais reutilizáveis', description: 'Foram adicionados componentes base de loading visual e utilitários de shimmer/min loading para reutilização nos módulos da interface.' },
+        { type: 'feature' as const, title: 'Documentação do MVP do módulo WhatsApp', description: 'Adicionado documento técnico do MVP de WhatsApp com escopo separado do Chat interno, foco em multiatendimento e base para evolução futura.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.223',
     date: '12/06/2026',
