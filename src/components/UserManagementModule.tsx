@@ -3,6 +3,7 @@ import { Users, Plus, Search, Shield, Trash2, Edit2, Loader2, Eye, EyeOff, Check
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { securityPinService, type PinMeta } from '../services/securityPin.service';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { Modal, ModalBody } from './ui';
 
@@ -29,6 +30,7 @@ const ROLES = [
 
 export const UserManagementModule: React.FC = () => {
   const { user } = useAuth();
+  const { requirePin } = useSecurityPin();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -116,82 +118,75 @@ export const UserManagementModule: React.FC = () => {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim()) {
       setError('Preencha todos os campos obrigatórios.');
       return;
     }
-
     if (formData.password.length < 6) {
       setError('A senha deve ter pelo menos 6 caracteres.');
       return;
     }
-
-    // Regras:
-    // - Advogado: pode criar qualquer cargo exceto Administrador
-    // - Sócio/Administrador: pode criar qualquer cargo
     const selectedRole = ROLES.find((r) => r.value === formData.role);
     const normalizedTargetRole = normalizeRole(selectedRole?.value);
-    if (normalizedCurrentRole === 'advogado') {
-      if (normalizedTargetRole === 'administrador') {
-        setError('Apenas Administradores podem criar usuários com cargo de Administrador.');
-        return;
-      }
-    }
-
-    setCreating(true);
-    setError(null);
-
-    try {
-      const { error: fnError } = await supabase.functions.invoke('create-collaborator', {
-        body: {
-          email: formData.email,
-          password: formData.password,
-          name: formData.name,
-          role: formData.role,
-        },
-      });
-
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
-
-      // Reset form e recarregar
-      setFormData({ name: '', email: '', role: 'Auxiliar', password: '' });
-      setShowCreateModal(false);
-      setSuccess(`Usuário "${formData.name}" criado com sucesso!`);
-      loadProfiles();
-
-    } catch (err: any) {
-      console.error('Erro ao criar usuário:', err);
-      setError(err.message || 'Erro ao criar usuário. Tente novamente.');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`Tem certeza que deseja excluir o usuário "${userName}"? Esta ação não pode ser desfeita.`)) {
+    if (normalizedCurrentRole === 'advogado' && normalizedTargetRole === 'administrador') {
+      setError('Apenas Administradores podem criar usuários com cargo de Administrador.');
       return;
     }
 
-    setDeleting(userId);
-    try {
-      // Usar Edge Function para deletar do Auth e soft delete do profile
-      const { error: fnError } = await supabase.functions.invoke('delete-user', {
-        body: { user_id: userId },
-      });
+    const nameSnapshot = formData.name;
+    await requirePin({
+      action: 'create_user',
+      resourceType: 'user',
+      resourceId: user?.id ?? 'new',
+      sensitivity: 'high',
+      title: 'Criar usuário',
+      description: `Confirme seu PIN para criar o usuário "${nameSnapshot}".`,
+      actionLabel: 'Criar usuário',
+      onVerified: async () => {
+        setCreating(true);
+        setError(null);
+        try {
+          const { error: fnError } = await supabase.functions.invoke('create-collaborator', {
+            body: { email: formData.email, password: formData.password, name: formData.name, role: formData.role },
+          });
+          if (fnError) throw new Error(fnError.message);
+          setFormData({ name: '', email: '', role: 'Auxiliar', password: '' });
+          setShowCreateModal(false);
+          setSuccess(`Usuário "${nameSnapshot}" criado com sucesso!`);
+          loadProfiles();
+        } catch (err: any) {
+          setError(err.message || 'Erro ao criar usuário. Tente novamente.');
+        } finally {
+          setCreating(false);
+        }
+      },
+    });
+  };
 
-      if (fnError) throw new Error(fnError.message);
-
-      setSuccess(`Usuário "${userName}" excluído com sucesso!`);
-      loadProfiles();
-    } catch (err: any) {
-      console.error('Erro ao excluir usuário:', err);
-      setError(err.message || 'Erro ao excluir usuário.');
-    } finally {
-      setDeleting(null);
-    }
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    await requirePin({
+      action: 'delete_user',
+      resourceType: 'user',
+      resourceId: userId,
+      sensitivity: 'high',
+      title: 'Excluir usuário',
+      description: `Confirme seu PIN para excluir permanentemente "${userName}". Esta ação não pode ser desfeita.`,
+      actionLabel: 'Excluir permanentemente',
+      onVerified: async () => {
+        setDeleting(userId);
+        try {
+          const { error: fnError } = await supabase.functions.invoke('delete-user', { body: { user_id: userId } });
+          if (fnError) throw new Error(fnError.message);
+          setSuccess(`Usuário "${userName}" excluído com sucesso!`);
+          loadProfiles();
+        } catch (err: any) {
+          setError(err.message || 'Erro ao excluir usuário.');
+        } finally {
+          setDeleting(null);
+        }
+      },
+    });
   };
 
   const handleEditUser = (profile: Profile) => {
@@ -208,71 +203,94 @@ export const UserManagementModule: React.FC = () => {
   const handleAdminResetPin = async () => {
     if (!editingUser?.user_id) return;
     const name = editingUser.name;
-    if (!confirm(`Resetar PIN de ${name}?\n\nO PIN atual será removido. O usuário precisará criar um novo PIN na próxima ação sensível.`)) return;
-
-    setResettingPin(true);
-    try {
-      await securityPinService.adminResetSecurityPin(editingUser.user_id);
-      setSuccess(`PIN de "${name}" removido. O usuário precisará criar um novo PIN.`);
-      setEditingUserPinMeta({ has_pin: false, pin_required_setup: true });
-    } catch (err: any) {
-      setError(err.message || 'Erro ao resetar PIN.');
-    } finally {
-      setResettingPin(false);
-    }
+    const targetUserId = editingUser.user_id;
+    await requirePin({
+      action: 'reset_user_pin',
+      resourceType: 'user',
+      resourceId: targetUserId,
+      sensitivity: 'high',
+      title: 'Resetar PIN',
+      description: `O PIN de "${name}" será removido. O usuário precisará criar um novo PIN na próxima ação sensível.`,
+      actionLabel: 'Resetar PIN',
+      onVerified: async () => {
+        setResettingPin(true);
+        try {
+          await securityPinService.adminResetSecurityPin(targetUserId);
+          setSuccess(`PIN de "${name}" removido. O usuário precisará criar um novo PIN.`);
+          setEditingUserPinMeta({ has_pin: false, pin_required_setup: true });
+        } catch (err: any) {
+          setError(err.message || 'Erro ao resetar PIN.');
+        } finally {
+          setResettingPin(false);
+        }
+      },
+    });
   };
 
   const handleSaveEdit = async () => {
     if (!editingUser) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ role: editRole, updated_at: new Date().toISOString() })
-        .eq('user_id', editingUser.user_id);
-
-      if (updateError) throw updateError;
-
-      setSuccess(`Cargo de "${editingUser.name}" atualizado para "${editRole}"!`);
-      setEditingUser(null);
-      loadProfiles();
-    } catch (err: any) {
-      console.error('Erro ao atualizar cargo:', err);
-      setError('Erro ao atualizar cargo do usuário.');
-    } finally {
-      setSaving(false);
-    }
+    const targetName = editingUser.name;
+    const targetUserId = editingUser.user_id;
+    await requirePin({
+      action: 'update_user_role',
+      resourceType: 'user',
+      resourceId: targetUserId ?? editingUser.id,
+      sensitivity: 'high',
+      title: 'Alterar cargo',
+      description: `Confirme seu PIN para alterar o cargo de "${targetName}" para "${editRole}".`,
+      actionLabel: 'Salvar cargo',
+      onVerified: async () => {
+        setSaving(true);
+        setError(null);
+        try {
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ role: editRole, updated_at: new Date().toISOString() })
+            .eq('user_id', targetUserId);
+          if (updateError) throw updateError;
+          setSuccess(`Cargo de "${targetName}" atualizado para "${editRole}"!`);
+          setEditingUser(null);
+          loadProfiles();
+        } catch (err: any) {
+          setError('Erro ao atualizar cargo do usuário.');
+        } finally {
+          setSaving(false);
+        }
+      },
+    });
   };
 
   const handleToggleStatus = async (profile: Profile) => {
-    const activate = !profile.is_active;
-    const action = activate ? 'reativar' : 'desativar';
-    if (!confirm(`Tem certeza que deseja ${action} o acesso de "${profile.name}"?`)) return;
-
     if (!profile.user_id) {
       setError('Usuário sem vínculo (user_id) no perfil.');
       return;
     }
-
-    setToggling(profile.user_id);
-    try {
-      const { error: fnError } = await supabase.functions.invoke('toggle-user-status', {
-        body: { user_id: profile.user_id, activate },
-      });
-
-      if (fnError) throw new Error(fnError.message);
-
-      setSuccess(`Acesso de "${profile.name}" ${activate ? 'reativado' : 'desativado'} com sucesso!`);
-      loadProfiles();
-    } catch (err: any) {
-      console.error('Erro ao alterar status:', err);
-      setError(err.message || 'Erro ao alterar status do usuário.');
-    } finally {
-      setToggling(null);
-    }
+    const activate = !profile.is_active;
+    const targetUserId = profile.user_id;
+    await requirePin({
+      action: activate ? 'activate_user' : 'deactivate_user',
+      resourceType: 'user',
+      resourceId: targetUserId,
+      sensitivity: 'high',
+      title: activate ? 'Reativar acesso' : 'Desativar acesso',
+      description: `Confirme seu PIN para ${activate ? 'reativar' : 'desativar'} o acesso de "${profile.name}".`,
+      actionLabel: activate ? 'Reativar acesso' : 'Desativar acesso',
+      onVerified: async () => {
+        setToggling(targetUserId);
+        try {
+          const { error: fnError } = await supabase.functions.invoke('toggle-user-status', {
+            body: { user_id: targetUserId, activate },
+          });
+          if (fnError) throw new Error(fnError.message);
+          setSuccess(`Acesso de "${profile.name}" ${activate ? 'reativado' : 'desativado'} com sucesso!`);
+          loadProfiles();
+        } catch (err: any) {
+          setError(err.message || 'Erro ao alterar status do usuário.');
+        } finally {
+          setToggling(null);
+        }
+      },
+    });
   };
 
   const filteredProfiles = profiles.filter((profile) =>
@@ -511,12 +529,12 @@ export const UserManagementModule: React.FC = () => {
         size="sm"
         zIndex={50}
         footer={
-          <div className="flex gap-3">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => setShowCreateModal(false)}
               disabled={creating}
-              className="flex-1 px-4 py-2 border border-[#e7e5df] text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 rounded transition disabled:opacity-50"
             >
               Cancelar
             </button>
@@ -524,7 +542,7 @@ export const UserManagementModule: React.FC = () => {
               type="submit"
               form="create-user-form"
               disabled={creating}
-              className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 text-[13px] font-semibold bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors disabled:opacity-50"
             >
               {creating ? (
                 <>
@@ -538,16 +556,21 @@ export const UserManagementModule: React.FC = () => {
           </div>
         }
       >
-        <ModalBody>
-          <form id="create-user-form" onSubmit={handleCreateUser} className="space-y-4">
+        <ModalBody className="px-5 py-4">
+          <form
+            id="create-user-form"
+            onSubmit={handleCreateUser}
+            className="space-y-3"
+            style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}
+          >
             {/* Nome */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Nome Completo</label>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1">Nome Completo</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                 placeholder="Nome do colaborador"
                 required
                 disabled={creating}
@@ -556,12 +579,12 @@ export const UserManagementModule: React.FC = () => {
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">E-mail</label>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1">E-mail</label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                 placeholder="email@exemplo.com"
                 required
                 disabled={creating}
@@ -570,11 +593,11 @@ export const UserManagementModule: React.FC = () => {
 
             {/* Cargo */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Cargo</label>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1">Cargo</label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                 disabled={creating}
               >
                 {ROLES.filter((role) => {
@@ -603,13 +626,13 @@ export const UserManagementModule: React.FC = () => {
 
             {/* Senha */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Senha Temporária</label>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1">Senha Temporária</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2 pr-10 border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  className="w-full h-[34px] px-3 pr-10 border border-slate-300 rounded text-[13px] focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400"
                   placeholder="Mínimo 6 caracteres"
                   required
                   disabled={creating}

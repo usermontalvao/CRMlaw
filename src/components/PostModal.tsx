@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from './ui';
 import {
-  X,
   ArrowLeft,
   Heart,
   MessageCircle,
@@ -387,47 +386,27 @@ export const PostModal: React.FC<PostModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  const modalContent = (
-    <div
-      className="fixed inset-0 z-[9999] flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4"
-      onClick={onClose}
-    >
-      <div
-        className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div
-          className="aero-modal-inner flex items-center justify-between gap-3 px-4 py-3 border-b border-white/30 dark:border-white/10 flex-shrink-0"
-        >
-          <div className="flex items-center gap-3">
-            {onBackToFeed && (
-              <button
-                onClick={onBackToFeed}
-                className="p-1.5 rounded-full transition-colors"
-                style={{ color: '#475569' }}
-                title="Voltar ao Feed"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            )}
-            <h2 className="text-base font-semibold sm:text-lg" style={{ color: '#0f172a' }}>
-              {post ? `Post de ${post.author?.name || 'Usuário'}` : 'Carregando...'}
-            </h2>
-          </div>
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={post ? `Post de ${post.author?.name || 'Usuário'}` : 'Carregando...'}
+      eyebrow="Feed"
+      size="lg"
+      zIndex={9999}
+      headerActions={
+        onBackToFeed ? (
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-full transition-colors"
-            style={{ color: '#475569' }}
+            onClick={onBackToFeed}
+            className="p-1.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+            title="Voltar ao Feed"
           >
-            <X className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
           </button>
-        </div>
-
-        {/* Conteúdo */}
-        <div className="flex-1 overflow-y-auto">
+        ) : undefined
+      }
+    >
+      <div>
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -927,12 +906,9 @@ export const PostModal: React.FC<PostModalProps> = ({
             </>
 
           ) : null}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
-
-  return createPortal(modalContent, document.body);
 };
 
 export default PostModal;

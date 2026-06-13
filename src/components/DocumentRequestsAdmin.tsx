@@ -3,7 +3,7 @@
  * solicitaÃ§Ãµes de documentos para um cliente especÃ­fico.
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal, ModalBody } from './ui';
 import {
   FolderOpen, Plus, Trash2, Check, X, Loader2, ChevronDown,
   CheckCircle2, Clock, XCircle, AlertCircle, Download, Eye,
@@ -131,146 +131,70 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-3 py-6 sm:px-6">
-      <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-xl bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
-        <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
-
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Nova solicitaÃ§Ã£o</p>
-            <h2 className="text-base font-bold text-slate-900">{client.full_name}</h2>
-          </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-            <X className="h-4 w-4" />
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Nova Solicitação"
+      eyebrow={client.full_name}
+      size="md"
+      zIndex={80}
+      footer={
+        <div className="flex items-center justify-end gap-3">
+          <button onClick={onClose} disabled={saving} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {saving ? 'Enviando...' : 'Criar solicitação'}
           </button>
         </div>
-
-        <div className="overflow-y-auto max-h-[70vh] p-5 space-y-5">
-          {/* TÃ­tulo */}
+      }
+    >
+      <ModalBody className="px-5 py-4">
+        <div className="flex flex-col gap-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              TÃ­tulo da solicitaÃ§Ã£o *
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Ex: Documentos para audiÃªncia trabalhista"
-              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-            />
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Título da solicitação <span className="text-red-500">*</span></label>
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex: Documentos para audiência trabalhista" className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition" />
           </div>
-
-          {/* DescriÃ§Ã£o */}
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              InstruÃ§Ãµes (opcional)
-            </label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="InstruÃ§Ãµes gerais para o cliente..."
-              rows={2}
-              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-            />
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Instruções (opcional)</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Instruções gerais para o cliente..." rows={2} className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-[13px] placeholder:text-slate-400 resize-none transition" />
           </div>
-
-          {/* Prazo */}
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              Prazo para envio (opcional)
-            </label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              className="w-full rounded-xl border border-[#e7e5df] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-            />
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Prazo para envio (opcional)</label>
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition" />
           </div>
-
-          {/* Lista de documentos */}
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">
-              Documentos necessÃ¡rios *
-            </label>
-
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-2">Documentos necessários <span className="text-red-500">*</span></label>
             <div className="space-y-2 mb-3">
               {items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-start">
-                  <div className="flex-1 space-y-1.5">
-                    <input
-                      type="text"
-                      value={item.label}
-                      onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, label: e.target.value } : it))}
-                      placeholder="Nome do documento"
-                      className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-                    />
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={item.required}
-                          onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, required: e.target.checked } : it))}
-                          className="rounded accent-orange-500"
-                        />
-                        ObrigatÃ³rio
-                      </label>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => removeItem(idx)}
-                    className="mt-2 rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                <div key={idx} className="flex gap-2 items-center">
+                  <input type="text" value={item.label} onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, label: e.target.value } : it))} placeholder="Nome do documento" className="flex-1 rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition" />
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer whitespace-nowrap">
+                    <input type="checkbox" checked={item.required} onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, required: e.target.checked } : it))} className="rounded accent-orange-500" />
+                    Obrigatório
+                  </label>
+                  <button onClick={() => removeItem(idx)} className="p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 rounded transition"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>
-
-            {/* SugestÃµes rÃ¡pidas */}
             <div className="mb-2">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">AdiÃ§Ã£o rÃ¡pida</p>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Adição rápida</p>
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_ITEMS.filter(q => !items.some(i => i.label === q)).slice(0, 8).map(q => (
-                  <button
-                    key={q}
-                    onClick={() => addItem(q)}
-                    className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition"
-                  >
+                  <button key={q} onClick={() => addItem(q)} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition dark:border-zinc-700 dark:bg-zinc-800 dark:text-slate-300">
                     <Plus className="h-3 w-3" /> {q}
                   </button>
                 ))}
               </div>
             </div>
-
-            <button
-              onClick={() => addItem()}
-              className="flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700"
-            >
+            <button onClick={() => addItem()} className="flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700">
               <Plus className="h-3.5 w-3.5" /> Adicionar documento personalizado
             </button>
           </div>
-
-          {error && (
-            <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700 ring-1 ring-rose-200">{error}</p>
-          )}
+          {error && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
         </div>
-
-        <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
-          <button onClick={onClose} disabled={saving}
-            className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-            Cancelar
-          </button>
-          <button onClick={handleSave} disabled={saving}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {saving ? 'Enviando...' : 'Criar solicitaÃ§Ã£o'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
+      </ModalBody>
+    </Modal>
   );
 };
 

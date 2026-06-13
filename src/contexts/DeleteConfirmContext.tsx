@@ -34,15 +34,14 @@ export const DeleteConfirmProvider: React.FC<{ children: React.ReactNode }> = ({
   const { success, error: toastError } = useToastContext();
 
   const buildPinOptions = (opts?: ConfirmOptions) => {
-    const entityPart = opts?.entityName ? `"${opts.entityName}" — ` : '';
     const description = opts?.message
-      ? opts.message
-      : `${entityPart}Esta ação é irreversível. Informe seu PIN de Segurança para continuar.`;
+      ?? 'Esta ação é irreversível. Informe seu PIN de Segurança para continuar.';
     return {
       action:       'delete_action',
       sensitivity:  (opts?.sensitivity ?? 'critical') as 'high' | 'critical',
       title:        opts?.title || 'Excluir item',
       description,
+      entityName:   opts?.entityName,
       actionLabel:  opts?.confirmLabel || 'Excluir',
     };
   };

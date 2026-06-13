@@ -7,7 +7,7 @@
  * função _portal_stage_from_names). Esta function apenas faz upsert dos
  * movimentos e atualiza os flags de sincronização.
  *
- * Roda: a cada 2 dias às 06:00 via pg_cron (job #16)
+ * Agendado atualmente via pg_cron (job #16) para rodar a cada 4 horas.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -132,7 +132,7 @@ serve(async (req) => {
   } catch (_) { /* usa chave padrão */ }
 
   const { data: processes, error: procErr } = await supabase
-    .from('processes').select('id, process_code, status')
+    .from('processes').select('id, process_code, status, court')
     .not('process_code', 'is', null).neq('process_code', '')
 
   if (procErr) {
@@ -213,12 +213,19 @@ serve(async (req) => {
         if (!upsertErr) totalNovos++
       }
 
-      // Atualiza apenas os flags de sincronização (status é do trigger).
-      await supabase.from('processes').update({
+      const syncedAt = new Date().toISOString()
+      const courtFromDatajud = src.orgaoJulgador?.nomeOrgao ?? null
+
+      const processUpdate: Record<string, any> = {
         djen_synced: true,
-        djen_last_sync: new Date().toISOString(),
+        djen_last_sync: syncedAt,
         djen_has_data: true,
-      }).eq('id', proc.id)
+        datajud_synced_at: syncedAt,
+      }
+      if (courtFromDatajud && !proc.court) {
+        processUpdate.court = courtFromDatajud
+      }
+      await supabase.from('processes').update(processUpdate).eq('id', proc.id)
 
       await new Promise(r => setTimeout(r, 1000))
 

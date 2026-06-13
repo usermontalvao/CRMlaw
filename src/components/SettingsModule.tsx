@@ -57,6 +57,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { supabase } from '../config/supabase';
 import ConfigurableList, { normalizeItems, type ConfigurableItem } from './ConfigurableList';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
 import { AccessRequestsAdmin } from './AccessRequestsAdmin';
@@ -611,6 +612,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [auditActionFilter, setAuditActionFilter] = useState('');
   const [auditUserFilter, setAuditUserFilter] = useState('');
   const [auditEntityFilter, setAuditEntityFilter] = useState('');
+  const [auditClientFilter, setAuditClientFilter] = useState('');
   const [auditClientMap, setAuditClientMap] = useState<Map<string, string>>(new Map());
   const [auditInstallmentMap, setAuditInstallmentMap] = useState<Map<string, { value: number; installment_number: number; due_date: string; client_name: string | null }>>(new Map());
 
@@ -814,16 +816,17 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     if (activeSection === 'roles') loadPermissions();
   }, [activeSection, loadPermissions]);
 
-  const loadAudit = useCallback(async (page = 0, dateFrom = auditDateFrom, dateTo = auditDateTo, action = auditActionFilter, userName = auditUserFilter, entity = auditEntityFilter) => {
+  const loadAudit = useCallback(async (page = 0, dateFrom = auditDateFrom, dateTo = auditDateTo, action = auditActionFilter, userName = auditUserFilter, entity = auditEntityFilter, clientId = auditClientFilter) => {
     if (!hasConfigAccess) return;
     setAuditLoading(true);
     try {
       const filters = {
-        ...(action   ? { action }                    : {}),
-        ...(entity   ? { entity_type: entity }       : {}),
-        ...(userName ? { user_name: userName }       : {}),
-        ...(dateFrom ? { date_from: dateFrom }       : {}),
-        ...(dateTo   ? { date_to: dateTo }           : {}),
+        ...(action    ? { action }                    : {}),
+        ...(entity    ? { entity_type: entity }       : {}),
+        ...(userName  ? { user_name: userName }       : {}),
+        ...(clientId  ? { client_id: clientId }       : {}),
+        ...(dateFrom  ? { date_from: dateFrom }       : {}),
+        ...(dateTo    ? { date_to: dateTo }           : {}),
       };
       const [logs, total, sigLogs] = await Promise.all([
         settingsService.getAuditLog({ ...filters, limit: AUDIT_PAGE_SIZE, offset: page * AUDIT_PAGE_SIZE }),
@@ -834,8 +837,13 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
           : Promise.resolve([] as AuditLogEntry[]),
       ]);
 
+      // Filtra assinaturas pelo cliente selecionado (client_id está em new_value)
+      const filteredSigLogs = clientId
+        ? sigLogs.filter(e => e.new_value?.client_id === clientId)
+        : sigLogs;
+
       // Merge e ordena por data desc
-      const merged = [...logs, ...sigLogs].sort(
+      const merged = [...logs, ...filteredSigLogs].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ).slice(0, AUDIT_PAGE_SIZE);
 
@@ -848,7 +856,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       }
 
       setAuditLog(merged);
-      setAuditTotal(total + sigLogs.length); // aproximado para paginação
+      setAuditTotal(total + filteredSigLogs.length); // aproximado para paginação
       setAuditPage(page);
     } catch (error) {
       setFeedback('error', 'Não foi possível carregar a auditoria.');
@@ -856,7 +864,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setAuditLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasConfigAccess, auditDateFrom, auditDateTo, auditActionFilter, auditUserFilter, auditEntityFilter]);
+  }, [hasConfigAccess, auditDateFrom, auditDateTo, auditActionFilter, auditUserFilter, auditEntityFilter, auditClientFilter]);
 
   useEffect(() => {
     if (activeSection === 'audit') {
@@ -1972,6 +1980,15 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             <option value="role_permissions">Permissões</option>
                           </select>
                         </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '200px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Cliente</label>
+                          <ClientSearchSelect
+                            value={auditClientFilter}
+                            onChange={(id) => setAuditClientFilter(id)}
+                            placeholder="Buscar cliente..."
+                            allowCreate={false}
+                          />
+                        </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexGrow: 1, minWidth: '160px' }}>
                           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>Usuário</label>
                           <input type="text" placeholder="Nome do usuário..." value={auditUserFilter}
@@ -1983,8 +2000,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           style={{ height: '34px', padding: '0 16px', background: '#ff8a00', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <RefreshCw size={13} /> Buscar
                         </button>
-                        {(auditDateFrom || auditDateTo || auditActionFilter || auditUserFilter || auditEntityFilter) && (
-                          <button onClick={() => { setAuditDateFrom(''); setAuditDateTo(''); setAuditActionFilter(''); setAuditUserFilter(''); setAuditEntityFilter(''); setTimeout(() => loadAudit(0, '', '', '', '', ''), 0); }}
+                        {(auditDateFrom || auditDateTo || auditActionFilter || auditUserFilter || auditEntityFilter || auditClientFilter) && (
+                          <button onClick={() => { setAuditDateFrom(''); setAuditDateTo(''); setAuditActionFilter(''); setAuditUserFilter(''); setAuditEntityFilter(''); setAuditClientFilter(''); setTimeout(() => loadAudit(0, '', '', '', '', '', ''), 0); }}
                             style={{ height: '34px', padding: '0 12px', background: 'transparent', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
                             Limpar
                           </button>

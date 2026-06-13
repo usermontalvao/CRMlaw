@@ -3112,7 +3112,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         ) : undefined}
       >
         {selectedEvent && (
-        <ModalBody className="space-y-2.5">
+        <ModalBody className="px-5 py-4">
 
           {/* ── Resumo compacto ── */}
           <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
@@ -3548,7 +3548,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={handleCloseCreateModal}
-                className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 sm:w-auto"
+                className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
                 disabled={savingEvent}
               >
                 Cancelar
@@ -3566,18 +3566,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>
         }
       >
-        <ModalBody>
+        <ModalBody className="px-5 py-4">
           <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-6 lg:grid-cols-12">
 
                 {/* Título — coluna inteira */}
                 <div className="col-span-1 sm:col-span-6 lg:col-span-12">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Título <span className="text-red-400">*</span>
                   </label>
                   <input
                     value={newEventForm.title}
                     onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                     placeholder="Ex: Reunião com cliente"
                     autoFocus
                   />
@@ -3585,28 +3585,28 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                 {/* Data */}
                 <div className="col-span-1 sm:col-span-2 lg:col-span-3">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Data <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition appearance-none"
                     required
                   />
                 </div>
 
                 {/* Horário */}
                 <div className="col-span-1 sm:col-span-2 lg:col-span-3">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Horário
                   </label>
                   <input
                     type="time"
                     value={newEventForm.time}
                     onChange={(e) => setNewEventForm({ ...newEventForm, time: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition appearance-none"
                   />
                 </div>
 
@@ -3614,13 +3614,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div className="col-span-1 sm:col-span-2 lg:col-span-6">
                   {(['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
                     <>
-                      <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                         Modalidade
                       </label>
                       <select
                         value={newEventForm.event_mode}
                         onChange={(e) => setNewEventForm(prev => ({ ...prev, event_mode: e.target.value as '' | 'presencial' | 'online' }))}
-                        className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition appearance-none"
                       >
                         <option value="">Não definida</option>
                         <option value="presencial">Presencial</option>
@@ -3632,7 +3632,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                 {/* Tipo — coluna inteira */}
                 <div className="col-span-1 sm:col-span-6 lg:col-span-12">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Tipo
                   </label>
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
@@ -3672,7 +3672,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                     {/* ── Cliente ── */}
                     <div className="col-span-1">
-                      <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                         Cliente <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                       </label>
                       <div ref={clientSearchRef} className="relative">
@@ -3714,7 +3714,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                 }}
                                 onFocus={() => { if (clientSearchTerm.trim()) setClientSearchOpen(true); }}
                                 placeholder="Nome ou buscar..."
-                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                                className="w-full pl-9 pr-3 rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] text-[13px] placeholder:text-slate-400 transition"
                               />
                             </div>
                             {clientSearchOpen && (clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 1) && (
@@ -3805,14 +3805,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                               </button>
                             </div>
                           )}
-                          <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                          <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                             {showReq ? 'Requerimento' : 'Processo'}{' '}
                             <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                           </label>
                           {!newEventForm.client_id ? (
                             <select
                               disabled
-                              className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-400 opacity-60 cursor-not-allowed"
+                              className="w-full rounded border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] text-slate-400 opacity-60 cursor-not-allowed"
                             >
                               <option>— Sem vínculo —</option>
                             </select>
@@ -3833,7 +3833,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                               <select
                                 value={newEventForm.requirement_id}
                                 onChange={e => setNewEventForm(prev => ({ ...prev, requirement_id: e.target.value }))}
-                                className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all"
+                                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition appearance-none"
                               >
                                 <option value="">— Sem vínculo —</option>
                                 {clientRequirements.length === 0 && (
@@ -3862,7 +3862,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             <select
                               value={newEventForm.process_id}
                               onChange={e => setNewEventForm(prev => ({ ...prev, process_id: e.target.value }))}
-                              className="w-full px-3 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition appearance-none"
                             >
                               <option value="">— Sem vínculo —</option>
                               {clientProcesses.length === 0 && (
@@ -4162,14 +4162,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                 {/* Observações — coluna inteira */}
                 <div className="col-span-1 sm:col-span-6 lg:col-span-12">
-                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Observações <span className="text-slate-300 font-normal normal-case tracking-normal">(opcional)</span>
                   </label>
                   <textarea
                     value={newEventForm.description}
                     onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
                     rows={2}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none transition-all"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                     placeholder="Anotações, detalhes adicionais..."
                   />
                 </div>
@@ -4572,7 +4572,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             <button
               type="button"
               onClick={() => setIsExportModalOpen(false)}
-              className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
             >
               Cancelar
             </button>
@@ -4592,7 +4592,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>
         }
       >
-        <ModalBody>
+        <ModalBody className="px-5 py-4">
           <div className="space-y-4">
             {/* Opções de Período */}
             <div className="space-y-2">
@@ -4727,7 +4727,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>
         }
       >
-        <ModalBody>
+        <ModalBody className="px-5 py-4">
                 {(() => {
                   const thirtyDaysAgo = new Date();
                   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

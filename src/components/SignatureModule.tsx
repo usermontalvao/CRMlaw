@@ -5859,7 +5859,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
             )}
 
-            <div className="bg-[#f8f7f5] overflow-hidden">
+            <div className="overflow-hidden">
 
               {/* ── Ações principais ── */}
               <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>

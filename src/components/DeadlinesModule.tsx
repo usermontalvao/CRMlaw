@@ -37,6 +37,7 @@ import {
   MessageSquare,
   Send,
   SquareCheck,
+  ChevronRight,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -358,6 +359,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [defaultDeadlineStatus, setDefaultDeadlineStatus] = useState<string | null>(null);
   const [defaultDeadlinePriority, setDefaultDeadlinePriority] = useState<string | null>(null);
   const statusFilterOptions = statusOptions.filter(s => s.key !== 'cumprido');
+  // Referências estáveis para as props do DeadlineFormModal — evita reset do form
+  const statusOptionsProp   = useMemo(() => statusOptions.map(s   => ({ key: s.key,                    label: s.label })), [statusOptions]);
+  const priorityOptionsProp = useMemo(() => priorityOptions.map(p => ({ key: p.key,                    label: p.label })), [priorityOptions]);
+  const typeOptionsProp     = useMemo(() => typeOptions.map(t     => ({ key: t.key as DeadlineType,     label: t.label })), [typeOptions]);
   const [soonDaysThreshold, setSoonDaysThreshold] = useState(2);
   const [weekDaysThreshold, setWeekDaysThreshold] = useState(7);
   const [defaultNotifyDays, setDefaultNotifyDays] = useState(2);
@@ -2293,7 +2298,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       }
     >
-      <ModalBody className="p-6 space-y-6">
+      <ModalBody className="px-5 py-4">
           {error && (
             <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {error}
@@ -2676,229 +2681,187 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
           }
         >
-          <ModalBody className="p-5 space-y-5">
-              {/* Title + description */}
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 leading-snug">{d.title}</h2>
-                {d.description && (
-                  <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">{d.description}</p>
+          <ModalBody className="px-5 py-4 space-y-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+
+            {/* Grade de informações — 2 colunas, estilo Perfex */}
+            <div className="rounded-lg border border-[#e7e5df] dark:border-zinc-700 overflow-hidden text-[13px]">
+              <div className="grid grid-cols-2 divide-x divide-[#e7e5df] dark:divide-zinc-700">
+
+                {/* col esquerda */}
+                <div className="divide-y divide-[#e7e5df] dark:divide-zinc-700">
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Vencimento</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{formatDate(d.due_date)}</span>
+                  </div>
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Status</span>
+                    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${getStatusBadge(d.status)}`}>
+                      {getStatusLabel(d.status)}
+                    </span>
+                  </div>
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Cliente</span>
+                    {d.client_id ? (
+                      <button
+                        type="button"
+                        onClick={() => { handleCloseViewDeadlineModal(); navigateTo('clientes', { mode: 'details', entityId: d.client_id } as any); }}
+                        className="text-amber-600 dark:text-amber-400 hover:underline font-medium truncate max-w-[160px] text-right"
+                      >
+                        {clientMap.get(d.client_id)?.full_name || '—'}
+                      </button>
+                    ) : <span className="text-slate-400">—</span>}
+                  </div>
+                  {(d.process_id || d.requirement_id) && (
+                    <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                      <span className="text-slate-500 dark:text-slate-400 shrink-0">{d.process_id ? 'Processo' : 'Req.'}</span>
+                      <button
+                        type="button"
+                        onClick={() => { handleCloseViewDeadlineModal(); if (d.process_id) navigateTo('processos', { entityId: d.process_id } as any); else navigateTo('requerimentos', { entityId: d.requirement_id } as any); }}
+                        className="font-mono font-semibold text-amber-600 dark:text-amber-400 hover:underline truncate max-w-[160px] text-right"
+                      >
+                        {d.process_id
+                          ? processes.find(p => p.id === d.process_id)?.process_code || '—'
+                          : requirements.find(r => r.id === d.requirement_id)?.protocol || '—'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* col direita */}
+                <div className="divide-y divide-[#e7e5df] dark:divide-zinc-700">
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Prazo</span>
+                    {isCumprido ? (
+                      <span className={`font-semibold ${completedOnTime ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {completedOnTime ? '✓ No prazo' : '✓ Fora do prazo'}
+                      </span>
+                    ) : (
+                      <span className={`font-bold ${isOverdue ? 'text-red-600' : isUrgent ? 'text-orange-500' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {Math.abs(daysLeft)} {countdownLabel}
+                      </span>
+                    )}
+                  </div>
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Prioridade</span>
+                    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${getPriorityBadge(d.priority)}`}>
+                      {getPriorityLabel(d.priority)}
+                    </span>
+                  </div>
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Responsável</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[160px] text-right">
+                      {d.responsible_id ? memberMap.get(d.responsible_id)?.name || '—' : '—'}
+                    </span>
+                  </div>
+                  {d.created_at && (
+                    <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                      <span className="text-slate-500 dark:text-slate-400 shrink-0">Criado em</span>
+                      <span className="text-slate-500 dark:text-slate-400 text-[12px]">
+                        {new Date(d.created_at).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
+            {/* Descrição */}
+            {d.description && (
+              <div className="border-t border-[#e7e5df] dark:border-zinc-700 pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Descrição</p>
+                <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">{d.description}</p>
+              </div>
+            )}
+
+            {/* Comentários */}
+            <div className="border-t border-[#e7e5df] dark:border-zinc-700 pt-3">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare className="w-4 h-4 text-slate-400" />
+                <h4 className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">Comentários</h4>
+                {comments.length > 0 && (
+                  <span className="text-[11px] bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">{comments.length}</span>
                 )}
               </div>
-
-              {/* Key metrics row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {/* Countdown card */}
-                <div className={`flex flex-col items-center justify-center rounded-xl p-3 border ${countdownBg}`}>
-                  {isCumprido ? (
-                    <>
-                      <span className={`text-2xl font-black leading-none ${countdownColor}`}>✓</span>
-                      <span className={`text-[10px] font-semibold mt-1 text-center ${completedOnTime ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        {completedOnTime ? 'dentro do prazo' : 'fora do prazo'}
-                      </span>
-                      {d.completed_at && (
-                        <span className={`text-[9px] mt-0.5 text-center ${completedOnTime ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {new Date(d.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <span className={`text-3xl font-black leading-none ${countdownColor}`}>{Math.abs(daysLeft)}</span>
-                      <span className={`text-[10px] font-semibold mt-1 text-center ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>{countdownLabel}</span>
-                    </>
-                  )}
+              {commentsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400 mb-3"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+              ) : comments.length === 0 ? (
+                <p className="text-[13px] text-slate-400 italic mb-3">Nenhum comentário ainda.</p>
+              ) : (
+                <div className="space-y-2 max-h-44 overflow-y-auto mb-3 pr-1">
+                  {comments.filter((c) => !c.parent_id).map((c) => {
+                    const replies = comments.filter((r) => r.parent_id === c.id);
+                    return (
+                      <div key={c.id} className="space-y-2">
+                        {renderComment(c, false)}
+                        {replies.length > 0 && (
+                          <div className="ml-6 pl-3 border-l-2 border-slate-100 dark:border-zinc-700 space-y-2">
+                            {replies.map((r) => renderComment(r, true))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                {/* Due date */}
-                <div className="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Vencimento</span>
-                  <span className="text-sm font-bold text-slate-800">{formatDate(d.due_date)}</span>
-                </div>
-                {/* Status */}
-                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Status</span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getStatusBadge(d.status)}`}>
-                    {getStatusLabel(d.status)}
-                  </span>
-                </div>
-                {/* Priority */}
-                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-[#e7e5df]">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prioridade</span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getPriorityBadge(d.priority)}`}>
-                    {getPriorityLabel(d.priority)}
-                  </span>
-                </div>
-              </div>
-
-              {/* People row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  disabled={!d.client_id}
-                  onClick={() => {
-                    if (!d.client_id) return;
-                    handleCloseViewDeadlineModal();
-                    navigateTo('clientes', { mode: 'details', entityId: d.client_id } as any);
-                  }}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
-                    d.client_id ? 'border-[#e7e5df] hover:border-orange-300 hover:bg-orange-50 cursor-pointer group' : 'border-[#e7e5df] cursor-default'
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                    <UserCircle className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>
-                    <p className={`text-sm font-semibold truncate ${d.client_id ? 'text-slate-800 group-hover:text-orange-700 group-hover:underline' : 'text-slate-800'}`}>
-                      {d.client_id ? clientMap.get(d.client_id)?.full_name || '—' : '—'}
-                    </p>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  disabled={!d.responsible_id || !memberMap.get(d.responsible_id || '')?.user_id}
-                  onClick={() => {
-                    const m = d.responsible_id ? memberMap.get(d.responsible_id) : null;
-                    if (!m?.user_id) return;
-                    handleCloseViewDeadlineModal();
-                    navigateTo('perfil', { userId: m.user_id } as any);
-                  }}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border bg-slate-50 text-left transition ${
-                    d.responsible_id && memberMap.get(d.responsible_id || '')?.user_id
-                      ? 'border-[#e7e5df] hover:border-emerald-300 hover:bg-emerald-50 cursor-pointer group'
-                      : 'border-[#e7e5df] cursor-default'
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <UserCircle className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
-                    <p className="text-sm font-semibold text-slate-800 truncate group-hover:text-emerald-700 group-hover:underline">
-                      {d.responsible_id ? memberMap.get(d.responsible_id)?.name || '—' : '—'}
-                    </p>
-                  </div>
-                </button>
-              </div>
-
-              {/* Process/Requirement link */}
-              {(d.process_id || d.requirement_id) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleCloseViewDeadlineModal();
-                    if (d.process_id) navigateTo('processos', { entityId: d.process_id } as any);
-                    else if (d.requirement_id) navigateTo('requerimentos', { entityId: d.requirement_id } as any);
-                  }}
-                  className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-purple-100 bg-purple-50 text-left transition hover:border-purple-300 hover:bg-purple-100 cursor-pointer group"
-                >
-                  <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-200">
-                    <FileText className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-purple-500">
-                      {d.process_id ? 'Processo Vinculado' : 'Requerimento Vinculado'}
-                    </p>
-                    <p className="text-sm font-bold text-purple-900 font-mono group-hover:underline">
-                      {d.process_id
-                        ? processes.find(p => p.id === d.process_id)?.process_code || '—'
-                        : requirements.find(r => r.id === d.requirement_id)?.protocol || '—'}
-                    </p>
-                  </div>
-                </button>
               )}
-
-              {/* Comments */}
-              <div className="border-t border-slate-100 pt-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <MessageSquare className="w-4 h-4 text-slate-400" />
-                  <h4 className="text-sm font-semibold text-slate-700">Comentários</h4>
-                  {comments.length > 0 && (
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{comments.length}</span>
-                  )}
+              {replyingTo && (
+                <div className="flex items-center justify-between gap-2 mb-2 px-3 py-1.5 bg-orange-50 border border-orange-100 rounded-lg">
+                  <span className="text-xs text-orange-700">
+                    Respondendo a <b>{replyingTo.name}</b>
+                  </span>
+                  <button type="button" onClick={() => setReplyingTo(null)} className="text-orange-500 hover:text-orange-700">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                {commentsLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-3"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
-                ) : comments.length === 0 ? (
-                  <p className="text-sm text-slate-400 italic mb-3">Nenhum comentário ainda.</p>
-                ) : (
-                  <div className="space-y-2 max-h-44 overflow-y-auto mb-3 pr-1">
-                    {comments.filter((c) => !c.parent_id).map((c) => {
-                      const replies = comments.filter((r) => r.parent_id === c.id);
+              )}
+              <div className="flex gap-2 relative">
+                {mentionSuggestions.length > 0 && (
+                  <div className="absolute bottom-12 left-0 right-12 bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl shadow-lg overflow-hidden z-10 max-h-52 overflow-y-auto">
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Mencionar</p>
+                    {mentionSuggestions.map((mem) => {
+                      const hue = getMemberHue(mem.name || '');
                       return (
-                        <div key={c.id} className="space-y-2">
-                          {renderComment(c, false)}
-                          {replies.length > 0 && (
-                            <div className="ml-6 pl-3 border-l-2 border-slate-100 space-y-2">
-                              {replies.map((r) => renderComment(r, true))}
-                            </div>
-                          )}
-                        </div>
+                        <button
+                          key={mem.id}
+                          type="button"
+                          onClick={() => pickMention(mem.name || '')}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-orange-50 dark:hover:bg-zinc-700 transition"
+                        >
+                          <div
+                            className="relative w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 overflow-hidden"
+                            style={{ background: `hsl(${hue}, 50%, 90%)`, color: `hsl(${hue}, 45%, 30%)` }}
+                          >
+                            {getMemberInitials(mem.name || '')}
+                            {(mem as any).avatar_url && (
+                              <img src={(mem as any).avatar_url} alt="" className="absolute w-7 h-7 rounded-full object-cover" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{mem.name}</p>
+                            {mem.role && <p className="text-[10px] text-slate-400 truncate">{mem.role}</p>}
+                          </div>
+                        </button>
                       );
                     })}
                   </div>
                 )}
-                {replyingTo && (
-                  <div className="flex items-center justify-between gap-2 mb-2 px-3 py-1.5 bg-orange-50 border border-orange-100 rounded-lg">
-                    <span className="text-xs text-orange-700">
-                      Respondendo a <b>{replyingTo.name}</b>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setReplyingTo(null)}
-                      className="text-orange-500 hover:text-orange-700"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-                <div className="flex gap-2 relative">
-                  {mentionSuggestions.length > 0 && (
-                    <div className="absolute bottom-12 left-0 right-12 bg-white border border-[#e7e5df] rounded-xl shadow-lg overflow-hidden z-10 max-h-52 overflow-y-auto">
-                      <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Mencionar</p>
-                      {mentionSuggestions.map((mem) => {
-                        const hue = getMemberHue(mem.name || '');
-                        return (
-                          <button
-                            key={mem.id}
-                            type="button"
-                            onClick={() => pickMention(mem.name || '')}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-orange-50 transition"
-                          >
-                            <div
-                              className="relative w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 overflow-hidden"
-                              style={{ background: `hsl(${hue}, 50%, 90%)`, color: `hsl(${hue}, 45%, 30%)` }}
-                            >
-                              {getMemberInitials(mem.name || '')}
-                              {(mem as any).avatar_url && (
-                                <img src={(mem as any).avatar_url} alt="" className="absolute w-7 h-7 rounded-full object-cover" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 truncate">{mem.name}</p>
-                              {mem.role && <p className="text-[10px] text-slate-400 truncate">{mem.role}</p>}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <input
-                    type="text"
-                    value={commentText}
-                    onChange={(e) => handleCommentChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') { setMentionQuery(null); setReplyingTo(null); } }}
-                    placeholder={replyingTo ? `Responder a ${replyingTo.name}...` : 'Escreva um comentário... use @ para mencionar'}
-                    className="flex-1 px-3 py-2 text-sm border border-[#e7e5df] rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
-                  />
-                  <button
-                    onClick={() => void handleAddComment(d.id)}
-                    disabled={savingComment || !commentText.trim()}
-                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 text-white transition disabled:opacity-40"
-                  >
-                    {savingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  value={commentText}
+                  onChange={(e) => handleCommentChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && mentionSuggestions.length === 0) { e.preventDefault(); void handleAddComment(d.id); } if (e.key === 'Escape') { setMentionQuery(null); setReplyingTo(null); } }}
+                  placeholder={replyingTo ? `Responder a ${replyingTo.name}...` : 'Escreva um comentário... use @ para mencionar'}
+                  className="flex-1 h-[34px] px-3 text-[13px] border border-[#e7e5df] dark:border-zinc-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 dark:bg-zinc-800 dark:text-slate-200"
+                />
+                <button
+                  onClick={() => void handleAddComment(d.id)}
+                  disabled={savingComment || !commentText.trim()}
+                  className="inline-flex items-center justify-center w-[34px] h-[34px] rounded-lg bg-orange-500 hover:bg-orange-600 text-white transition disabled:opacity-40"
+                >
+                  {savingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
               </div>
+            </div>
 
           </ModalBody>
         </Modal>
@@ -2922,9 +2885,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       processes={processes}
       clients={clients}
       requirements={requirements}
-      statusOptions={statusOptions.map(s => ({ key: s.key, label: s.label }))}
-      priorityOptions={priorityOptions.map(p => ({ key: p.key, label: p.label }))}
-      typeOptions={typeOptions.map(t => ({ key: t.key as DeadlineType, label: t.label }))}
+      statusOptions={statusOptionsProp}
+      priorityOptions={priorityOptionsProp}
+      typeOptions={typeOptionsProp}
     />
   );
 

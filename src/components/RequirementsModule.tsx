@@ -2500,6 +2500,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setShowDetailPassword(false);
     setDecryptedInssPassword(null);
     setCopiedDetailField(null);
+    // Fetch completo para incluir inss_password (não vem da query de lista)
+    void requirementService.getRequirementById(requirement.id).then((full) => {
+      if (full) setSelectedRequirementForView(full);
+    });
   };
 
   const handleQuickBackToAnalysis = async () => {
@@ -3307,10 +3311,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     document.body,
   );
 
-  const inputClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all";
+  const inputClass = "w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition";
   const selectClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer";
   const textareaClass = "w-full px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none min-h-[80px]";
-  const labelClass = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5";
+  const labelClass = "block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1";
 
   const requirementModal = (
     <Modal
@@ -3318,14 +3322,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       onClose={handleCloseModal}
       title={selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
       eyebrow={selectedRequirement ? 'Editar' : 'Novo'}
-      size="xl"
+      size="2xl"
       zIndex={70}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            <button type="button" onClick={handleCloseModal} disabled={saving} className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white sm:w-auto">Cancelar</button>
-            <button type="submit" form="requirement-form" disabled={saving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60 sm:w-auto">
+            <button type="button" onClick={handleCloseModal} disabled={saving} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50">Cancelar</button>
+            <button type="submit" form="requirement-form" disabled={saving} className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-60">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {saving ? 'Salvando...' : 'Salvar'}
             </button>
@@ -3333,7 +3337,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <form id="requirement-form" onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
@@ -3382,48 +3386,54 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       <Loader2 className="w-4 h-4 text-orange-500 absolute right-3.5 top-1/2 -translate-y-1/2 animate-spin" />
                     )}
                     {showBeneficiarySuggestions && (
-                      <div className="absolute mt-1.5 w-full bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20">
+                      <div className="absolute mt-1 w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded shadow-md max-h-56 overflow-y-auto z-20">
                         {clientsLoading ? (
-                          <div className="px-4 py-3 text-sm text-slate-500">Buscando...</div>
+                          <div className="px-3 py-1.5 text-[13px] text-slate-500">Buscando...</div>
                         ) : clients.length === 0 ? (
-                          <div className="px-4 py-3">
-                            <p className="text-sm text-slate-500 dark:text-zinc-400 mb-2">Nenhum cliente encontrado.</p>
+                          <>
+                            <div className="px-3 py-1.5 text-[13px] text-slate-500 dark:text-zinc-400 border-b border-slate-100 dark:border-zinc-700">Nenhum cliente encontrado.</div>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => openClientModal({ full_name: beneficiarySearchTerm })}
-                              className="w-full text-left px-3 py-2.5 bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20 border border-orange-200 dark:border-orange-500/30 rounded-xl flex items-center gap-2 text-orange-700 dark:text-orange-400 transition"
+                              className="w-full text-left px-3 py-1.5 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition flex items-center gap-1.5 text-orange-600 dark:text-orange-400"
                             >
-                              <Plus className="w-4 h-4 shrink-0" />
-                              <div>
-                                <div className="text-sm font-semibold">Adicionar novo cliente</div>
-                                <div className="text-xs opacity-70">"{beneficiarySearchTerm}"</div>
-                              </div>
+                              <Plus className="w-3.5 h-3.5 shrink-0" />
+                              <span className="text-[13px] font-medium">Adicionar "{beneficiarySearchTerm}"</span>
                             </button>
-                          </div>
+                          </>
                         ) : (
-                          clients.map((client) => (
+                          <>
+                            {clients.map((client) => (
+                              <button
+                                type="button"
+                                key={client.id}
+                                className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  handleFormChange('beneficiary', client.full_name);
+                                  handleFormChange('client_id', client.id);
+                                  setBeneficiarySearchTerm(client.full_name);
+                                  if (client.cpf_cnpj) handleFormChange('cpf', formatCPF(client.cpf_cnpj));
+                                  const phoneValue = client.phone || client.mobile || '';
+                                  if (phoneValue) handleFormChange('phone', phoneValue);
+                                  setShowBeneficiarySuggestions(false);
+                                }}
+                              >
+                                <p className="text-[13px] font-medium truncate text-slate-900 dark:text-white">{client.full_name}</p>
+                                <p className="text-[11px] truncate text-slate-400 dark:text-zinc-400">{client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : ''}{client.cpf_cnpj && client.email ? ' · ' : ''}{client.email || ''}</p>
+                              </button>
+                            ))}
                             <button
                               type="button"
-                              key={client.id}
-                              className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition border-b border-slate-100 dark:border-zinc-700/50 last:border-0"
                               onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                handleFormChange('beneficiary', client.full_name);
-                                handleFormChange('client_id', client.id);
-                                setBeneficiarySearchTerm(client.full_name);
-                                if (client.cpf_cnpj) handleFormChange('cpf', formatCPF(client.cpf_cnpj));
-                                const phoneValue = client.phone || client.mobile || '';
-                                if (phoneValue) handleFormChange('phone', phoneValue);
-                                setShowBeneficiarySuggestions(false);
-                              }}
+                              onClick={() => openClientModal({ full_name: beneficiarySearchTerm })}
+                              className="w-full text-left px-3 py-1.5 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition border-t border-slate-200 dark:border-zinc-700 flex items-center gap-1.5 text-orange-600 dark:text-orange-400"
                             >
-                              <div className="font-semibold text-slate-800 dark:text-white">{client.full_name}</div>
-                              <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                                {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} · {client.email || 'Sem e-mail'}
-                              </div>
+                              <Plus className="w-3.5 h-3.5 shrink-0" />
+                              <span className="text-[13px] font-medium">Adicionar Novo Cliente</span>
                             </button>
-                          ))
+                          </>
                         )}
                       </div>
                     )}
@@ -3731,7 +3741,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       size="md"
       zIndex={95}
     >
-      <ModalBody className="space-y-4">
+      <ModalBody className="px-5 py-4">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
               <input
@@ -3968,11 +3978,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 <Calendar className="w-4 h-4" />
                 Exigência
               </button>
-              <button type="button" onClick={() => openPericiaModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition">
+              <button type="button" onClick={() => openPericiaModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition">
                 <Stethoscope className="w-4 h-4" />
                 Perícia
               </button>
-              <button type="button" onClick={() => handleOpenModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+              <button type="button" onClick={() => handleOpenModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition">
                 <Edit2 className="w-4 h-4" />
                 Editar
               </button>
@@ -4023,7 +4033,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Coluna Esquerda - Informações do Cliente */}
                 <div className="space-y-5">
-                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Cliente</h3>
                     </div>
@@ -4073,7 +4083,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     </dl>
                   </div>
 
-                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Processos Vinculados</h3>
                       <span className="text-xs text-slate-400 dark:text-slate-500">Controle rápido</span>
@@ -4137,7 +4147,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                 {/* Coluna Direita - Informações do Requerimento */}
                 <div className="space-y-5">
-                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
+                  <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                     <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Requerimento</h3>
                     </div>
@@ -4303,7 +4313,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     };
 
                     return (
-                      <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-[#f8f7f5] dark:bg-zinc-900 shadow-sm">
+                      <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                         <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
                           <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias</h3>
                         </div>

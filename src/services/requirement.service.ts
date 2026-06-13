@@ -149,7 +149,9 @@ class RequirementService {
   }
 
   async getRequirementById(id: string): Promise<Requirement | null> {
-    const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
+    // Inclui inss_password (plain-text legado) apenas no fetch individual (detalhe),
+    // nunca na query de lista, para não vazar em massa.
+    const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
     const { data, error } = await supabase
       .from(this.tableName)
       .select(SAFE_COLS)

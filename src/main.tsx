@@ -29,11 +29,7 @@ window.addEventListener('message', (event) => {
   }
 });
 
-import { registerLicense } from '@syncfusion/ej2-base';
 import './index.css';
-
-const syncfusionLicenseKey = import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '';
-if (syncfusionLicenseKey) registerLicense(syncfusionLicenseKey);
 
 const isDev = import.meta.env.DEV;
 

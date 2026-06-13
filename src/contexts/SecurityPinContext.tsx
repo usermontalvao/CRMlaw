@@ -19,6 +19,7 @@ export interface RequirePinOptions {
   action: string;
   resourceType?: string;
   resourceId?: string;
+  entityName?: string;
   sensitivity?: Sensitivity;
   title?: string;
   description?: string;
@@ -220,8 +221,15 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Verificar se usuário tem PIN
     const hasPin = await securityPinService.hasSecurityPin();
     if (!hasPin) {
-      // Abre fluxo de criação
-      const created = await openModal('create', { ...opts, sensitivity });
+      // Sem PIN: abre criação com contexto próprio (não vaza title/entityName da ação original)
+      const created = await openModal('create', {
+        action: 'create_pin_first',
+        sensitivity,
+        title: 'Crie seu PIN de Segurança',
+        description: 'Você ainda não tem um PIN cadastrado. Crie agora para proteger suas ações.',
+        actionLabel: 'Criar PIN',
+        onVerified: opts.onVerified,
+      });
       return created;
     }
 
@@ -297,6 +305,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
           actionLabel={modal.options.actionLabel}
           resourceType={modal.options.resourceType}
           resourceId={modal.options.resourceId}
+          entityName={modal.options.entityName}
           sensitivity={modal.options.sensitivity}
           onSuccess={handleSuccess}
           onCancel={() => closeModal(false)}

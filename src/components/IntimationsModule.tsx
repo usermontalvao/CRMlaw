@@ -2760,7 +2760,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               type="button"
               onClick={() => setLinkModalOpen(false)}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
             >
               Cancelar
             </button>
@@ -2774,7 +2774,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           </div>
         }
       >
-        <ModalBody className="space-y-5" style={{ minHeight: '380px' }}>
+        <ModalBody className="px-5 py-4" style={{ minHeight: '380px' }}>
               {/* Cliente — AJAX search */}
               <ClientSearchSelect
                 value={selectedClientId}
@@ -2814,7 +2814,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       onFocus={() => setProcessDropdownOpen(true)}
                       placeholder={selectedClientId ? 'Buscar processo do cliente...' : 'Selecione um cliente primeiro'}
                       disabled={!selectedClientId}
-                      className="w-full h-11 pl-9 pr-9 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="w-full h-[34px] pl-9 pr-9 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
                     />
                     {(selectedProcessId || processSearchTerm) && (
                       <button
@@ -2881,7 +2881,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       value={newProcessCode}
                       onChange={(e) => setNewProcessCode(e.target.value)}
                       placeholder="0000000-00.0000.0.00.0000"
-                      className="w-full h-10 px-3 rounded-lg text-sm font-mono bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                      className="w-full h-[34px] px-3 rounded text-[13px] font-mono bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition"
                     />
                   </div>
 
@@ -2890,7 +2890,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <select
                       value={newProcessArea}
                       onChange={(e) => setNewProcessArea(e.target.value as typeof newProcessArea)}
-                      className="w-full h-10 px-3 rounded-lg text-sm bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                      className="w-full h-[34px] px-3 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition appearance-none"
                     >
                       <option value="civel">Cível</option>
                       <option value="trabalhista">Trabalhista</option>
@@ -3028,7 +3028,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               type="button"
               onClick={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
             >
               Cancelar
             </button>
@@ -3044,7 +3044,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           </div>
         }
       >
-        <ModalBody className="space-y-4">
+        <ModalBody className="px-5 py-4">
               {currentIntimationForAction && <>
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <p className="text-xs text-amber-800">
@@ -3063,7 +3063,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   type="date"
                   value={prescriptionBaseDate}
                   onChange={(e) => setPrescriptionBaseDate(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                   required
                 />
                 <p className="text-xs text-slate-500 mt-1">
@@ -3253,8 +3253,8 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
     }
   };
 
-  const inputStyle = 'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
-  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+  const inputStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
+  const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   return (
     <Modal
@@ -3269,7 +3269,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
           >
             Cancelar
           </button>
@@ -3285,7 +3285,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
         </div>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         {/* Informações da Intimação */}
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
@@ -3312,7 +3312,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               type="text"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               required
             />
           </div>
@@ -3326,7 +3326,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={4}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
             />
           </div>
 
@@ -3339,7 +3339,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               type="date"
               value={formData.due_date}
               onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               min={new Date().toISOString().split('T')[0]}
               required
             />
@@ -3422,7 +3422,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as DeadlineType })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               >
                 <option value="processo">Processo</option>
                 <option value="requerimento">Requerimento</option>
@@ -3437,7 +3437,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value as DeadlinePriority })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               >
                 <option value="urgente">Urgente</option>
                 <option value="alta">Alta</option>
@@ -3514,6 +3514,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
     type: getEventTypeFromAnalysis(analysis),
     client_id: intimation.client_id || '',
     responsible_id: '',
+    event_mode: '' as '' | 'presencial' | 'online',
   });
 
   // Removido: clientSearchTerm e showClientSuggestions (agora usa ClientSearchSelect no modal de compromisso)
@@ -3534,6 +3535,10 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
       setError(null);
 
       const startAt = `${formData.date}T${formData.time}:00`;
+      const durationMin: Record<string, number> = {
+        deadline: 60, hearing: 120, requirement: 60, payment: 30, meeting: 60, pericia: 180, personal: 60,
+      };
+      const endAt = new Date(new Date(startAt).getTime() + (durationMin[formData.type] ?? 60) * 60 * 1000).toISOString();
 
       const payload: CreateCalendarEventDTO = {
         title: formData.title,
@@ -3541,9 +3546,13 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         event_type: formData.type,
         status: 'pendente',
         start_at: startAt,
+        end_at: endAt,
         client_id: formData.client_id || null,
         process_id: intimation.process_id || null,
         user_id: formData.responsible_id || null,
+        event_mode: (['hearing', 'meeting', 'pericia'] as CalendarEventType[]).includes(formData.type as CalendarEventType)
+          ? (formData.event_mode || null)
+          : null,
       };
 
       const createdAppointment = await calendarService.createEvent(payload);
@@ -3588,8 +3597,8 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
     }
   };
 
-  const inputStyle = 'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
-  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+  const inputStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
+  const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   return (
     <Modal
@@ -3604,7 +3613,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
           >
             Cancelar
           </button>
@@ -3612,31 +3621,15 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             type="submit"
             form="appointment-form"
             disabled={saving}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+            className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
           >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Criar Compromisso
           </button>
         </div>
       }
     >
-      <ModalBody>
-        {/* Informações da Intimação */}
-        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
-          <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
-          <p className="text-sm text-blue-800">
-            <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
-          </p>
-          {client && (
-            <p className="text-sm text-blue-800">
-              <strong>Cliente:</strong> {client.full_name}
-            </p>
-          )}
-          <p className="text-sm text-blue-800">
-            <strong>Tipo:</strong> {intimation.tipo_comunicacao || 'Intimação'}
-          </p>
-        </div>
-
+      <ModalBody className="px-5 py-4">
         <form id="appointment-form" onSubmit={handleSubmit} className="space-y-4">
           {/* Título */}
           <div>
@@ -3654,14 +3647,12 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
 
           {/* Descrição */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Descrição
-            </label>
+            <label className={labelStyle}>Descrição</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={4}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              rows={3}
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
             />
           </div>
 
@@ -3676,74 +3667,101 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             />
           </div>
 
-          {/* Data e Hora */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Data | Hora | Modalidade */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">
-                Data *
-              </label>
+              <label className={labelStyle}>Data *</label>
               <input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className={inputStyle}
                 min={new Date().toISOString().split('T')[0]}
                 required
               />
-              {analysis?.deadline?.dueDate && (
-                <p className="text-xs text-amber-600 mt-1">
-                  ℹ️ Data exata da audiência/prazo
-                </p>
-              )}
             </div>
-
             <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">
-                Hora * (Horário de Cuiabá GMT-4)
-              </label>
+              <label className={labelStyle}>Hora * <span className="font-normal text-slate-400">(GMT-4)</span></label>
               <input
                 type="time"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className={inputStyle}
                 required
               />
-              {analysis?.deadline && (
-                <p className="text-xs text-amber-600 mt-1">
-                  ℹ️ Horário padrão: 14:00 (audiências)
-                </p>
-              )}
+            </div>
+            {(['hearing', 'meeting', 'pericia'] as CalendarEventType[]).includes(formData.type as CalendarEventType) && (
+              <div>
+                <label className={labelStyle}>Modalidade</label>
+                <select
+                  value={formData.event_mode}
+                  onChange={(e) => setFormData({ ...formData, event_mode: e.target.value as '' | 'presencial' | 'online' })}
+                  className={inputStyle}
+                >
+                  <option value="">Não definida</option>
+                  <option value="presencial">Presencial</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Tipo — chips */}
+          <div>
+            <label className={labelStyle}>Tipo de Compromisso</label>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              {([
+                { value: 'meeting',     label: 'Reunião',    active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-emerald-400 hover:text-emerald-600' },
+                { value: 'hearing',     label: 'Audiência',  active: 'bg-red-500 text-white border-red-500',         idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-red-400 hover:text-red-600' },
+                { value: 'deadline',    label: 'Prazo',      active: 'bg-indigo-500 text-white border-indigo-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-indigo-400 hover:text-indigo-600' },
+                { value: 'requirement', label: 'Diligência', active: 'bg-orange-500 text-white border-orange-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-orange-400 hover:text-orange-600' },
+                { value: 'payment',     label: 'Pagamento',  active: 'bg-sky-500 text-white border-sky-500',         idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-sky-400 hover:text-sky-600' },
+                { value: 'pericia',     label: 'Perícia',    active: 'bg-purple-500 text-white border-purple-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-purple-400 hover:text-purple-600' },
+              ] as const).map(({ value, label, active, idle }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: value, event_mode: '' })}
+                  className={`py-1.5 rounded text-xs font-semibold border transition-all text-center ${formData.type === value ? active : idle}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Responsável */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-              Responsável *
-            </label>
+            <div className="flex items-baseline gap-2 mb-2">
+              <label className={labelStyle}>Responsável *</label>
+              {formData.responsible_id
+                ? <span className="text-xs text-orange-600 font-semibold truncate">{members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Selecionado'}</span>
+                : <span className="text-xs text-slate-400">Selecione um advogado</span>
+              }
+            </div>
             <div className="flex flex-wrap gap-2">
               {members.map((m) => (
                 <button
                   key={m.id}
                   type="button"
                   onClick={() => setFormData({ ...formData, responsible_id: formData.responsible_id === (m.user_id || m.id) ? '' : (m.user_id || m.id) })}
-                  className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                  className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all hover:scale-110 ${
                     formData.responsible_id === (m.user_id || m.id)
-                      ? 'ring-2 ring-offset-2 ring-amber-500'
-                      : 'ring-1 ring-transparent hover:ring-slate-300'
+                      ? 'ring-2 ring-offset-2 ring-orange-500 scale-110'
+                      : 'ring-1 ring-white dark:ring-zinc-600 hover:ring-slate-300'
                   }`}
                   title={m.name || m.email || ''}
                 >
                   {m.avatar_url ? (
-                    <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                    <img src={m.avatar_url} className="w-10 h-10 rounded-full object-cover" alt={m.name || ''} />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-xs font-bold text-amber-700 dark:text-amber-400">
                       {(m.name || m.email || '?')[0].toUpperCase()}
                     </div>
                   )}
                   {formData.responsible_id === (m.user_id || m.id) && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
-                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+                      <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M2 6l3 3 5-5"/>
                       </svg>
                     </span>
@@ -3751,30 +3769,6 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 </button>
               ))}
             </div>
-            {formData.responsible_id && (
-              <p className="text-xs text-amber-600 mt-2">
-                ✓ {members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Responsável selecionado'}
-              </p>
-            )}
-          </div>
-
-          {/* Tipo */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Tipo de Compromisso
-            </label>
-            <select
-              value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value as CalendarEventType })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-            >
-              <option value="meeting">Reunião</option>
-              <option value="hearing">Audiência</option>
-              <option value="deadline">Prazo</option>
-              <option value="requirement">Diligência</option>
-              <option value="payment">Pagamento</option>
-              <option value="pericia">Perícia</option>
-            </select>
           </div>
 
           {error && (

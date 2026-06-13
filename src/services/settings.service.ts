@@ -1861,6 +1861,7 @@ class SettingsService {
     user_id?: string;
     action?: string;
     user_name?: string;
+    client_id?: string;
     date_from?: string;
     date_to?: string;
     limit?: number;
@@ -1876,6 +1877,7 @@ class SettingsService {
     if (filters?.user_id)     query = query.eq('user_id', filters.user_id);
     if (filters?.action)      query = query.eq('action', filters.action);
     if (filters?.user_name)   query = query.ilike('user_name', `%${filters.user_name}%`);
+    if (filters?.client_id)   query = (query as any).or(`entity_id.eq.${filters.client_id},new_value->>client_id.eq.${filters.client_id}`);
     if (filters?.date_from)   query = query.gte('created_at', filters.date_from);
     if (filters?.date_to)     query = query.lte('created_at', filters.date_to + 'T23:59:59.999Z');
     if (filters?.limit)       query = query.limit(filters.limit);
@@ -1897,6 +1899,7 @@ class SettingsService {
     action?: string;
     entity_type?: string;
     user_name?: string;
+    client_id?: string;
     date_from?: string;
     date_to?: string;
   }): Promise<number> {
@@ -1907,6 +1910,7 @@ class SettingsService {
     if (filters?.action)      query = (query as any).eq('action', filters.action);
     if (filters?.entity_type) query = (query as any).eq('entity_type', filters.entity_type);
     if (filters?.user_name)   query = (query as any).ilike('user_name', `%${filters.user_name}%`);
+    if (filters?.client_id)   query = (query as any).or(`entity_id.eq.${filters.client_id},new_value->>client_id.eq.${filters.client_id}`);
     if (filters?.date_from)   query = (query as any).gte('created_at', filters.date_from);
     if (filters?.date_to)     query = (query as any).lte('created_at', filters.date_to + 'T23:59:59.999Z');
 

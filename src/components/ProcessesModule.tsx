@@ -59,6 +59,7 @@ import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '.
 import type { SignatureRequest } from '../types/signature.types';
 import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
+import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { normalizeSearchText } from '../utils/search';
 import { ClientAvatar } from './shared/ClientAvatar';
@@ -654,6 +655,43 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     fetchProcesses();
   }, []);
 
+  // Realtime — atualiza processos automaticamente quando o cron DJEN/DataJud grava no banco
+  useEffect(() => {
+    const channel = supabase
+      .channel('processes_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'processes' },
+        (payload) => {
+          const updated = payload.new as Process;
+          processService.invalidateCache();
+          setProcesses(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
+          setSelectedProcessForView(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'processes' },
+        (payload) => {
+          processService.invalidateCache();
+          setProcesses(prev => [payload.new as Process, ...prev]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'processes' },
+        (payload) => {
+          const id = (payload.old as { id: string }).id;
+          processService.invalidateCache();
+          setProcesses(prev => prev.filter(p => p.id !== id));
+          setSelectedProcessForView(prev => prev?.id === id ? null : prev);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   // #6 — Carregar processos com intimações não lidas
   useEffect(() => {
     djenLocalService.getUnreadProcessIds().then(setProcessesWithUnread).catch(() => {});
@@ -679,6 +717,19 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setLoadingAiSummary(true);
     setAiSummary(null);
     try {
+      const normalizeWhitespace = (value?: string | null) =>
+        String(value || '')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\u00a0/g, ' ')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+
+      const truncate = (value: string, max: number) =>
+        value.length <= max ? value : `${value.slice(0, max).trimEnd()}...`;
+
       // Busca DJEN e DataJud em paralelo
       const [djenEvents, djResult] = await Promise.allSettled([
         processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? ''),
@@ -766,6 +817,155 @@ Cada bullet = máximo 2 linhas. Baseie-se SOMENTE nos dados acima.`,
       setAiSummary(result);
     } catch { setAiSummary('Erro ao gerar resumo. Tente novamente.'); }
     finally { setLoadingAiSummary(false); }
+  };
+
+  const generateProcessSummaryImproved = async (proc: Process) => {
+    if (loadingAiSummary) return;
+    setLoadingAiSummary(true);
+    setAiSummary(null);
+    try {
+      const normalizeWhitespace = (value?: string | null) =>
+        String(value || '')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\u00a0/g, ' ')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+
+      const truncate = (value: string, max: number) =>
+        value.length <= max ? value : `${value.slice(0, max).trimEnd()}...`;
+
+      const toDayKey = (d: string) => {
+        if (!d) return '';
+        if (d.includes('T')) return d.slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        if (/^\d{2}\/\d{2}\/\d{4}/.test(d)) {
+          const [dd, mm, yyyy] = d.split('/');
+          return `${yyyy}-${mm}-${dd}`;
+        }
+        return d;
+      };
+
+      const [djenEvents, djResult] = await Promise.allSettled([
+        processTimelineService.fetchTimelineFromDatabase(proc.id, proc.process_code ?? ''),
+        proc.process_code ? fetchDatajudMovimentos(proc.process_code) : Promise.resolve(null),
+      ]);
+
+      const events = djenEvents.status === 'fulfilled' ? djenEvents.value : [];
+      const datajudMovs =
+        djResult.status === 'fulfilled' && djResult.value?.processo?.movimentos?.length
+          ? djResult.value.processo.movimentos
+          : [];
+
+      if (events.length === 0 && datajudMovs.length === 0) {
+        setAiSummary('Sem movimentações registradas para resumir.');
+        return;
+      }
+
+      const djenTimeline = events
+        .slice(0, timelineEventLimit)
+        .map((e) => {
+          const date = toDayKey(e.date);
+          const type = e.type ? e.type.toUpperCase() : 'MOVIMENTACAO';
+          const summary = normalizeWhitespace(e.aiAnalysis?.summary);
+          const excerpt = truncate(normalizeWhitespace(e.description), 900);
+          const urgency = e.aiAnalysis?.urgency ? ` | urgencia IA: ${e.aiAnalysis.urgency}` : '';
+          const actionRequired = e.aiAnalysis?.actionRequired ? ' | acao requerida: sim' : '';
+          return [
+            `[${date}] ${type} - ${e.title}${urgency}${actionRequired}`,
+            e.orgao ? `Orgao: ${e.orgao}` : '',
+            summary ? `Resumo previo: ${summary}` : '',
+            excerpt ? `Trecho integral relevante: ${excerpt}` : '',
+          ].filter(Boolean).join('\n');
+        })
+        .join('\n\n');
+
+      let datajudTimeline = '';
+      if (datajudMovs.length > 0) {
+        const movs = datajudMovs
+          .slice(0, timelineEventLimit)
+          .map((m) => {
+            const date = toDayKey(m.dataHora);
+            const complements = (m.complementosTabelados ?? [])
+              .slice(0, 3)
+              .map((c) => c.descricao || c.nome)
+              .filter(Boolean)
+              .join('; ');
+
+            return [
+              `[${date}] ${m.nome}`,
+              m.orgaoJulgador?.nomeOrgao ? `Orgao julgador: ${m.orgaoJulgador.nomeOrgao}` : '',
+              complements ? `Complementos: ${complements}` : '',
+            ].filter(Boolean).join('\n');
+          })
+          .join('\n\n');
+
+        datajudTimeline = `\n\nMOVIMENTACOES CNJ (DataJud - ${datajudMovs.length} total, exibindo ate ${timelineEventLimit}):\n${movs}`;
+      }
+
+      const internalNotes = buildNoteThreads(parseNotes(selectedProcessForView?.notes))
+        .slice(-6)
+        .map((note) => {
+          const author = getNoteAuthorDisplay(note);
+          const text = truncate(normalizeWhitespace(note.text), 400);
+          return text ? `[${formatDateTime(note.created_at)}] ${author}: ${text}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+
+      const clientName = clientMap.get(proc.client_id)?.full_name || 'Não identificado';
+      const areaLabel = practiceAreas.find(a => a.key === proc.practice_area)?.label || proc.practice_area || 'Não informada';
+      const poloAtivo = processParties?.polo_ativo || clientName;
+      const poloPassivo = processParties?.polo_passivo || 'Não identificado';
+      const dataAjuizamento =
+        djResult.status === 'fulfilled' && djResult.value?.processo?.dataAjuizamento
+          ? new Date(djResult.value.processo.dataAjuizamento).toLocaleDateString('pt-BR')
+          : (proc.distributed_at ? new Date(proc.distributed_at).toLocaleDateString('pt-BR') : 'Não informado');
+
+      const result = await aiService.generateText(
+        `Você é um advogado sênior brasileiro especialista em análise processual. Leia o histórico com precisão factual e escreva de forma técnica e direta.
+
+REGRAS ABSOLUTAS:
+1. Nunca atribua uma ação a uma parte sem que o texto identifique isso expressamente.
+2. Nunca invente datas, prazos, decisões, recursos, petições, valores ou providências.
+3. Distribuição, conclusão, juntada, remessa, recebimento, publicação/disponibilização no DJE e atos cartorários não significam, por si só, decisão de mérito nem medida da parte.
+4. Se o histórico mostrar apenas atos ordinatórios ou fase inicial, diga isso expressamente.
+5. Nunca recomende "apresentar petição inicial" se o processo já está distribuído/ajuizado.
+6. Se não houver prazo ou decisão material identificável, escreva isso claramente em "Pontos de Atenção" e "Próximo Passo Recomendado".
+7. O próximo passo recomendado deve ser conservador e aderente ao histórico real. Se faltarem elementos para uma providência ativa, recomende apenas acompanhar o andamento, aguardar citação/intimação ou revisar a última publicação integralmente.
+8. Cite a data (dd/mm/aaaa) do evento que embasa cada afirmação inline, dentro da própria frase. NUNCA acrescente sufixos rotulados entre parênteses do tipo "(Ultima movimentação: ...)", "(Movimentação relevante: ...)" ou "(Prazos: ...)" — isso é proibido.
+9. NÃO repita a mesma informação. Cada afirmação deve ser dita uma única vez.`,
+        `PROCESSO: ${proc.process_code || 'Não informado'}
+POLO ATIVO (autor/requerente, nosso cliente): ${poloAtivo}
+POLO PASSIVO (réu/requerido): ${poloPassivo}
+AREA: ${areaLabel} | VARA/TRIBUNAL: ${proc.court || 'Não informado'} | DISTRIBUIDO: ${dataAjuizamento}
+
+=== HISTORICO PROCESSUAL - DJEN (mais recente para o mais antigo) ===
+${djenTimeline || 'Sem publicações no DJEN.'}
+${datajudTimeline}
+${internalNotes ? `\n\n=== HISTORICO INTERNO DO ESCRITORIO ===\n${internalNotes}` : ''}
+==============================================================
+
+TAREFA:
+Leia TODO o histórico acima e escreva a análise em DOIS blocos, exatamente neste formato:
+
+Um único parágrafo corrido (3 a 5 frases, sem título, sem bullets) explicando: a fase atual e a última movimentação com sua data; as movimentações anteriores que tiveram efeito prático real; e qualquer prazo, risco ou ausência de decisão de mérito que mereça atenção. Texto fluido e técnico, cada informação dita uma única vez.
+
+**Próximo Passo Recomendado**
+• [Uma frase com a providência concreta e conservadora, aderente ao histórico; se não houver base para agir, oriente apenas acompanhar/aguardar.]
+
+Não use outros títulos além de "Próximo Passo Recomendado". Sem sufixos entre parênteses. Baseie-se somente nos dados acima.`,
+        aiSummaryMaxTokens
+      );
+
+      setAiSummary(result);
+    } catch {
+      setAiSummary('Erro ao gerar resumo. Tente novamente.');
+    } finally {
+      setLoadingAiSummary(false);
+    }
   };
 
   // Verificar processos arquivados com prazos pendentes
@@ -2520,24 +2720,26 @@ Regras:
   }, [selectedProcessForView]);
 
   const inputStyle =
-    'w-full h-9 px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
-  const labelStyle = 'block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5';
+    'w-full h-[34px] px-3 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition';
+  const textareaStyle =
+    'w-full px-3 py-2 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 resize-none transition';
+  const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   const processModal = (
     <Modal
       open={isModalOpen}
       onClose={handleCloseModal}
       title={selectedProcess ? 'Editar Processo' : 'Novo Processo'}
-      eyebrow="Formulário"
-      size="xl"
+      eyebrow="Processos"
+      size="2xl"
       zIndex={80}
       footer={
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <div className="flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={handleCloseModal}
             disabled={saving}
-            className="w-full px-4 py-2 text-sm text-slate-600 transition hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white sm:w-auto"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
           >
             Cancelar
           </button>
@@ -2545,7 +2747,7 @@ Regras:
             type="submit"
             onClick={handleSubmit}
             disabled={saving}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-600 sm:w-auto"
+            className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Salvar
@@ -2553,16 +2755,19 @@ Regras:
         </div>
       }
     >
-      <ModalBody className="p-4 sm:p-5">
+      <ModalBody className="px-5 py-4">
         {error && (
-          <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">
+          <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded text-sm">
             {error}
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5 pb-1" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
 
-          {/* Linha 1 — Cliente | Número do Processo | Buscar */}
+          {/* Seção: Identificação */}
           <div>
+            <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Identificação</span>
+            </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-end">
               <div className="md:col-span-5">
                 <ClientSearchSelect
@@ -2619,8 +2824,11 @@ Regras:
           </div>
 
           {/* Seção: Dados do Processo */}
-          <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-600">Dados do Processo</p>
+          <div>
+            <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Dados do Processo</span>
+            </div>
+            <div className="flex flex-col gap-3">
 
             {/* Linha 3 — Área | Status | Distribuição | Vara/Comarca */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12">
@@ -2676,29 +2884,9 @@ Regras:
               )}
             </div>
 
-            {/* Linha 4 — Advogado | Audiência | Modo (quando sim) */}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12">
-              {!fl.isHidden('responsible') && (
-              <div className="xl:col-span-5">
-                <label className={labelStyle}>{fl.fieldLabel('responsible', 'Advogado do processo')}</label>
-                <select
-                  value={formData.responsible_lawyer_id}
-                  onChange={(e) => {
-                    handleFormChange('responsible_lawyer_id', e.target.value);
-                    const m = memberMap.get(e.target.value);
-                    if (m) handleFormChange('responsible_lawyer', m.name);
-                  }}
-                  className={inputStyle}
-                  required={fl.isRequired('responsible')}
-                >
-                  <option value="">Selecione</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-              )}
-              <div className="xl:col-span-3">
+            {/* Linha 4 — Audiência | Modo */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
                 <label className={labelStyle}>Audiência</label>
                 <select
                   value={formData.hearing_scheduled}
@@ -2710,7 +2898,7 @@ Regras:
                 </select>
               </div>
               {formData.hearing_scheduled === 'sim' && (
-                <div className="xl:col-span-4">
+                <div>
                   <label className={labelStyle}>Modo</label>
                   <select
                     value={formData.hearing_mode}
@@ -2723,6 +2911,48 @@ Regras:
                 </div>
               )}
             </div>
+
+            {/* Responsável */}
+            {!fl.isHidden('responsible') && (
+            <div>
+              <div className="flex items-baseline gap-3 mb-1">
+                <label className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                  {fl.fieldLabel('responsible', 'Advogado do processo')}{fl.isRequired('responsible') && <span className="text-red-500"> *</span>}
+                </label>
+                {formData.responsible_lawyer
+                  ? <span className="text-xs text-orange-600 font-semibold truncate">{formData.responsible_lawyer}</span>
+                  : <span className="text-xs text-slate-400">Selecione um advogado</span>
+                }
+              </div>
+              <div className="flex flex-wrap gap-2 bg-white dark:bg-zinc-800 rounded border border-slate-300 dark:border-zinc-600 p-3">
+                {members.filter(m => (m as any).is_active !== false).map(m => {
+                  const isSelected = formData.responsible_lawyer_id === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      title={m.name || ''}
+                      onClick={() => {
+                        handleFormChange('responsible_lawyer_id', m.id);
+                        handleFormChange('responsible_lawyer', m.name || '');
+                      }}
+                      className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all hover:z-10 hover:scale-110 ${isSelected ? 'ring-2 ring-offset-1 ring-orange-500 scale-110' : 'ring-1 ring-white dark:ring-zinc-600'}`}
+                    >
+                      {m.avatar_url
+                        ? <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                        : <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-xs font-bold text-amber-700 dark:text-amber-400">{(m.name || m.email || '?')[0].toUpperCase()}</div>
+                      }
+                      {isSelected && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5"/></svg>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            )}
 
             {/* Linha 5 — Data | Hora | Responsável (só quando audiência = sim) */}
             {formData.hearing_scheduled === 'sim' && (
@@ -2786,6 +3016,7 @@ Regras:
                 </div>
               </div>
             )}
+            </div>
           </div>
 
           {/* Linha 5 — Observações */}
@@ -2793,9 +3024,10 @@ Regras:
           <div>
             <label className={labelStyle}>{fl.fieldLabel('description', 'Observações')}</label>
             <textarea
+              rows={3}
               value={formData.notes}
               onChange={(e) => handleFormChange('notes', e.target.value)}
-              className={`${inputStyle} h-14 resize-none`}
+              className={textareaStyle}
               placeholder=""
               required={fl.isRequired('description')}
             />
@@ -2840,7 +3072,7 @@ Regras:
             )}
             <button
               onClick={() => handleOpenModal(selectedProcessForView)}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
+              className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-medium px-4 py-2.5 rounded-lg transition"
             >
               <Edit2 className="w-4 h-4" />
               Editar Processo
@@ -2904,7 +3136,7 @@ Regras:
             </span>
           </div>
 
-          <div className="p-6 sm:p-8 bg-[#f8f7f5] dark:bg-zinc-900">
+          <div className="p-6 sm:p-8 bg-white dark:bg-zinc-900">
             {/* Grid de dados — card unificado com células divididas */}
             <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden mb-6">
               <div className="grid grid-cols-2 lg:grid-cols-3 divide-x divide-y divide-slate-100 dark:divide-zinc-800">
@@ -3020,7 +3252,7 @@ Regras:
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Resumo Inteligente</span>
                 <button
-                  onClick={() => generateProcessSummary(selectedProcessForView)}
+                  onClick={() => generateProcessSummaryImproved(selectedProcessForView)}
                   disabled={loadingAiSummary}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition disabled:opacity-50"
                 >

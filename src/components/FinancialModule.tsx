@@ -3208,7 +3208,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 type="button"
                 onClick={handleCloseEditModal}
                 disabled={editLoading}
-                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
               >
                 Cancelar
               </button>
@@ -3216,7 +3216,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 type="submit"
                 form="edit-agreement-form"
                 disabled={editLoading}
-                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
+                className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
               >
                 {editLoading ? (
                   <>
@@ -3232,7 +3232,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           </div>
         }
       >
-        <ModalBody>
+        <ModalBody className="px-5 py-4">
             <form id="edit-agreement-form" onSubmit={handleSubmitEdit} className="flex flex-col flex-1 min-h-0">
               <div className="flex flex-col gap-4">
 
@@ -3279,7 +3279,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             value={editForm.processId}
                             onChange={(e) => handleEditChange('processId', e.target.value)}
                             disabled={!editForm.clientId || loadingLinkedEntities}
-                            className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
+                            className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-8 transition"
                           >
                             <option value="">
                               {!editForm.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
@@ -3375,7 +3375,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           <button
                             type="button"
                             onClick={() => handleEditChange('feeType', 'percentage')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                            className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                               editForm.feeType === 'percentage'
                                 ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
@@ -3386,7 +3386,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           <button
                             type="button"
                             onClick={() => handleEditChange('feeType', 'fixed')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                            className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                               editForm.feeType === 'fixed'
                                 ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
@@ -3462,7 +3462,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           <button
                             type="button"
                             onClick={() => handleEditChange('paymentType', 'upfront')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                            className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                               editForm.paymentType === 'upfront'
                                 ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
@@ -3473,7 +3473,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           <button
                             type="button"
                             onClick={() => handleEditChange('paymentType', 'installments')}
-                            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                            className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                               editForm.paymentType === 'installments'
                                 ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
@@ -4395,11 +4395,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         onClose={handleCloseModal}
         title="Novo Lançamento"
         eyebrow="Financeiro"
-        size="xl"
+        size="2xl"
         zIndex={70}
         footer={
-          <div className="w-full overflow-x-hidden">
-            {/* Faixa RESUMO */}
+          <div className="w-full">
             {(() => {
               const total = parseCurrencyToNumber(formData.totalValue);
               if (total <= 0) return null;
@@ -4412,30 +4411,32 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 ? new Date(formData.firstDueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
                 : '—';
               return (
-                <div className="rounded-lg bg-slate-100 dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-800 mb-3 px-4 py-2.5 flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs">
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600 dark:text-emerald-400 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-emerald-400" /> Resumo
+                <div className="bg-amber-50 dark:bg-zinc-900 border border-amber-200 dark:border-zinc-700 rounded mb-2 px-3 py-1.5 flex items-center flex-wrap gap-x-3 gap-y-1 text-[12px]">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Resumo
                   </span>
                   <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">Valor <strong className="text-slate-900 dark:text-white tabular-nums font-semibold ml-0.5">{formatCurrency(total)}</strong></span>
-                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-300 dark:text-slate-600 select-none">·</span>
                   <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">Honorários <strong className="text-emerald-700 dark:text-emerald-400 tabular-nums font-semibold ml-0.5">{formatCurrency(feeVal)}</strong></span>
-                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-300 dark:text-slate-600 select-none">·</span>
                   <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">
                     {count === 1 ? 'À vista' : `${count}× de`} <strong className="text-slate-900 dark:text-white tabular-nums font-semibold ml-0.5">{formatCurrency(perInst)}</strong>
                   </span>
-                  <span className="text-slate-300 dark:text-slate-700 select-none">|</span>
+                  <span className="text-slate-300 dark:text-slate-600 select-none">·</span>
                   <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">{count === 1 ? 'Vence' : '1ª parcela'} <strong className="text-slate-900 dark:text-white font-semibold ml-0.5">{dueDateStr}</strong></span>
                 </div>
               );
             })()}
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-xs text-slate-400 hidden sm:block">Campos com <span className="text-red-400">*</span> são obrigatórios</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 italic hidden sm:block">
+                Campos com <span className="text-red-500 font-bold not-italic">*</span> são obrigatórios
+              </p>
               <div className="flex items-center gap-3 ml-auto">
                 <button
                   type="button"
                   onClick={handleCloseModal}
                   disabled={formLoading}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                  className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
                 >
                   Cancelar
                 </button>
@@ -4443,7 +4444,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   type="submit"
                   form="new-agreement-form"
                   disabled={formLoading}
-                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                  className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-[13px] font-semibold flex items-center gap-2 rounded transition disabled:opacity-50 active:scale-[0.98]"
                 >
                   {formLoading ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
@@ -4456,25 +4457,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           </div>
         }
       >
-        <ModalBody>
-          <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col gap-4 pb-1">
+        <ModalBody className="px-5 py-4">
+          <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col gap-5 pb-1" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
 
             {formError && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
                 {formError}
               </div>
             )}
 
             {/* ── Identificação ── */}
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Identificação</span>
-                <div className="flex-1 h-px bg-slate-100 dark:bg-zinc-800" />
+              <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">IDENTIFICAÇÃO</span>
               </div>
-              <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-12 gap-x-3 gap-y-3">
                 {/* Line 1: Cliente | Processo | Data */}
-                <div className="col-span-4">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Cliente <span className="text-red-400">*</span></label>
+                <div className="col-span-5">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Cliente <span className="text-red-500">*</span></label>
                   <ClientSearchSelect
                     value={formData.clientId}
                     onChange={(clientId) => handleChange('clientId', clientId)}
@@ -4484,16 +4484,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     allowCreate={true}
                   />
                 </div>
-                <div className="col-span-5">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
-                    Processo / Requerimento <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                <div className="col-span-4">
+                  <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    Processo / Requerimento <span className="font-normal text-slate-400">(opcional)</span>
                   </label>
                   <div className="relative">
                     <select
                       value={formData.processId}
                       onChange={(e) => handleChange('processId', e.target.value)}
                       disabled={!formData.clientId || loadingLinkedEntities}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] appearance-none disabled:opacity-50 disabled:cursor-not-allowed pr-10 transition"
                     >
                       <option value="">
                         {!formData.clientId ? 'Selecione um cliente primeiro' : loadingLinkedEntities ? 'Carregando…' : clientProcesses.length === 0 && clientRequirements.length === 0 ? 'Nenhum processo/requerimento' : '— Sem vínculo —'}
@@ -4519,89 +4519,91 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     </select>
                     <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
                       {loadingLinkedEntities
-                        ? <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
-                        : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+                        ? <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                        : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     </div>
                   </div>
                 </div>
                 <div className="col-span-3">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Data do lançamento</label>
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Data do lançamento</label>
                   <input
                     type="date"
                     value={formData.agreementDate}
                     onChange={(e) => handleChange('agreementDate', e.target.value)}
-                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm transition"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition"
                   />
                 </div>
                 {/* Line 2: Título | Responsável */}
-                <div className="col-span-7">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Título do lançamento <span className="text-red-400">*</span></label>
+                <div className="col-span-9">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Título do lançamento <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
                     value={formData.title}
                     onChange={(e) => handleChange('title', e.target.value)}
-                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] placeholder:text-slate-400 px-3 text-[13px] transition"
                     required
                   />
                 </div>
                 {members.length > 0 && (
-                  <div className="col-span-5">
-                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
-                      Responsável pelos recebimentos <span className="text-red-400">*</span>
+                  <div className="col-span-3">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
+                      Responsável <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex flex-wrap gap-1.5 items-center min-h-[2.75rem]">
+                    <div className="flex -space-x-2 items-center h-[34px]">
                       {[...members]
                         .sort((a, b) => {
                           const order = (m: typeof a) => { const r = (m.role || '').toLowerCase(); return r.includes('admin') ? 0 : r.includes('advog') ? 1 : 2; };
                           return order(a) - order(b);
                         })
-                        .map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => setCalendarResponsibleId(calendarResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
-                            className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
-                              calendarResponsibleId === (m.user_id || m.id)
-                                ? 'ring-2 ring-offset-2 ring-amber-500'
-                                : 'ring-1 ring-transparent hover:ring-slate-300'
-                            }`}
-                            title={m.name || m.email || ''}
-                          >
-                            {m.avatar_url ? (
-                              <img src={m.avatar_url} className="w-8 h-8 rounded-full object-cover" alt={m.name || ''} />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700">
-                                {(m.name || m.email || '?')[0].toUpperCase()}
-                              </div>
-                            )}
-                            {calendarResponsibleId === (m.user_id || m.id) && (
-                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center">
-                                <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M2 6l3 3 5-5"/>
-                                </svg>
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      {calendarResponsibleId && (
-                        <p className="text-xs text-amber-600 ml-1">
-                          ✓ {members.find(m => (m.user_id || m.id) === calendarResponsibleId)?.name || 'Responsável selecionado'}
-                        </p>
-                      )}
+                        .map((m) => {
+                          const isSelected = calendarResponsibleId === (m.user_id || m.id);
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setCalendarResponsibleId(isSelected ? '' : (m.user_id || m.id))}
+                              title={m.name || m.email || ''}
+                              className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
+                                isSelected ? 'ring-2 ring-offset-1 ring-amber-500 z-10' : 'hover:z-10'
+                              }`}
+                            >
+                              {m.avatar_url ? (
+                                <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover border-2 border-white dark:border-zinc-900" alt={m.name || ''} />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-amber-100 border-2 border-white dark:border-zinc-900 flex items-center justify-center text-sm font-semibold text-amber-700">
+                                  {(m.name || m.email || '?')[0].toUpperCase()}
+                                </div>
+                              )}
+                              {isSelected && (
+                                <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center border border-white">
+                                  <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M2 6l3 3 5-5"/>
+                                  </svg>
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                     </div>
+                    {calendarResponsibleId && (
+                      <p className="text-xs text-amber-600 mt-1 truncate">
+                        {members.find(m => (m.user_id || m.id) === calendarResponsibleId)?.name || 'Selecionado'}
+                      </p>
+                    )}
                   </div>
                 )}
                 {/* Line 3: Descrição */}
                 <div className="col-span-12">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
-                    Objeto / Descrição <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                  <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    Objeto / Descrição <span className="font-normal">(opcional)</span>
                   </label>
                   <textarea
                     placeholder="Descreva o objeto do serviço, ex: Revisão de benefício previdenciário — auxílio-doença."
                     value={formData.description}
                     onChange={(e) => handleChange('description', e.target.value)}
-                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
+                    rows={3}
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                   />
                 </div>
               </div>
@@ -4609,39 +4611,38 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
             {/* ── Financeiro ── */}
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Financeiro</span>
-                <div className="flex-1 h-px bg-slate-100 dark:bg-zinc-800" />
+              <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">FINANCEIRO</span>
               </div>
-              <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-12 gap-x-3 gap-y-3 items-end">
 
                 {/* Linha 1: Valor | Tipo honorário | % ou R$ fixo | Honorários calculados */}
                 <div className="col-span-3">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Valor total <span className="text-red-400">*</span></label>
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Valor total <span className="text-red-500">*</span></label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none select-none">R$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-slate-500 pointer-events-none select-none">R$</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={formData.totalValue}
                       onChange={(e) => handleChange('totalValue', e.target.value)}
-                      className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 pl-10 pr-4 text-sm font-medium tabular-nums transition"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] placeholder:text-slate-400 pl-10 pr-3 text-[13px] font-semibold tabular-nums transition"
                       required
                     />
                   </div>
                 </div>
 
-                <div className="col-span-3">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Tipo de honorário</label>
-                  <div className="flex rounded-lg border border-[#e7e5df] dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
+                <div className="col-span-4">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Tipo de honorário</label>
+                  <div className="flex p-0.5 bg-slate-100 dark:bg-zinc-800 rounded border border-slate-200 dark:border-zinc-600 h-[34px] items-center">
                     <button
                       type="button"
                       onClick={() => handleChange('feeType', 'percentage')}
-                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                      className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                         formData.feeType === 'percentage'
-                          ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm font-bold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                       }`}
                     >
                       Percentual
@@ -4649,10 +4650,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     <button
                       type="button"
                       onClick={() => handleChange('feeType', 'fixed')}
-                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                      className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                         formData.feeType === 'fixed'
-                          ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm font-bold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                       }`}
                     >
                       Valor fixo
@@ -4662,8 +4663,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
                 {formData.feeType === 'percentage' ? (
                   <>
-                    <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Percentual (%) <span className="text-red-400">*</span></label>
+                    <div className="col-span-2">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">% <span className="text-red-500">*</span></label>
                       <input
                         type="number"
                         min="1"
@@ -4672,51 +4673,51 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         placeholder="0"
                         value={formData.feePercentage}
                         onChange={(e) => handleChange('feePercentage', e.target.value)}
-                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] placeholder:text-slate-400 px-3 text-[13px] appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition"
                         required
                       />
                     </div>
                     <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários calc.</label>
-                      <div className="h-11 flex items-center">
+                      <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">Honorários calc.</label>
+                      <div className="h-[34px] flex items-center">
                         {formData.totalValue && formData.feePercentage ? (
-                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span className="inline-flex items-center gap-1.5 text-base font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            <CheckCircle className="w-4 h-4 shrink-0" />
                             {formatCurrency(parseCurrencyToNumber(formData.totalValue) * (Number(formData.feePercentage || '0') / 100))}
                           </span>
                         ) : (
-                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                          <span className="text-lg font-bold text-slate-400 dark:text-slate-500">—</span>
                         )}
                       </div>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários fixos <span className="text-red-400">*</span></label>
-                      <div className="flex items-center gap-2 rounded-lg border border-[#e7e5df] dark:border-zinc-600 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition">
-                        <span className="text-slate-500 dark:text-slate-400 text-sm font-medium select-none">R$</span>
+                    <div className="col-span-2">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Valor fixo <span className="text-red-500">*</span></label>
+                      <div className="flex items-center gap-1.5 rounded border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 focus-within:ring-1 focus-within:ring-orange-400/40 focus-within:border-orange-400 transition">
+                        <span className="text-slate-500 dark:text-slate-400 text-[13px] font-medium select-none">R$</span>
                         <input
                           type="text"
                           inputMode="decimal"
                           placeholder="0,00"
                           value={formData.feeFixedValue}
                           onChange={(e) => handleChange('feeFixedValue', e.target.value)}
-                          className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums"
+                          className="flex-1 bg-transparent outline-none border-none text-slate-900 dark:text-white text-sm font-medium tabular-nums placeholder:text-slate-400"
                           required
                         />
                       </div>
                     </div>
                     <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Honorários calc.</label>
-                      <div className="h-11 flex items-center">
+                      <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">Honorários calc.</label>
+                      <div className="h-[34px] flex items-center">
                         {formData.feeFixedValue ? (
-                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span className="inline-flex items-center gap-1.5 text-base font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            <CheckCircle className="w-4 h-4 shrink-0" />
                             {formatCurrency(parseCurrencyToNumber(formData.feeFixedValue))}
                           </span>
                         ) : (
-                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                          <span className="text-lg font-bold text-slate-400 dark:text-slate-500">—</span>
                         )}
                       </div>
                     </div>
@@ -4724,16 +4725,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 )}
 
                 {/* Linha 2: Forma pagamento | 1º vencimento | Nº parcelas | Valor/parcela */}
-                <div className="col-span-3">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Forma de pagamento</label>
-                  <div className="flex rounded-lg border border-[#e7e5df] dark:border-zinc-600 p-1 bg-slate-100 dark:bg-zinc-800 h-11 items-center">
+                <div className="col-span-4">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Forma de pagamento</label>
+                  <div className="flex p-0.5 bg-slate-100 dark:bg-zinc-800 rounded border border-slate-200 dark:border-zinc-600 h-[34px] items-center">
                     <button
                       type="button"
                       onClick={() => handleChange('paymentType', 'upfront')}
-                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                      className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                         formData.paymentType === 'upfront'
-                          ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm font-bold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                       }`}
                     >
                       À vista
@@ -4741,10 +4742,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     <button
                       type="button"
                       onClick={() => handleChange('paymentType', 'installments')}
-                      className={`flex-1 rounded-md px-3 py-1 text-sm font-medium transition ${
+                      className={`flex-1 rounded px-2 py-0.5 text-[12px] font-medium transition ${
                         formData.paymentType === 'installments'
-                          ? 'bg-[#f8f7f5] dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm font-bold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                       }`}
                     >
                       Parcelado
@@ -4753,12 +4754,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 </div>
 
                 <div className="col-span-3">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Primeiro vencimento</label>
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Primeiro vencimento</label>
                   <input
                     type="date"
                     value={formData.firstDueDate}
                     onChange={(e) => handleChange('firstDueDate', e.target.value)}
-                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm transition"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition"
                     required={formData.paymentType === 'upfront' || !formData.customInstallments.length}
                   />
                 </div>
@@ -4766,7 +4767,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 {formData.paymentType === 'installments' && (
                   <>
                     <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Nº de parcelas</label>
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Nº de parcelas</label>
                       <input
                         type="number"
                         min="2"
@@ -4774,13 +4775,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         placeholder="2"
                         value={formData.installmentsCount}
                         onChange={(e) => handleChange('installmentsCount', e.target.value)}
-                        className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-slate-400 px-4 text-sm transition"
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] placeholder:text-slate-400 px-3 text-[13px] transition"
                         required
                       />
                     </div>
-                    <div className="col-span-3">
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Valor / parcela</label>
-                      <div className="h-11 flex flex-col justify-center gap-0.5">
+                    <div className="col-span-2">
+                      <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">Valor / parcela</label>
+                      <div className="h-[34px] flex flex-col justify-center gap-0.5">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
                           {formData.totalValue && formData.installmentsCount
                             ? formatCurrency(parseCurrencyToNumber(formData.totalValue) / Number(formData.installmentsCount))
@@ -4814,19 +4815,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
                 {/* Parcelas personalizadas */}
                 {formData.customInstallments.length > 0 && (
-                  <div className="col-span-12 border border-[#e7e5df] dark:border-zinc-700 rounded-xl overflow-hidden">
+                  <div className="col-span-12 border border-neutral-200 dark:border-zinc-700 rounded-md overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 dark:bg-zinc-800 border-b border-[#e7e5df] dark:border-zinc-700">
+                      <thead className="bg-neutral-50 dark:bg-zinc-800 border-b border-neutral-200 dark:border-zinc-700">
                         <tr>
-                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
-                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Vencimento</th>
-                          <th className="py-2.5 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
+                          <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-neutral-400">#</th>
+                          <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-neutral-400">Vencimento</th>
+                          <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-neutral-400">Valor</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-zinc-700">
+                      <tbody className="divide-y divide-neutral-100 dark:divide-zinc-700">
                         {formData.customInstallments.map((item, index) => (
-                          <tr key={index} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
-                            <td className="py-2 px-4 text-slate-500 dark:text-slate-400 font-medium">{index + 1}</td>
+                          <tr key={index} className="hover:bg-neutral-50 dark:hover:bg-zinc-800/50 transition">
+                            <td className="py-2 px-4 text-neutral-500 dark:text-neutral-400 font-medium">{index + 1}</td>
                             <td className="py-2 px-4">
                               <input
                                 type="date"
@@ -4840,7 +4841,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                     ),
                                   }));
                                 }}
-                                className="border border-[#e7e5df] dark:border-zinc-600 rounded-lg px-2 py-1.5 bg-[#f8f7f5] dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm"
+                                className="border border-slate-300 dark:border-zinc-600 rounded px-2 py-1 bg-white dark:bg-zinc-800 text-neutral-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 text-[13px]"
                               />
                             </td>
                             <td className="py-2 px-4">
@@ -4857,16 +4858,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                     ),
                                   }));
                                 }}
-                                className="w-full border border-[#e7e5df] dark:border-zinc-600 rounded-lg px-3 py-1.5 bg-[#f8f7f5] dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 tabular-nums"
+                                className="w-full border border-slate-300 dark:border-zinc-600 rounded px-3 py-1 bg-white dark:bg-zinc-800 text-neutral-800 dark:text-white text-[13px] focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 tabular-nums placeholder:text-slate-400"
                               />
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    <div className="bg-slate-50 dark:bg-zinc-800 py-2.5 px-4 text-sm text-slate-600 dark:text-slate-300 flex justify-between items-center border-t border-slate-100 dark:border-zinc-700">
+                    <div className="bg-neutral-50 dark:bg-zinc-800 py-2 px-4 text-sm text-neutral-600 dark:text-neutral-300 flex justify-between items-center border-t border-neutral-100 dark:border-zinc-700">
                       <span className="font-medium">
-                        Total: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{
+                        Total: <span className="font-bold text-neutral-800 dark:text-white tabular-nums">{
                           formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0)
                             ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0))
                             : '—'
@@ -4898,14 +4899,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
                 {/* Notas */}
                 <div className="col-span-12">
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">
-                    Notas internas <span className="text-slate-400 dark:text-slate-500">(opcional)</span>
+                  <label className="block text-[13px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    Notas internas <span className="font-normal">(opcional)</span>
                   </label>
                   <textarea
                     placeholder="Observações internas sobre este lançamento…"
                     value={formData.notes}
                     onChange={(e) => handleChange('notes', e.target.value)}
-                    className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[2.5rem] placeholder:text-slate-400 px-4 py-2 text-sm resize-none transition"
+                    rows={2}
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                   />
                 </div>
               </div>
@@ -4952,9 +4954,49 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         }
       >
         <ModalBody>
-              {selectedAgreement && <>{/* Grid de 3 colunas */}
+              {selectedAgreement && <>
+              {/* Barra de ações */}
+              <div className="flex flex-wrap items-center gap-2 pb-4 mb-2 border-b border-[#e7e5df] dark:border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() => { setIsManualEntryOpen(true); setManualEntryData({ paymentDate: today, paymentMethod: paymentMethods[0] ?? 'pix', paidValue: '', description: '', notes: '' }); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-[12px] font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />Baixa Avulsa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateReceipt(selectedAgreement)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 text-[12px] font-medium hover:bg-slate-50 dark:hover:bg-zinc-700 transition"
+                >
+                  <Receipt className="w-3.5 h-3.5 text-slate-400" />Gerar Recibo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditModal(selectedAgreement)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-[12px] font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition"
+                >
+                  <Edit className="w-3.5 h-3.5" />Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAuditModal(selectedAgreement.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 text-[12px] font-medium hover:bg-slate-50 dark:hover:bg-zinc-700 transition"
+                >
+                  <History className="w-3.5 h-3.5 text-slate-400" />Auditoria
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteAgreement(selectedAgreement)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-red-200 dark:border-red-700/50 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[12px] font-medium hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />Excluir
+                </button>
+              </div>
+
+              {/* Grid de 3 colunas */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
-                {/* Coluna 1 - Resumo e Ações */}
+                {/* Coluna 1 - Resumo */}
                 <div className="lg:col-span-1 flex flex-col gap-6">
                   {/* Resumo do Acordo */}
                   <div className="border border-[#e7e5df] dark:border-zinc-700 rounded-xl p-4 sm:p-5">
@@ -5086,78 +5128,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     )}
                   </div>
 
-                  {/* Ações Rápidas */}
-                  <div className="border border-[#e7e5df] dark:border-zinc-700 rounded-xl p-4 sm:p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-700 flex items-center justify-center">
-                        <Bell className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                      </div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ações</h2>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleGenerateReceipt(selectedAgreement)}
-                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 transition border border-[#e7e5df] dark:border-zinc-600"
-                      >
-                        <Receipt className="w-3.5 h-3.5 text-slate-500" />Gerar Recibo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setIsManualEntryOpen(true); setManualEntryData({ paymentDate: today, paymentMethod: paymentMethods[0] ?? 'pix', paidValue: '', description: '', notes: '' }); }}
-                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 transition border border-emerald-200 dark:border-emerald-700/50"
-                      >
-                        <Plus className="w-3.5 h-3.5" />Baixa Avulsa
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditModal(selectedAgreement)}
-                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-400 transition border border-amber-200 dark:border-amber-700/50"
-                      >
-                        <Edit className="w-3.5 h-3.5" />Editar Acordo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAuditModal(selectedAgreement.id)}
-                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-400 transition border border-purple-200 dark:border-purple-700/50"
-                      >
-                        <History className="w-3.5 h-3.5" />Auditoria
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAgreement(selectedAgreement)}
-                        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition border border-red-200 dark:border-red-700/50"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />Excluir
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Cliente — acesso rápido */}
-                  {(() => {
-                    const detailClient = clients.find(c => c.id === selectedAgreement.client_id);
-                    if (!detailClient) return null;
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => { handleCloseDetails(); navigateToClient(selectedAgreement.client_id); }}
-                        className="group w-full text-left border border-blue-100 dark:border-blue-700/40 rounded-xl p-4 bg-blue-50/60 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-6 h-6 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-                            <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                          </div>
-                          <h2 className="text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400 flex-1">Cliente</h2>
-                          <ChevronRight className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover:opacity-100 transition" />
-                        </div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{getClientName(selectedAgreement.client_id)}</p>
-                        {(detailClient as any).cpf && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">CPF: {(detailClient as any).cpf}</p>}
-                        {(detailClient as any).phone && <p className="text-xs text-slate-500 dark:text-slate-400">{(detailClient as any).phone}</p>}
-                        <p className="text-xs text-blue-500 dark:text-blue-400 mt-1.5 font-medium">Abrir ficha do cliente →</p>
-                      </button>
-                    );
-                  })()}
-
                   {/* Notas Internas */}
                   {selectedAgreement.notes && (
                     <div className="border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 sm:p-5 bg-amber-50 dark:bg-amber-900/10">
@@ -5202,257 +5172,202 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         <p>Nenhuma parcela encontrada</p>
                       </div>
                     ) : (
-                      <div className="space-y-2 pr-1 lg:flex-grow lg:overflow-y-auto">
-                        {/* Parcelas pagas — colapsáveis (apenas parcelas regulares) */}
+                      <div className="lg:flex-grow lg:min-h-0 lg:overflow-y-auto rounded-xl border border-[#e7e5df] dark:border-zinc-700 overflow-hidden" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
                         {(() => {
                           const paid = installments.filter(i => i.status === 'pago' && i.entry_type !== 'avulso');
-                          const unpaid = installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso');
-                          if (paid.length === 0) return null;
-                          return (
-                            <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/40 overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => setShowPaidInstallments(v => !v)}
-                                className="w-full flex items-center justify-between px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                                    {paid.length} parcela{paid.length > 1 ? 's' : ''} paga{paid.length > 1 ? 's' : ''} · <SensitiveValue value={paid.reduce((s, i) => s + (i.paid_value ?? i.value), 0)} isRevealed={financialRevealed} /> recebido
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                                  {showPaidInstallments ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  {showPaidInstallments ? 'Ocultar pagas' : 'Ver pagas'}
-                                </div>
-                              </button>
-                              {showPaidInstallments && (
-                                <div className="divide-y divide-emerald-100 dark:divide-emerald-800/30">
-                                  {paid.map(inst => (
-                                    <div key={inst.id} className="px-4 py-2.5 flex items-center justify-between bg-white dark:bg-zinc-900/50 text-xs">
-                                      <div className="flex items-center gap-2">
-                                        {inst.entry_type === 'avulso' ? (
-                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[9px]">AV</span>
-                                        ) : (
-                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">{inst.installment_number}</span>
-                                        )}
-                                        <div>
-                                          <div className="flex items-center gap-1.5">
-                                            <p className="font-semibold text-slate-700 dark:text-slate-300">
-                                              {inst.entry_type === 'avulso' ? 'Entrada Avulsa' : `Parcela ${inst.installment_number}/${selectedAgreement.installments_count}`}
-                                            </p>
-                                            {inst.entry_type === 'avulso' && (
-                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 uppercase tracking-wide">Avulso</span>
-                                            )}
-                                          </div>
-                                          <p className="text-slate-400 dark:text-slate-500">
-                                            Recebido em {inst.payment_date ? new Date(inst.payment_date).toLocaleDateString('pt-BR') : '—'} · {inst.payment_method ? { pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' }[inst.payment_method] ?? inst.payment_method : '—'}
-                                          </p>
-                                          {inst.notes && <p className="text-slate-400 dark:text-slate-500 italic truncate max-w-[180px]">{inst.notes}</p>}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <p className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums"><SensitiveValue value={inst.paid_value ?? inst.value} isRevealed={financialRevealed} /></p>
-                                        <div className="flex items-center justify-end gap-2 mt-0.5">
-                                          <button
-                                            onClick={() => handleEditPayment(inst)}
-                                            className="text-[10px] text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition"
-                                          >
-                                            Editar
-                                          </button>
-                                          <span className="text-slate-200 dark:text-slate-700">·</span>
-                                          <button
-                                            onClick={() => handleGenerateReceipt(selectedAgreement, inst)}
-                                            className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition"
-                                          >
-                                            Recibo
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                        {/* Baixas avulsas — colapsáveis */}
-                        {(() => {
                           const avulsos = installments.filter(i => i.entry_type === 'avulso');
-                          if (avulsos.length === 0) return null;
-                          const totalAvulso = avulsos.reduce((s, i) => s + (i.paid_value ?? i.value ?? 0), 0);
+                          const unpaid = installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso');
+                          const isPercentage = selectedAgreement.fee_type === 'percentage';
+                          const colCount = 4;
+                          const installmentsCount = selectedAgreement.installments_count || 1;
+                          const netAgreementValue = selectedAgreement.net_value ?? (selectedAgreement.total_value - selectedAgreement.fee_value);
+                          const clientInstallmentValue = netAgreementValue / installmentsCount;
+                          const pmLabels: Record<string, string> = { pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' };
                           return (
-                            <div className="rounded-xl border border-blue-200 dark:border-blue-700/40 overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => setShowAvulsoEntries(v => !v)}
-                                className="w-full flex items-center justify-between px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-                                    {avulsos.length} entrada{avulsos.length > 1 ? 's' : ''} avulsa{avulsos.length > 1 ? 's' : ''} · <SensitiveValue value={totalAvulso} isRevealed={financialRevealed} /> recebido
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
-                                  {showAvulsoEntries ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  {showAvulsoEntries ? 'Ocultar avulsas' : 'Ver avulsas'}
-                                </div>
-                              </button>
-                              {showAvulsoEntries && (
-                                <div className="divide-y divide-blue-100 dark:divide-blue-800/30">
-                                  {avulsos.map(avulso => (
-                                    <div key={avulso.id} className="px-4 py-3 bg-white dark:bg-zinc-900/50">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[9px] shrink-0">AV</span>
-                                          <div>
-                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Entrada Avulsa</p>
-                                            <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                                              {avulso.payment_date ? new Date(avulso.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                                              {avulso.payment_method && ` · ${{ pix: 'PIX', transferencia: 'Transf.', dinheiro: 'Dinheiro', cartao_credito: 'Crédito', cartao_debito: 'Débito', cheque: 'Cheque' }[avulso.payment_method] ?? avulso.payment_method}`}
-                                            </p>
-                                            {avulso.notes && <p className="text-[11px] text-slate-400 italic truncate max-w-[180px]">{avulso.notes}</p>}
-                                          </div>
+                            <table className="w-full text-[13px]">
+                              <thead>
+                                <tr className="bg-slate-50 dark:bg-zinc-800 border-b border-[#e7e5df] dark:border-zinc-700">
+                                  <th className="pl-3 pr-2 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 w-9">#</th>
+                                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Vencimento</th>
+                                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor</th>
+                                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Status</th>
+                                  <th className="px-3 py-2.5 w-[90px]"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#e7e5df] dark:divide-zinc-700/50">
+                                {/* Parcelas pagas */}
+                                {paid.length > 0 && (
+                                  <>
+                                    <tr
+                                      className="cursor-pointer bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition"
+                                      onClick={() => setShowPaidInstallments(v => !v)}
+                                    >
+                                      <td colSpan={colCount + 1} className="px-3 py-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-2 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            {paid.length} parcela{paid.length > 1 ? 's' : ''} paga{paid.length > 1 ? 's' : ''} · <SensitiveValue value={paid.reduce((s, i) => s + (i.paid_value ?? i.value), 0)} isRevealed={financialRevealed} /> recebido
+                                          </span>
+                                          <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                            {showPaidInstallments ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                            {showPaidInstallments ? 'Ocultar' : 'Ver pagas'}
+                                          </span>
                                         </div>
-                                        <div className="text-right shrink-0">
-                                          <p className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums"><SensitiveValue value={avulso.paid_value ?? avulso.value} isRevealed={financialRevealed} /></p>
-                                          <div className="flex items-center justify-end gap-2 mt-1">
-                                            <button onClick={() => handleEditPayment(avulso)} className="text-[10px] text-slate-400 hover:text-amber-600 transition">Editar</button>
-                                            <span className="text-slate-200 dark:text-slate-700">·</span>
-                                            <button onClick={() => handleGenerateReceipt(selectedAgreement, avulso)} className="text-[10px] text-slate-400 hover:text-emerald-600 transition">Recibo</button>
-                                            <span className="text-slate-200 dark:text-slate-700">·</span>
-                                            <button onClick={() => handleDeleteAvulsoEntry(avulso.id)} className="text-[10px] text-slate-400 hover:text-red-600 transition">Excluir</button>
+                                      </td>
+                                    </tr>
+                                    {showPaidInstallments && paid.map(inst => (
+                                      <tr key={inst.id} className="bg-emerald-50/30 dark:bg-emerald-900/10 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 transition">
+                                        <td className="pl-3 pr-2 py-2.5">
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+                                            {inst.installment_number ?? 'AV'}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <div className="text-[13px] text-slate-700 dark:text-slate-300">
+                                            {inst.payment_date ? new Date(inst.payment_date).toLocaleDateString('pt-BR') : '—'}
                                           </div>
+                                          {inst.payment_method && <div className="text-[11px] text-slate-400 dark:text-slate-500">{pmLabels[inst.payment_method] ?? inst.payment_method}</div>}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <div className="text-[13px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                            <SensitiveValue value={inst.paid_value ?? inst.value} isRevealed={financialRevealed} />
+                                          </div>
+                                          {isPercentage && (
+                                            <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                              Cliente <SensitiveValue value={clientInstallmentValue} isRevealed={financialRevealed} /> · Honor. <SensitiveValue value={selectedAgreement.fee_value / installmentsCount} isRevealed={financialRevealed} />
+                                            </div>
+                                          )}
+                                          {inst.notes && <div className="text-[11px] text-slate-400 italic truncate max-w-[160px]">{inst.notes}</div>}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Pago</span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                          <button onClick={() => handleEditPayment(inst)} className="text-[11px] text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition">Editar</button>
+                                          <span className="mx-1 text-slate-200 dark:text-slate-700">·</span>
+                                          <button onClick={() => handleGenerateReceipt(selectedAgreement, inst)} className="text-[11px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition">Recibo</button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </>
+                                )}
+                                {/* Baixas avulsas */}
+                                {avulsos.length > 0 && (
+                                  <>
+                                    <tr
+                                      className="cursor-pointer bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition"
+                                      onClick={() => setShowAvulsoEntries(v => !v)}
+                                    >
+                                      <td colSpan={colCount + 1} className="px-3 py-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-2 text-[12px] font-semibold text-amber-700 dark:text-amber-300">
+                                            <Plus className="w-3.5 h-3.5" />
+                                            {avulsos.length} entrada{avulsos.length > 1 ? 's' : ''} avulsa{avulsos.length > 1 ? 's' : ''} · <SensitiveValue value={avulsos.reduce((s, i) => s + (i.paid_value ?? i.value ?? 0), 0)} isRevealed={financialRevealed} /> recebido
+                                          </span>
+                                          <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                                            {showAvulsoEntries ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                            {showAvulsoEntries ? 'Ocultar' : 'Ver avulsas'}
+                                          </span>
                                         </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                                      </td>
+                                    </tr>
+                                    {showAvulsoEntries && avulsos.map(avulso => (
+                                      <tr key={avulso.id} className="bg-amber-50/30 dark:bg-amber-900/10 hover:bg-amber-50/50 dark:hover:bg-amber-900/20 transition">
+                                        <td className="pl-3 pr-2 py-2.5">
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-bold text-[9px]">AV</span>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <div className="text-[13px] text-slate-700 dark:text-slate-300">
+                                            {avulso.payment_date ? new Date(avulso.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                                          </div>
+                                          {avulso.payment_method && <div className="text-[11px] text-slate-400 dark:text-slate-500">{pmLabels[avulso.payment_method] ?? avulso.payment_method}</div>}
+                                          {avulso.notes && <div className="text-[11px] text-slate-400 italic truncate max-w-[140px]">{avulso.notes}</div>}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <div className="text-[13px] font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                                            <SensitiveValue value={avulso.paid_value ?? avulso.value} isRevealed={financialRevealed} />
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Avulso</span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                          <button onClick={() => handleEditPayment(avulso)} className="text-[11px] text-slate-400 hover:text-amber-600 transition">Editar</button>
+                                          <span className="mx-1 text-slate-200 dark:text-slate-700">·</span>
+                                          <button onClick={() => handleGenerateReceipt(selectedAgreement, avulso)} className="text-[11px] text-slate-400 hover:text-emerald-600 transition">Recibo</button>
+                                          <span className="mx-1 text-slate-200 dark:text-slate-700">·</span>
+                                          <button onClick={() => handleDeleteAvulsoEntry(avulso.id)} className="text-[11px] text-slate-400 hover:text-red-600 transition">Excluir</button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </>
+                                )}
+                                {/* Parcelas pendentes */}
+                                {unpaid.map(installment => {
+                                  const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < serverToday;
+                                  const dueMidnight = parseLocalDate(installment.due_date);
+                                  const now = new Date();
+                                  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                                  const daysOverdue = isOverdue && dueMidnight
+                                    ? Math.floor((todayMidnight.getTime() - dueMidnight.getTime()) / (1000 * 60 * 60 * 24))
+                                    : 0;
+                                  const dueDate = dueMidnight ?? new Date(installment.due_date);
+                                  const diffMs = dueDate.getTime() - todayMidnight.getTime();
+                                  const daysUntilDue = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
+                                  const dueDateLabel = isOverdue
+                                    ? `Vencida há ${daysOverdue} ${daysOverdue === 1 ? 'dia' : 'dias'}`
+                                    : daysUntilDue === 0 ? 'Vence hoje'
+                                    : daysUntilDue === 1 ? 'Vence amanhã'
+                                    : `Vence em ${daysUntilDue} dias`;
+                                  const rowBg = isOverdue
+                                    ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                                    : 'bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/40';
+                                  const numberBg = isOverdue ? 'bg-rose-500' : 'bg-slate-300 dark:bg-slate-600';
+                                  const statusClass = isOverdue
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                                    : 'bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-300';
+                                  return (
+                                    <tr key={installment.id} className={`transition ${rowBg}`}>
+                                      <td className="pl-3 pr-2 py-2.5">
+                                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-white font-bold text-[10px] ${numberBg}`}>
+                                          {installment.installment_number}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <div className="text-[13px] text-slate-700 dark:text-slate-300">{dueDate.toLocaleDateString('pt-BR')}</div>
+                                        <div className={`text-[11px] ${isOverdue ? 'text-rose-500 dark:text-rose-400 font-medium' : 'text-slate-400 dark:text-slate-500'}`}>{dueDateLabel}</div>
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <div className="text-[13px] font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
+                                          <SensitiveValue value={selectedAgreement.total_value / installmentsCount} isRevealed={financialRevealed} />
+                                        </div>
+                                        {isPercentage && (
+                                          <div className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
+                                            Cliente <SensitiveValue value={clientInstallmentValue} isRevealed={financialRevealed} /> · Honor. <SensitiveValue value={selectedAgreement.fee_value / installmentsCount} isRevealed={financialRevealed} />
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusClass}`}>
+                                          {isOverdue ? 'Em atraso' : 'Aguardando'}
+                                        </span>
+                                      </td>
+                                      <td className="pr-3 py-2.5 text-right">
+                                        <button
+                                          onClick={() => handleOpenPaymentModal(installment)}
+                                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold text-white bg-amber-500 hover:bg-amber-600 transition whitespace-nowrap"
+                                        >
+                                          <CheckCircle className="w-3 h-3" />
+                                          Dar baixa
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           );
                         })()}
-
-                        {installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').length === 0 && <div />}
-                        {installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').map((installment, index) => {
-                          const _ = index; // suppress unused var
-                          const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < serverToday;
-                          const isPaid = installment.status === 'pago';
-                          const dueMidnight = parseLocalDate(installment.due_date);
-                          const now = new Date();
-                          const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                          const daysOverdue = isOverdue && dueMidnight
-                            ? Math.floor((todayMidnight.getTime() - dueMidnight.getTime()) / (1000 * 60 * 60 * 24))
-                            : 0;
-                          const paymentMethodLabels: Record<string, string> = {
-                            dinheiro: 'Dinheiro',
-                            pix: 'PIX',
-                            transferencia: 'Transferência',
-                            cheque: 'Cheque',
-                            cartao_credito: 'Cartão de Crédito',
-                            cartao_debito: 'Cartão de Débito',
-                          };
-                          const installmentsCount = selectedAgreement.installments_count || 1;
-                          const netAgreementValue =
-                            selectedAgreement.net_value ??
-                            (selectedAgreement.total_value - selectedAgreement.fee_value);
-                          const clientInstallmentValue = netAgreementValue / installmentsCount;
-                          
-                          const dueDate = dueMidnight ?? new Date(installment.due_date);
-                          const diffMs = dueDate.getTime() - todayMidnight.getTime();
-                          const daysUntilDue = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
-                          const pendingMessage =
-                            daysUntilDue === 0
-                              ? 'Vence hoje'
-                              : daysUntilDue === 1
-                                ? 'Vence amanhã'
-                                : `Vence em ${daysUntilDue} dias`;
-
-                          const theme = isPaid
-                            ? {
-                                border: 'border-emerald-200 dark:border-emerald-500/40',
-                                bg: 'from-emerald-50/80 via-white to-white dark:from-emerald-500/10 dark:via-zinc-900 dark:to-zinc-900',
-                                badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100',
-                                pill: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
-                                number: 'bg-emerald-500',
-                              }
-                            : isOverdue
-                              ? {
-                                  border: 'border-rose-200 dark:border-[#fb7185]/40',
-                                  bg: 'from-rose-50/35 via-white to-white dark:from-rose-950/25 dark:via-zinc-900 dark:to-zinc-900',
-                                  badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
-                                  pill: 'bg-rose-500/10 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300',
-                                  number: 'bg-rose-500 dark:bg-rose-500',
-                                }
-                              : {
-                                  border: 'border-[#e7e5df] dark:border-slate-600',
-                                  bg: 'from-slate-50/70 via-white to-white dark:from-slate-500/10 dark:via-zinc-900 dark:to-zinc-900',
-                                  badge: 'bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-200',
-                                  pill: 'bg-slate-500/10 text-slate-700 dark:text-slate-200',
-                                  number: 'bg-slate-500',
-                                };
-
-                          const statusBadge = isPaid
-                            ? 'Pagamento concluído'
-                            : isOverdue
-                              ? 'Em atraso'
-                              : 'Aguardando';
-
-                          const statusDescription = isPaid
-                            ? `Recebido em ${new Date(installment.payment_date!).toLocaleDateString('pt-BR')}`
-                            : isOverdue
-                              ? `Vencida há ${daysOverdue} ${daysOverdue === 1 ? 'dia' : 'dias'}`
-                              : pendingMessage;
-
-                          return (
-                            <React.Fragment key={installment.id}>
-                              <div
-                                className={`rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} shadow-sm transition-all duration-200 hover:shadow-md`}
-                              >
-                              {/* Linha compacta: badge + info + "Dar baixa" */}
-                              <div className="flex items-start gap-2.5 px-3 py-2.5">
-                                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-white text-[10px] font-bold shrink-0 mt-0.5 ${theme.number}`}>
-                                  {installment.installment_number}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                      Parcela {installment.installment_number}/{selectedAgreement.installments_count}
-                                    </p>
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.pill}`}>
-                                      {statusDescription}
-                                    </span>
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.badge}`}>
-                                      {statusBadge}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
-                                    <span>Vence <strong className="font-semibold text-slate-700 dark:text-slate-200">{dueDate.toLocaleDateString('pt-BR')}</strong></span>
-                                    <span>Total <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(selectedAgreement.total_value / installmentsCount)}</strong></span>
-                                    {selectedAgreement.fee_type === 'percentage' && (
-                                      <span>Cliente <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(clientInstallmentValue)}</strong></span>
-                                    )}
-                                    {selectedAgreement.fee_type === 'percentage' && (
-                                      <span>Honor. <strong className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(selectedAgreement.fee_value / installmentsCount)}</strong></span>
-                                    )}
-                                  </div>
-                                </div>
-                                <button
-                                  onClick={() => handleOpenPaymentModal(installment)}
-                                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition bg-amber-500 hover:bg-amber-600 shadow-amber-500/30 whitespace-nowrap shrink-0"
-                                >
-                                  <CheckCircle className="w-3 h-3" />
-                                  Dar baixa
-                                </button>
-                              </div>
-                              </div>
-                              {index < installments.filter(i => i.status !== 'pago' && i.entry_type !== 'avulso').length - 1 && (
-                                <div className="hidden dark:block h-px bg-gradient-to-r from-transparent via-white/15 to-transparent mx-2 rounded-full" />
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
                       </div>
                     )}
                   </div>

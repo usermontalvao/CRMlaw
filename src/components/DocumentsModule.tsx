@@ -2172,11 +2172,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         size="md"
         zIndex={70}
         footer={
-          <div className="flex justify-end gap-3">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={handleCloseModal}
-              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
             >
               Cancelar
             </button>
@@ -2184,23 +2184,23 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               type="submit"
               form="template-form"
               disabled={uploading}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
             >
               {uploading ? 'Enviando...' : 'Salvar Template'}
             </button>
           </div>
         }
       >
-        <ModalBody>
+        <ModalBody className="px-5 py-4">
           <form id="template-form" onSubmit={handleUploadTemplate} className="flex flex-col gap-6">
             {/* Form Fields */}
             <div className="space-y-5">
               {/* Nome */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Template</label>
+                <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Nome do Template</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-[#f8f7f5]"
+                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
                   placeholder="Digite o nome do template"
@@ -2209,9 +2209,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
               {/* Descrição */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
+                <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Descrição</label>
                 <textarea
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                   rows={3}
                   value={descriptionInput}
                   onChange={(e) => setDescriptionInput(e.target.value)}
@@ -2236,7 +2236,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
               {/* File Upload */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Template</label>
+                <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Arquivo do Template</label>
                 <div className="flex items-center gap-3">
                   <input
                     id="template-file-input"
@@ -2284,7 +2284,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       size="xl"
       zIndex={70}
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         {previewLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -2323,7 +2323,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                   value={previewEditName}
                   onChange={(e) => setPreviewEditName(e.target.value)}
                 />
@@ -2331,7 +2331,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
                 <textarea
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                   rows={3}
                   value={previewEditDescription}
                   onChange={(e) => setPreviewEditDescription(e.target.value)}
@@ -2340,7 +2340,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               <div className="flex-1 space-y-2">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
                 <textarea
-                  className="w-full h-full min-h-[280px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                  className="w-full min-h-[280px] rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                   value={previewEditContent}
                   onChange={(e) => setPreviewEditContent(e.target.value)}
                 />
@@ -2350,14 +2350,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <button
                   type="button"
                   onClick={handleCancelPreviewEditing}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+                  className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={previewSaving}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
                 >
                   {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
@@ -2395,7 +2395,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       size="sm"
       zIndex={90}
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
             <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
@@ -2416,11 +2416,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       size="lg"
       zIndex={70}
       footer={
-        <div className="flex gap-3">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={handleCloseEditModal}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
           >
             Cancelar
           </button>
@@ -2428,37 +2428,37 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             type="submit"
             form="edit-form"
             disabled={previewSaving}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
           >
             {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
           </button>
         </div>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <form id="edit-form" onSubmit={handleSaveTemplateEdits} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Nome</label>
             <input
               type="text"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Descrição</label>
             <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
               rows={3}
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
+            <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">Conteúdo</label>
             <textarea
-              className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+              className="w-full h-64 rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               placeholder="Conteúdo do template com variáveis entre colchetes duplos, ex: [[NOME]]"
@@ -2545,7 +2545,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </button>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 break-all">{generatedDocName}</p>
         {generatedAttachments.length > 0 && (
           <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-4">
@@ -2613,7 +2613,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </button>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
           Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
         </p>
@@ -2625,7 +2625,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               type="text"
               readOnly
               value={templateFillLink}
-              className="flex-1 w-full bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+              className="flex-1 w-full rounded text-slate-900 dark:text-white border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] font-mono transition"
             />
             <button
               type="button"
@@ -2697,7 +2697,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 setTemplateFormConfigTemplate(null);
               }
             }}
-            className="px-4 py-2.5 rounded-xl border border-[#e7e5df] dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
             disabled={templateFormConfigSaving}
           >
             Cancelar
@@ -2722,7 +2722,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </div>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         {templateFormConfigError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {templateFormConfigError}
@@ -2811,7 +2811,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p)),
                         )
                       }
-                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition mt-1"
                     />
                   </label>
                   <label className="block">
@@ -2848,7 +2848,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           }),
                         );
                       }}
-                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition mt-1"
                     >
                       <option value="text">Texto</option>
                       <option value="name">Nome</option>
@@ -2870,7 +2870,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           prev.map((p, i) => (i === idx ? { ...p, description: e.target.value } : p)),
                         )
                       }
-                      className="mt-1 w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition mt-1"
                       placeholder="Ex: Digite o número com DDD"
                     />
                   </label>
@@ -2922,7 +2922,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         const parsed = templateFormConfigParseOptions(e.target.value);
                         setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));
                       }}
-                      className="mt-2 w-full min-h-[96px] rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                      className="w-full min-h-[96px] rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition mt-2"
                       placeholder="Ex:\nSolteiro(a)\nCasado(a)"
                     />
                   </div>
@@ -2952,7 +2952,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </button>
       }
     >
-      <ModalBody>
+      <ModalBody className="px-5 py-4">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
           Envie este link para o cliente assinar o documento
         </p>
@@ -2964,7 +2964,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               type="text"
               readOnly
               value={signatureLink}
-              className="flex-1 w-full bg-[#f8f7f5] dark:bg-zinc-900 border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+              className="flex-1 w-full rounded text-slate-900 dark:text-white border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] font-mono transition"
             />
             <button
               onClick={handleCopyLink}

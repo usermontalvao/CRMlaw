@@ -726,6 +726,26 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     }
   };
 
+  const detailModalIcon = selectedClient?.client_type === 'pessoa_juridica'
+    ? <Building2 className="w-5 h-5" />
+    : <User className="w-5 h-5" />;
+
+  const detailModalSubtitle = selectedClient ? (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+      <span className="font-medium text-slate-700">{selectedClient.client_type === 'pessoa_juridica' ? 'Pessoa jurídica' : 'Pessoa física'}</span>
+      {selectedClient.cpf_cnpj && (
+        <>
+          <span className="text-slate-300">•</span>
+          <span>{selectedClient.cpf_cnpj}</span>
+        </>
+      )}
+      <span className="text-slate-300">•</span>
+      <span className={selectedClient.status === 'ativo' ? 'text-emerald-700' : 'text-slate-500'}>
+        {selectedClient.status === 'ativo' ? 'Cadastro ativo' : 'Cadastro inativo'}
+      </span>
+    </div>
+  ) : undefined;
+
   return (
     <>
       <div className="space-y-4">
@@ -1196,17 +1216,15 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onClose={() => closeFormModal(true)}
           title={modalState.type === 'edit' ? 'Editar Cliente' : 'Novo Cliente'}
           subtitle={formContext === 'prefill' ? 'Dados pré-preenchidos automaticamente' : undefined}
-          size="xl"
+          size="lg"
         >
-          <div className="p-4">
-            <ClientForm
-              client={modalState.client}
-              prefill={modalState.type === 'create' ? formPrefill : null}
-              onBack={() => closeFormModal(true)}
-              onSave={handleFormSaved}
-              variant="modal"
-            />
-          </div>
+          <ClientForm
+            client={modalState.client}
+            prefill={modalState.type === 'create' ? formPrefill : null}
+            onBack={() => closeFormModal(true)}
+            onSave={handleFormSaved}
+            variant="modal"
+          />
         </ClientModal>
       )}
 
@@ -1225,7 +1243,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               {manualMergeSelected.length < 2 ? 'Selecione ao menos 2 contatos' : `${manualMergeSelected.length} contatos selecionados`}
             </p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowManualMerge(false)} className="px-4 py-2 rounded-lg border border-[#e7e5df] text-sm font-medium text-slate-600 hover:bg-slate-50 transition">Cancelar</button>
+              <button type="button" onClick={() => setShowManualMerge(false)} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Cancelar</button>
               <button type="button" onClick={executeManualMerge} disabled={manualMergeSelected.length < 2 || !manualMergePrimaryId || manualMergeLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
                 {manualMergeLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Mesclando...</> : <><Merge className="w-4 h-4" /> Mesclar contatos</>}
               </button>
@@ -1368,6 +1386,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           isOpen={isDetailsModalOpen}
           onClose={closeDetailsModal}
           title="Detalhes do cliente"
+          subtitle={detailModalSubtitle}
+          icon={detailModalIcon}
           size="xl"
         >
           <div className="p-3">

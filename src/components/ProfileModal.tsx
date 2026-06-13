@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from './ui';
 import {
-  X,
   Save,
   Loader2,
   Camera,
@@ -531,38 +530,18 @@ export default function ProfileModal({
     ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
     : 0;
 
-  if (!isOpen) return null;
-
-  const content = (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center px-0 py-0 sm:items-center sm:px-6 sm:py-4">
-      <div
-        className="aero-backdrop absolute inset-0"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div className="aero-modal relative flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[92vh] sm:max-w-4xl sm:rounded-2xl">
-        <div className="h-1.5 w-full bg-orange-500 flex-shrink-0" />
-        <div className="aero-modal-inner flex items-start justify-between gap-4 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-8">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-              Perfil do Usuário
-            </p>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Configurações</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-            aria-label="Fechar modal"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          {/* Tabs Navigation */}
-          <div className="border-b border-white/30 dark:border-white/10 bg-[#f8f7f5]/40 dark:bg-black/20">
-            <nav className="flex min-w-max gap-5 overflow-x-auto px-4 scrollbar-hide sm:gap-8 sm:px-8" aria-label="Tabs">
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Configurações"
+      eyebrow="Perfil"
+      size="2xl"
+      zIndex={70}
+    >
+      {/* Tabs Navigation */}
+      <div className="border-b border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900">
+            <nav className="flex min-w-max gap-5 overflow-x-auto px-4 scrollbar-hide sm:gap-6 sm:px-5" aria-label="Tabs">
               {[
                 { id: 'dados', label: 'Dados Pessoais', icon: User },
                 ...(canSeeProfessionalTab ? [{ id: 'profissional', label: 'Profissional', icon: Briefcase }] : []),
@@ -590,10 +569,10 @@ export default function ProfileModal({
           </div>
 
           {/* Tab Content */}
-          <div className="p-4 sm:p-8">
+          <div className="px-5 py-4">
             {message && (
               <div
-                className={`mb-6 p-4 rounded-xl border ${
+                className={`mb-4 p-3 rounded border ${
                   message.type === 'success'
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-200'
                     : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200'
@@ -605,8 +584,8 @@ export default function ProfileModal({
 
             {/* Tab Contents */}
             {activeTab === 'dados' && (
-              <form onSubmit={handleSaveProfile} className="space-y-6">
-                <div className="flex flex-col items-start gap-4 pb-6 border-b border-[#e7e5df] sm:flex-row sm:items-center sm:gap-6">
+              <form onSubmit={handleSaveProfile} className="space-y-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                <div className="flex flex-col items-start gap-3 pb-4 border-b border-[#e7e5df] sm:flex-row sm:items-center sm:gap-4">
                   <div className="relative">
                     <img
                       src={profileForm.avatarUrl}
@@ -629,69 +608,69 @@ export default function ProfileModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Nome Completo
                     </label>
                     <input
                       type="text"
                       value={profileForm.name}
                       onChange={(e) => handleProfileChange('name', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Email
                     </label>
                     <input
                       type="email"
                       value={profileForm.email}
                       onChange={(e) => handleProfileChange('email', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       CPF
                     </label>
                     <input
                       type="text"
                       value={profileForm.cpf}
                       onChange={(e) => handleProfileChange('cpf', formatCpf(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                       placeholder="000.000.000-00"
                       maxLength={14}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Telefone
                     </label>
                     <input
                       type="tel"
                       value={profileForm.phone}
                       onChange={(e) => handleProfileChange('phone', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                       placeholder="(00) 00000-0000"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Cargo
                     </label>
                     <select
                       value={profileForm.role}
                       onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] transition"
                       disabled
                     >
                       <option value="Administrador">Administrador</option>
@@ -708,7 +687,7 @@ export default function ProfileModal({
                   <button
                     type="submit"
                     disabled={saving}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-2.5 font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50 sm:w-auto"
+                    className="flex w-full items-center justify-center gap-2 rounded bg-orange-500 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-50 sm:w-auto"
                   >
                     {saving ? (
                       <>
@@ -727,35 +706,35 @@ export default function ProfileModal({
             )}
 
             {activeTab === 'profissional' && canSeeProfessionalTab && (
-              <form onSubmit={handleSaveProfile} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <form onSubmit={handleSaveProfile} className="space-y-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Nome Completo para Documentos
                     </label>
                     <input
                       type="text"
                       value={profileForm.lawyerFullName}
                       onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                       placeholder="Nome como deve aparecer em documentos jurídicos"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Número OAB
                     </label>
                     <input
                       type="text"
                       value={profileForm.oab}
                       onChange={(e) => handleProfileChange('oab', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                       placeholder="UF 123456"
                     />
                   </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
                   <p className="text-sm text-blue-800">
                     <strong>Atenção:</strong> Estes dados serão utilizados para gerar documentos e petições.
                     Mantenha-os sempre atualizados.
@@ -766,7 +745,7 @@ export default function ProfileModal({
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-1.5 text-[13px] font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {saving ? (
                       <>
@@ -785,16 +764,16 @@ export default function ProfileModal({
             )}
 
             {activeTab === 'sobre' && (
-              <form onSubmit={handleSaveProfile} className="space-y-6">
+              <form onSubmit={handleSaveProfile} className="space-y-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Biografia Profissional
                   </label>
                   <textarea
                     value={profileForm.bio}
                     onChange={(e) => handleProfileChange('bio', e.target.value)}
                     rows={6}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none"
+                    className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                     placeholder="Fale sobre sua formação, especializações e áreas de atuação..."
                   />
                 </div>
@@ -803,7 +782,7 @@ export default function ProfileModal({
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-1.5 text-[13px] font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {saving ? (
                       <>
@@ -824,29 +803,29 @@ export default function ProfileModal({
             {activeTab === 'security' && (
               <div className="space-y-8">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-6">Alterar Senha</h3>
-                  <form onSubmit={handlePasswordSubmit} className="space-y-6">
+                  <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Alterar Senha</h3>
+                  <form onSubmit={handlePasswordSubmit} className="space-y-4" style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                         Nova Senha
                       </label>
                       <input
                         type="password"
                         value={passwordForm.newPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                         placeholder="••••••••"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                         Confirmar Senha
                       </label>
                       <input
                         type="password"
                         value={passwordForm.confirmPassword}
                         onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-[#e7e5df] rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                         placeholder="••••••••"
                       />
                     </div>
@@ -854,7 +833,7 @@ export default function ProfileModal({
                       <button
                         type="submit"
                         disabled={saving}
-                        className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                        className="px-4 py-1.5 text-[13px] font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
                         {saving ? (
                           <>
@@ -873,8 +852,8 @@ export default function ProfileModal({
                 </div>
 
                 <div className="border-t border-[#e7e5df] pt-8">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-6">Detalhes da Conta</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Detalhes da Conta</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
                     <div className="bg-slate-50 p-4 rounded-xl">
                       <p className="text-xs text-slate-500 mb-1">ID do Usuário</p>
                       <p className="text-sm font-mono text-slate-900">{user?.id}</p>
@@ -950,7 +929,7 @@ export default function ProfileModal({
                 {/* Produtividade */}
                 {canView('tarefas') && (
                   <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Produtividade</h3>
+                    <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Produtividade</h3>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600">Taxa de Conclusão</span>
@@ -969,7 +948,7 @@ export default function ProfileModal({
                 {/* Requerimentos */}
                 {canView('requerimentos') && (
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Requerimentos</h3>
+                    <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Requerimentos</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                       <div className="flex items-center justify-between mb-2">
@@ -999,7 +978,7 @@ export default function ProfileModal({
                 {/* Prazos */}
                 {canView('prazos') && (
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Prazos</h3>
+                    <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Prazos</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -1029,7 +1008,7 @@ export default function ProfileModal({
                 {/* Agenda */}
                 {canView('agenda') && (
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Agenda</h3>
+                    <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Agenda</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -1038,7 +1017,7 @@ export default function ProfileModal({
                         </div>
                         <p className="text-xs text-slate-600">Total de Eventos</p>
                       </div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded p-3">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-2xl font-bold text-blue-600">{stats.eventsThisMonth}</span>
                           <CalendarDays className="w-4 h-4 text-blue-600" />
@@ -1052,7 +1031,7 @@ export default function ProfileModal({
                 {/* Intimações DJEN */}
                 {canView('intimacoes') && (
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Intimações DJEN</h3>
+                    <h3 className="text-[13px] font-semibold text-slate-900 mb-3">Intimações DJEN</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -1074,10 +1053,6 @@ export default function ProfileModal({
               </div>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
-
-  return createPortal(content, document.body);
 }

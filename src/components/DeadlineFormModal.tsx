@@ -318,8 +318,9 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
     onClose();
   };
 
-  const inputStyle = 'w-full h-10 px-3 py-2 rounded-lg text-sm bg-white border border-[#e7e5df] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors';
-  const labelStyle = 'block text-xs font-semibold text-slate-500 mb-1.5';
+  const inputStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
+  const textareaStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 min-h-[96px] px-3 py-2 text-[13px] leading-5 placeholder:text-slate-400 transition resize-none';
+  const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   return (
     <Modal
@@ -328,16 +329,16 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
       title={selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
       subtitle={`Preencha os dados abaixo para ${selectedDeadline ? 'atualizar o' : 'cadastrar um novo'} prazo`}
       icon={<Clock className="w-5 h-5" />}
-      size="xl"
+      size="2xl"
       zIndex={80}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400"><span className="text-red-400">*</span> campos obrigatórios</p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-            <button type="button" onClick={handleClose} disabled={saving} className="w-full px-5 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 border border-[#e7e5df] rounded-xl hover:bg-slate-50 transition disabled:opacity-50 sm:w-auto">
+            <button type="button" onClick={handleClose} disabled={saving} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50">
               Cancelar
             </button>
-            <button type="button" onClick={handleSubmit} disabled={saving} className="inline-flex w-full items-center justify-center gap-2 px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 shadow-sm sm:w-auto">
+            <button type="button" onClick={handleSubmit} disabled={saving} className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               {selectedDeadline ? 'Salvar Alterações' : 'Criar Prazo'}
             </button>
@@ -345,29 +346,9 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
         </div>
       }
     >
-      <ModalBody className="space-y-4 bg-slate-50 px-4 py-4 sm:px-6">
+      <ModalBody className="px-5 py-4">
+        <div className="flex flex-col gap-5">
 
-        {/* Intimation context banner */}
-        {source === 'intimation' && intimationContext && (
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-orange-900 mb-2">Intimação Vinculada</h4>
-            {intimationContext.process_number && (
-              <p className="text-sm text-orange-800">
-                <strong>Processo:</strong> {intimationContext.process_number}
-              </p>
-            )}
-            {intimationContext.client_name && (
-              <p className="text-sm text-orange-800">
-                <strong>Cliente:</strong> {intimationContext.client_name}
-              </p>
-            )}
-            {intimationContext.type && (
-              <p className="text-sm text-orange-800">
-                <strong>Tipo:</strong> {intimationContext.type}
-              </p>
-            )}
-          </div>
-        )}
 
         {/* Error */}
         {error && (
@@ -470,12 +451,12 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
                     const dias = Number(e.target.value);
                     if (dataPublicacao && !Number.isNaN(dias) && dias > 0) handleChange('due_date', calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora));
                   }}
-                  className="w-14 h-10 px-2 rounded-lg text-sm text-center bg-[#f8f7f5] border border-[#e7e5df] text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                  className="w-14 h-[34px] px-2 rounded text-[13px] text-center bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition"
                 />
                 {[5, 10, 15].map(d => (
                   <button key={d} type="button"
                     onClick={() => { setDiasPrazo(String(d)); if (dataPublicacao) handleChange('due_date', calcularDataVencimento(dataPublicacao, d, tipoPrazoCalculadora)); }}
-                    className={`h-10 px-2.5 text-xs rounded-lg font-semibold transition-all ${diasPrazo === String(d) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    className={`h-[34px] px-2.5 text-[13px] rounded font-semibold transition ${diasPrazo === String(d) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >{d}</button>
                 ))}
               </div>
@@ -545,74 +526,78 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
               <label className={labelStyle}>Notificar (dias antes)</label>
               <input type="number" min={0} max={30} value={formData.notify_days_before} onChange={e => handleChange('notify_days_before', e.target.value)} className={inputStyle} placeholder="2" />
             </div>
-            {!fl.isHidden('notes') && (
-            <div className="col-span-1 sm:col-span-2 lg:col-span-4">
-              <label className={labelStyle}>{fl.fieldLabel('notes', 'Descrição / Observações')}</label>
-              <textarea
-                value={formData.description}
-                onChange={e => handleChange('description', e.target.value)}
-                placeholder="Detalhes adicionais sobre o prazo..."
-                className={`${inputStyle} h-16 resize-none`}
-                required={fl.isRequired('notes')}
-              />
-            </div>
-            )}
           </div>
         </section>
 
-        {/* Responsável */}
-        {!fl.isHidden('responsible') && <section>
-          <div className="flex items-baseline gap-3 mb-2">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Responsável <span className="text-red-400">*</span></p>
-            <p className="text-xs font-semibold truncate">
+        {/* Observações + Responsável lado a lado */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
+          {!fl.isHidden('notes') && (
+          <div>
+            <label className={labelStyle}>{fl.fieldLabel('notes', 'Observações')}</label>
+            <textarea
+              value={formData.description}
+              onChange={e => handleChange('description', e.target.value)}
+              placeholder="Detalhes adicionais sobre o prazo..."
+              rows={4}
+              className={textareaStyle}
+              required={fl.isRequired('notes')}
+            />
+          </div>
+          )}
+          {!fl.isHidden('responsible') && (
+          <div>
+            <div className="flex items-baseline gap-2 mb-2">
+              <label className={labelStyle}>Responsável <span className="text-red-400">*</span></label>
               {formData.responsible_id
-                ? <span className="text-orange-600">{members.find(m => m.id === formData.responsible_id)?.name || ''}</span>
-                : <span className="text-slate-400 font-normal">Selecione um advogado</span>}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-3">
-            {[...members].filter(m => (m as any).is_active !== false).sort((a, b) => {
-              const rank = (m: Profile) => {
-                const r = (m.role || '').toLowerCase();
-                if (r.includes('admin')) return 0;
-                if (r.includes('advogad')) return 1;
-                return 2;
-              };
-              return rank(a) - rank(b);
-            }).map(member => {
-              const isSelected = formData.responsible_id === member.id;
-              const hue = getMemberHue(member.name || '');
-              const initials = getMemberInitials(member.name || '');
-              return (
-                <button
-                  key={member.id}
-                  type="button"
-                  title={member.name}
-                  onClick={() => handleChange('responsible_id', member.id)}
-                  className="relative group transition-transform hover:z-10 hover:scale-110"
-                >
-                  <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isSelected ? 'ring-2 ring-offset-1 ring-orange-500 scale-110' : 'ring-1 ring-white'}`}
-                    style={{ background: `hsl(${hue},55%,52%)`, color: '#fff' }}
+                ? <span className="text-xs text-orange-600 font-semibold truncate">{members.find(m => m.id === formData.responsible_id)?.name || ''}</span>
+                : <span className="text-xs text-slate-400">Selecione um advogado</span>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[...members].filter(m => (m as any).is_active !== false).sort((a, b) => {
+                const rank = (m: Profile) => {
+                  const r = (m.role || '').toLowerCase();
+                  if (r.includes('admin')) return 0;
+                  if (r.includes('advogad')) return 1;
+                  return 2;
+                };
+                return rank(a) - rank(b);
+              }).map(member => {
+                const isSelected = formData.responsible_id === member.id;
+                const hue = getMemberHue(member.name || '');
+                const initials = getMemberInitials(member.name || '');
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    title={member.name}
+                    onClick={() => handleChange('responsible_id', member.id)}
+                    className="relative group transition-transform hover:z-10 hover:scale-110"
                   >
-                    {member.avatar_url
-                      ? <img src={member.avatar_url} alt={member.name || ''} className="w-full h-full object-cover rounded-full" />
-                      : initials}
-                  </div>
-                  {isSelected && (
-                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
-                      <Check className="w-2 h-2 text-white" strokeWidth={3} />
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isSelected ? 'ring-2 ring-offset-2 ring-orange-500 scale-110' : 'ring-1 ring-white'}`}
+                      style={{ background: `hsl(${hue},55%,52%)`, color: '#fff' }}
+                    >
+                      {member.avatar_url
+                        ? <img src={member.avatar_url} alt={member.name || ''} className="w-full h-full object-cover rounded-full" />
+                        : initials}
                     </div>
-                  )}
-                </button>
-              );
-            })}
-            {members.length === 0 && (
-              <p className="text-xs text-slate-400 py-2">Nenhum membro disponível.</p>
-            )}
+                    {isSelected && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+                        <Check className="w-2 h-2 text-white" strokeWidth={3} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              {members.length === 0 && (
+                <p className="text-xs text-slate-400 py-2">Nenhum membro disponível.</p>
+              )}
+            </div>
           </div>
-        </section>}
+          )}
+        </div>
 
+        </div>
       </ModalBody>
     </Modal>
   );

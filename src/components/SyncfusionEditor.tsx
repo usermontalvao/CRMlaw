@@ -3,12 +3,13 @@
 
 import React, { useRef, useImperativeHandle, forwardRef, useEffect, useState } from 'react';
 import type { MenuItemModel } from '@syncfusion/ej2-navigations';
-import { L10n, setCulture } from '@syncfusion/ej2-base';
+import { L10n, registerLicense, setCulture } from '@syncfusion/ej2-base';
 import * as EJ2_PT_LOCALE from '@syncfusion/ej2-locale/src/pt.json';
 import {
   DocumentEditorContainerComponent,
   Toolbar,
 } from '@syncfusion/ej2-react-documenteditor';
+import '../styles/syncfusion-editor.css';
 import {
   getCachedSuggestions,
   setCachedSuggestions,
@@ -23,6 +24,11 @@ import {
 
 // Prune entradas expiradas na inicialização do módulo
 pruneExpiredEntries();
+
+const syncfusionLicenseKey = String(import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '').trim();
+if (syncfusionLicenseKey) {
+  registerLicense(syncfusionLicenseKey);
+}
 
 // Inject required modules
 DocumentEditorContainerComponent.Inject(Toolbar);

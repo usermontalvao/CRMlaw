@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
 interface ModalProps {
   open: boolean;
@@ -17,6 +17,8 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   zIndex?: number;
+  accentBarClassName?: string;
+  iconContainerClassName?: string;
 }
 
 const sizeClasses: Record<ModalSize, string> = {
@@ -24,6 +26,7 @@ const sizeClasses: Record<ModalSize, string> = {
   md: 'max-w-xl',
   lg: 'max-w-2xl',
   xl: 'max-w-5xl',
+  '2xl': 'max-w-3xl',
 };
 
 export const Modal: React.FC<ModalProps> = ({
@@ -38,6 +41,8 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   footer,
   zIndex = 80,
+  accentBarClassName = 'bg-amber-500',
+  iconContainerClassName = 'bg-amber-500 text-white',
 }) => {
   useEffect(() => {
     if (!open) return;
@@ -75,8 +80,8 @@ export const Modal: React.FC<ModalProps> = ({
               aria-modal="true"
               aria-label={title}
               className={[
-                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-[#f8f7f5] shadow-xl ring-1 ring-black/8 dark:bg-zinc-900 dark:ring-white/8 sm:w-full',
-                'rounded-t-[24px] sm:max-h-[92dvh] sm:rounded-2xl',
+                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-white shadow-xl ring-1 ring-black/8 dark:bg-zinc-900 dark:ring-white/8 sm:w-full',
+                'rounded-t-[16px] sm:max-h-[92dvh] sm:rounded-none',
                 sizeClasses[size],
               ].join(' ')}
               initial={{ opacity: 0, scale: 0.985 }}
@@ -84,13 +89,13 @@ export const Modal: React.FC<ModalProps> = ({
               exit={{ opacity: 0, scale: 0.985 }}
               transition={{ duration: 0.16, ease: 'easeOut' }}
             >
-              <div className="h-1.5 w-full shrink-0 bg-amber-500" />
+              <div className={['h-1.5 w-full shrink-0', accentBarClassName].join(' ')} />
 
-              <div className="shrink-0 border-b border-[#e7e5df] px-4 py-4 dark:border-zinc-800 sm:px-8 sm:py-5">
+              <div className="shrink-0 border-b border-[#e7e5df] px-4 py-2 dark:border-zinc-800 sm:px-5 sm:py-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     {icon && (
-                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
+                      <div className={['mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center', iconContainerClassName].join(' ')}>
                         {icon}
                       </div>
                     )}
@@ -100,7 +105,7 @@ export const Modal: React.FC<ModalProps> = ({
                           {eyebrow}
                         </p>
                       )}
-                      <h2 className="truncate text-base font-semibold text-slate-900 dark:text-white sm:text-lg">{title}</h2>
+                      <h2 className="truncate text-[14px] font-semibold text-slate-900 dark:text-white sm:text-[15px]">{title}</h2>
                       {subtitle && (
                         typeof subtitle === 'string'
                           ? <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 sm:truncate">{subtitle}</p>
@@ -115,7 +120,7 @@ export const Modal: React.FC<ModalProps> = ({
                       type="button"
                       onClick={onClose}
                       aria-label="Fechar"
-                      className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                      className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -128,7 +133,7 @@ export const Modal: React.FC<ModalProps> = ({
               </div>
 
               {footer && (
-                <div className="shrink-0 border-t border-[#e7e5df] bg-[#f8f7f5] px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900 sm:px-8 sm:py-4">
+                <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
                   {footer}
                 </div>
               )}
@@ -142,7 +147,7 @@ export const Modal: React.FC<ModalProps> = ({
 };
 
 export const ModalBody: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = '', children, ...props }) => (
-  <div className={['p-4 sm:p-8', className].filter(Boolean).join(' ')} {...props}>
+  <div className={['p-4 sm:p-6', className].filter(Boolean).join(' ')} {...props}>
     {children}
   </div>
 );

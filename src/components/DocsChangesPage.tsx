@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.223': { name: 'Café Processo Lúcido', emoji: '🧠' },
   '1.10.217': { name: 'Café Recibo Limpo', emoji: '🧾' },
   '1.10.216': { name: 'Café Componentes Padrão', emoji: '🎨' },
   '1.10.215': { name: 'Café Modal Limpo', emoji: '🪟' },
@@ -878,6 +879,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.223',
+    date: '12/06/2026',
+    summary: 'Processos: resumo de IA passou a considerar melhor a linha do tempo, publicações e notas internas ao montar a análise.',
+    modules: [
+      { moduleId: 'processos', changes: [
+        { type: 'improvement' as const, title: 'Resumo IA com mais contexto processual', description: 'A geração do resumo passou a enviar trechos maiores do DJEN, enriquecer eventos do DataJud e incluir notas internas para reduzir leituras superficiais e recomendações genéricas.' },
+        { type: 'fix' as const, title: 'Prompt mais restritivo para próximo passo', description: 'O prompt da análise foi endurecido para evitar conclusões inventadas, como sugerir petição inicial ou atos não suportados pela linha do tempo real do processo.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.222',
     date: '11/06/2026',

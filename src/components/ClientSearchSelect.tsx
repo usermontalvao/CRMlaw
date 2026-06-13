@@ -171,13 +171,13 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
             onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
             placeholder={placeholder}
             required={required}
-            className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] text-slate-900 h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 placeholder:text-slate-400"
+            className="w-full rounded border border-slate-300 bg-white text-slate-900 h-[34px] px-3 text-[13px] focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 placeholder:text-slate-400"
           />
         )}
 
         {/* Cliente selecionado */}
         {value && selectedClientName && (
-          <div className="flex items-center justify-between w-full rounded-xl border border-[#e7e5df] h-11 px-4 text-sm bg-[#f8f7f5]">
+          <div className="flex items-center justify-between w-full rounded border border-slate-300 h-[34px] px-3 text-[13px] bg-white">
             <span className="text-slate-900 font-medium truncate">{selectedClientName}</span>
             <button
               type="button"
@@ -194,36 +194,32 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         {searchOpen && !value && dropdownStyle && (searchLoading || searchResults.length > 0 || searchTerm.trim().length >= 2) && typeof document !== 'undefined' && (
           createPortal(
             <div
-              className="client-search-dropdown rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto border border-zinc-200 bg-white"
+              className="client-search-dropdown rounded shadow-md z-[60] max-h-[220px] overflow-y-auto border border-slate-200 bg-white"
               style={dropdownStyle}
             >
             {searchLoading && (
-              <div className="px-3 py-2 text-slate-500 text-sm" style={{ background: '#ffffff' }}>Buscando...</div>
+              <div className="px-3 py-1.5 text-slate-500 text-[13px]">Buscando...</div>
             )}
-            
+
             {!searchLoading && searchResults.length === 0 && searchTerm.trim().length >= 2 && (
               <>
-                <div className="px-3 py-2 text-zinc-500 text-sm border-b border-zinc-100" style={{ background: '#ffffff' }}>
-                  Nenhum cliente encontrado para "{searchTerm}"
+                <div className="px-3 py-1.5 text-zinc-500 text-[13px] border-b border-zinc-100">
+                  Nenhum cliente encontrado.
                 </div>
                 {allowCreate && (
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleCreateNew({ full_name: searchTerm })}
-                    className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition flex items-center gap-2 text-orange-600 font-medium"
-                    style={{ background: '#ffffff' }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-orange-50 transition flex items-center gap-1.5 text-orange-600"
                   >
-                    <Plus className="w-4 h-4" />
-                    <div>
-                      <p className="text-sm font-semibold">Adicionar Novo Cliente</p>
-                      <p className="text-xs text-zinc-500">Criar cadastro para "{searchTerm}"</p>
-                    </div>
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[13px] font-medium">Adicionar "{searchTerm}"</span>
                   </button>
                 )}
               </>
             )}
-            
+
             {!searchLoading && searchResults.map((client) => {
               const primaryPhone = client.phone || client.mobile || '';
               return (
@@ -232,25 +228,23 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleSelect(client)}
-                  className="w-full text-left px-3 py-2.5 hover:bg-zinc-100 transition border-b border-zinc-100 last:border-0"
-                  style={{ background: '#ffffff', color: '#18181b' }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 transition border-b border-zinc-100 last:border-0"
                 >
-                  <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>{client.full_name}</p>
-                  <p className="text-xs truncate" style={{ color: '#71717a' }}>{client.email || primaryPhone || 'Sem contato cadastrado'}</p>
+                  <p className="text-[13px] font-medium truncate text-slate-900">{client.full_name}</p>
+                  <p className="text-[11px] truncate text-slate-400">{client.email || primaryPhone || ''}</p>
                 </button>
               );
             })}
-            
+
             {allowCreate && !searchLoading && searchResults.length > 0 && (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleCreateNew()}
-                className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition border-t border-zinc-200 flex items-center gap-2 text-orange-600 font-medium"
-                style={{ background: '#ffffff' }}
+                className="w-full text-left px-3 py-1.5 hover:bg-orange-50 transition border-t border-zinc-200 flex items-center gap-1.5 text-orange-600"
               >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-semibold">Adicionar Novo Cliente</span>
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[13px] font-medium">Adicionar Novo Cliente</span>
               </button>
             )}
             </div>,

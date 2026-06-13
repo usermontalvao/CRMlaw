@@ -111,7 +111,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">VALOR DA PARCELA</label>
               <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-blue-600" />
+                <DollarSign className="w-4 h-4 text-amber-600" />
                 <span className="text-slate-900 font-bold text-lg">
                   {formatCurrency(agreement.installment_value)}
                 </span>
@@ -143,7 +143,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
             <label className="block text-xs font-semibold text-slate-500 mb-1">STATUS</label>
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
               agreement.status === 'ativo' ? 'bg-green-100 text-green-800' :
-              agreement.status === 'concluido' ? 'bg-blue-100 text-blue-800' :
+              agreement.status === 'concluido' ? 'bg-slate-100 text-slate-700' :
               agreement.status === 'cancelado' ? 'bg-red-100 text-red-800' :
               'bg-slate-100 text-slate-800'
             }`}>

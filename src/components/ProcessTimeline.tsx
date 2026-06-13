@@ -34,7 +34,6 @@ import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { processService } from '../services/process.service';
 import type { ProcessStatus } from '../types/process.types';
-import { events as globalEvents, SYSTEM_EVENTS } from '../utils/events';
 import { fetchDatajudMovimentos, categorizarMovimento, getTribunalNome, type DatajudComplemento } from '../services/datajud.service';
 import { supabase } from '../config/supabase';
 
@@ -49,17 +48,34 @@ interface ProcessTimelineProps {
   onAddToCalendar?: (event: TimelineEvent) => void;
 }
 
-// Mapeamento de estágio detectado → ProcessStatus (usado para sincronizar badge do detalhe)
-const STAGE_KEY_TO_STATUS: Record<string, ProcessStatus> = {
-  distribuicao: 'distribuido',
-  citacao: 'citacao',
-  conciliacao: 'conciliacao',
-  contestacao: 'contestacao',
-  instrucao: 'instrucao',
-  sentenca: 'sentenca',
-  recurso: 'recurso',
-  transito: 'andamento',
-  execucao: 'cumprimento',
+// FONTE ÚNICA: mapeia o status canônico (DataJud) → índice do stepper visual.
+// O stepper NUNCA é calculado por texto livre do DJEN; apenas reflete o status
+// canônico vindo de _infer_process_stage (process_effective_status).
+const STATUS_TO_STAGE_INDEX: Record<string, number> = {
+  nao_protocolado: 0,
+  aguardando_confeccao: 0,
+  distribuido: 0,
+  citacao: 1,
+  conciliacao: 2,
+  contestacao: 3,
+  instrucao: 4,
+  andamento: 4,
+  sentenca: 5,
+  recurso: 6,
+  cumprimento: 8,
+  arquivado: 8,
+};
+
+// Lê o status canônico do banco (fonte única: DataJud via _infer_process_stage,
+// respeitando o override manual status_manual). Não grava nada.
+const fetchCanonicalStatus = async (processId: string): Promise<ProcessStatus | null> => {
+  try {
+    const { data, error } = await supabase.rpc('process_effective_status', { p_process_id: processId });
+    if (error || !data) return null;
+    return data as ProcessStatus;
+  } catch {
+    return null;
+  }
 };
 
 // Estágios do processo com detecção inteligente
@@ -220,163 +236,6 @@ const formatDate = (dateStr: string) => {
   }
 };
 
-const detectCurrentStage = (events: TimelineEvent[]): number => {
-  // Estágios: 0=Distribuição, 1=Citação, 2=Conciliação, 3=Contestação, 4=Instrução, 5=Sentença, 6=Recurso, 7=Trânsito, 8=Execução
-  const eventTypes = events.map(e => e.type);
-  const titles = events.map(e => e.title.toLowerCase());
-  const descriptions = events.map(e => (e.description || '').toLowerCase());
-  const graus = events.map(e => e.grauRecursal || '');
-
-  // Fase recursal: grau recursal indica instância superior (Turma Recursal = JE 2ª inst, TRT/TST = trabalhista, STJ/STF)
-  const GRAUS_RECURSO = ['Turma Recursal', 'STJ', 'STF', 'TST', 'TRT'];
-  const hasGrauRecurso = graus.some(g => GRAUS_RECURSO.includes(g));
-  if (hasGrauRecurso || eventTypes.includes('recurso')) return 6;
-
-  // Fase de EXECUÇÃO / CUMPRIMENTO (estágio 8) — vem DEPOIS da sentença na
-  // cronologia, então é verificada antes do retorno de "sentença". Detecta
-  // quando a parte vira Exequente e há intimação para executar/receber o crédito.
-  // (Inclui intimação de "interesse processual" + "demonstrativo do débito",
-  // típica de pós-trânsito em julgado, mesmo sem ordem de bloqueio.)
-  const execText = [...titles, ...descriptions].join(' ');
-  const hasExecucao =
-    execText.includes('exequente') ||
-    execText.includes('cumprimento de sentença') ||
-    execText.includes('cumprimento de sentenca') ||
-    execText.includes('fase de cumprimento') ||
-    execText.includes('liquidação de sentença') ||
-    execText.includes('liquidacao de sentenca') ||
-    execText.includes('interesse processual') ||
-    (execText.includes('demonstrativo') && (execText.includes('débito') || execText.includes('debito'))) ||
-    (execText.includes('execução') && !hasGrauRecurso) ||
-    (execText.includes('execucao') && !hasGrauRecurso);
-  if (hasExecucao) return 8;
-
-  if (eventTypes.includes('sentenca')) return 5;
-  if (eventTypes.includes('citacao')) return 1;
-
-  // Fallback: verificar títulos com padrões mais específicos
-  const hasRecurso = titles.some(t =>
-    t.includes('recurso interposto') ||
-    t.includes('apelação') ||
-    t.includes('agravo de instrumento') ||
-    t.includes('embargos de declaração') ||
-    t.includes('recurso especial') ||
-    t.includes('recurso extraordinário')
-  );
-  if (hasRecurso) return 6;
-
-  const hasSentenca = titles.some(t =>
-    t.trim() === 'sentença' ||
-    t.trim() === 'sentença/acórdão' ||
-    t.includes('sentença proferida') ||
-    t.includes('sentença homologatória') ||
-    t.includes('julgamento procedente') ||
-    t.includes('julgamento improcedente') ||
-    t.includes('julgo procedente') ||
-    t.includes('julgo improcedente') ||
-    t.includes('julgo parcialmente procedente') ||
-    t.includes('homologando o projeto de sentença')
-  ) || descriptions.some(d =>
-    d.includes('foi proferida sentença') ||
-    d.includes('proferiu sentença') ||
-    d.includes('sentença proferida') ||
-    d.includes('homologando o projeto de sentença') ||
-    d.includes('condenando o réu a pagar') ||
-    d.includes('julgo procedente') ||
-    d.includes('julgo improcedente') ||
-    d.includes('julgo parcialmente') ||
-    d.includes('julgamento de mérito') ||
-    d.includes('dispositivo da sentença')
-  );
-  if (hasSentenca) return 5;
-  
-  // Detectar audiência de instrução (estágio 4)
-  const hasAudienciaInstrucao = titles.some(t => 
-    t.includes('audiência de instrução') ||
-    t.includes('audiência instrutória')
-  );
-  if (hasAudienciaInstrucao) return 4;
-  
-  // Detectar contestação (estágio 3)
-  const hasContestacao = titles.some(t => 
-    t.includes('contestação') || 
-    t.includes('defesa apresentada')
-  );
-  if (hasContestacao) return 3;
-  
-  // Detectar audiência de conciliação (estágio 2)
-  const hasConciliacao = titles.some(t => 
-    t.includes('audiência de conciliação') ||
-    t.includes('audiência designada') ||
-    t.includes('conciliação virtual') ||
-    t.includes('conciliação designada')
-  ) || descriptions.some(d =>
-    d.includes('audiência de conciliação') ||
-    d.includes('conciliação virtual')
-  );
-  if (hasConciliacao) return 2;
-  
-  // Detectar citação (estágio 1)
-  const hasCitacao = titles.some(t => 
-    t.includes('citação') || 
-    t.includes('citado')
-  );
-  if (hasCitacao) return 1;
-  
-  // Se tem intimação com audiência designada, provavelmente é conciliação
-  const hasIntimacaoAudiencia = eventTypes.includes('intimacao') && 
-    (titles.some(t => t.includes('audiência')) || descriptions.some(d => d.includes('audiência')));
-  if (hasIntimacaoAudiencia) return 2;
-  
-  // Verificar despachos com ordens de bloqueio (fase de execução)
-  const hasDespachoBloqueio = titles.some(t => 
-    t.includes('bloqueio') && 
-    (t.includes('contas') || t.includes('aplicações') || t.includes('bens'))
-  ) || descriptions.some(d => 
-    d.includes('bloqueio') && 
-    (d.includes('contas') || d.includes('aplicações') || d.includes('bens'))
-  );
-  if (hasDespachoBloqueio) return 8; // Fase de execução
-  
-  // Se tem despacho regular, provavelmente está em instrução
-  if (eventTypes.includes('despacho')) return 4;
-  
-  // Verificar intimações específicas com bloqueio
-  const hasIntimacaoBloqueio = eventTypes.includes('intimacao') && (
-    titles.some(t => t.includes('bloqueio')) || 
-    descriptions.some(d => d.includes('bloqueio'))
-  );
-  if (hasIntimacaoBloqueio) return 8; // Fase de execução
-  
-  // Se tem intimação genérica, provavelmente está em instrução
-  if (eventTypes.includes('intimacao')) return 4;
-  
-  return 0; // Distribuição
-};
-
-const mapStageToStatus = (stage: number): ProcessStatus => {
-  switch (stage) {
-    case 1:
-      return 'citacao';
-    case 2:
-      return 'conciliacao';
-    case 3:
-      return 'contestacao';
-    case 4:
-      return 'instrucao';
-    case 5:
-      return 'sentenca';
-    case 6:
-      return 'recurso';
-    case 7:
-      return 'cumprimento';
-    case 8:
-      return 'cumprimento';
-    case 0:
-    default:
-      return 'distribuido';
-  }
-};
 
 /** Delega extração de comarca ao serviço (fonte única de verdade). */
 const extractComarcaFromEvents = (events: TimelineEvent[]): string | null => {
@@ -583,25 +442,21 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       // Buscar movimentações DataJud e fundir (em paralelo, silencioso)
       setDjenEvents(data);
       if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
-      const stage = detectCurrentStage(data);
-      setCurrentStage(stage);
 
-      // Sempre notifica o pai com o estágio visual detectado (independente do autoUpdate)
-      const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
-      if (detectedStatus) onStatusUpdated?.(detectedStatus);
-
-      if (processId && data.length > 0) {
-        const currentProcess = await processService.getProcessById(processId);
-        if (currentProcess) {
-          // FONTE ÚNICA: grava no banco o MESMO status que alimenta o stepper e o
-          // badge (detectCurrentStage → detectedStatus). Antes recalculava via
-          // detectSuggestedStatus, que podia divergir do estágio visual.
-          if (detectedStatus && currentProcess.status !== detectedStatus) {
-            await processService.updateStatus(processId, detectedStatus);
-            setStatusUpdated(detectedStatus);
-            globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
-          }
-          if (!currentProcess.court) {
+      // FONTE ÚNICA: stepper e badge leem o status canônico (DataJud via
+      // _infer_process_stage, respeitando status_manual). NUNCA recalcular por
+      // texto livre do DJEN nem gravar status aqui — quem grava é o trigger/cron.
+      if (processId) {
+        const canonical = await fetchCanonicalStatus(processId);
+        if (canonical) {
+          setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
+          setStatusUpdated(canonical);
+          onStatusUpdated?.(canonical);
+        }
+        // Comarca (não é status) — mantém o enriquecimento quando ausente.
+        if (data.length > 0) {
+          const currentProcess = await processService.getProcessById(processId);
+          if (currentProcess && !currentProcess.court) {
             const comarca = extractComarcaFromEvents(data);
             if (comarca) await processService.updateProcess(processId, { court: comarca });
           }
@@ -612,20 +467,16 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         const data = await processTimelineService.fetchProcessTimeline(processCode);
         setDjenEvents(data);
         if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
-        const stage = detectCurrentStage(data);
-        setCurrentStage(stage);
-        const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
-        if (detectedStatus) onStatusUpdated?.(detectedStatus);
-        if (processId && data.length > 0) {
-          const currentProcess = await processService.getProcessById(processId);
-          if (currentProcess) {
-            // FONTE ÚNICA: grava o mesmo detectedStatus do stepper/badge.
-            if (detectedStatus && currentProcess.status !== detectedStatus) {
-              await processService.updateStatus(processId, detectedStatus);
-              setStatusUpdated(detectedStatus);
-              globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
-            }
-            if (!currentProcess.court) {
+        if (processId) {
+          const canonical = await fetchCanonicalStatus(processId);
+          if (canonical) {
+            setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
+            setStatusUpdated(canonical);
+            onStatusUpdated?.(canonical);
+          }
+          if (data.length > 0) {
+            const currentProcess = await processService.getProcessById(processId);
+            if (currentProcess && !currentProcess.court) {
               const comarca = extractComarcaFromEvents(data);
               if (comarca) await processService.updateProcess(processId, { court: comarca });
             }
@@ -650,18 +501,13 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       );
       setDjenEvents(data);
       if (data.length > 0) setProcessInfo(extractProcessInfoFromEvents(data));
-      const stage = detectCurrentStage(data);
-      setCurrentStage(stage);
-      const detectedStatus = STAGE_KEY_TO_STATUS[PROCESS_STAGES[stage]?.key];
-      if (detectedStatus) {
-        onStatusUpdated?.(detectedStatus);
-        if (processId) {
-          // Persiste a fonte única ao atualizar manualmente, mantendo banco = stepper = badge.
-          const cur = await processService.getProcessById(processId);
-          if (cur && cur.status !== detectedStatus) {
-            await processService.updateStatus(processId, detectedStatus);
-          }
-          globalEvents.emit(SYSTEM_EVENTS.PROCESS_UPDATED, { processId, status: detectedStatus });
+      // FONTE ÚNICA: ao atualizar, apenas relê o status canônico (DataJud). Não grava.
+      if (processId) {
+        const canonical = await fetchCanonicalStatus(processId);
+        if (canonical) {
+          setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
+          setStatusUpdated(canonical);
+          onStatusUpdated?.(canonical);
         }
       }
     } catch (err: any) {
@@ -950,7 +796,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
           {statusUpdated && (
             <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <p className="text-xs text-emerald-700">Status atualizado: <strong>{getStatusLabel(statusUpdated)}</strong></p>
+              <p className="text-xs text-emerald-700">Fase atual <span className="text-emerald-600/70">(DataJud)</span>: <strong>{getStatusLabel(statusUpdated)}</strong></p>
             </div>
           )}
 

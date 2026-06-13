@@ -6,11 +6,14 @@ import type { Client, CreateClientDTO, ClientType, MaritalStatus } from '../type
 import { useFormLayout } from '../hooks/useFormLayout';
 
 const inputClass =
-  'w-full px-3 py-1.5 rounded-md border border-[#e7e5df] dark:border-zinc-700 ' +
-  'bg-[#f8f7f5] dark:bg-zinc-800 text-sm text-slate-800 dark:text-zinc-100 ' +
-  'placeholder-slate-400 focus:outline-0 focus:ring-1 focus:ring-orange-500 focus:border-orange-500';
+  'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 ' +
+  'border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
 
-const labelClass = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5';
+const textareaClass =
+  'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 ' +
+  'border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-[13px] placeholder:text-slate-400 resize-none transition';
+
+const labelClass = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
 interface ClientFormProps {
   client: Client | null;
@@ -299,7 +302,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const fl = useFormLayout('clients');
 
   return (
-    <div className={`w-full bg-[#f8f7f5] font-display ${isModalVariant ? '' : 'min-h-full'}`}>
+    <div className={`w-full ${isModalVariant ? '' : 'bg-[#f8f7f5] min-h-full'}`}>
       {!isModalVariant && (
         <>
           <div className="h-1 w-full bg-orange-500" />
@@ -316,9 +319,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
         id="client-form"
         onSubmit={handleSubmit}
         className={`flex flex-col ${isModalVariant ? '' : 'min-h-[calc(100vh-64px)]'}`}
+        style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}
       >
         {/* Body */}
-        <div className="px-5 py-3 space-y-3 flex-1">
+        <div className="px-5 py-4 flex flex-col gap-5 flex-1">
 
           {/* Client Type toggle */}
           <div className="flex gap-3 items-center">
@@ -350,11 +354,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
 
           {/* Dados Pessoais */}
-          <div className="space-y-1.5">
-            <h2 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Dados Pessoais</h2>
+          <div>
+            <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{isPessoaFisica ? 'Dados Pessoais' : 'Dados da Empresa'}</span>
+            </div>
             {isPessoaFisica ? (
-              <div className="grid grid-cols-12 gap-x-3 gap-y-2">
-                <label className="flex flex-col col-span-6">
+              <div className="grid grid-cols-12 gap-x-3 gap-y-3">
+                <label className="flex flex-col col-span-5">
                   <span className={labelClass}>Nome Completo</span>
                   <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
                 </label>
@@ -369,7 +375,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} />
                 </label>
                 {!fl.isHidden('birth_date') && (
-                <label className="flex flex-col col-span-2">
+                <label className="flex flex-col col-span-3">
                   <span className={labelClass}>{fl.fieldLabel('birth_date', 'Nascimento')}</span>
                   <input
                     type="date"
@@ -410,7 +416,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+              <div className="grid grid-cols-12 gap-x-3 gap-y-3">
                 <label className="flex flex-col col-span-7">
                   <span className={labelClass}>Razão Social</span>
                   <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} />
@@ -438,10 +444,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
 
           {/* Endereço */}
-          {!fl.isHidden('address') && <div className="space-y-1.5">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">{fl.fieldLabel('address', 'Endereço')}</h3>
+          {!fl.isHidden('address') && <div>
+            <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{fl.fieldLabel('address', 'Endereço')}</span>
+            </div>
             {cepError && <span className="text-xs text-red-500 block">{cepError}</span>}
-            <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+            <div className="grid grid-cols-12 gap-x-3 gap-y-3">
               <label className="flex flex-col col-span-2">
                 <span className={labelClass}>CEP</span>
                 <input type="text" className={inputClass} value={formData.address_zip_code} onChange={(e) => handleChange('address_zip_code', e.target.value)} />
@@ -474,9 +482,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>}
 
           {/* Status e Observações */}
-          <div className="space-y-1.5">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">Status e Observações</h3>
-            <div className="grid grid-cols-12 gap-x-3 gap-y-2">
+          <div>
+            <div className="border-b border-slate-100 dark:border-zinc-700 pb-1.5 mb-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status e Observações</span>
+            </div>
+            <div className="grid grid-cols-12 gap-x-3 gap-y-3">
               {!fl.isHidden('status') && <div className="flex flex-col col-span-4">
                 <span className={labelClass}>{fl.fieldLabel('status', 'Status')}</span>
                 <div className="flex p-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 h-[calc(1.75rem+2px)]">
@@ -502,7 +512,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 <textarea
                   rows={2}
                   required={fl.isRequired('notes')}
-                  className={`${inputClass} resize-none`}
+                  className={textareaClass}
                   value={formData.notes}
                   onChange={(e) => handleChange('notes', e.target.value)}
                 />
@@ -513,24 +523,29 @@ const ClientForm: React.FC<ClientFormProps> = ({
         </div>
 
         <div
-          className={`w-full border-t border-[#e7e5df] dark:border-zinc-800 px-5 py-3 flex justify-end gap-2 bg-[#f8f7f5] dark:bg-zinc-900 ${
+          className={`w-full border-t border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 py-3 flex items-center justify-between ${
             isModalVariant ? '' : 'sticky bottom-0 left-0'
           }`}
         >
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-4 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Salvando...' : 'Salvar Cliente'}
-          </button>
+          <p className="text-xs text-slate-500 italic hidden sm:block">
+            Campos com <span className="text-red-500 font-bold not-italic">*</span> são obrigatórios
+          </p>
+          <div className="flex items-center gap-3 ml-auto">
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-[13px] font-semibold flex items-center gap-2 rounded transition disabled:opacity-50 active:scale-[0.98]"
+            >
+              {loading ? 'Salvando...' : 'Salvar Cliente'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

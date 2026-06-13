@@ -163,6 +163,11 @@ serve(async (req) => {
       console.log(`   📁 Processos: ${processes?.length || 0}`)
       console.log(`   📰 Processos com DJEN existente: ${processIdsComDjen.size}`)
 
+      // ── Time budget global: conta desde o início da função (inclui ETAPA 1 + ETAPA 2) ──
+      const EXEC_BUDGET_MS = 120_000 // 120s → garante terminar antes do timeout HTTP de 150s
+      const execStart = Date.now()
+      const timeLeft = () => EXEC_BUDGET_MS - (Date.now() - execStart)
+
       if (profiles && profiles.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 1: Sincronização por advogado`)
         // Sincronizar por nome do advogado
@@ -201,11 +206,6 @@ serve(async (req) => {
       // Sincronizar por processos cadastrados
       if (processes && processes.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 2: Sincronização por processo`)
-
-        // ── Time budget: reserva 30s para log final + analyze-intimations ──
-        const EXEC_BUDGET_MS = 110_000 // para antes dos 150s do Supabase
-        const execStart = Date.now()
-        const timeLeft = () => EXEC_BUDGET_MS - (Date.now() - execStart)
 
         let validos = (processes as any[]).filter(
           p => p.process_code?.replace(/[^0-9]/g, '').length === 20
@@ -609,29 +609,28 @@ async function saveCommunications(supabase: any, communications: any[], processe
 
       if (!error) {
         savedCount++
-        
-        // Se vinculou a um processo, atualizar status e flags do processo
+
+        // Se vinculou a um processo, atualizar APENAS os flags de sincronização.
+        // O status é responsabilidade exclusiva da fonte única no banco
+        // (trigger trg_recompute_process_status + _infer_process_stage sobre os
+        // movimentos DataJud). NÃO classificamos status a partir do texto livre do DJEN.
         if (linkedProcess && processId) {
           try {
-            const newStatus = detectProcessStatus(comm.texto, comm.tipoComunicacao)
             const updatePayload: any = {
               djen_synced: true,
               djen_last_sync: new Date().toISOString(),
               djen_has_data: true,
               updated_at: new Date().toISOString()
             }
-            
-            // Atualizar status se detectou um novo
-            if (newStatus && newStatus !== linkedProcess.status) {
-              updatePayload.status = newStatus
-              console.log(`📊 Processo ${processId}: ${linkedProcess.status} → ${newStatus}`)
+            if (comm.nomeOrgao && !linkedProcess.court) {
+              updatePayload.court = comm.nomeOrgao
             }
-            
+
             await supabase
               .from('processes')
               .update(updatePayload)
               .eq('id', processId)
-            
+
             if (!processesUpdated.includes(processId)) {
               processesUpdated.push(processId)
             }
@@ -649,83 +648,3 @@ async function saveCommunications(supabase: any, communications: any[], processe
   return { saved: savedCount, processesUpdated }
 }
 
-// Detecta status do processo baseado no texto da intimação
-function detectProcessStatus(texto: string, tipoComunicacao?: string): string | null {
-  if (!texto) return null
-  
-  const textoLower = texto.toLowerCase()
-  
-  // Arquivado
-  if (textoLower.includes('arquivamento definitivo') || 
-      textoLower.includes('autos arquivados') ||
-      textoLower.includes('baixa definitiva') ||
-      (textoLower.includes('arquivado') && textoLower.includes('transitado'))) {
-    return 'arquivado'
-  }
-
-  // Cumprimento de sentença
-  if (textoLower.includes('cumprimento de sentença') || 
-      textoLower.includes('fase de cumprimento') ||
-      textoLower.includes('liquidação de sentença')) {
-    return 'cumprimento'
-  }
-
-  // Recurso
-  if (textoLower.includes('apelação') ||
-      textoLower.includes('agravo de instrumento') ||
-      textoLower.includes('agravo interno') ||
-      textoLower.includes('embargos de declaração') ||
-      textoLower.includes('recurso especial') ||
-      textoLower.includes('recurso extraordinário')) {
-    return 'recurso'
-  }
-
-  // Sentença
-  if (textoLower.includes('julgo procedente') || 
-      textoLower.includes('julgo improcedente') ||
-      textoLower.includes('julgo parcialmente procedente') ||
-      textoLower.includes('extingo o processo') ||
-      textoLower.includes('homologo o acordo')) {
-    return 'sentenca'
-  }
-
-  // Instrução
-  if (textoLower.includes('audiência de instrução') ||
-      textoLower.includes('instrução e julgamento') ||
-      textoLower.includes('produção de provas') ||
-      textoLower.includes('oitiva de testemunhas')) {
-    return 'instrucao'
-  }
-
-  // Conciliação
-  if (textoLower.includes('audiência de conciliação') ||
-      textoLower.includes('conciliação virtual') ||
-      textoLower.includes('conciliação designada') ||
-      textoLower.includes('pauta de conciliação')) {
-    return 'conciliacao'
-  }
-
-  // Contestação
-  if (textoLower.includes('contestação') || 
-      textoLower.includes('defesa apresentada') ||
-      textoLower.includes('juntada de contestação')) {
-    return 'contestacao'
-  }
-
-  // Citação
-  if (textoLower.includes('citação') || 
-      textoLower.includes('cite-se') ||
-      textoLower.includes('fica citado')) {
-    return 'citacao'
-  }
-
-  // Em andamento genérico
-  if (textoLower.includes('intimação') ||
-      textoLower.includes('despacho') ||
-      textoLower.includes('prazo') ||
-      textoLower.includes('manifestação')) {
-    return 'andamento'
-  }
-
-  return null
-}
