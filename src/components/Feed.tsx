@@ -94,6 +94,7 @@ import type { DjenComunicacaoLocal } from '../types/djen.types';
 import type { FinancialStats } from '../types/financial.types';
 import type { Requirement } from '../types/requirement.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { formatCurrency as fmtCurrencyG } from '../utils/formatters';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { FinancialModal } from './FinancialModal';
 import { PostModal } from './PostModal';
@@ -2714,14 +2715,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     [processes]
   );
 
-  const formatCurrency = useCallback((value: number): string => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  }, []);
+  const formatCurrency = useCallback((value: number): string => fmtCurrencyG(value), []);
 
   const upcomingDeadlines = useMemo(
     () =>

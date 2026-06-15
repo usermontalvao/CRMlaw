@@ -17,6 +17,7 @@ export type ModuleName =
   | 'tarefas'
   | 'notificacoes'
   | 'chat'
+  | 'whatsapp'
   | 'usuarios'
   | 'monitor'
   | 'login'

@@ -1,73 +1,125 @@
+// ── Configuração global de formatação (carregada de system_settings.preferences) ──
+interface FormatterConfig {
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+  currency: string;   // ISO 4217, ex: 'BRL', 'USD', 'EUR'
+  locale: string;     // BCP 47, ex: 'pt-BR'
+}
+
+const CURRENCY_LOCALE: Record<string, string> = {
+  BRL: 'pt-BR',
+  USD: 'en-US',
+  EUR: 'de-DE',
+};
+
+let _cfg: FormatterConfig = {
+  dateFormat: 'DD/MM/YYYY',
+  currency: 'BRL',
+  locale: 'pt-BR',
+};
+
+/** Atualiza a configuração global de formatação (chamado uma vez no mount do App). */
+export const setFormatterPrefs = (prefs: { date_format?: string; currency?: string }) => {
+  const fmt = (prefs.date_format as FormatterConfig['dateFormat']) || 'DD/MM/YYYY';
+  const cur = prefs.currency || 'BRL';
+  _cfg = {
+    dateFormat: fmt,
+    currency: cur,
+    locale: CURRENCY_LOCALE[cur] || 'pt-BR',
+  };
+};
+
+/** Carrega as preferências do banco e aplica globalmente. Chame uma vez no App.tsx. */
+export const loadFormatterPrefs = async (): Promise<void> => {
+  try {
+    const { settingsService } = await import('../services/settings.service');
+    const prefs = await settingsService.getPreferences();
+    setFormatterPrefs(prefs);
+  } catch {
+    // mantém defaults
+  }
+};
+
 /**
- * Formata um valor numérico como moeda brasileira (BRL)
+ * Formata um valor numérico como moeda (respeita a configuração global de moeda).
  */
 export const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('pt-BR', {
+  return new Intl.NumberFormat(_cfg.locale, {
     style: 'currency',
-    currency: 'BRL',
+    currency: _cfg.currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 };
 
 /**
- * Formata um valor numérico como moeda brasileira sem centavos
+ * Formata um valor numérico como moeda sem centavos.
  */
 export const formatCurrencyShort = (value: number): string => {
-  return new Intl.NumberFormat('pt-BR', {
+  return new Intl.NumberFormat(_cfg.locale, {
     style: 'currency',
-    currency: 'BRL',
+    currency: _cfg.currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
 };
 
 /**
- * Formata uma data para o padrão brasileiro
+ * Formata uma data respeitando o formato configurado em Preferências.
+ * Aceita string ISO (YYYY-MM-DD ou com hora) ou objeto Date.
  */
-export const formatDate = (date: Date | string): string => {
+export const formatDate = (date: Date | string | null | undefined): string => {
+  if (!date) return '—';
+  let yyyy: string, mm: string, dd: string;
+
   if (typeof date === 'string') {
     const raw = date.trim();
     const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
     if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-      const [yyyy, mm, dd] = datePart.split('-');
-      return `${dd}/${mm}/${yyyy}`;
+      [yyyy, mm, dd] = datePart.split('-');
+    } else {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return raw;
+      yyyy = d.getFullYear().toString();
+      mm   = String(d.getMonth() + 1).padStart(2, '0');
+      dd   = String(d.getDate()).padStart(2, '0');
     }
-    const d = new Date(raw);
-    return d.toLocaleDateString('pt-BR');
+  } else {
+    yyyy = date.getFullYear().toString();
+    mm   = String(date.getMonth() + 1).padStart(2, '0');
+    dd   = String(date.getDate()).padStart(2, '0');
   }
 
-  return date.toLocaleDateString('pt-BR');
+  switch (_cfg.dateFormat) {
+    case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
+    case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
+    default:           return `${dd}/${mm}/${yyyy}`;
+  }
 };
 
 /**
- * Formata uma data com hora
+ * Formata uma data com hora (data usa o formato configurado, hora sempre HH:MM).
  */
-export const formatDateTime = (date: Date | string): string => {
+export const formatDateTime = (date: Date | string | null | undefined): string => {
+  if (!date) return '—';
   if (typeof date === 'string') {
     const raw = date.trim();
-    // Tem componente de hora — mostra data e hora
     if (raw.includes('T')) {
       const d = new Date(raw);
       if (!isNaN(d.getTime())) {
-        return d.toLocaleString('pt-BR', {
-          day: '2-digit', month: '2-digit', year: 'numeric',
-          hour: '2-digit', minute: '2-digit',
-        });
+        const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return `${formatDate(d)} ${time}`;
       }
     }
-    // Só data (YYYY-MM-DD)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      return formatDate(raw);
-    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return formatDate(raw);
     const d = new Date(raw);
-    return d.toLocaleString('pt-BR');
+    if (!isNaN(d.getTime())) {
+      const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      return `${formatDate(d)} ${time}`;
+    }
+    return raw;
   }
-
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${formatDate(date)} ${time}`;
 };
 
 /**

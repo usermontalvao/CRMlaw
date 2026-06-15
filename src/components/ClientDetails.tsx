@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useNavigation } from '../contexts/NavigationContext';
+import { formatDate as fmtDateG, formatDateTime as fmtDateTimeG, formatCurrency as fmtCurrencyG } from '../utils/formatters';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -73,19 +74,9 @@ const formatPhone = (v: string) => {
   return `(${n.slice(0, 2)}) ${n.slice(2, 3)} ${n.slice(3, 7)}-${n.slice(7, 11)}`;
 };
 
-const formatDate = (d?: string | null) => {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('pt-BR');
-};
-
-const formatDateTime = (d?: string | null) => {
-  if (!d) return '—';
-  const dt = new Date(d);
-  return `${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-};
-
-const formatCurrency = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+const formatDate = (d?: string | null) => fmtDateG(d);
+const formatDateTime = (d?: string | null) => fmtDateTimeG(d);
+const formatCurrency = (v: number) => fmtCurrencyG(v);
 
 // ─── Label maps ──────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, DollarSign, User } from 'lucide-react';
 import { financialService } from '../services/financial.service';
 import type { Agreement } from '../types/financial.types';
+import { formatCurrency, formatDate } from '../utils/formatters';
 
 interface FinancialModalProps {
   agreementId: string;
@@ -26,17 +27,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
     loadAgreement();
   }, [agreementId]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value || 0);
-  };
-
-  const formatDate = (date: string | null) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('pt-BR');
-  };
+  // formatCurrency e formatDate importadas de utils/formatters (configuráveis globalmente)
 
   if (loading) {
     return (

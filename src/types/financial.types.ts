@@ -16,7 +16,8 @@ export interface Agreement {
   id: string;
   client_id: string;
   process_id?: string | null;
-  
+  requirement_id?: string | null;
+
   // Dados do Acordo
   title: string;
   description?: string;
@@ -74,6 +75,7 @@ export interface Installment {
 export interface CreateAgreementDTO {
   client_id: string;
   process_id?: string;
+  requirement_id?: string;
   title: string;
   description?: string;
   agreement_date: string;
@@ -101,6 +103,7 @@ export interface UpdateAgreementDTO {
   payment_type?: PaymentType;
   client_id?: string;
   process_id?: string | null;
+  requirement_id?: string | null;
   custom_installments?: CustomInstallmentInput[];
   status?: AgreementStatus;
   notes?: string;

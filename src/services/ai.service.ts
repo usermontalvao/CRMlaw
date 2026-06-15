@@ -747,6 +747,81 @@ Retorne APENAS o texto corrigido e formatado, sem explicações.`;
       throw new Error('Falha ao formatar qualificação com IA');
     }
   }
+  // ── Fase K: IA de apoio contextual ─────────────────────────────────────────
+
+  /**
+   * Sugere uma resposta para o agente com base no histórico recente e contexto do cliente.
+   * @param recentMessages últimas mensagens formatadas como "Cliente: ...\nAgente: ..."
+   * @param clientContext resumo do cliente (nome, processos, pendências)
+   */
+  async suggestReply(recentMessages: string, clientContext: string): Promise<string> {
+    if (!this.isEnabled()) return '';
+    try {
+      await this.ensureSettingsLoaded();
+      const systemPrompt = `Você é um assistente de atendimento jurídico. Sugira UMA resposta breve, profissional e objetiva para o próximo turno da conversa.
+Contexto do cliente:
+${clientContext}
+
+Regras:
+- Escreva apenas o texto da resposta, sem prefixo, sem aspas
+- Máximo 3 frases
+- Tom formal e cordial (escritório de advocacia)
+- Se não houver informação suficiente, peça a informação necessária`;
+      const userPrompt = `Conversa recente:\n${recentMessages}\n\nSugira a próxima resposta do atendente:`;
+      const result = await this.generateText(systemPrompt, userPrompt, 200, 'suggest_reply');
+      return result?.trim() || '';
+    } catch (err) {
+      console.error('suggestReply error', err);
+      return '';
+    }
+  }
+
+  /**
+   * Classifica automaticamente o assunto da conversa a partir das mensagens.
+   * Retorna string curta (até ~60 chars) para preencher contact_reason.
+   */
+  async classifySubject(recentMessages: string): Promise<string> {
+    if (!this.isEnabled()) return '';
+    try {
+      await this.ensureSettingsLoaded();
+      const systemPrompt = `Você é um assistente jurídico. Com base nas mensagens abaixo, classifique o assunto do atendimento em uma frase curta (máximo 8 palavras). Exemplos: "Consulta trabalhista - rescisão de contrato", "Previdenciário - aposentadoria por invalidez", "Família - guarda de menores". Responda APENAS com o assunto, sem explicações.`;
+      const result = await this.generateText(systemPrompt, recentMessages, 60, 'classify_subject');
+      return result?.trim().slice(0, 80) || '';
+    } catch (err) {
+      console.error('classifySubject error', err);
+      return '';
+    }
+  }
+
+  /**
+   * Extrai dados estruturados da conversa (nome, CPF, assunto, urgência, etc.).
+   * Retorna um objeto com as chaves encontradas.
+   */
+  async extractContactData(recentMessages: string): Promise<Record<string, string>> {
+    if (!this.isEnabled()) return {};
+    try {
+      await this.ensureSettingsLoaded();
+      const systemPrompt = `Você é um assistente jurídico. Extraia dados estruturados da conversa abaixo no formato JSON.
+Retorne APENAS JSON válido com as chaves disponíveis (omita chaves não encontradas):
+{
+  "nome": "nome completo do cliente",
+  "cpf": "CPF se mencionado",
+  "telefone": "telefone alternativo se mencionado",
+  "email": "email se mencionado",
+  "assunto": "assunto principal do contato",
+  "urgente": "Sim ou Não",
+  "observacoes": "qualquer informação relevante adicional"
+}`;
+      const result = await this.generateText(systemPrompt, recentMessages, 300, 'extract_data');
+      if (!result) return {};
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return {};
+      return JSON.parse(jsonMatch[0]) as Record<string, string>;
+    } catch (err) {
+      console.error('extractContactData error', err);
+      return {};
+    }
+  }
 }
 
 export const aiService = new AIService();

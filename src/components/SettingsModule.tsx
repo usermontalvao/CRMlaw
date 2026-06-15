@@ -194,7 +194,7 @@ type SettingsGroupKey = 'geral' | 'modulos' | 'notificacoes' | 'integracoes' | '
 
 // Status de integração por seção — só marcamos as não-integradas para manter o sidebar limpo
 const SECTION_STATUS: Partial<Record<SettingsSection, 'parcial' | 'pendente'>> = {
-  preferences:                  'parcial',  // timezone/moeda/data salvos mas não aplicados globalmente
+  preferences:                  'parcial',  // timezone ainda não aplicado; data/moeda já integrados
   djen:                         'parcial',  // DataJud configurado; consumo real depende da chave ativa
 };
 
@@ -2730,11 +2730,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <div className="px-8 py-6 space-y-6">
 
                     {/* Aviso de integração pendente */}
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px', padding: '12px 16px' }}>
-                      <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px' }}>
+                      <span style={{ fontSize: '16px', flexShrink: 0 }}>✅</span>
                       <div>
-                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', margin: 0 }}>Configurações salvas mas ainda não aplicadas globalmente</p>
-                        <p style={{ fontSize: '12px', color: '#b45309', margin: '3px 0 0' }}>Fuso horário, formato de data, moeda e horário comercial são salvos, mas o sistema ainda usa valores padrão em todos os módulos. A integração global está prevista para versões futuras. O prazo padrão de prazos e o horário comercial já são consumidos parcialmente.</p>
+                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#166534', margin: 0 }}>Formato de data e moeda aplicados globalmente</p>
+                        <p style={{ fontSize: '12px', color: '#15803d', margin: '3px 0 0' }}>Formato de data e moeda são consumidos automaticamente pelos módulos (Financeiro, Prazos, etc.). Fuso horário ainda não é aplicado globalmente — as datas exibidas usam o horário local do navegador.</p>
                       </div>
                     </div>
 
@@ -2758,7 +2758,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-sm font-medium text-slate-700">Formato de Data</label>
-                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#dcfce7', color: '#166534' }}>Aplicado</span>
                         </div>
                         <select
                           className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
@@ -2784,7 +2784,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-sm font-medium text-slate-700">Moeda</label>
-                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#fee2e2', color: '#991b1b' }}>Não aplicado</span>
+                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#dcfce7', color: '#166534' }}>Aplicado</span>
                         </div>
                         <select
                           className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"

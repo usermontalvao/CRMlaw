@@ -13,6 +13,7 @@ interface Profile {
   email: string;
   name: string;
   role: string;
+  gender?: string;
   avatar_url?: string;
   is_active?: boolean;
   created_at: string;
@@ -42,6 +43,7 @@ export const UserManagementModule: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [editRole, setEditRole] = useState<string>('');
+  const [editGender, setEditGender] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [editingUserPinMeta, setEditingUserPinMeta] = useState<PinMeta | null>(null);
@@ -52,6 +54,7 @@ export const UserManagementModule: React.FC = () => {
     name: '',
     email: '',
     role: 'Auxiliar',
+    gender: '',
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -148,10 +151,10 @@ export const UserManagementModule: React.FC = () => {
         setError(null);
         try {
           const { error: fnError } = await supabase.functions.invoke('create-collaborator', {
-            body: { email: formData.email, password: formData.password, name: formData.name, role: formData.role },
+            body: { email: formData.email, password: formData.password, name: formData.name, role: formData.role, gender: formData.gender },
           });
           if (fnError) throw new Error(fnError.message);
-          setFormData({ name: '', email: '', role: 'Auxiliar', password: '' });
+          setFormData({ name: '', email: '', role: 'Auxiliar', gender: '', password: '' });
           setShowCreateModal(false);
           setSuccess(`Usuário "${nameSnapshot}" criado com sucesso!`);
           loadProfiles();
@@ -192,6 +195,7 @@ export const UserManagementModule: React.FC = () => {
   const handleEditUser = (profile: Profile) => {
     setEditingUser(profile);
     setEditRole(profile.role);
+    setEditGender(profile.gender || '');
     setEditingUserPinMeta(null);
     if (profile.user_id) {
       securityPinService.getPinMeta(profile.user_id)
@@ -245,7 +249,7 @@ export const UserManagementModule: React.FC = () => {
         try {
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ role: editRole, updated_at: new Date().toISOString() })
+            .update({ role: editRole, gender: editGender, updated_at: new Date().toISOString() })
             .eq('user_id', targetUserId);
           if (updateError) throw updateError;
           setSuccess(`Cargo de "${targetName}" atualizado para "${editRole}"!`);
@@ -462,13 +466,13 @@ export const UserManagementModule: React.FC = () => {
                     {/* Edit role button */}
                     <button
                       onClick={() => handleEditUser(profile)}
-                      disabled={isSelf || !isActive}
-                      title={isSelf ? 'Você não pode editar seu próprio cargo' : !isActive ? 'Reative o usuário para editar' : 'Editar cargo'}
+                      disabled={!isActive}
+                      title={isSelf ? 'Editar seus dados (gênero)' : !isActive ? 'Reative o usuário para editar' : 'Editar cargo'}
                       style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid rgba(15,23,42,0.09)',
                         background: 'transparent', color: '#747878', cursor: 'pointer', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', transition: 'background .12s ease, color .12s ease',
-                        opacity: (isSelf || !isActive) ? 0.4 : 1 }}
-                      onMouseEnter={e => { if (!isSelf && isActive) { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.color = '#191c1e'; } }}
+                        opacity: (!isActive) ? 0.4 : 1 }}
+                      onMouseEnter={e => { if (isActive) { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.color = '#191c1e'; } }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#747878'; }}
                     >
                       <Edit2 size={12} />
@@ -622,6 +626,26 @@ export const UserManagementModule: React.FC = () => {
               )}
             </div>
 
+            {/* Gênero */}
+            <div>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1">Gênero</label>
+              <select
+                value={formData.gender}
+                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+                disabled={creating}
+              >
+                <option value="">Não informar</option>
+                <option value="male">Masculino</option>
+                <option value="female">Feminino</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                {normalizeRole(formData.role) === 'advogado'
+                  ? 'Define o tratamento (Dr./Dra.) usado no atendimento por WhatsApp.'
+                  : 'O tratamento Dr./Dra. vale apenas para advogados.'}
+              </p>
+            </div>
+
             {/* Senha */}
             <div>
               <label className="block text-[13px] font-medium text-slate-700 mb-1">Senha Temporária</label>
@@ -656,15 +680,17 @@ export const UserManagementModule: React.FC = () => {
           <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '360px',
             boxShadow: '0 24px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(15,23,42,0.10)' }}
             onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#191c1e', marginBottom: '4px' }}>Editar cargo</h3>
+            {(() => { const editingSelf = editingUser.user_id === user?.id; return (<>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#191c1e', marginBottom: '4px' }}>{editingSelf ? 'Editar meus dados' : 'Editar cargo'}</h3>
             <p style={{ fontSize: '13px', color: '#747878', marginBottom: '16px' }}>{editingUser.name}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: editingSelf ? '8px' : '20px' }}>
               {ROLES.map(role => (
-                <button key={role.value} onClick={() => setEditRole(role.value)}
+                <button key={role.value} disabled={editingSelf} onClick={() => { if (!editingSelf) setEditRole(role.value); }}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
                     borderRadius: '8px', border: `1px solid ${editRole === role.value ? 'rgba(255,138,0,0.4)' : 'rgba(15,23,42,0.10)'}`,
                     background: editRole === role.value ? 'rgba(255,138,0,0.06)' : '#fff',
-                    cursor: 'pointer', textAlign: 'left', transition: 'all .12s ease', width: '100%' }}>
+                    cursor: editingSelf ? 'not-allowed' : 'pointer', textAlign: 'left', transition: 'all .12s ease', width: '100%',
+                    opacity: editingSelf && editRole !== role.value ? 0.5 : 1 }}>
                   <span style={{ fontSize: '16px' }}>{role.icon}</span>
                   <div>
                     <p style={{ fontSize: '13px', fontWeight: 600, color: editRole === role.value ? '#c45c00' : '#191c1e' }}>{role.label}</p>
@@ -674,19 +700,46 @@ export const UserManagementModule: React.FC = () => {
                 </button>
               ))}
             </div>
+            {editingSelf && (
+              <p style={{ fontSize: '11.5px', color: '#747878', marginBottom: '20px' }}>Você não pode alterar o próprio cargo. Outro administrador precisa fazer isso.</p>
+            )}
+
+            {/* Gênero — usado p/ tratamento Dr./Dra. apenas de advogados */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#444748', marginBottom: '6px' }}>Gênero</label>
+              <select value={editGender} onChange={e => setEditGender(e.target.value)}
+                style={{ width: '100%', height: '36px', padding: '0 10px', fontSize: '13px',
+                  border: '1px solid rgba(15,23,42,0.14)', borderRadius: '8px', background: '#fff', cursor: 'pointer' }}>
+                <option value="">Não informar</option>
+                <option value="male">Masculino</option>
+                <option value="female">Feminino</option>
+              </select>
+              <p style={{ fontSize: '11.5px', color: '#747878', marginTop: '6px' }}>
+                {normalizeRole(editRole) === 'advogado'
+                  ? 'Define o tratamento (Dr./Dra.) no atendimento por WhatsApp.'
+                  : 'O tratamento Dr./Dra. vale apenas para advogados.'}
+              </p>
+            </div>
+            </>); })()}
+
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button onClick={() => setEditingUser(null)}
                 style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 500, color: '#444748',
                   background: 'transparent', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '8px', cursor: 'pointer' }}>
                 Cancelar
               </button>
-              <button onClick={handleSaveEdit} disabled={saving || editRole === editingUser.role}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
-                  fontSize: '13px', fontWeight: 600, color: '#fff', background: '#ea6c00',
-                  border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: (saving || editRole === editingUser.role) ? 0.6 : 1 }}>
-                {saving ? <Loader2 size={13} className="animate-spin" /> : null}
-                Salvar
-              </button>
+              {(() => {
+                const unchanged = editRole === editingUser.role && editGender === (editingUser.gender || '');
+                return (
+                  <button onClick={handleSaveEdit} disabled={saving || unchanged}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                      fontSize: '13px', fontWeight: 600, color: '#fff', background: '#ea6c00',
+                      border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: (saving || unchanged) ? 0.6 : 1 }}>
+                    {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+                    Salvar
+                  </button>
+                );
+              })()}
             </div>
 
             {/* ── PIN de Segurança (admin) ───────────────────────────────── */}

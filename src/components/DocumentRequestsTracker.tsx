@@ -763,9 +763,11 @@ const RequestCard: React.FC<CardProps> = ({
     <div className={`rounded-2xl border overflow-hidden transition-all ${
       isReviewed ? 'border-slate-100 bg-slate-50/50' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-sm'
     }`}>
-      {/* Cabeçalho */}
-      <button onClick={onToggle}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50/70 transition-colors">
+      {/* Cabeçalho (div clicável, não <button>: contém botões internos — aninhar
+          <button> em <button> é HTML inválido e quebra a hidratação) */}
+      <div onClick={onToggle} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50/70 transition-colors cursor-pointer">
         <div className="mt-0.5 flex-shrink-0">
           {isReviewed ? <FolderCheck className="h-4 w-4 text-slate-300" /> : <FolderOpen className="h-4 w-4 text-orange-500" />}
         </div>
@@ -814,7 +816,7 @@ const RequestCard: React.FC<CardProps> = ({
         <div className="shrink-0 text-slate-300 mt-0.5">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </div>
-      </button>
+      </div>
 
       {/* Expandido */}
       {expanded && (
@@ -898,6 +900,19 @@ export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadg
   const [deadlineDraft, setDeadlineDraft] = useState('');
   const [editListRequest, setEditListRequest] = useState<TrackerRequest | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // Clientes cujo aviso "Documentos prontos" foi dispensado no WhatsApp → escondemos
+  // aqui as solicitações já concluídas (complete) para não poluir o painel.
+  const readDismissed = (): Set<string> => {
+    try { return new Set(JSON.parse(localStorage.getItem('wa_dismissed_doc_ready') || '[]')); } catch { return new Set(); }
+  };
+  const [dismissedClients, setDismissedClients] = useState<Set<string>>(readDismissed);
+  useEffect(() => {
+    const refresh = () => setDismissedClients(readDismissed());
+    window.addEventListener('wa-doc-ready-dismissed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener('wa-doc-ready-dismissed', refresh); window.removeEventListener('storage', refresh); };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -992,7 +1007,10 @@ export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadg
     })));
   };
 
-  const activeRequests = requests.filter(r => ['pending', 'partial', 'complete'].includes(r.status));
+  const activeRequests = requests.filter(r =>
+    ['pending', 'partial', 'complete'].includes(r.status)
+    // Esconde os concluídos de clientes que já dispensaram o aviso "Documentos prontos".
+    && !(r.status === 'complete' && r.client_id && dismissedClients.has(r.client_id)));
   const reviewedRequests = requests.filter(r => r.status === 'reviewed');
 
   if (!open) return null;

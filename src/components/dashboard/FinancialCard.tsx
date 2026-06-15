@@ -1,5 +1,6 @@
 import React from 'react';
 import { Wallet, ChevronRight, TrendingUp, AlertTriangle, PiggyBank, Eye, EyeOff } from 'lucide-react';
+import { formatCurrency } from '../../utils/formatters';
 
 interface FinancialStats {
   monthly_fees_received: number;
@@ -16,14 +17,6 @@ interface FinancialCardProps {
   hideValues?: boolean;
   onToggleReveal?: () => void;
 }
-
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 
 const MASKED = 'R$ •••••';
 

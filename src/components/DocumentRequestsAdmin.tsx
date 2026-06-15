@@ -7,7 +7,7 @@ import { Modal, ModalBody } from './ui';
 import {
   FolderOpen, Plus, Trash2, Check, X, Loader2, ChevronDown,
   CheckCircle2, Clock, XCircle, AlertCircle, Download, Eye,
-  GripVertical, FileText, Send,
+  GripVertical, FileText, Send, Sparkles,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import type { Client } from '../types/client.types';
@@ -22,6 +22,9 @@ interface DocUpload {
   final_name?: string | null;
   ai_document_type?: string | null;
   ai_confidence?: number | null;
+  ai_matches?: boolean | null;
+  ai_review_notes?: string | null;
+  reviewed_by?: string | null;
   pages_count?: number | null;
   uploaded_at: string;
   processed_path?: string | null;
@@ -221,8 +224,8 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
           id, label, description, required, sort_order, status,
           document_uploads (
             id, processing_status, review_status, rejection_reason,
-            final_name, ai_document_type, ai_confidence, pages_count,
-            uploaded_at, processed_path
+            final_name, ai_document_type, ai_confidence, ai_matches, ai_review_notes,
+            reviewed_by, pages_count, uploaded_at, processed_path
           )
         )
       `)
@@ -373,6 +376,27 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                                 )}
                               </div>
                             )}
+                            {/* Veredito da IA de visão (auditoria da baixa) */}
+                            {item.upload && (item.upload.ai_confidence != null || item.upload.ai_matches != null) && (() => {
+                              const u = item.upload!;
+                              const conf = u.ai_confidence != null ? Math.round(u.ai_confidence * 100) : null;
+                              const auto = u.review_status === 'approved' && !u.reviewed_by;
+                              const m = u.ai_matches;
+                              const tone = auto ? 'emerald' : m === false ? 'rose' : m == null ? 'slate' : 'amber';
+                              const label = auto ? 'Baixa automática pela IA' : m === false ? 'IA: não corresponde ao pedido' : m == null ? 'IA não pôde validar — revisar' : 'IA sugere aprovar — confirmar';
+                              const toneCls = ({ emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-100', rose: 'bg-rose-50 text-rose-700 ring-rose-100', amber: 'bg-amber-50 text-amber-700 ring-amber-100', slate: 'bg-slate-100 text-slate-600 ring-slate-200' } as Record<string, string>)[tone];
+                              return (
+                                <div className="mt-1.5 flex items-start gap-1.5" title={u.ai_review_notes || undefined}>
+                                  <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-violet-500" />
+                                  <div className="min-w-0">
+                                    <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${toneCls}`}>
+                                      {label}{conf != null ? ` · ${conf}%` : ''}
+                                    </span>
+                                    {u.ai_review_notes && <p className="mt-0.5 text-[10px] leading-snug text-slate-400">{u.ai_review_notes}</p>}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           {/* AÃ§Ãµes de revisÃ£o */}

@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import { profileService, type Profile } from './profile.service';
 import { userNotificationService } from './userNotification.service';
 import { matchesNormalizedSearch } from '../utils/search';
+import { formatCurrency } from '../utils/formatters';
 
 const FEED_ATTACHMENT_BUCKET = 'anexos_chat';
 
@@ -1020,8 +1021,8 @@ class FeedPostsService {
         if (data) {
           for (const agreement of data) {
             const clientName = clientsMap.get((agreement as any).client_id)?.full_name || 'Cliente';
-            const totalFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(agreement.total_value || 0);
-            const installmentFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(agreement.installment_value || 0);
+            const totalFormatted = formatCurrency(agreement.total_value || 0);
+            const installmentFormatted = formatCurrency(agreement.installment_value || 0);
             
             let formattedText = `acordo financeiro do cliente ${clientName.toUpperCase()}, valor total ${totalFormatted}`;
             if (agreement.installments_count > 1) {

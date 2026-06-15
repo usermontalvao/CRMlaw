@@ -17,8 +17,10 @@ const OFFICE_DEFAULT = {
   logoUrl: '',
 };
 
+import { formatCurrency } from '../utils/formatters';
+
 function fmtBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+  return formatCurrency(Number(value || 0));
 }
 
 export function paymentMethodLabel(method?: string | null): string {

@@ -63,6 +63,7 @@ import { caseService } from '../services/case.service';
 import { taskService } from '../services/task.service';
 import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { formatCurrency as fmtCurrencyG } from '../utils/formatters';
 
 // Banner padrão jurídico (usado quando usuário não selecionou nenhum)
 const DEFAULT_BANNER = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200&h=400&fit=crop';
@@ -2462,16 +2463,16 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                     )}
                                     {financialDetailsByPostId[post.id]?.total_value != null ? (
                                       <p className="text-slate-600 text-xs mt-0.5">
-                                        Total {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(financialDetailsByPostId[post.id]?.total_value || 0)}
+                                        Total {fmtCurrencyG(financialDetailsByPostId[post.id]?.total_value || 0)}
                                         {financialDetailsByPostId[post.id]?.installments_count && (financialDetailsByPostId[post.id]?.installments_count || 0) > 1
-                                          ? ` • ${(financialDetailsByPostId[post.id]?.installments_count || 0)}x de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(financialDetailsByPostId[post.id]?.installment_value || 0)}`
+                                          ? ` • ${(financialDetailsByPostId[post.id]?.installments_count || 0)}x de ${fmtCurrencyG(financialDetailsByPostId[post.id]?.installment_value || 0)}`
                                           : ''}
                                       </p>
                                     ) : (
                                       <p className="text-slate-600 text-xs mt-0.5">
-                                        Recebido {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(post.preview_data.financeiro.recebido || 0)}
-                                        • Pendente {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(post.preview_data.financeiro.pendente || 0)}
-                                        • Atrasado {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(post.preview_data.financeiro.atrasado || 0)}
+                                        Recebido {fmtCurrencyG(post.preview_data.financeiro.recebido || 0)}
+                                        • Pendente {fmtCurrencyG(post.preview_data.financeiro.pendente || 0)}
+                                        • Atrasado {fmtCurrencyG(post.preview_data.financeiro.atrasado || 0)}
                                       </p>
                                     )}
                                   </div>

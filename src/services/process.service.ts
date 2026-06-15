@@ -17,6 +17,14 @@ interface ProcessCache {
   filters?: string;
 }
 
+/** Uma movimentação processual local (espelho do DataJud). */
+export interface ProcessMovement {
+  id: string;
+  nome: string;
+  data_hora: string;
+  orgao_julgador: string | null;
+}
+
 class ProcessService {
   private tableName = 'processes';
   private cache: ProcessCache | null = null;
@@ -90,6 +98,44 @@ class ProcessService {
     };
 
     return result;
+  }
+
+  /**
+   * Movimentações processuais (DataJud) já sincronizadas localmente em
+   * datajud_movimentos. Mais recentes primeiro. Leitura, não chama a API remota.
+   */
+  async listProcessMovements(processId: string, limit = 40): Promise<ProcessMovement[]> {
+    const { data, error } = await supabase
+      .from('datajud_movimentos')
+      .select('id, nome, data_hora, orgao_julgador')
+      .eq('process_id', processId)
+      .order('data_hora', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data || []) as ProcessMovement[];
+  }
+
+  /**
+   * Movimentações de vários processos em UMA query (evita N+1 quando a UI
+   * mostra a mini timeline de cada processo do cliente). Agrupa por
+   * process_id, já ordenado do mais recente ao antigo e limitado por processo.
+   */
+  async listProcessMovementsBatch(processIds: string[], perProcessLimit = 40): Promise<Record<string, ProcessMovement[]>> {
+    const ids = Array.from(new Set(processIds.filter(Boolean)));
+    if (ids.length === 0) return {};
+    const { data, error } = await supabase
+      .from('datajud_movimentos')
+      .select('id, process_id, nome, data_hora, orgao_julgador')
+      .in('process_id', ids)
+      .order('data_hora', { ascending: false });
+    if (error) throw new Error(error.message);
+    const byProc: Record<string, ProcessMovement[]> = {};
+    for (const id of ids) byProc[id] = [];
+    for (const row of (data || []) as Array<ProcessMovement & { process_id: string }>) {
+      const bucket = byProc[row.process_id];
+      if (bucket && bucket.length < perProcessLimit) bucket.push(row);
+    }
+    return byProc;
   }
 
   async getProcessById(id: string): Promise<Process | null> {

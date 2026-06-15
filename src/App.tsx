@@ -68,6 +68,7 @@ const DeadlinesModule = lazy(() => import('./components/DeadlinesModule'));
 const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const ChatModule = lazy(() => import('./components/ChatModule'));
+const WhatsAppModule = lazy(() => import('./components/WhatsAppModule'));
 const UserManagementModule = lazy(() => import('./components/UserManagementModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
@@ -101,7 +102,7 @@ import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
 import { supabase } from './config/supabase';
 import { clientService } from './services/client.service';
-import { formatCPF } from './utils/formatters';
+import { formatCPF, formatDate, loadFormatterPrefs } from './utils/formatters';
 import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
@@ -207,6 +208,7 @@ const MODULE_META: Record<string, { label: string; desc: string; Icon: React.Ele
   agenda:        { label: 'Agenda',               desc: 'compromissos e audiências',              Icon: Calendar },
   tarefas:       { label: 'Tarefas',              desc: 'atividades e pendências',                Icon: CheckSquare },
   chat:          { label: 'Mensagens',            desc: 'comunicação interna',                    Icon: MessageCircle },
+  whatsapp:      { label: 'WhatsApp',             desc: 'atendimento via WhatsApp',               Icon: MessageSquare },
   peticoes:      { label: 'Editor de Petições',   desc: 'redação e formatação de petições',       Icon: Newspaper },
   configuracoes: { label: 'Configurações',        desc: 'ajustes do sistema',                     Icon: Settings },
 };
@@ -282,8 +284,7 @@ const AccessDeniedScreen: React.FC<{
   };
 
   // Helpers
-  const fmtDate = (iso?: string | null) =>
-    iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+  const fmtDate = (iso?: string | null) => formatDate(iso ?? null);
 
   const grantedDuration = (req: any): string => {
     if (!req?.expires_at) return 'permanente';
@@ -973,9 +974,11 @@ const MainApp: React.FC = () => {
 
   useEffect(() => {
     settingsService.getModulesConfig().then(setModulesConfig).catch(() => {});
+    loadFormatterPrefs();
     // Recarrega a config de módulos quando o admin salvar em Configurações.
     const off = events.on(SYSTEM_EVENTS.MODULES_CONFIG_UPDATED, () => {
       settingsService.getModulesConfig().then(setModulesConfig).catch(() => {});
+      loadFormatterPrefs();
     });
     return off;
   }, []);
@@ -1173,6 +1176,7 @@ const MainApp: React.FC = () => {
     'agenda',
     'tarefas',
     'chat',
+    'whatsapp',
     'peticoes',
     'configuracoes',
     'usuarios',
@@ -1994,6 +1998,12 @@ useEffect(() => {
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
               expiresAt={getOverrideExpiry('chat')} />
           )}
+          {!permissionsLoading && canAccessModule('whatsapp') && (
+            <SidebarModuleBtn moduleKey="whatsapp" label="WhatsApp" Icon={MessageSquare}
+              isActive={activeModule === 'whatsapp'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
+              expiresAt={getOverrideExpiry('whatsapp')} />
+          )}
 
           {/* ── ATENDIMENTO ── Leads ────────────────────────────── */}
           {sidebarMode === 'normal' && !permissionsLoading &&
@@ -2137,7 +2147,7 @@ useEffect(() => {
       </HiddenMenuModulesContext.Provider>
 
         {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950">
+      <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' ? 'h-[100dvh] overflow-hidden' : ''}`}>
         {/* Cloud Mobile Header - Pill-shaped navigation shell */}
         {activeModule === 'cloud' ? (
           <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
@@ -2217,6 +2227,7 @@ useEffect(() => {
                     configuracoes: { label: 'Configurações', Icon: Settings },
                     agenda: { label: 'Agenda', Icon: Calendar },
                     chat: { label: 'Chat', Icon: MessageCircle },
+                    whatsapp: { label: 'WhatsApp', Icon: MessageSquare },
                     tarefas: { label: 'Tarefas', Icon: CheckSquare },
                   };
                   const meta = MODULE_META[activeModule];
@@ -2414,7 +2425,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm">
               <CheckCheck className="w-4 h-4 flex-shrink-0 text-emerald-500" />
@@ -2547,6 +2558,7 @@ useEffect(() => {
               />
             )}
             {activeModule === 'chat' && <ChatModule />}
+            {activeModule === 'whatsapp' && <WhatsAppModule />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && (
               <FinancialModule
@@ -2588,7 +2600,7 @@ useEffect(() => {
           onBadgeCountChange={setDocRequestsBadge}
         />
 
-        {activeModule !== 'chat' && (
+        {activeModule !== 'chat' && activeModule !== 'whatsapp' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">

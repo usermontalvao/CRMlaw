@@ -62,6 +62,7 @@ import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
 import type { Client } from '../types/client.types';
+import { formatDate as fmtDateGlobal, formatDateTime as fmtDateTimeGlobal } from '../utils/formatters';
 
 const STATUS_OPTIONS: {
   key: DeadlineStatus;
@@ -232,22 +233,12 @@ const emptyForm: DeadlineFormData = {
 
 const formatDate = (value?: string | null) => {
   if (!value) return 'Não informado';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('pt-BR');
+  return fmtDateGlobal(value);
 };
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return 'Não informado';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fmtDateTimeGlobal(value);
 };
 
 // Calcula data de vencimento baseado em dias úteis (exclui finais de semana)

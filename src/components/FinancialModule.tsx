@@ -57,6 +57,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import { AgreementFormModal } from './AgreementFormModal';
 import type {
   Agreement,
   AgreementStatus,
@@ -69,6 +70,7 @@ import type {
 import type { Client } from '../types/client.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { Modal, ModalBody, FinancialSkeleton } from './ui';
+import { formatCurrency, formatDate as fmtDateShared } from '../utils/formatters';
 
 interface FinancialModuleProps {
   entityId?: string;
@@ -382,14 +384,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     return () => unsubscribe();
   }, [activeMonth, loadData]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  };
+  // formatCurrency importada de utils/formatters (respeita config global de moeda)
 
   const handleToggleFinancialReveal = async () => {
     if (financialRevealed) {
@@ -535,7 +530,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
     return {
       installment: nextDueInstallment,
-      dueDateFormatted: dueDateObj.toLocaleDateString('pt-BR'),
+      dueDateFormatted: fmtDateShared(dueDateObj),
       relativeLabel,
     };
   }, [nextDueInstallment, today]);
@@ -572,7 +567,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       loadLinkedEntities(agreement.client_id);
       setEditForm({
         clientId: agreement.client_id,
-        processId: agreement.process_id || '',
+        processId: agreement.process_id || agreement.requirement_id || '',
         title: agreement.title,
         description: agreement.description || '',
         notes: agreement.notes || '',
@@ -760,9 +755,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         }))
         : undefined;
 
+      const isReqEdit = editForm.processId ? clientRequirements.some(r => r.id === editForm.processId) : false;
       const updated = await financialService.updateAgreement(selectedAgreement.id, {
         client_id: editForm.clientId,
-        process_id: editForm.processId || null,
+        process_id: !isReqEdit && editForm.processId ? editForm.processId : null,
+        requirement_id: isReqEdit && editForm.processId ? editForm.processId : null,
         title: editForm.title.trim(),
         description: editForm.description.trim() || undefined,
         agreement_date: editForm.agreementDate,
@@ -920,9 +917,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       setFormLoading(true);
       setFormError(null);
 
+      const isReqCreate = formData.processId ? clientRequirements.some(r => r.id === formData.processId) : false;
       const createdAgreement = await financialService.createAgreement({
         client_id: formData.clientId,
-        process_id: formData.processId || undefined,
+        process_id: !isReqCreate && formData.processId ? formData.processId : undefined,
+        requirement_id: isReqCreate && formData.processId ? formData.processId : undefined,
         title: formData.title.trim(),
         description: formData.description?.trim() || undefined,
         agreement_date: formData.agreementDate,
@@ -1765,7 +1764,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       const issueDateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
       // Helpers para o HTML
-      const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const fmtR = (v: number) => formatCurrency(v);
       const fmtShortVal = (v: number) => {
         if (v === 0) return '';
         if (v >= 1000) return 'R$ ' + (v / 1000).toFixed(1).replace('.', ',') + 'k';
@@ -1967,9 +1966,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
             const client = clients.find(c => c.id === cid);
             const cName  = client?.full_name || (client as any)?.name || '—';
             const cCpf   = maskDoc(client?.cpf_cnpj || (client as any)?.cpf || (client as any)?.document);
-            const dateStr = inst.payment_date
-              ? new Date(inst.payment_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-              : '—';
+            const dateStr = inst.payment_date ? fmtDateShared(inst.payment_date) : '—';
             const rawMeth = (inst as any).payment_method;
             const methKey = (rawMeth && methodKeys.includes(rawMeth)) ? rawMeth : 'outros';
             const fee      = computeFee(inst);
@@ -3662,10 +3659,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         <div className="flex justify-between sm:flex-col sm:text-right text-sm font-semibold text-slate-900">
                           <p>{formatCurrency(inst.value)}</p>
                           <p className="text-[11px] font-normal text-slate-500">
-                            {(parseLocalDate(inst.due_date) ?? new Date(inst.due_date)).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'short',
-                            })}
+                            {fmtDateShared(inst.due_date)}
                           </p>
                         </div>
                         <button
@@ -3761,9 +3755,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? 0) - (parseLocalDate(bInst.due_date)?.getTime() ?? 0));
                     const nextDue = futurePending[0] ?? nextDueFallback[0];
                     const nextDueDate = nextDue ? (parseLocalDate(nextDue.due_date) ?? new Date(nextDue.due_date)) : null;
-                    const nextDueLabel = nextDueDate
-                      ? nextDueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-                      : 'Sem parcelas';
+                    const nextDueLabel = nextDueDate ? fmtDateShared(nextDueDate) : 'Sem parcelas';
                     const diffDays = nextDue?.due_date
                       ? (() => {
                           const raw = String(nextDue.due_date).slice(0, 10);
@@ -4380,9 +4372,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       )}
       </div>
 
-      {/* Modal de novo lançamento */}
-      <Modal
+      {/* Modal de novo lançamento — componente compartilhado, reutilizado no WhatsApp 360 */}
+      <AgreementFormModal
         open={isModalOpen}
+        onClose={handleCloseModal}
+        onSaved={() => loadData()}
+      />
+      {/* Modal legado desativado (substituído por AgreementFormModal acima) */}
+      <Modal
+        open={false}
         onClose={handleCloseModal}
         title="Novo Lançamento"
         eyebrow="Financeiro"

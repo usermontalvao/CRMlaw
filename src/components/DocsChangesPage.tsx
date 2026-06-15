@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.227': { name: 'Café WhatsApp Orquestrado', emoji: '🟢' },
   '1.10.226': { name: 'Café Assinatura Resiliente', emoji: '🛡️' },
   '1.10.225': { name: 'Café Assinatura Orquestrada', emoji: '✍️' },
   '1.10.224': { name: 'Café Configuração Blindada', emoji: '🔐' },
@@ -882,6 +883,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.227',
+    date: '15/06/2026',
+    summary: 'WhatsApp: checkpoint amplo do módulo com workspace dedicado, integrações 360, envio por Evolution, automações, IA e base server-side para atendimento e documentos.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'feature' as const, title: 'Workspace dedicado do WhatsApp', description: 'O atendimento ganhou shell próprio com modais internos, lista de conversas, painel lateral 360 e ações rápidas conectadas aos demais módulos do CRM.' },
+        { type: 'feature' as const, title: 'Infraestrutura server-side do canal', description: 'Foram adicionadas edge functions e migrations para instâncias, webhook da Evolution, envio de mensagens, presença, avatar, templates, notas internas, agendamentos, IA assistida e políticas de governança do módulo.' },
+        { type: 'improvement' as const, title: 'Base para documentos e assinatura via conversa', description: 'O fluxo de solicitação de documentos, links públicos de preenchimento e assinatura e o intake documental por WhatsApp passaram a contar com componentes e serviços próprios integrados ao restante da plataforma.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.226',
     date: '13/06/2026',

@@ -1,0 +1,5821 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
+import {
+  Search, Send, Loader2, MessageCircle, Phone, User as UserIcon,
+  CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
+  Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
+  Pencil, Download, UserCheck, Unlink, IdCard, Scale, Calendar,
+  Clock, ChevronDown, ChevronUp, ChevronRight, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw,
+  StickyNote, Trash2, History, CalendarClock, MessageSquare, Filter, Maximize2,
+  UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
+  Sparkles, Tag, Tags, Bot,
+  Shield, ShieldCheck, Eye, EyeOff,
+  BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
+  Mail, MapPin,
+} from 'lucide-react';
+import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote } from '../services/whatsapp.service';
+import type { WhatsAppTemplate, WhatsAppScheduledMessage, TimelineEvent, TimelineKind } from '../types/whatsapp.types';
+import { processService, type ProcessMovement } from '../services/process.service';
+import { deadlineService } from '../services/deadline.service';
+import { taskService } from '../services/task.service';
+import type { CalendarEvent, CalendarEventType } from '../types/calendar.types';
+import type { Requirement, RequirementStatus } from '../types/requirement.types';
+import type { DeadlineType, DeadlinePriority } from '../types/deadline.types';
+import type { TaskPriority } from '../types/task.types';
+import type {
+  WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
+  WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection,
+} from '../types/whatsapp.types';
+import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
+import { useAuth } from '../contexts/AuthContext';
+import { useToastContext } from '../contexts/ToastContext';
+import { useNavigation } from '../contexts/NavigationContext';
+import { aiService } from '../services/ai.service';
+import { signatureService } from '../services/signature.service';
+import { type WaModal, WaWorkspaceRenderer } from './WaWorkspace';
+import { ClientCloudDocsLink } from './CloudFolderModal';
+import { Modal, ModalBody } from './ui/Modal';
+
+/** Retorna dia da semana e minutos desde meia-noite no timezone IANA informado. */
+function getCurrentTimeInTz(timezone: string): { dow: number; curMins: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    }).formatToParts(new Date());
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const weekday = parts.find(p => p.type === 'weekday')?.value ?? '';
+    const hour = +(parts.find(p => p.type === 'hour')?.value ?? '0') % 24;
+    const minute = +(parts.find(p => p.type === 'minute')?.value ?? '0');
+    return { dow: dayMap[weekday] ?? new Date().getDay(), curMins: hour * 60 + minute };
+  } catch {
+    const now = new Date();
+    return { dow: now.getDay(), curMins: now.getHours() * 60 + now.getMinutes() };
+  }
+}
+
+type FilterTab = 'all' | 'unread' | 'mine';
+
+// Fase M: etiquetas pré-definidas para escritório jurídico
+export const WA_LABELS: { key: string; color: string; bg: string }[] = [
+  { key: 'Urgente',             color: '#dc2626', bg: '#fee2e2' },
+  { key: 'Aguardando doc.',     color: '#d97706', bg: '#fef3c7' },
+  { key: 'Proposta enviada',    color: '#2563eb', bg: '#dbeafe' },
+  { key: 'Audiência próxima',   color: '#7c3aed', bg: '#ede9fe' },
+  { key: 'Pagamento pendente',  color: '#ea580c', bg: '#ffedd5' },
+  { key: 'Novo cliente',        color: '#059669', bg: '#d1fae5' },
+  { key: 'Em negociação',       color: '#0891b2', bg: '#cffafe' },
+];
+
+// ── Confirmação leve (sem PIN) para ações reversíveis do módulo ──
+// O app reserva o fluxo com PIN (useDeleteConfirm) para exclusões críticas;
+// aqui usamos um confirm simples para "devolver à fila", "cancelar", etc.
+type ConfirmOpts = { message: string; title?: string; confirmLabel?: string; tone?: 'danger' | 'default' };
+type ConfirmFn = (opts: ConfirmOpts) => Promise<boolean>;
+
+function useConfirm(): { confirm: ConfirmFn; pending: (ConfirmOpts & { resolve: (v: boolean) => void }) | null; resolve: (v: boolean) => void } {
+  const [pending, setPending] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
+  const confirm = useCallback<ConfirmFn>((opts) => new Promise<boolean>(res => setPending({ ...opts, resolve: res })), []);
+  const resolve = useCallback((v: boolean) => setPending(p => { p?.resolve(v); return null; }), []);
+  return { confirm, pending, resolve };
+}
+
+// ── Shell de diálogo estilo WhatsApp (Fase Q: padronização visual) ──
+// Header em teal (#008069), card arredondado, overlay com blur, ESC/clique-fora
+// fecham, trava o scroll do body e entra com micro-animação. Todos os modais do
+// módulo usam este shell para parecer uma aplicação profissional e consistente.
+const WA_TEAL = '#008069';        // faixa de cabeçalho (WhatsApp)
+const WA_GREEN = '#00a884';       // verde de ação (botões primários)
+const WA_GREEN_DARK = '#017561';  // hover do verde
+
+// Classes reutilizáveis para o corpo dos modais (mantêm a estética coesa).
+const waInput = 'w-full px-3 py-2 text-[13px] rounded-lg bg-[#f0f2f5] border border-transparent focus:bg-white focus:border-[#00a884] outline-none transition';
+const waLabel = 'block text-[12px] font-semibold text-slate-500 mb-1';
+const waBtnPrimary = 'inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-[#00a884] text-white text-[13px] font-semibold hover:bg-[#017561] disabled:opacity-50 transition';
+const waBtnGhost = 'px-3 py-2 text-[13px] font-semibold text-slate-500 hover:text-slate-700 transition';
+const waBtnDanger = 'inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 text-white text-[13px] font-semibold hover:bg-red-700 disabled:opacity-50 transition';
+
+const WA_DIALOG_WIDTH: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+  sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl',
+};
+
+const WaDialog: React.FC<{
+  title: string;
+  subtitle?: React.ReactNode;
+  icon?: React.ReactNode;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  zIndex?: number;
+  headerActions?: React.ReactNode;
+  /** Header escuro (para previews de mídia). Padrão: teal do WhatsApp. */
+  headerClassName?: string;
+}> = ({ title, subtitle, icon, onClose, children, footer, size = 'md', zIndex = 50, headerActions, headerClassName }) => {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-[2px] p-0 sm:p-4" style={{ zIndex }} onClick={onClose}>
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={title}
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.98, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        className={`w-full ${WA_DIALOG_WIDTH[size]} max-h-[94dvh] flex flex-col overflow-hidden bg-white shadow-2xl ring-1 ring-black/10 rounded-t-2xl sm:rounded-2xl`}
+      >
+        <div className={`shrink-0 flex items-center gap-3 px-4 py-3 text-white ${headerClassName ?? ''}`} style={headerClassName ? undefined : { backgroundColor: WA_TEAL }}>
+          {icon && <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">{icon}</div>}
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-[15px] font-semibold leading-tight">{title}</h3>
+            {subtitle && (typeof subtitle === 'string'
+              ? <p className="truncate text-[12px] text-white/80">{subtitle}</p>
+              : <div className="text-[12px] text-white/80">{subtitle}</div>)}
+          </div>
+          {headerActions}
+          <button type="button" onClick={onClose} aria-label="Fechar" className="shrink-0 rounded-full p-1.5 text-white/80 hover:bg-white/15 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</div>
+
+        {footer && <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">{footer}</div>}
+      </motion.div>
+    </div>,
+    document.body,
+  );
+};
+
+const WaDialogBody: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = '', children, ...props }) => (
+  <div className={['p-4 sm:p-5', className].filter(Boolean).join(' ')} {...props}>{children}</div>
+);
+
+const ConfirmDialog: React.FC<{ opts: ConfirmOpts; onResolve: (v: boolean) => void }> = ({ opts, onResolve }) => {
+  const danger = opts.tone === 'danger';
+  return (
+    <WaDialog
+      title={opts.title || 'Confirmar'}
+      onClose={() => onResolve(false)}
+      size="sm"
+      zIndex={60}
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={() => onResolve(false)} className={waBtnGhost}>Cancelar</button>
+          <button onClick={() => onResolve(true)} className={danger ? waBtnDanger : waBtnPrimary}>
+            {opts.confirmLabel || 'Confirmar'}
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <p className="text-[13.5px] text-slate-600 leading-snug">{opts.message}</p>
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+const formatTime = (iso: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const initials = (name: string | null, phone: string) => {
+  const base = (name || phone || '?').trim();
+  const parts = base.split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || base.slice(0, 2).toUpperCase();
+};
+
+const prettyPhone = (phone: string) => {
+  const d = (phone || '').replace(/\D/g, '');
+  const m = d.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
+  return phone.startsWith('+') ? phone : `+${d}`;
+};
+
+const formatBytes = (n: number | null) => {
+  if (!n) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const dayLabel = (iso: string) => {
+  const d = new Date(iso);
+  const today = new Date();
+  const yest = new Date(); yest.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Hoje';
+  if (d.toDateString() === yest.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+};
+
+/** "visto por último" com data e hora reais, no estilo do WhatsApp. */
+const lastSeenLabel = (iso: string) => {
+  const d = new Date(iso);
+  const hhmm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const today = new Date();
+  const yest = new Date(); yest.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return `visto por último hoje às ${hhmm}`;
+  if (d.toDateString() === yest.toDateString()) return `visto por último ontem às ${hhmm}`;
+  return `visto por último em ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })} às ${hhmm}`;
+};
+
+/**
+ * Presença a exibir no cabeçalho. Oportunista e com janela de validade: sinais
+ * ao vivo (online/digitando/gravando) só valem se recentes, senão caem para
+ * "visto por último" quando houver. Retorna null quando não há nada confiável.
+ */
+const presenceInfo = (c: { presence: WhatsAppPresence; presence_updated_at: string | null; last_seen_at: string | null }):
+  { text: string; live: boolean } | null => {
+  const age = c.presence_updated_at ? Date.now() - new Date(c.presence_updated_at).getTime() : Infinity;
+  const fresh = (ms: number) => age <= ms;
+  if (c.presence === 'composing' && fresh(25_000)) return { text: 'digitando…', live: true };
+  if (c.presence === 'recording' && fresh(25_000)) return { text: 'gravando áudio…', live: true };
+  if (c.presence === 'available' && fresh(75_000)) return { text: 'online', live: true };
+  // Offline ou sinal antigo → "visto por último". Quando o WhatsApp não envia o
+  // lastSeen explícito (caso comum), usamos o instante do último sinal de
+  // presença como melhor estimativa honesta de quando o contato esteve ativo.
+  const seenIso = c.last_seen_at || c.presence_updated_at;
+  if (seenIso) return { text: lastSeenLabel(seenIso), live: false };
+  return null;
+};
+
+const DateDivider: React.FC<{ label: string }> = ({ label }) => (
+  <div className="flex justify-center my-2.5">
+    <span className="px-3 py-1 rounded-full bg-white/90 text-slate-500 text-[11px] font-semibold shadow-sm">{label}</span>
+  </div>
+);
+
+const typeLabel = (t: string) =>
+  t === 'image' ? '📷 Imagem' : t === 'audio' ? '🎤 Áudio' : t === 'video' ? '🎬 Vídeo'
+    : t === 'document' ? '📎 Documento' : '📎 Anexo';
+
+const conversationPreviewLabel = (type: WhatsAppMessage['type'], text?: string | null, fileName?: string | null) => {
+  const trimmed = text?.trim();
+  if (trimmed) return trimmed;
+  if (type === 'image') return 'Imagem';
+  if (type === 'audio') return 'Audio';
+  if (type === 'video') return 'Video';
+  if (type === 'document') return fileName || 'Documento';
+  return 'Mensagem';
+};
+
+// ── Identidade do agente (Fase 1) ──
+// Tratamento Dr./Dra. só para advogados (cargo "advogado" ou OAB preenchida),
+// conforme o gênero do perfil. Demais cargos usam só o primeiro nome.
+const normalizeRoleStr = (r?: string | null) =>
+  (r || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const firstName = (name?: string | null) => (name || '').trim().split(/\s+/)[0] || '';
+const isLawyer = (s?: Partial<StaffOption> | null) =>
+  !!s && (normalizeRoleStr(s.role) === 'advogado' || !!(s.oab && s.oab.trim()));
+const treatmentOf = (s?: Partial<StaffOption> | null) =>
+  isLawyer(s) ? (s!.gender === 'male' ? 'Dr.' : s!.gender === 'female' ? 'Dra.' : '') : '';
+/** Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla". */
+const agentLabel = (s?: Partial<StaffOption> | null, shortNameOverride?: string | null) => {
+  if (!s) return null;
+  const fn = firstName(shortNameOverride || s.name);
+  const t = treatmentOf(s);
+  return t ? `${t} ${fn}` : fn;
+};
+const greetingByHour = () => {
+  const h = new Date().getHours();
+  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+};
+/** Saudação inicial automática do 1º atendimento (Fase 1). */
+const buildGreeting = (s: Partial<StaffOption>, roleLabelOverride?: string | null) => {
+  const label = agentLabel(s);
+  let clause = '';
+  if (isLawyer(s)) clause = s.gender === 'male' ? ', sou advogado' : s.gender === 'female' ? ', sou advogada' : '';
+  else if (roleLabelOverride) clause = `, ${roleLabelOverride}`;
+  return `Olá, meu nome é ${label}${clause} e vou conduzir seu atendimento. ${greetingByHour()}.`;
+};
+/** Apresentação do novo responsável ao aceitar uma transferência (Fase 4). */
+const buildAcceptPresentation = (s: Partial<StaffOption>, shortNameOverride?: string | null) => {
+  const label = agentLabel(s, shortNameOverride);
+  return `Olá, me chamo ${label} e estarei te ajudando no seu atendimento.`;
+};
+
+// ── Status operacional + SLA (Fase 4 + A) ──
+// Status derivado do estado real da conversa (sem campo de texto livre):
+// bloqueado / encerrada / aguardando você / aguardando setor / aguardando cliente / aberta.
+type ConvStatusKey = 'blocked' | 'closed' | 'waiting_you' | 'waiting_internal' | 'waiting_client' | 'open';
+const convStatus = (c: {
+  is_blocked: boolean;
+  status: string;
+  last_message_direction: WhatsAppDirection | null;
+  assigned_user_id?: string | null;
+  department_id?: string | null;
+  awaiting_accept?: boolean;
+}): { key: ConvStatusKey; label: string; cls: string } => {
+  if (c.is_blocked) return { key: 'blocked', label: 'Bloqueado', cls: 'bg-red-100 text-red-600' };
+  if (c.status === 'closed') return { key: 'closed', label: 'Encerrada', cls: 'bg-slate-200 text-slate-600' };
+  if (c.last_message_direction === 'in') return { key: 'waiting_you', label: 'Aguardando você', cls: 'bg-amber-100 text-amber-700' };
+  // Na fila de um setor mas sem responsável atribuído (e sem aceite pendente de transferência pessoal)
+  if (!c.assigned_user_id && c.department_id && !c.awaiting_accept) return { key: 'waiting_internal', label: 'Aguardando setor', cls: 'bg-sky-100 text-sky-700' };
+  if (c.last_message_direction === 'out') return { key: 'waiting_client', label: 'Aguardando cliente', cls: 'bg-slate-100 text-slate-500' };
+  return { key: 'open', label: 'Aberta', cls: 'bg-emerald-100 text-emerald-700' };
+};
+
+/** Minutos parados aguardando nossa resposta (cliente foi o último a falar). */
+const waitingMinutes = (c: WhatsAppConversation): number | null => {
+  if (c.is_blocked || c.status === 'closed') return null;
+  if (c.last_message_direction !== 'in') return null;
+  const since = c.last_customer_message_at || c.last_message_at;
+  if (!since) return null;
+  return (Date.now() - new Date(since).getTime()) / 60000;
+};
+
+/** Sinal de SLA: atenção (>15min) ou estourado (>60min). null = sem alerta. */
+const slaSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
+  const m = waitingMinutes(c);
+  if (m == null || m < 15) return null;
+  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
+  return m >= 60
+    ? { color: '#dc2626', label: `parada há ${human}` }
+    : { color: '#d97706', label: `parada há ${human}` };
+};
+
+/**
+ * Sinal de SLA interno (Fase B): conversa em fila de setor sem responsável há muito tempo.
+ * Usa last_message_at como proxy do momento em que entrou na fila.
+ * null = sem alerta (conversa não está em fila ou tempo aceitável).
+ */
+const slaInternalSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
+  if (convStatus(c).key !== 'waiting_internal') return null;
+  const since = c.last_message_at;
+  if (!since) return null;
+  const m = (Date.now() - new Date(since).getTime()) / 60000;
+  if (m < 30) return null;
+  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
+  return m >= 120
+    ? { color: '#dc2626', label: `na fila há ${human}` }
+    : { color: '#d97706', label: `na fila há ${human}` };
+};
+
+/**
+ * Fase N: conversa com responsável atribuído que não respondeu em >4h após última
+ * mensagem do cliente. Mais grave que slaSignal (15min) — sinaliza abandono real.
+ */
+const abandonedSignal = (c: WhatsAppConversation): { label: string } | null => {
+  if (!c.assigned_user_id || c.is_blocked || c.status === 'closed') return null;
+  if (c.last_message_direction !== 'in') return null;
+  const since = c.last_customer_message_at || c.last_message_at;
+  if (!since) return null;
+  const h = (Date.now() - new Date(since).getTime()) / 3600000;
+  if (h < 4) return null;
+  const label = h < 24 ? `${Math.floor(h)}h sem resposta` : `${Math.floor(h / 24)}d sem resposta`;
+  return { label };
+};
+
+/**
+ * Alerta de transferência sem aceite/continuidade (Fase 4). Enquanto a conversa
+ * está "aguardando aceite", sinaliza o tempo parado: neutro no início, atenção
+ * (>15min) e estourado (>60min) — para a operação ver o gargalo antes de virar
+ * problema. null = não há transferência pendente.
+ */
+const transferAlert = (c: WhatsAppConversation): { color: string; label: string } | null => {
+  if (!c.awaiting_accept || c.is_blocked || c.status === 'closed') return null;
+  const since = c.transfer_pending_since;
+  const m = since ? (Date.now() - new Date(since).getTime()) / 60000 : 0;
+  if (m < 15) return { color: '#0ea5e9', label: 'aguardando aceite' };
+  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
+  return m >= 60
+    ? { color: '#dc2626', label: `sem aceite há ${human}` }
+    : { color: '#d97706', label: `sem aceite há ${human}` };
+};
+
+// Avatar real do contato com fallback para iniciais (foto ausente ou URL expirada).
+const Avatar: React.FC<{ url: string | null; name: string | null; phone: string; size: number; onClick?: () => void }> = ({ url, name, phone, size, onClick }) => {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [url]);
+  const show = !!url && !broken;
+  const clickable = show && !!onClick;
+  return (
+    <div onClick={clickable ? onClick : undefined} title={clickable ? 'Ver foto' : undefined}
+      className={`rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold overflow-hidden${clickable ? ' cursor-pointer hover:ring-2 hover:ring-amber-300 transition' : ''}`}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.34) }}>
+      {show
+        ? <img src={url!} alt={name || phone} onError={() => setBroken(true)} className="w-full h-full object-cover" />
+        : initials(name, phone)}
+    </div>
+  );
+};
+
+const MSG_PAGE = 60; // mensagens por bloco de paginação
+
+const WhatsAppModule: React.FC = () => {
+  const { user } = useAuth();
+  const toast = useToastContext();
+  const { navigateTo } = useNavigation();
+  const { confirm, pending: confirmPending, resolve: resolveConfirm } = useConfirm();
+  const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
+  const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [pending, setPending] = useState<WhatsAppMessage[]>([]);
+  // Descritores para "tentar de novo": guardam o necessário para reenviar uma
+  // mensagem que falhou (texto, ou mídia com o File original). Limpos no sucesso.
+  const retryRef = useRef<Map<string, { kind: 'text'; text: string; replyId?: string }
+    | { kind: 'media'; file: File; mediaKind: 'image' | 'video' | 'audio' | 'document'; caption: string; replyId?: string }>>(new Map());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
+  const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
+  const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>({ auto_greeting: true, short_name: null, role_label: null });
+  const [search, setSearch] = useState('');
+  // Fase 5: a inbox abre em "Minhas" por padrão (escopo do próprio atendente).
+  // A escolha persiste localmente — quem trabalha em "Todas" não reabre em Minhas.
+  const [filter, setFilter] = useState<FilterTab>(() => {
+    const v = localStorage.getItem('wa_filter');
+    return v === 'all' || v === 'unread' || v === 'mine' ? v : 'mine';
+  });
+  const [channelFilter, setChannelFilter] = useState<string>('all');
+  const [deptFilter, setDeptFilter] = useState<string>('all');
+  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [hasMoreMsgs, setHasMoreMsgs] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const oldestTsRef = useRef<string | null>(null);
+  // Mapa de progresso de upload (0-100) por tempId; alimentado por timer simulado.
+  const [uploadProgress, setUploadProgress] = useState<Map<string, number>>(new Map());
+  const cancelledUploads = useRef<Set<string>>(new Set());
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  // Fase H: ação jurídica a partir de mensagem
+  const [deadlineSource, setDeadlineSource] = useState<WhatsAppMessage | null>(null);
+  const [taskSource, setTaskSource] = useState<WhatsAppMessage | null>(null);
+  // Fase I: integrações com outros módulos a partir da conversa
+  const [docRequestOpen, setDocRequestOpen] = useState(false);
+  // Fase M: filtro por etiqueta + resumo automático por IA
+  const [labelFilter, setLabelFilter] = useState('');
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  // Fase J: sessão de IA da conversa selecionada
+  const [aiSession, setAiSession] = useState<import('../types/whatsapp.types').WhatsAppAiSession | null>(null);
+  // Fase K: sugestão de resposta e extração de dados
+  const [suggesting, setSuggesting] = useState(false);
+  const [classifying, setClassifying] = useState(false);
+  const [extractedData, setExtractedData] = useState<Record<string, string> | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  // Fase L: modo privado (mascaramento visual) e exportação
+  const [privateMode, setPrivateMode] = useState(false);
+  // Fase M: dashboard de atendimento
+  const [showDashboard, setShowDashboard] = useState(false);
+  // Fase N: aviso de fora do horário de atendimento
+  const [outsideHours, setOutsideHours] = useState<{ message: string } | null>(null);
+  // WhatsApp 360: workspace modal (abre entidades do CRM sem sair da conversa)
+  const [workspace, setWorkspace] = useState<WaModal | null>(null);
+  const openWa = useCallback((modal: WaModal) => setWorkspace(modal), []);
+  const closeWa = useCallback(() => setWorkspace(null), []);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [newConvOpen, setNewConvOpen] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Templates carregados uma vez para o atalho "/" no compositor (estilo WhatsApp).
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const reloadTemplates = useCallback(() => {
+    whatsappService.listTemplates({ activeOnly: true }).then(setTemplates).catch(() => {});
+  }, []);
+  useEffect(() => { reloadTemplates(); }, [reloadTemplates]);
+  const [slashIndex, setSlashIndex] = useState(0); // item destacado no dropdown do "/"
+  // Anexos selecionados aguardando preview/legenda antes do envio (Fase 0.1+).
+  const [attachStaged, setAttachStaged] = useState<File[] | null>(null);
+  // Fase 3: por padrão a lista mostra apenas conversas ativas (status "Abertas");
+  // encerradas saem da fila e só aparecem no filtro próprio "Encerradas" — ou
+  // quando o cliente volta a falar e a conversa é reaberta (status → open).
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'waiting_you' | 'waiting_internal' | 'reopened' | 'closed'>(() => {
+    const v = localStorage.getItem('wa_status_filter');
+    return v === 'all' || v === 'open' || v === 'waiting_you' || v === 'waiting_internal' || v === 'reopened' || v === 'closed' ? v : 'open';
+  });
+  const [replyTo, setReplyTo] = useState<WhatsAppMessage | null>(null);
+  const [editing, setEditing] = useState<WhatsAppMessage | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [, forceTick] = useState(0);
+  // Larguras das colunas com persistência local (Fase 10.1).
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const v = Number(localStorage.getItem('wa_panel_w'));
+    return v >= 260 && v <= 560 ? v : 300;
+  });
+  const [listWidth, setListWidth] = useState(() => {
+    const v = Number(localStorage.getItem('wa_list_w'));
+    return v >= 280 && v <= 520 ? v : 340;
+  });
+  useEffect(() => { localStorage.setItem('wa_panel_w', String(panelWidth)); }, [panelWidth]);
+  useEffect(() => { localStorage.setItem('wa_list_w', String(listWidth)); }, [listWidth]);
+  // Persistência local dos filtros da inbox (Fase 3/5): o escopo escolhido pelo
+  // atendente sobrevive ao recarregar — sem reimpor o padrão a cada abertura.
+  useEffect(() => { localStorage.setItem('wa_filter', filter); }, [filter]);
+  useEffect(() => { localStorage.setItem('wa_status_filter', statusFilter); }, [statusFilter]);
+  // Drag and drop de arquivos na thread (estilo WhatsApp Web). `dragDepth` conta
+  // enter/leave para não piscar o overlay ao cruzar elementos filhos.
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
+
+  // Redimensiona o painel lateral arrastando a borda (entre 260 e 560px).
+  const startPanelResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const onMove = (ev: MouseEvent) => {
+      // Painel fica à direita: arrastar p/ a esquerda aumenta a largura.
+      setPanelWidth(Math.min(560, Math.max(260, startW + (startX - ev.clientX))));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [panelWidth]);
+
+  // Divisória arrastável entre a lista de conversas e a thread (Fase 10.1).
+  const startListResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = listWidth;
+    const onMove = (ev: MouseEvent) => {
+      // Lista fica à esquerda: arrastar p/ a direita aumenta a largura.
+      setListWidth(Math.min(520, Math.max(280, startW + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [listWidth]);
+
+  const threadRef = useRef<HTMLDivElement>(null);
+  const threadContentRef = useRef<HTMLDivElement>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recTimerRef = useRef<number | null>(null);
+  const avatarTriedRef = useRef<Set<string>>(new Set());
+  const atBottomRef = useRef(true);
+  const lastConvRef = useRef<string | null>(null);
+
+  const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
+  const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
+  const staffByUser = useMemo(() => new Map(staff.map(s => [s.user_id, s.name])), [staff]);
+  const staffById = useMemo(() => new Map(staff.map(s => [s.user_id, s])), [staff]);
+  // Papel operacional do usuário logado → permissões da UI (Fase 9).
+  const myRole = user ? (staffById.get(user.id)?.role ?? null) : null;
+  const perms = useMemo(() => agentPermissions(myRole), [myRole]);
+
+  const selected = useMemo(
+    () => conversations.find(c => c.id === selectedId) || null,
+    [conversations, selectedId],
+  );
+
+  // Contexto para expandir variáveis dos modelos ({{cliente.nome}}, {{saudacao}}…).
+  const templateCtx = useMemo(() => ({
+    clientName: selected?.contact_name ?? null,
+    clientPhone: selected ? prettyPhone(selected.contact_phone) : null,
+    agentName: agentLabel(user ? staffById.get(user.id) : null),
+    greeting: greetingByHour(),
+  }), [selected, user, staffById]);
+
+  // Atalho "/" do compositor (estilo WhatsApp): quando o texto é só "/algo" (sem
+  // espaço), abre um menu de modelos filtrados pelo nome; selecionar insere o corpo.
+  const slashMatch = !editing ? /^\/(\S*)$/.exec(draft) : null;
+  const slashResults = slashMatch
+    ? templates.filter(t => t.name.toLowerCase().includes(slashMatch[1].toLowerCase())).slice(0, 6)
+    : [];
+  const slashActive = slashResults.length > 0;
+  const slashIdx = Math.min(slashIndex, Math.max(0, slashResults.length - 1));
+  const applyTemplate = useCallback((t: WhatsAppTemplate) => {
+    setDraft(renderTemplate(t.body, templateCtx));
+    setSlashIndex(0);
+  }, [templateCtx]);
+
+  // Pacote 360 do cliente carregado uma vez ao abrir a conversa (Fase 10).
+  // Banner-resumo e painéis laterais consomem deste estado — sem refetch por bloco.
+  const [overview, setOverview] = useState<ClientOverview | null>(null);
+  const selectedClientId = selected?.client_id ?? null;
+  // Recarrega o pacote 360 sob demanda (ex.: após criar uma solicitação de documento).
+  const reloadOverview = useCallback(() => {
+    if (!selectedClientId) { setOverview(null); return; }
+    whatsappService.getClientOverview(selectedClientId)
+      .then(setOverview)
+      .catch(() => setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, signatures: [], agreements: [] }));
+  }, [selectedClientId]);
+  useEffect(() => {
+    if (!selectedClientId) { setOverview(null); return; }
+    let alive = true;
+    setOverview(null);
+    whatsappService.getClientOverview(selectedClientId)
+      .then(o => { if (alive) setOverview(o); })
+      .catch(() => { if (alive) setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, signatures: [], agreements: [] }); });
+    return () => { alive = false; };
+  }, [selectedClientId]);
+
+  // ── Status de documentos por cliente (chips de lista/cabeçalho), em tempo real ──
+  // Resolve o "não está realtime": quando a IA dá baixa em um item, lista, cabeçalho
+  // e painel de pendências reagem na hora.
+  const [docStatusByClient, setDocStatusByClient] = useState<Record<string, 'awaiting' | 'ready'>>({});
+  const convClientIds = useMemo(
+    () => Array.from(new Set(conversations.map(c => c.client_id).filter(Boolean) as string[])),
+    [conversations],
+  );
+  const loadDocStatus = useCallback(() => {
+    if (convClientIds.length === 0) { setDocStatusByClient({}); return; }
+    whatsappService.getDocStatusByClients(convClientIds).then(setDocStatusByClient).catch(() => {});
+  }, [convClientIds]);
+  useEffect(() => { loadDocStatus(); }, [loadDocStatus]);
+  useEffect(() => {
+    const unsub = whatsappService.subscribeDocRequests(() => { loadDocStatus(); reloadOverview(); });
+    return unsub;
+  }, [loadDocStatus, reloadOverview]);
+
+  // ── Dispensar o aviso "Documentos prontos" por cliente (só visual; não toca nos
+  // document_requests). Persiste em localStorage. Só o estado 'ready' é dispensável —
+  // 'awaiting' é alerta ativo. A dispensa é limpa automaticamente quando o status
+  // deixa de ser 'ready' (novo ciclo de documentos volta a aparecer).
+  const DISMISS_KEY = 'wa_dismissed_doc_ready';
+  const [dismissedDocReady, setDismissedDocReady] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); } catch { return new Set(); }
+  });
+  const persistDismissed = (s: Set<string>) => {
+    try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...s])); } catch { /* storage indisponível */ }
+  };
+  const dismissDocReady = useCallback((clientId: string) => {
+    setDismissedDocReady(prev => { const n = new Set(prev); n.add(clientId); persistDismissed(n); return n; });
+    // Avisa outros painéis (ex.: DocumentRequestsTracker) para limpar os concluídos deste cliente.
+    window.dispatchEvent(new CustomEvent('wa-doc-ready-dismissed', { detail: clientId }));
+  }, []);
+  // Poda: só remove a dispensa quando o cliente AINDA está no mapa mas deixou de
+  // ser 'ready' (novo ciclo de documentos). Durante o reload o mapa fica vazio —
+  // não podar nesse caso, senão o aviso dispensado reaparece (bug do "voltou").
+  useEffect(() => {
+    if (Object.keys(docStatusByClient).length === 0) return; // ainda carregando
+    setDismissedDocReady(prev => {
+      let changed = false; const n = new Set(prev);
+      for (const id of prev) { if ((id in docStatusByClient) && docStatusByClient[id] !== 'ready') { n.delete(id); changed = true; } }
+      if (changed) persistDismissed(n);
+      return changed ? n : prev;
+    });
+  }, [docStatusByClient]);
+  // Status efetivo para exibição: oculta 'ready' já dispensado.
+  const effectiveDocStatus = useCallback((clientId: string | null | undefined): 'awaiting' | 'ready' | null => {
+    if (!clientId) return null;
+    const st = docStatusByClient[clientId];
+    if (!st) return null;
+    if (st === 'ready' && dismissedDocReady.has(clientId)) return null;
+    return st;
+  }, [docStatusByClient, dismissedDocReady]);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      setConversations(await whatsappService.listConversations());
+    } catch {/* */} finally { setLoadingConvs(false); }
+  }, []);
+
+  const loadMessages = useCallback(async (convId: string) => {
+    setLoadingMsgs(true);
+    try {
+      const msgs = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      setMessages(msgs);
+      setHasMoreMsgs(msgs.length === MSG_PAGE);
+      oldestTsRef.current = msgs[0]?.wa_timestamp ?? null;
+    } catch {/* */} finally { setLoadingMsgs(false); }
+  }, []);
+
+  const loadMoreMsgs = useCallback(async () => {
+    if (!selectedId || !oldestTsRef.current || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const older = await whatsappService.listMessages(selectedId, { limit: MSG_PAGE, before: oldestTsRef.current });
+      if (older.length === 0) { setHasMoreMsgs(false); return; }
+      oldestTsRef.current = older[0]?.wa_timestamp ?? oldestTsRef.current;
+      setMessages(prev => [...older, ...prev]);
+      setHasMoreMsgs(older.length === MSG_PAGE);
+    } catch {/* */} finally { setLoadingMore(false); }
+  }, [selectedId, loadingMore]);
+
+  // Atualização silenciosa da thread (sem spinner) para eventos em tempo real:
+  // mantém a conversa fluida, sem piscar nem perder a posição de rolagem.
+  const refreshMessages = useCallback(async (convId: string) => {
+    try { setMessages(await whatsappService.listMessages(convId, { limit: MSG_PAGE })); } catch {/* */}
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+    whatsappService.listChannels().then(setChannels).catch(() => {});
+    whatsappService.listDepartments().then(setDepartments).catch(() => {});
+    whatsappService.listStaff().then(setStaff).catch(() => {});
+    whatsappService.getMyAgentPrefs().then(setAgentPrefs).catch(() => {});
+    const unsub = whatsappService.subscribe({
+      // Mescla a conversa que mudou no lugar (presença, preview, contador,
+      // ordem) — sem recarregar a lista nem tocar na thread aberta.
+      onConversationChange: (payload) => {
+        const row = payload.new as Partial<WhatsAppConversation> | undefined;
+        if (payload.eventType === 'DELETE' || !row?.id) { loadConversations(); return; }
+        setConversations(prev => {
+          const idx = prev.findIndex(c => c.id === row.id);
+          if (idx === -1) { loadConversations(); return prev; } // conversa nova → busca completa (avatar etc.)
+          const next = [...prev];
+          // Preserva a URL assinada do avatar (campo só do client, não vem no payload).
+          next[idx] = { ...prev[idx], ...row, contact_avatar_url: prev[idx].contact_avatar_url } as WhatsAppConversation;
+          next.sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
+          return next;
+        });
+      },
+      // Mensagem nova/alterada: atualiza só a thread aberta, em silêncio.
+      // Para UPDATE de status (delivered/read), faz merge cirúrgico sem reload completo.
+      onMessageChange: (payload) => {
+        const convId = (payload.new as any)?.conversation_id ?? (payload.old as any)?.conversation_id;
+        if (!convId) return;
+        if (payload.eventType === 'UPDATE') {
+          const row = payload.new as Partial<WhatsAppMessage>;
+          if (row?.id && row?.status) {
+            setMessages(prev => {
+              const idx = prev.findIndex(m => m.id === row.id);
+              if (idx === -1) return prev;
+              const next = [...prev];
+              next[idx] = { ...next[idx], status: row.status! };
+              return next;
+            });
+            return;
+          }
+        }
+        setSelectedId(curr => { if (curr && convId === curr) refreshMessages(curr); return curr; });
+      },
+    });
+    return unsub;
+  }, [loadConversations, refreshMessages]);
+
+  useEffect(() => {
+    setPending([]); setReplyTo(null); setEditing(null);
+    setHasMoreMsgs(false); setLoadingMore(false); oldestTsRef.current = null;
+    setUploadProgress(new Map()); cancelledUploads.current.clear();
+    if (!selectedId) { setMessages([]); return; }
+    loadMessages(selectedId);
+    whatsappService.markRead(selectedId).then(() => {
+      setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, unread_count: 0 } : c));
+    }).catch(() => {});
+  }, [selectedId, loadMessages]);
+
+  // Fase N: verifica horário de atendimento ao trocar de canal/conversa (timezone-aware).
+  useEffect(() => {
+    const instanceId = selected?.instance_id;
+    if (!instanceId) { setOutsideHours(null); return; }
+    const ch = channels.find(c => c.id === instanceId);
+    let cancelled = false;
+    whatsappService.listBusinessHours(instanceId).then(rows => {
+      if (cancelled) return;
+      const tz = ch?.timezone || 'America/Cuiaba';
+      const { dow, curMins } = getCurrentTimeInTz(tz);
+      const row = rows.find(r => r.day_of_week === dow);
+      if (!row || !row.is_active) {
+        setOutsideHours({ message: ch?.absence_message || 'Canal fora do horário de atendimento.' });
+        return;
+      }
+      const [sh, sm] = row.start_time.split(':').map(Number);
+      const [eh, em] = row.end_time.split(':').map(Number);
+      const startMins = sh * 60 + sm;
+      const endMins = eh * 60 + em;
+      if (curMins < startMins || curMins >= endMins) {
+        setOutsideHours({ message: ch?.absence_message || `Atendimento: ${row.start_time}–${row.end_time}.` });
+      } else {
+        setOutsideHours(null);
+      }
+    }).catch(() => { if (!cancelled) setOutsideHours(null); });
+    return () => { cancelled = true; };
+  }, [selected?.instance_id, selected?.id, channels]);
+
+  // Ao abrir uma conversa sem foto, busca a foto de perfil na Evolution (1x por conversa).
+  useEffect(() => {
+    if (!selected || selected.contact_avatar_url) return;
+    if (avatarTriedRef.current.has(selected.id)) return;
+    avatarTriedRef.current.add(selected.id);
+    whatsappService.refreshAvatar(selected.id)
+      .then(({ path }) => { if (path) loadConversations(); })
+      .catch(() => {});
+  }, [selected, loadConversations]);
+
+  // Fase J: sessão de IA — carrega e assina realtime quando a conversa muda.
+  useEffect(() => {
+    if (!selectedId) { setAiSession(null); return; }
+    whatsappService.getAiSession(selectedId).then(s => setAiSession(s)).catch(() => {});
+    const unsub = whatsappService.subscribeAiSession(selectedId, s => setAiSession(s));
+    return unsub;
+  }, [selectedId]);
+  // Fase K: limpar dados extraídos ao trocar de conversa.
+  useEffect(() => { setExtractedData(null); }, [selectedId]);
+
+  // Mescla mensagens reais + otimistas (que ainda não voltaram do servidor).
+  const allMessages = useMemo(() => {
+    const extra = pending.filter(p => !messages.some(b =>
+      (!!p._serverId && b.id === p._serverId)
+      || (!!p.evolution_message_id && !!b.evolution_message_id && b.evolution_message_id === p.evolution_message_id),
+    ));
+    return [...messages, ...extra].sort((a, b) => a.wa_timestamp.localeCompare(b.wa_timestamp));
+  }, [messages, pending]);
+
+  const msgById = useMemo(() => new Map(allMessages.map(m => [m.id, m])), [allMessages]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    setPending(prev => {
+      const persistedRowIds = new Set(messages.map(m => m.id));
+      const persistedEvolutionIds = new Set(messages.map(m => m.evolution_message_id).filter((id): id is string => !!id));
+      const next = prev.filter(p =>
+        !(p._serverId && persistedRowIds.has(p._serverId))
+        && !(p.evolution_message_id && persistedEvolutionIds.has(p.evolution_message_id)),
+      );
+      return next.length === prev.length ? prev : next;
+    });
+  }, [messages]);
+
+  // Auto-scroll: salto instantâneo ao abrir/trocar conversa; suave em mensagem
+  // nova só quando o usuário já está no fim (não puxa quem está lendo histórico).
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const isSwitch = lastConvRef.current !== selectedId;
+    lastConvRef.current = selectedId;
+    if (isSwitch) { el.scrollTop = el.scrollHeight; atBottomRef.current = true; return; }
+    if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [allMessages, selectedId]);
+
+  // Recalcula a presença ao longo do tempo (sem novo evento): "online" expira
+  // virando "visto por último" e o tempo relativo se mantém atual.
+  useEffect(() => {
+    if (!selectedId) return;
+    const id = window.setInterval(() => forceTick(t => t + 1), 15_000);
+    return () => window.clearInterval(id);
+  }, [selectedId]);
+
+  // Mantém a presença do contato fluindo: pede à Evolution ao abrir e renova em
+  // ritmo curto (sem subscribe nativo, é o que mantém online/visto-por-último
+  // atualizando rápido — o WhatsApp só reenvia a presença quando provocamos).
+  useEffect(() => {
+    if (!selectedId) return;
+    whatsappService.subscribePresence(selectedId);
+    const id = window.setInterval(() => whatsappService.subscribePresence(selectedId), 15_000);
+    return () => window.clearInterval(id);
+  }, [selectedId]);
+
+  // Mantém o fim "grudado" enquanto o conteúdo cresce depois de renderizado —
+  // imagens/áudio têm altura desconhecida no 1º paint e esticam a thread depois,
+  // o que empurrava a última mensagem pra fora de vista ao abrir a conversa.
+  useEffect(() => {
+    const el = threadRef.current;
+    const content = threadContentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [selectedId]);
+
+  const onThreadScroll = useCallback(() => {
+    const el = threadRef.current;
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  // Ordem de urgência para ordenar a inbox (Fase A): cliente esperando resposta vem primeiro.
+  const STATUS_URGENCY: Record<ConvStatusKey, number> = {
+    waiting_you: 0, waiting_internal: 1, open: 2, waiting_client: 3, blocked: 4, closed: 5,
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return conversations
+      .filter(c => {
+        // Fase 0: conversa sem nenhuma mensagem (last_message_at nulo) é rascunho de
+        // "Nova conversa" aberta mas sem primeiro envio — não polui a inbox. Fica
+        // visível apenas enquanto está aberta na thread; ao sair sem enviar, some.
+        if (!c.last_message_at && c.id !== selectedId) return false;
+        if (filter === 'unread' && c.unread_count === 0) return false;
+        if (filter === 'mine' && c.assigned_user_id !== user?.id) return false;
+        if (statusFilter === 'open' && c.status === 'closed') return false;
+        if (statusFilter === 'closed' && c.status !== 'closed') return false;
+        if (statusFilter === 'waiting_you' && convStatus(c).key !== 'waiting_you') return false;
+        if (statusFilter === 'waiting_internal' && convStatus(c).key !== 'waiting_internal') return false;
+        if (statusFilter === 'reopened' && (c.status === 'closed' || !c.reopened_at)) return false;
+        if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
+        if (deptFilter === 'none' && c.department_id) return false;
+        if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
+        if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
+        if (!q) return true;
+        return (c.contact_name || '').toLowerCase().includes(q) || c.contact_phone.includes(q);
+      })
+      .sort((a, b) => {
+        const stA = convStatus(a).key;
+        const stB = convStatus(b).key;
+        const ua = STATUS_URGENCY[stA] ?? 9;
+        const ub = STATUS_URGENCY[stB] ?? 9;
+        if (ua !== ub) return ua - ub;
+        // Dentro de grupos onde tempo de espera define urgência: mais antigo primeiro
+        // (quem espera há mais tempo precisa de atenção primeiro).
+        if (stA === 'waiting_you' || stA === 'waiting_internal') {
+          const ta = a.last_customer_message_at || a.last_message_at || a.created_at;
+          const tb = b.last_customer_message_at || b.last_message_at || b.created_at;
+          return ta < tb ? -1 : ta > tb ? 1 : 0; // ascendente = mais antigo primeiro
+        }
+        // Demais grupos: mais recente primeiro.
+        const ta = a.last_message_at || a.created_at;
+        const tb = b.last_message_at || b.created_at;
+        return tb < ta ? -1 : tb > ta ? 1 : 0;
+      });
+  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+
+  // Não-lidas ignoram conversas bloqueadas: elas saem da fila normal.
+  const unreadTotal = useMemo(
+    () => conversations.reduce((s, c) => s + (c.is_blocked ? 0 : (c.unread_count || 0)), 0),
+    [conversations],
+  );
+
+  // Contadores das abas (Fase A): exibem volume real de conversas em cada escopo.
+  const tabCounts = useMemo(() => {
+    const visible = conversations.filter(c => c.last_message_at || c.id === selectedId);
+    return {
+      all: visible.length,
+      unread: visible.filter(c => !c.is_blocked && c.unread_count > 0).length,
+      mine: visible.filter(c => c.assigned_user_id === user?.id).length,
+    };
+  }, [conversations, selectedId, user?.id]);
+
+  const anyConnected = channels.some(c => c.status === 'connected');
+  const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
+
+  // Abre a conversa recém-criada/reaberta na inbox (recarrega para trazer avatar etc.).
+  const handleConversationOpened = useCallback(async (conversationId: string) => {
+    setNewConvOpen(false);
+    await loadConversations();
+    setSelectedId(conversationId);
+  }, [loadConversations]);
+
+  const handleReopen = useCallback(async () => {
+    if (!selected) return;
+    try {
+      await whatsappService.reopenConversation(selected.id);
+      setConversations(prev => prev.map(c => c.id === selected.id
+        ? { ...c, status: 'open', reopened_at: new Date().toISOString(), closed_at: null } : c));
+    } catch (e: any) { toast.error('Falha ao reabrir', e.message); }
+  }, [selected, toast]);
+
+  const handleUnblock = useCallback(async () => {
+    if (!selected) return;
+    if (!await confirm({ title: 'Desbloquear contato', message: 'Ele voltará ao fluxo normal de atendimento.', confirmLabel: 'Desbloquear' })) return;
+    try {
+      await whatsappService.unblockContact(selected.id);
+      setConversations(prev => prev.map(c => c.id === selected.id
+        ? { ...c, is_blocked: false, blocked_at: null, blocked_by: null, blocked_reason: null } : c));
+    } catch (e: any) { toast.error('Falha ao desbloquear', e.message); }
+  }, [selected, confirm, toast]);
+
+  // 360: abrir o módulo de Assinaturas já com o cliente em prefill (sem poluir as notas).
+  // 360: criar acordo financeiro inline
+  const handleNavigateFinanceiro = useCallback(() => {
+    if (!selected?.client_id) return;
+    openWa({ type: 'financial_create', clientId: selected.client_id, clientName: selected.contact_name || undefined });
+  }, [selected, openWa]);
+
+  // Aceitar a transferência pendente: assume o atendimento, apresenta o novo
+  // responsável ao cliente e limpa o alerta.
+  const handleAccept = useCallback(async () => {
+    if (!selected) return;
+    try {
+      await whatsappService.acceptTransfer(selected.id);
+      // Apresentação automática do responsável ao cliente (best-effort).
+      const me = user ? staffById.get(user.id) : null;
+      if (me && !selected.is_blocked) {
+        try {
+          const text = buildAcceptPresentation({ ...me, name: agentPrefs.short_name || me.name });
+          await whatsappService.sendText({ conversationId: selected.id, text });
+          await refreshMessages(selected.id);
+        } catch { /* apresentação é best-effort; o aceite já valeu */ }
+      }
+      setConversations(prev => prev.map(c => c.id === selected.id
+        ? { ...c, awaiting_accept: false, transfer_pending_since: null,
+            assigned_user_id: c.assigned_user_id || (user?.id ?? null) } : c));
+    } catch (e: any) { toast.error('Falha ao aceitar', e.message); }
+  }, [selected, user, agentPrefs, staffById, refreshMessages, toast]);
+
+  // Assumir o atendimento direto da fila (sem transferência): vira responsável.
+  const handleAssume = useCallback(async () => {
+    if (!selected || !user?.id) return;
+    try {
+      await whatsappService.assumeConversation(selected.id);
+      // Fase J: abortar sessão de IA quando agente humano assume
+      if (aiSession?.status === 'active') {
+        await whatsappService.abortAiSession(selected.id).catch(() => {});
+      }
+      setConversations(prev => prev.map(c => c.id === selected.id
+        ? { ...c, assigned_user_id: user.id, awaiting_accept: false, transfer_pending_since: null } : c));
+    } catch (e: any) { toast.error('Falha ao assumir', e.message); }
+  }, [selected, user?.id, toast, aiSession]);
+
+  // Devolver a conversa para a fila do setor: remove o responsável.
+  const handleRelease = useCallback(async () => {
+    if (!selected) return;
+    if (!await confirm({ title: 'Devolver à fila', message: 'Você deixará de ser o responsável por este atendimento.', confirmLabel: 'Devolver' })) return;
+    try {
+      await whatsappService.releaseToQueue(selected.id);
+      setConversations(prev => prev.map(c => c.id === selected.id
+        ? { ...c, assigned_user_id: null, awaiting_accept: false, transfer_pending_since: null } : c));
+    } catch (e: any) { toast.error('Falha ao devolver à fila', e.message); }
+  }, [selected, confirm, toast]);
+
+  // ── Envio otimista de texto / edição ──
+  const bumpConversationPreview = useCallback((conversationId: string, preview: string, at: string) => {
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === conversationId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        last_message_at: at,
+        last_message_direction: 'out',
+        last_message_preview: preview,
+      };
+      next.sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
+      return next;
+    });
+  }, []);
+
+  const bindPendingToServerMessage = useCallback((tempId: string, messageId: string, evolutionMessageId: string | null) => {
+    setPending(prev => prev.map(p => (
+      p._tempId === tempId
+        ? {
+            ...p,
+            _serverId: messageId,
+            evolution_message_id: evolutionMessageId,
+            _local: p._local === 'uploading' ? 'sending' : p._local,
+          }
+        : p
+    )));
+  }, []);
+
+  const handleSend = async () => {
+    const rawText = draft.trim();
+    if (!rawText || !selected || sending) return;
+
+    if (editing) {
+      const target = editing;
+      setSending(true);
+      try {
+        await whatsappService.editMessage(target.id, rawText);
+        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, content: rawText, edited_at: new Date().toISOString() } : m));
+        setEditing(null); setDraft('');
+        void refreshMessages(selected.id);
+      } catch (err: any) {
+        toast.error('Falha ao editar', err.message);
+      } finally { setSending(false); }
+      return;
+    }
+
+    // Saudação inicial automática (Fase 1): no primeiro atendimento humano
+    // (nenhuma mensagem enviada ainda) e se o agente tiver a saudação ligada.
+    const hasOutbound = messages.some(m => m.direction === 'out') || pending.some(p => p.direction === 'out');
+    const me = user ? staffById.get(user.id) : null;
+    if (!hasOutbound && agentPrefs.auto_greeting && me) {
+      try {
+        const greeting = buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
+        await whatsappService.sendText({ conversationId: selected.id, text: greeting });
+        await refreshMessages(selected.id);
+      } catch { /* saudação é best-effort; não impede a mensagem principal */ }
+    }
+
+    // Prefixo de identificação do agente: *Dr. Pedro:*\n antes do texto.
+    // Usa agentLabel para incluir Dr./Dra. em advogados automaticamente.
+    // Só em envios manuais pelo compositor — saudações e mensagens automáticas ficam sem prefixo.
+    const agentDisplayName = agentLabel(me, agentPrefs.short_name);
+    const text = agentDisplayName ? `*${agentDisplayName}:*\n${rawText}` : rawText;
+
+    const sentAt = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: WhatsAppMessage = {
+      id: tempId, conversation_id: selected.id, evolution_message_id: null,
+      direction: 'out', type: 'text', content: text, media_url: null, media_mime: null,
+      storage_path: null, media_size: null, media_sha256: null, file_name: null,
+      transcription_text: null, transcription_status: null,
+      reply_to_id: replyTo?.id ?? null, edited_at: null,
+      status: 'sent', sender_user_id: user?.id ?? null,
+      wa_timestamp: sentAt, created_at: sentAt,
+      _local: 'sending', _tempId: tempId,
+    };
+    const replyId = replyTo?.id;
+    retryRef.current.set(tempId, { kind: 'text', text, replyId });
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(selected.id, rawText, sentAt);
+    setDraft(''); setReplyTo(null); setSending(true);
+    try {
+      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId });
+      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      retryRef.current.delete(tempId);
+      void refreshMessages(selected.id);
+    } catch (err: any) {
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
+      toast.error('Mensagem não enviada', err?.message || 'Falha ao enviar pelo WhatsApp.');
+    } finally { setSending(false); }
+  };
+
+  // ── Fase K: helpers de texto para chamadas de IA ────────────────────────────
+  const buildRecentText = (limit = 15) =>
+    [...messages].slice(-limit)
+      .map(m => `${m.direction === 'out' ? 'Agente' : 'Cliente'}: ${(m.content || m.transcription_text || '[mídia]').slice(0, 300)}`)
+      .join('\n');
+
+  const buildClientContext = () => {
+    if (!overview) return selected?.contact_name ? `Cliente: ${selected.contact_name}` : 'Sem dados do cliente disponíveis.';
+    const lines: string[] = [];
+    if (selected?.contact_name) lines.push(`Cliente: ${selected.contact_name}`);
+    if (overview.processes?.length) {
+      lines.push(`Processos ativos: ${overview.processes.length}`);
+      const urgent = overview.processes.filter((p: any) => p.priority === 'urgente');
+      if (urgent.length) lines.push(`Urgentes: ${urgent.length}`);
+    }
+    const pendSig = overview.signatures?.filter((s: any) => s.status === 'pending').length ?? 0;
+    if (pendSig > 0) lines.push(`Assinaturas pendentes: ${pendSig}`);
+    return lines.join(' | ') || 'Cliente vinculado, sem dados adicionais.';
+  };
+
+  const handleSuggestReply = async () => {
+    if (!selected || suggesting || messages.length < 1) return;
+    setSuggesting(true);
+    try {
+      const suggestion = await aiService.suggestReply(buildRecentText(), buildClientContext());
+      if (suggestion) setDraft(suggestion);
+      else toast.error('IA', 'Não foi possível gerar sugestão.');
+    } catch {
+      toast.error('IA', 'Erro ao sugerir resposta.');
+    } finally { setSuggesting(false); }
+  };
+
+  const handleAiClassify = async () => {
+    if (!selected || classifying || messages.length < 1) return;
+    setClassifying(true);
+    try {
+      const subject = await aiService.classifySubject(buildRecentText(10));
+      if (subject) {
+        await whatsappService.setContactReason(selected.id, subject);
+        loadConversations();
+      } else {
+        toast.error('IA', 'Não foi possível classificar o assunto.');
+      }
+    } catch {
+      toast.error('IA', 'Erro ao classificar assunto.');
+    } finally { setClassifying(false); }
+  };
+
+  const handleExtractData = async () => {
+    if (!selected || extracting || messages.length < 2) return;
+    setExtracting(true);
+    try {
+      const data = await aiService.extractContactData(buildRecentText(20));
+      setExtractedData(Object.keys(data).length > 0 ? data : {});
+    } catch {
+      toast.error('IA', 'Erro ao extrair dados.');
+    } finally { setExtracting(false); }
+  };
+
+  // ── Fase L: exportação e guarda jurídica ────────────────────────────────────
+  const handleExportConversation = () => {
+    if (!selected || messages.length === 0) return;
+    const header = [
+      `Conversa WhatsApp — ${selected.contact_name || prettyPhone(selected.contact_phone)}`,
+      `Exportado em: ${new Date().toLocaleString('pt-BR')}`,
+      selected.contact_reason ? `Assunto: ${selected.contact_reason}` : null,
+      '─'.repeat(60),
+    ].filter(Boolean).join('\n');
+
+    const body = messages.map(m => {
+      const who = m.direction === 'out' ? 'Equipe' : (selected.contact_name || selected.contact_phone);
+      const when = m.wa_timestamp
+        ? new Date(m.wa_timestamp).toLocaleString('pt-BR')
+        : new Date(m.created_at).toLocaleString('pt-BR');
+      const text = m.content || m.transcription_text
+        ? (m.content || `[transcrição: ${m.transcription_text}]`)
+        : `[${m.type}]`;
+      return `[${when}] ${who}: ${text}`;
+    }).join('\n');
+
+    const blob = new Blob([`${header}\n\n${body}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversa-${(selected.contact_name || selected.contact_phone).replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleToggleLegalHold = async () => {
+    if (!selected) return;
+    const newHold = !selected.legal_hold;
+    const reason = newHold
+      ? prompt('Motivo da guarda jurídica (opcional):') ?? undefined
+      : undefined;
+    try {
+      await whatsappService.setLegalHold(selected.id, newHold, reason);
+      setConversations(prev => prev.map(c =>
+        c.id === selected.id
+          ? { ...c, legal_hold: newHold, legal_hold_reason: reason ?? null }
+          : c
+      ));
+      toast.success(newHold ? 'Guarda jurídica ativada.' : 'Guarda jurídica removida.');
+    } catch (e: any) {
+      toast.error('Falha ao atualizar guarda jurídica', e.message);
+    }
+  };
+
+  // ── Envio de mídia (imagem/vídeo/áudio/documento) ──
+  const sendFile = async (file: File, kind: 'image' | 'video' | 'audio' | 'document', captionOverride?: string) => {
+    if (!selected) return;
+    const caption = captionOverride !== undefined ? captionOverride.trim() : draft.trim();
+    const sentAt = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const previewUrl = kind !== 'document' ? URL.createObjectURL(file) : null;
+    const optimistic: WhatsAppMessage = {
+      id: tempId, conversation_id: selected.id, evolution_message_id: null,
+      direction: 'out', type: kind, content: caption || null,
+      media_url: previewUrl, media_mime: file.type, storage_path: null,
+      media_size: file.size, media_sha256: null, file_name: file.name,
+      transcription_text: null, transcription_status: null,
+      reply_to_id: replyTo?.id ?? null, edited_at: null,
+      status: 'sent', sender_user_id: user?.id ?? null,
+      wa_timestamp: sentAt, created_at: sentAt,
+      _local: 'uploading', _tempId: tempId,
+    };
+    const replyId = replyTo?.id;
+    retryRef.current.set(tempId, { kind: 'media', file, mediaKind: kind, caption, replyId });
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(selected.id, conversationPreviewLabel(kind, caption, file.name), sentAt);
+    setDraft(''); setReplyTo(null);
+
+    // Timer que simula progresso de 0 → 85% durante o upload (UX padrão — sem XHR nativo).
+    let pct = 0;
+    setUploadProgress(prev => { const m = new Map(prev); m.set(tempId, 0); return m; });
+    const progressTimer = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 18 + 4, 85);
+      setUploadProgress(prev => { const m = new Map(prev); m.set(tempId, Math.round(pct)); return m; });
+    }, 350);
+
+    const clearProgress = () => {
+      clearInterval(progressTimer);
+      setUploadProgress(prev => { const m = new Map(prev); m.delete(tempId); return m; });
+    };
+
+    try {
+      const up = await whatsappService.uploadMedia(file, { conversationId: selected.id });
+      clearProgress();
+      // Upload concluído mas usuário cancelou enquanto aguardava — descarta silenciosamente.
+      if (cancelledUploads.current.has(tempId)) {
+        cancelledUploads.current.delete(tempId);
+        setPending(prev => prev.filter(p => p._tempId !== tempId));
+        return;
+      }
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      const { message_id, evolution_message_id } = await whatsappService.sendMedia({
+        conversationId: selected.id, type: kind, text: caption || undefined,
+        storagePath: up.storagePath, mimeType: up.mimeType, fileName: up.fileName, replyToId: replyId,
+      });
+      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      retryRef.current.delete(tempId);
+      void refreshMessages(selected.id);
+    } catch (err: any) {
+      clearProgress();
+      if (cancelledUploads.current.has(tempId)) {
+        cancelledUploads.current.delete(tempId);
+        setPending(prev => prev.filter(p => p._tempId !== tempId));
+        return;
+      }
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
+      toast.error('Arquivo não enviado', err?.message || 'Falha ao enviar o anexo pelo WhatsApp.');
+    } finally {
+      if (previewUrl) setTimeout(() => URL.revokeObjectURL(previewUrl), 30_000);
+    }
+  };
+
+  // Reenvia uma mensagem que falhou (texto ou mídia), reusando o que foi guardado.
+  const retryPending = (m: WhatsAppMessage) => {
+    const tempId = m._tempId;
+    if (!tempId) return;
+    const desc = retryRef.current.get(tempId);
+    if (!desc) return;
+    retryRef.current.delete(tempId);
+    setPending(prev => prev.filter(p => p._tempId !== tempId)); // remove o item falho
+    if (desc.kind === 'text') void resendText(desc.text, desc.replyId);
+    else void sendFile(desc.file, desc.mediaKind, desc.caption);
+  };
+
+  // Descarta uma mensagem falha da fila (não foi entregue ao cliente).
+  const discardPending = (m: WhatsAppMessage) => {
+    if (!m._tempId) return;
+    retryRef.current.delete(m._tempId);
+    setPending(prev => prev.filter(p => p._tempId !== m._tempId));
+  };
+
+  // Cancela um upload em andamento: marca o tempId para descarte quando o fetch concluir.
+  const cancelUpload = (tempId: string) => {
+    cancelledUploads.current.add(tempId);
+    retryRef.current.delete(tempId);
+    // Remove da fila imediatamente (otimista); se o upload já completou, sendFile
+    // descarta o resultado ao checar cancelledUploads.
+    setPending(prev => prev.filter(p => p._tempId !== tempId));
+    setUploadProgress(prev => { const m = new Map(prev); m.delete(tempId); return m; });
+  };
+
+  // Reenvio de texto sem a lógica de saudação/edição do composer (usado no retry).
+  const resendText = async (text: string, replyId?: string) => {
+    if (!selected) return;
+    const sentAt = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const optimistic: WhatsAppMessage = {
+      id: tempId, conversation_id: selected.id, evolution_message_id: null,
+      direction: 'out', type: 'text', content: text, media_url: null, media_mime: null,
+      storage_path: null, media_size: null, media_sha256: null, file_name: null,
+      transcription_text: null, transcription_status: null,
+      reply_to_id: replyId ?? null, edited_at: null,
+      status: 'sent', sender_user_id: user?.id ?? null,
+      wa_timestamp: sentAt, created_at: sentAt, _local: 'sending', _tempId: tempId,
+    };
+    retryRef.current.set(tempId, { kind: 'text', text, replyId });
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(selected.id, text, sentAt);
+    try {
+      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId });
+      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      retryRef.current.delete(tempId);
+      void refreshMessages(selected.id);
+    } catch (err: any) {
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
+      toast.error('Mensagem não enviada', err?.message || 'Falha ao reenviar pelo WhatsApp.');
+    }
+  };
+
+  // Reenvio rápido de um arquivo já enviado: reaproveita o objeto no storage
+  // (sem novo upload) e dispara de novo pela conversa atual.
+  const resendExisting = async (m: WhatsAppMessage) => {
+    if (!selected || !m.storage_path || m.type === 'text') return;
+    const sentAt = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const kind = (m.type === 'sticker' ? 'image' : m.type) as 'image' | 'video' | 'audio' | 'document';
+    const optimistic: WhatsAppMessage = {
+      ...m, id: tempId, evolution_message_id: null, reply_to_id: null,
+      status: 'sent', wa_timestamp: sentAt, created_at: sentAt, _local: 'sending', _tempId: tempId,
+    };
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(selected.id, conversationPreviewLabel(kind, m.content || '', m.file_name || ''), sentAt);
+    try {
+      const { message_id, evolution_message_id } = await whatsappService.sendMedia({
+        conversationId: selected.id, type: kind, text: m.content || undefined,
+        storagePath: m.storage_path, mimeType: m.media_mime || 'application/octet-stream', fileName: m.file_name || undefined,
+      });
+      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      void refreshMessages(selected.id);
+    } catch (err: any) {
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
+      toast.error('Arquivo não enviado', err?.message || 'Falha ao reenviar o anexo pelo WhatsApp.');
+    }
+  };
+
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>, _kind: 'media' | 'document') => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    stageAttachments(files);
+  };
+
+  // Encaminha os arquivos para o preview com legenda (em vez de enviar na hora).
+  // Valida tamanho/vazio aqui para não levar arquivo inválido ao preview.
+  const stageAttachments = (files: File[]) => {
+    if (!selected || files.length === 0) return;
+    const tooBig = files.filter(f => f.size > MAX_FILE_BYTES);
+    const empty = files.filter(f => f.size === 0);
+    const ok = files.filter(f => f.size > 0 && f.size <= MAX_FILE_BYTES);
+    if (tooBig.length || empty.length) {
+      const names = [...tooBig, ...empty].map(f => f.name || 'arquivo').join(', ');
+      toast.warning(tooBig.length ? 'Arquivo acima de 100 MB' : 'Arquivo vazio ou inválido', names);
+    }
+    if (ok.length) setAttachStaged(ok);
+  };
+
+  // Confirma o envio dos anexos do preview: a legenda vai com o 1º arquivo
+  // (padrão WhatsApp para álbum); os demais seguem sem legenda.
+  const confirmStagedSend = (caption: string, files: File[]) => {
+    setAttachStaged(null);
+    files.forEach((f, i) => sendFile(f, kindForFile(f), i === 0 ? caption : ''));
+  };
+
+  // ── Drag and drop de arquivos na thread ──
+  // Limite operacional alinhado ao teto comum da Evolution/WhatsApp.
+  const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB
+
+  // Classifica o arquivo solto pelo MIME; sem tipo claro, segue como documento.
+  const kindForFile = (file: File): 'image' | 'video' | 'audio' | 'document' => {
+    const t = (file.type || '').toLowerCase();
+    if (t.startsWith('image/')) return 'image';
+    if (t.startsWith('video/')) return 'video';
+    if (t.startsWith('audio/')) return 'audio';
+    return 'document';
+  };
+
+  // Arquivos soltos vão para o mesmo preview com legenda (múltiplos suportados).
+  const handleDroppedFiles = (files: File[]) => stageAttachments(files);
+
+  const onThreadDragEnter = (e: React.DragEvent) => {
+    if (!selected || editing) return;
+    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setDragOver(true);
+  };
+
+  const onThreadDragOver = (e: React.DragEvent) => {
+    if (!dragOver) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onThreadDragLeave = (e: React.DragEvent) => {
+    if (!dragOver) return;
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragOver(false);
+  };
+
+  const onThreadDrop = (e: React.DragEvent) => {
+    if (!selected || editing) return;
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setDragOver(false);
+    handleDroppedFiles(Array.from(e.dataTransfer?.files || []));
+  };
+
+  // ── Gravação de áudio ──
+  const startRecording = async () => {
+    if (!selected || recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      recChunksRef.current = [];
+      rec.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+        const blob = new Blob(recChunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        if (blob.size > 0) void sendAudioBlob(blob);
+      };
+      mediaRecRef.current = rec;
+      rec.start();
+      setRecording(true); setRecSeconds(0);
+      recTimerRef.current = window.setInterval(() => setRecSeconds(s => s + 1), 1000);
+    } catch {
+      toast.error('Não foi possível acessar o microfone');
+    }
+  };
+
+  const stopRecording = (send: boolean) => {
+    const rec = mediaRecRef.current;
+    if (!rec) return;
+    if (!send) { recChunksRef.current = []; }
+    setRecording(false);
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    if (rec.state !== 'inactive') rec.stop();
+    mediaRecRef.current = null;
+  };
+
+  const sendAudioBlob = async (blob: Blob) => {
+    if (!selected) return;
+    const sentAt = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}`;
+    const previewUrl = URL.createObjectURL(blob);
+    const optimistic: WhatsAppMessage = {
+      id: tempId, conversation_id: selected.id, evolution_message_id: null,
+      direction: 'out', type: 'audio', content: null,
+      media_url: previewUrl, media_mime: blob.type, storage_path: null,
+      media_size: blob.size, media_sha256: null, file_name: 'audio.webm',
+      transcription_text: null, transcription_status: null,
+      reply_to_id: replyTo?.id ?? null, edited_at: null,
+      status: 'sent', sender_user_id: user?.id ?? null,
+      wa_timestamp: sentAt, created_at: sentAt,
+      _local: 'uploading', _tempId: tempId,
+    };
+    const replyId = replyTo?.id;
+    setPending(prev => [...prev, optimistic]); setReplyTo(null);
+    bumpConversationPreview(selected.id, conversationPreviewLabel('audio'), sentAt);
+    try {
+      const up = await whatsappService.uploadMedia(blob, { conversationId: selected.id, fileName: 'audio.webm' });
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      const { message_id, evolution_message_id } = await whatsappService.sendAudio({
+        conversationId: selected.id, storagePath: up.storagePath, mimeType: up.mimeType,
+        fileName: up.fileName, replyToId: replyId,
+      });
+      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      void refreshMessages(selected.id);
+    } catch (err: any) {
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
+      toast.error('Falha ao enviar áudio', err.message);
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
+    }
+  };
+
+  const beginEdit = (m: WhatsAppMessage) => {
+    setEditing(m); setReplyTo(null); setDraft(m.content || '');
+  };
+
+  return (
+    <div className="flex h-full min-h-0 bg-[#faf9f7]">
+      {/* ── Lista de conversas ── */}
+      <aside style={{ width: listWidth }} className="flex-shrink-0 flex flex-col border-r border-[#e7e5df] bg-white min-h-0">
+        <div className="px-4 pt-4 pb-3 border-b border-[#e7e5df]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={18} className="text-amber-600" />
+              <h2 className="text-[15px] font-bold text-slate-800">WhatsApp</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
+                {anyConnected ? 'Online' : 'Offline'}
+              </span>
+              <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
+                <BarChart2 size={15} />
+              </button>
+              <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition">
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar conversa…"
+              className="w-full pl-9 pr-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-2.5">
+            <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)}
+              className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
+              <option value="all">Todos os canais</option>
+              {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
+            </select>
+            <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+              className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
+              <option value="all">Todos os setores</option>
+              {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <option value="none">Sem setor</option>
+            </select>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
+              <option value="all">Todos os status</option>
+              <option value="open">Abertas</option>
+              <option value="waiting_you">Aguardando você</option>
+              <option value="waiting_internal">Aguardando setor</option>
+              <option value="reopened">Reabertas</option>
+              <option value="closed">Encerradas</option>
+            </select>
+            <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
+              className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
+              <option value="">Todas as etiquetas</option>
+              {WA_LABELS.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+            </select>
+          </div>
+
+          {/* Abas de situação (restauradas): Todas / Não lidas / Minhas */}
+          <div className="flex items-center gap-1 mt-2.5">
+            {([
+              ['all', `Todas (${tabCounts.all})`],
+              ['unread', `Não lidas (${tabCounts.unread})`],
+              ['mine', `Minhas (${tabCounts.mine})`],
+            ] as [FilterTab, string][])
+              .map(([key, label]) => (
+                <button key={key} onClick={() => setFilter(key)}
+                  className={`px-3 py-1 rounded-full text-[12px] font-semibold transition ${filter === key ? 'bg-amber-600 text-white' : 'text-slate-500 hover:bg-[#f3f2ef]'}`}>
+                  {label}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {loadingConvs ? (
+            <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+          ) : filtered.length === 0 ? (
+            <div className="px-4 py-10 text-center text-[13px] text-slate-400">
+              Nenhuma conversa{search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.
+            </div>
+          ) : filtered.map(c => {
+            const active = c.id === selectedId;
+            const ch = c.instance_id ? channelById.get(c.instance_id) : null;
+            const dept = c.department_id ? deptById.get(c.department_id) : null;
+            const st = convStatus(c);
+            const sla = slaSignal(c);
+            const slaInt = slaInternalSignal(c);
+            // Borda esquerda colorida por severidade de SLA (radar operacional — Fase B).
+            const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
+              : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
+              : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
+              : slaInt?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
+              : '';
+            return (
+              <button key={c.id} onClick={() => setSelectedId(c.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
+                <div className="relative flex-shrink-0">
+                  <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={40} />
+                  {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13.5px] font-semibold text-slate-800 truncate flex items-center gap-1">
+                      {c.is_blocked && <Ban size={12} className="text-red-500 flex-shrink-0" />}
+                      <span className="truncate">{privateMode ? maskName(c.contact_name) : (c.contact_name || prettyPhone(c.contact_phone))}</span>
+                    </span>
+                    <span className="flex items-center gap-1 flex-shrink-0">
+                      {/* SLA como badge textual (Fase B): visível sem hover, substitui o dot invisível */}
+                      {sla
+                        ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
+                            <Clock size={9} />{sla.label}
+                          </span>
+                        : <span className="text-[10.5px] text-slate-400">{formatTime(c.last_message_at)}</span>}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <span className="text-[12px] text-slate-500 truncate">
+                      {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
+                    </span>
+                    {!c.is_blocked && c.unread_count > 0 && (
+                      <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${st.cls}`}>
+                      {st.key === 'blocked' && <Ban size={9} />}{st.label}
+                    </span>
+                    {(() => { const ds = effectiveDocStatus(c.client_id); return ds && (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
+                      </span>
+                    ); })()}
+                    {dept && (
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-semibold" style={{ background: (dept.color || '#16a34a') + '22', color: dept.color || '#16a34a' }}>
+                        {dept.name}
+                      </span>
+                    )}
+                    {/* Alerta de fila interna atrasada (Fase B) */}
+                    {slaInt && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+                        style={{ background: slaInt.color + '22', color: slaInt.color }}>
+                        <Clock size={9} /> {slaInt.label}
+                      </span>
+                    )}
+                    {!c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-500">
+                        <UserPlus size={9} /> Na fila
+                      </span>
+                    )}
+                    {(() => { const ta = transferAlert(c); return ta ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+                        style={{ background: ta.color + '22', color: ta.color }}>
+                        <ArrowRightLeft size={9} /> {ta.label}
+                      </span>
+                    ) : null; })()}
+                    {/* Fase N: abandono (>4h sem resposta com responsável atribuído) */}
+                    {(() => { const ab = abandonedSignal(c); return ab ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+                        style={{ background: '#7c3aed22', color: '#7c3aed' }}>
+                        <Clock size={9} /> {ab.label}
+                      </span>
+                    ) : null; })()}
+                    {/* Fase M: etiquetas da conversa */}
+                    {(c.labels ?? []).slice(0, 2).map(lbl => {
+                      const meta = WA_LABELS.find(x => x.key === lbl);
+                      return meta ? (
+                        <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"
+                          style={{ background: meta.bg, color: meta.color }}>
+                          <Tag size={8} />{lbl}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* Divisória arrastável lista ↔ thread (Fase 10.1) */}
+      <div onMouseDown={startListResize} title="Arraste para redimensionar"
+        className="hidden md:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
+
+      {/* ── Thread ── */}
+      <section className="relative flex-1 flex flex-col min-h-0 min-w-0"
+        onDragEnter={onThreadDragEnter} onDragOver={onThreadDragOver}
+        onDragLeave={onThreadDragLeave} onDrop={onThreadDrop}>
+        {dragOver && selected && (
+          <div className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 pointer-events-none">
+            <Paperclip size={32} className="text-amber-600" />
+            <p className="text-[15px] font-bold text-amber-800">Solte para enviar</p>
+            <p className="text-[12.5px] text-amber-700/80">Imagens, vídeos, áudios, PDFs e documentos · até 100 MB</p>
+          </div>
+        )}
+        {!selected ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
+            <MessageCircle size={40} className="opacity-30" />
+            <p className="text-[14px]">Selecione uma conversa para começar.</p>
+          </div>
+        ) : (
+          <>
+            <header className="flex items-center gap-3 px-5 py-3 border-b border-[#e7e5df] bg-white">
+              <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={36}
+                onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-bold text-slate-800 truncate">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || prettyPhone(selected.contact_phone))}</p>
+                <div className="flex items-center gap-2 text-[11.5px] text-slate-400">
+                  {(() => {
+                    const pr = presenceInfo(selected);
+                    if (!pr) return <span>{privateMode ? maskPhoneFull() : prettyPhone(selected.contact_phone)}</span>;
+                    return pr.live
+                      ? <span className="inline-flex items-center gap-1 font-semibold text-green-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> {pr.text}
+                        </span>
+                      : <span className="text-slate-500">{pr.text}</span>;
+                  })()}
+                  {selected.assigned_user_id && <span>· {staffByUser.get(selected.assigned_user_id) || 'Atribuído'}</span>}
+                  {selected.department_id && deptById.get(selected.department_id) && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: (deptById.get(selected.department_id)!.color || '#16a34a') + '22', color: deptById.get(selected.department_id)!.color || '#16a34a' }}>
+                      {deptById.get(selected.department_id)!.name}
+                    </span>
+                  )}
+                  {(() => { const st = convStatus(selected); return (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>{st.label}</span>
+                  ); })()}
+                  {(() => { const sla = slaSignal(selected); return sla ? (
+                    <span className="inline-flex items-center gap-1 font-semibold" style={{ color: sla.color }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: sla.color }} /> {sla.label}
+                    </span>
+                  ) : null; })()}
+                  {(() => { const ta = transferAlert(selected); return ta ? (
+                    <span className="inline-flex items-center gap-1 font-semibold" style={{ color: ta.color }}>
+                      <ArrowRightLeft size={11} /> {ta.label}
+                    </span>
+                  ) : null; })()}
+                </div>
+              </div>
+              {/* Ações em ícone com tooltip — não quebram o layout (Fase 10.1) */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
+                  <button onClick={handleAccept} title="Assumir este atendimento"
+                    className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition">
+                    <CheckCircle2 size={15} /> Aceitar
+                  </button>
+                )}
+                {/* Comandos de fila (atribuição direta, sem transferência) */}
+                {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
+                  <button onClick={handleAssume} title={selected.assigned_user_id ? 'Assumir este atendimento' : 'Assumir da fila'}
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition">
+                    <UserPlus size={16} />
+                  </button>
+                )}
+                {!selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
+                  <button onClick={handleRelease} title="Devolver à fila"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
+                    <UserMinus size={16} />
+                  </button>
+                )}
+                <button onClick={() => setTimelineOpen(true)} title="Histórico da conversa"
+                  className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+                  <History size={16} />
+                </button>
+                {selected.client_id && (
+                  <button onClick={() => setSummaryOpen(true)} title="Resumo por IA"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-violet-50 text-slate-600 hover:text-violet-600 flex items-center justify-center transition">
+                    <Sparkles size={16} />
+                  </button>
+                )}
+                {perms.canTransfer && (
+                  <button onClick={() => setTransferOpen(true)} title="Transferir conversa"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
+                    <ArrowRightLeft size={16} />
+                  </button>
+                )}
+                {selected.is_blocked ? (
+                  perms.canBlock && (
+                    <button onClick={handleUnblock} title="Desbloquear contato"
+                      className="flex-shrink-0 w-9 h-9 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition">
+                      <ShieldOff size={16} />
+                    </button>
+                  )
+                ) : (
+                  perms.canBlock && (
+                    <button onClick={() => setBlockOpen(true)} title="Bloquear contato"
+                      className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-red-50 text-slate-600 hover:text-red-600 flex items-center justify-center transition">
+                      <Ban size={16} />
+                    </button>
+                  )
+                )}
+                {selected.status === 'closed' ? (
+                  <button onClick={handleReopen} title="Reabrir conversa"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition">
+                    <RotateCcw size={16} />
+                  </button>
+                ) : (
+                  <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
+                    <CheckCircle2 size={16} />
+                  </button>
+                )}
+                {/* Fase L: exportar histórico */}
+                {messages.length > 0 && (
+                  <button onClick={handleExportConversation} title="Exportar histórico (.txt)"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+                    <Download size={16} />
+                  </button>
+                )}
+                <button onClick={() => setSelectedId(null)} title="Sair da conversa"
+                  className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+                  <X size={16} />
+                </button>
+              </div>
+            </header>
+
+            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} onDismissDocReady={() => dismissDocReady(selected.client_id!)} />}
+
+            {/* Fase J: banner de sessão de IA ativa */}
+            {aiSession?.status === 'active' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', background: '#ede9fe', borderBottom: '1px solid #ddd6fe' }}>
+                <Bot size={15} style={{ color: '#7c3aed', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#5b21b6' }}>Assistente IA em atendimento</span>
+                  <span style={{ fontSize: '11.5px', color: '#6d28d9', marginLeft: '8px' }}>
+                    {aiSession.turn_count} turno{aiSession.turn_count !== 1 ? 's' : ''} · passo {aiSession.current_step}
+                    {Object.keys(aiSession.collected_data || {}).length > 0 && ` · ${Object.keys(aiSession.collected_data).length} dado${Object.keys(aiSession.collected_data).length !== 1 ? 's' : ''} coletado${Object.keys(aiSession.collected_data).length !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
+                <button
+                  onClick={handleAssume}
+                  style={{ flexShrink: 0, padding: '4px 10px', borderRadius: '7px', background: '#7c3aed', color: '#fff', border: 'none', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}>
+                  Assumir atendimento
+                </button>
+              </div>
+            )}
+            {/* Fase O: banner de aprovação de resposta IA pendente */}
+            {aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
+              <AiApprovalBanner
+                session={aiSession}
+                onDone={async () => {
+                  const s = await whatsappService.getAiSession(selectedId!);
+                  setAiSession(s);
+                }}
+              />
+            )}
+            {aiSession && aiSession.status === 'handed_off' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: '#f0fdf4', borderBottom: '1px solid #bbf7d0' }}>
+                <Bot size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
+                <span style={{ fontSize: '11.5px', color: '#15803d', fontWeight: 600 }}>IA concluída — dados coletados disponíveis nas notas internas.</span>
+              </div>
+            )}
+
+            <div ref={threadRef} onScroll={onThreadScroll} className="flex-1 overflow-y-auto min-h-0" style={{ background: '#f3f2ef' }}>
+              <div ref={threadContentRef} className="px-5 py-4 space-y-1.5">
+              {loadingMsgs ? (
+                <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+              ) : (() => {
+                let prevDay = '';
+                return (<>
+                  {/* Botão de paginação: carrega bloco anterior de mensagens (Fase D) */}
+                  {hasMoreMsgs && (
+                    <div className="flex justify-center pb-2">
+                      <button onClick={loadMoreMsgs} disabled={loadingMore}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11.5px] font-semibold text-slate-500 bg-white shadow-sm border border-slate-200 hover:bg-slate-50 disabled:opacity-50 transition">
+                        {loadingMore ? <Loader2 size={12} className="animate-spin" /> : <ChevronUp size={12} />}
+                        {loadingMore ? 'Carregando…' : 'Carregar mensagens anteriores'}
+                      </button>
+                    </div>
+                  )}
+                  {/* Agrupa imagens consecutivas do mesmo remetente em álbuns (estilo WhatsApp) */}
+                  {(() => {
+                    const groupable = (x: WhatsAppMessage) => x.type === 'image' && !x.reply_to_id
+                      && x._local !== 'failed' && x.status !== 'failed' && x._local !== 'uploading' && x._local !== 'sending';
+                    const units: ({ kind: 'album'; items: WhatsAppMessage[] } | { kind: 'single'; m: WhatsAppMessage })[] = [];
+                    for (let i = 0; i < allMessages.length; i++) {
+                      const m = allMessages[i];
+                      if (groupable(m)) {
+                        const run = [m]; let j = i + 1;
+                        while (j < allMessages.length) {
+                          const n = allMessages[j];
+                          if (!groupable(n) || n.direction !== m.direction || (n.sender_user_id || null) !== (m.sender_user_id || null)) break;
+                          if (Math.abs(new Date(n.wa_timestamp).getTime() - new Date(allMessages[j - 1].wa_timestamp).getTime()) > 60000) break;
+                          run.push(n); j++;
+                        }
+                        if (run.length >= 2) { units.push({ kind: 'album', items: run }); i = j - 1; continue; }
+                      }
+                      units.push({ kind: 'single', m });
+                    }
+                    return units.map(u => {
+                      const head = u.kind === 'album' ? u.items[0] : u.m;
+                      const day = new Date(head.wa_timestamp).toDateString();
+                      const showDivider = day !== prevDay;
+                      prevDay = day;
+                      const senderName = head.direction === 'out' && head.sender_user_id ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null) : null;
+                      return (
+                        <React.Fragment key={u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id)}>
+                          {showDivider && <DateDivider label={dayLabel(head.wa_timestamp)} />}
+                          {u.kind === 'album' ? (
+                            <ImageAlbum items={u.items} out={head.direction === 'out'} senderName={senderName} onOpenImage={setLightbox} />
+                          ) : (
+                            <MessageBubble
+                              m={u.m}
+                              repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
+                              senderName={senderName}
+                              senderRole={u.m.direction === 'out' && u.m.sender_user_id ? (staffById.get(u.m.sender_user_id)?.role || null) : null}
+                              privateMode={privateMode}
+                              onReply={() => { setReplyTo(u.m); setEditing(null); }}
+                              onEdit={() => beginEdit(u.m)}
+                              onOpenImage={setLightbox}
+                              onRetry={() => retryPending(u.m)}
+                              onDiscard={() => discardPending(u.m)}
+                              onResend={() => resendExisting(u.m)}
+                              uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
+                              onCancel={u.m._local === 'uploading' && u.m._tempId ? () => cancelUpload(u.m._tempId!) : undefined}
+                              onCreateDeadline={selected?.client_id && !u.m._tempId ? () => setDeadlineSource(u.m) : undefined}
+                              onCreateTask={selected?.client_id && !u.m._tempId ? () => setTaskSource(u.m) : undefined}
+                            />
+                          )}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                  <ThreadScheduledGhosts conversationId={selected.id} privateMode={privateMode} />
+                </>);
+              })()}
+              </div>
+            </div>
+
+            {/* Banner de reply / edição */}
+            {(replyTo || editing) && !selected.is_blocked && (
+              <div className="px-4 pt-2 bg-white">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border-l-2 border-amber-500">
+                  {editing ? <Pencil size={14} className="text-amber-600 flex-shrink-0" /> : <CornerUpLeft size={14} className="text-amber-600 flex-shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-amber-700">{editing ? 'Editando mensagem' : `Respondendo${(replyTo!.direction === 'out') ? ' você' : ''}`}</p>
+                    <p className="text-[12px] text-slate-600 truncate">{(editing || replyTo)!.content || typeLabel((editing || replyTo)!.type)}</p>
+                  </div>
+                  <button onClick={() => { setReplyTo(null); setEditing(null); if (editing) setDraft(''); }} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+                </div>
+              </div>
+            )}
+
+            {/* Aviso de conversa encerrada (Fase 3) */}
+            {!selected.is_blocked && selected.status === 'closed' && (
+              <div className="px-4 pt-2 bg-white">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 border-l-2 border-slate-400">
+                  <CheckCircle2 size={14} className="text-slate-500 flex-shrink-0" />
+                  <p className="flex-1 text-[12px] text-slate-600">
+                    Atendimento encerrado{selected.closure_reason ? ` — ${selected.closure_reason}` : ''}. Reabre sozinho se o cliente voltar a falar.
+                  </p>
+                  <button onClick={handleReopen}
+                    className="flex-shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 hover:underline">
+                    <RotateCcw size={12} /> Reabrir
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Fase N: aviso de fora do horário de atendimento */}
+            {outsideHours && !selected.is_blocked && (
+              <div className="px-4 py-2 border-t border-amber-200 bg-amber-50 flex items-center gap-2">
+                <Clock size={14} className="text-amber-600 flex-shrink-0" />
+                <p className="flex-1 text-[12px] text-amber-800">{outsideHours.message}</p>
+                <button onClick={() => setOutsideHours(null)}
+                  className="flex-shrink-0 text-amber-400 hover:text-amber-700 text-[12px]">✕</button>
+              </div>
+            )}
+
+            {/* Composer (ou aviso de bloqueio) */}
+            {selected.is_blocked ? (
+              <div className="px-4 py-3 border-t border-[#e7e5df] bg-red-50/60 flex items-center gap-3">
+                <Ban size={16} className="text-red-500 flex-shrink-0" />
+                <p className="flex-1 text-[12.5px] text-red-700">
+                  Contato bloqueado{selected.blocked_reason ? ` — ${selected.blocked_reason}` : ''}. Desbloqueie para enviar mensagens.
+                </p>
+                <button onClick={handleUnblock}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-[12.5px] font-semibold hover:bg-red-100 transition">
+                  <ShieldOff size={14} /> Desbloquear
+                </button>
+              </div>
+            ) : (
+            <div className="px-4 py-3 border-t border-[#e7e5df] bg-white">
+              {recording ? (
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-2 text-[13px] font-semibold text-red-600">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+                    Gravando… {String(Math.floor(recSeconds / 60)).padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
+                  </span>
+                  <div className="flex-1" />
+                  <button onClick={() => stopRecording(false)} className="px-3 py-2 text-[13px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
+                  <button onClick={() => stopRecording(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-amber-600 text-white text-[13px] font-semibold hover:bg-amber-700">
+                    <Send size={15} /> Enviar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  {!editing && (
+                    <>
+                      <input ref={imgInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => onPickFiles(e, 'media')} />
+                      <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
+                      <button title="Imagem ou vídeo" onClick={() => imgInputRef.current?.click()}
+                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><ImageIcon size={18} /></button>
+                      <button title="Documento" onClick={() => docInputRef.current?.click()}
+                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><Paperclip size={18} /></button>
+                      <button title="Usar modelo de mensagem" onClick={() => setTemplateOpen(true)}
+                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><MessageSquare size={18} /></button>
+                      {perms.canSchedule && (
+                        <button title="Agendar mensagem" onClick={() => setScheduleOpen(true)}
+                          className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><CalendarClock size={18} /></button>
+                      )}
+                      {messages.length > 0 && (
+                        <button title="Sugerir resposta com IA" onClick={handleSuggestReply} disabled={suggesting}
+                          className="flex-shrink-0 w-9 h-9 rounded-full text-violet-500 hover:bg-violet-50 flex items-center justify-center transition disabled:opacity-40">
+                          {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={16} />}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <div className="relative flex-1">
+                    {/* Menu do atalho "/" — modelos de mensagem (estilo WhatsApp) */}
+                    {slashActive && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 z-30 rounded-xl border border-[#e7e5df] bg-white shadow-xl overflow-hidden">
+                        <div className="px-3 py-1.5 bg-[#f0f2f5] text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                          <MessageSquare size={11} /> Modelos {slashMatch![1] ? `· /${slashMatch![1]}` : '· digite para filtrar'}
+                        </div>
+                        <div className="max-h-56 overflow-y-auto">
+                          {slashResults.map((t, i) => (
+                            <button key={t.id} onMouseEnter={() => setSlashIndex(i)} onClick={() => applyTemplate(t)}
+                              className={`w-full text-left px-3 py-2 transition ${i === slashIdx ? 'bg-[#00a884]/10' : 'hover:bg-slate-50'}`}>
+                              <p className="text-[12.5px] font-semibold text-slate-700"><span className="text-[#00a884]">/</span>{t.name}</p>
+                              <p className="text-[11.5px] text-slate-500 line-clamp-1 whitespace-pre-wrap break-words">{renderTemplate(t.body, templateCtx)}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <textarea value={draft} onChange={e => setDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (slashActive) {
+                          if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, slashResults.length - 1)); return; }
+                          if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); applyTemplate(slashResults[slashIdx]); return; }
+                          if (e.key === 'Escape') { e.preventDefault(); setDraft(''); return; }
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                        if (e.key === 'Escape') { setEditing(null); setReplyTo(null); }
+                      }}
+                      rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…  (use / para modelos)'}
+                      className="w-full resize-none max-h-32 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                  </div>
+                  {draft.trim() || editing ? (
+                    <button onClick={handleSend} disabled={sending || !draft.trim()}
+                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 disabled:opacity-40 transition">
+                      {sending ? <Loader2 size={16} className="animate-spin" /> : editing ? <Check size={18} /> : <Send size={16} />}
+                    </button>
+                  ) : (
+                    <button title="Gravar áudio" onClick={startRecording}
+                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 transition">
+                      <Mic size={18} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* ── Painel do contato ── */}
+      {selected && (
+        <div onMouseDown={startPanelResize} title="Arraste para redimensionar"
+          className="hidden xl:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
+      )}
+      {selected && (
+        <aside style={{ width: panelWidth }}
+          className="flex-shrink-0 border-l border-[#e7e5df] bg-white p-3.5 hidden xl:flex flex-col gap-3 overflow-y-auto min-h-0">
+          {/* Header compacto: avatar + nome + telefone numa linha */}
+          <div className="flex items-center gap-2.5 pb-3 border-b border-[#f1f0ec]">
+            <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={40}
+              onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
+            <div className="min-w-0">
+              <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || 'Contato')}</p>
+              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                <Phone size={11} className="text-slate-300 flex-shrink-0" /> {privateMode ? maskPhoneFull() : prettyPhone(selected.contact_phone)}
+              </p>
+            </div>
+          </div>
+
+          {/* Atendimento: Responsável; Setor + Etiqueta lado a lado; transferir */}
+          <div className="space-y-1.5">
+            <div className="min-w-0">
+              <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
+              <p className="text-[12px] font-semibold text-slate-700 truncate">{selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 items-start">
+              <div className="min-w-0">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Setor</p>
+                <p className="text-[12px] font-semibold text-slate-700 truncate">{selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Etiquetas</p>
+                <ConversationLabelsPanel
+                  conversation={selected}
+                  onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
+                />
+              </div>
+            </div>
+            <button onClick={() => setTransferOpen(true)}
+              className="w-full inline-flex items-center justify-center gap-1.5 py-1 rounded-md border border-[#e7e5df] text-[11px] font-semibold text-slate-500 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition">
+              <ArrowRightLeft size={12} /> Transferir conversa
+            </button>
+          </div>
+
+          {/* Assunto detectado pela IA (somente leitura; preenchido ao encerrar o atendimento) */}
+          {selected.contact_reason && (
+            <div className="space-y-1">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <Sparkles size={10} className="text-violet-500" /> Assunto (IA)
+              </p>
+              <p className="text-[12.5px] text-slate-700 break-words">{selected.contact_reason}</p>
+            </div>
+          )}
+
+          {/* Fase K: extração de dados por IA */}
+          {messages.length >= 2 && (
+            <div className="space-y-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                Dados extraídos
+                <button onClick={handleExtractData} disabled={extracting} title="Extrair dados estruturados da conversa com IA"
+                  className="ml-auto inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold text-violet-600 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 transition">
+                  {extracting ? <Loader2 size={8} className="animate-spin" /> : <Sparkles size={8} />} Extrair
+                </button>
+              </p>
+              {extractedData && (
+                Object.keys(extractedData).length === 0 ? (
+                  <p className="text-[11.5px] text-slate-400">Nenhum dado estruturado identificado.</p>
+                ) : (
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 px-2.5 py-2 space-y-1">
+                    {Object.entries(extractedData).map(([k, v]) => (
+                      <div key={k} className="flex gap-1.5 text-[11.5px]">
+                        <span className="font-semibold text-slate-500 capitalize min-w-[60px]">{k}:</span>
+                        <span className="text-slate-700 break-words">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          {/* Fase K: checklist de pendências do playbook IA */}
+          {aiSession?.status === 'active' && aiSession.playbook_id && (() => {
+            const collected = aiSession.collected_data || {};
+            const missing = Object.keys(collected).length === 0 ? [] : [];
+            // Show what's been collected so far
+            const keys = Object.keys(collected);
+            if (keys.length === 0) return null;
+            return (
+              <div className="space-y-1.5">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Bot size={10} /> IA coletou
+                </p>
+                <div className="rounded-lg border border-violet-100 bg-violet-50/30 px-2.5 py-2 space-y-1">
+                  {keys.map(k => (
+                    <div key={k} className="flex gap-1.5 items-start text-[11px]">
+                      <Check size={10} className="text-violet-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-slate-700 break-words"><span className="font-semibold capitalize">{k}:</span> {collected[k]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Perfil/cliente sempre visível — vincular, desvincular, editar e ver cadastro acessíveis */}
+          <ClientLinkPanel
+            conversation={selected}
+            onChanged={loadConversations}
+            onOpenWorkspace={openWa}
+          />
+
+          {/* Notas internas sempre visíveis — adicionar comentário rápido para a equipe */}
+          <InternalNotesSection conversationId={selected.id} staffByUser={staffByUser} currentUserId={user?.id ?? null} confirm={confirm} />
+
+          <ScheduledMessagesPanel conversationId={selected.id} canSchedule={perms.canSchedule} confirm={confirm} />
+
+          {/* 360: Ações do cliente — tudo vinculado ao cliente desta conversa */}
+          {selected.client_id && (
+            <div className="space-y-1.5">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { label: 'Lançamento', icon: <HandCoins size={15} />, on: () => openWa({ type: 'financial_create', clientId: selected.client_id!, clientName: selected.contact_name || undefined }) },
+                { label: 'Prazo', icon: <Clock size={15} />, on: () => openWa({ type: 'deadline_create', clientId: selected.client_id! }) },
+                { label: 'Agenda', icon: <Calendar size={15} />, on: () => openWa({ type: 'calendar_create', clientId: selected.client_id! }) },
+                { label: 'Documento', icon: <FileText size={15} />, on: () => openWa({ type: 'document_generate', clientId: selected.client_id!, clientName: selected.contact_name || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
+                { label: 'Pedir doc.', icon: <FilePlus size={15} />, on: () => setDocRequestOpen(true) },
+              ].map(a => (
+                <button key={a.label} onClick={a.on}
+                  className="flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border border-[#e7e5df] text-slate-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 transition">
+                  <span className="text-amber-600">{a.icon}</span>
+                  <span className="text-[10px] font-semibold leading-none">{a.label}</span>
+                </button>
+              ))}
+            </div>
+            </div>
+          )}
+
+          {/* 360: Casos (processos + requerimentos) com ações inline */}
+          {selected.client_id && (
+            <CasosPanel
+              clientId={selected.client_id}
+              clientName={selected.contact_name || undefined}
+              processes={overview?.processes ?? null}
+              pendings={overview?.pendings ?? null}
+              onOpenWorkspace={openWa}
+            />
+          )}
+
+          {/* 360: Prazos (lista; criar pela barra de ações do cliente) */}
+          {selected.client_id && <ClientAgendaPanel schedule={overview?.schedule ?? null} />}
+
+          {selected.client_id && <ClientPendingsPanel pendings={overview?.pendings ?? null} confirm={confirm} onChanged={reloadOverview} />}
+          {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.contact_name || undefined} />}
+          {selected.client_id && <ClientSignaturesPanel signatures={overview?.signatures ?? null} />}
+
+          {/* 360: Financeiro — acordos clicáveis abrem detalhes em modal */}
+          {selected.client_id && (
+            <ClientAgreementsPanel
+              agreements={overview?.agreements ?? null}
+              onOpenWorkspace={openWa}
+            />
+          )}
+
+          {/* Fase L: Governança — rodapé compacto */}
+          <div className="space-y-1.5 pt-2 border-t border-[#f1f0ec]">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Governança</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {/* Modo privado: mascara CPF/telefone no conteúdo visível */}
+              <button onClick={() => setPrivateMode(v => !v)}
+                className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] font-semibold transition ${
+                  privateMode
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-[#f3f2ef] text-slate-500 hover:bg-slate-200'
+                }`}>
+                {privateMode ? <EyeOff size={12} /> : <Eye size={12} />}
+                {privateMode ? 'Privado ativo' : 'Modo privado'}
+              </button>
+              {/* Guarda jurídica: impede purga pela política de retenção */}
+              <button onClick={handleToggleLegalHold}
+                className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] font-semibold transition ${
+                  selected.legal_hold
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-[#f3f2ef] text-slate-500 hover:bg-amber-50 hover:text-amber-700'
+                }`}>
+                {selected.legal_hold ? <ShieldCheck size={12} /> : <Shield size={12} />}
+                {selected.legal_hold ? 'Guarda ativa' : 'Guarda jur.'}
+              </button>
+            </div>
+            {selected.legal_hold && selected.legal_hold_reason && (
+              <p className="text-[10px] text-amber-700 px-0.5">{selected.legal_hold_reason}</p>
+            )}
+          </div>
+        </aside>
+      )}
+
+      {transferOpen && selected && (
+        <TransferModal
+          conversation={selected}
+          departments={departments}
+          staff={staff}
+          onClose={() => setTransferOpen(false)}
+          onDone={async () => { setTransferOpen(false); setSelectedId(null); await loadConversations(); }}
+        />
+      )}
+
+      {newConvOpen && (
+        <NewConversationModal
+          channels={connectedChannels}
+          onClose={() => setNewConvOpen(false)}
+          onOpened={handleConversationOpened}
+        />
+      )}
+
+      {timelineOpen && selected && (
+        <ConversationTimelineModal
+          conversation={selected}
+          staffByUser={staffByUser}
+          onClose={() => setTimelineOpen(false)}
+        />
+      )}
+
+      {attachStaged && selected && (
+        <AttachmentPreviewModal
+          files={attachStaged}
+          onClose={() => setAttachStaged(null)}
+          onConfirm={confirmStagedSend}
+        />
+      )}
+
+      {confirmPending && <ConfirmDialog opts={confirmPending} onResolve={resolveConfirm} />}
+
+      {/* WhatsApp 360: workspace modal para criar/editar entidades do CRM sem sair da conversa */}
+      <WaWorkspaceRenderer
+        modal={workspace}
+        onClose={closeWa}
+        onSaved={(type) => {
+          // Atualiza só o domínio afetado, mantendo scroll e seleção da conversa
+          if (['process', 'requirement', 'deadline', 'calendar', 'financial', 'client', 'document'].includes(type)) {
+            if (selected?.client_id) {
+              whatsappService.getClientOverview(selected.client_id).then(ov => ov && setOverview(ov)).catch(() => {});
+            }
+          }
+          closeWa();
+        }}
+      />
+
+      {templateOpen && selected && (
+        <TemplatePickerModal
+          context={templateCtx}
+          onClose={() => { setTemplateOpen(false); reloadTemplates(); }}
+          onPick={(text) => { setDraft(d => d ? `${d} ${text}` : text); setTemplateOpen(false); reloadTemplates(); }}
+        />
+      )}
+
+      {scheduleOpen && selected && (
+        <ScheduleMessageModal
+          conversation={selected}
+          initialText={draft}
+          onClose={() => setScheduleOpen(false)}
+          onDone={() => { setScheduleOpen(false); setDraft(''); }}
+        />
+      )}
+
+      {blockOpen && selected && (
+        <BlockContactModal
+          conversation={selected}
+          onClose={() => setBlockOpen(false)}
+          onDone={(reason) => {
+            setBlockOpen(false);
+            setConversations(prev => prev.map(c => c.id === selected.id
+              ? { ...c, is_blocked: true, blocked_at: new Date().toISOString(), blocked_reason: reason } : c));
+          }}
+        />
+      )}
+
+      {closeOpen && selected && (
+        <CloseConversationModal
+          conversation={selected}
+          agent={user ? staffById.get(user.id) : null}
+          onClose={() => setCloseOpen(false)}
+          onDone={async () => {
+            setCloseOpen(false);
+            // IA analisa a conversa encerrada e registra o motivo do contato (2º plano,
+            // não bloqueia o fechamento). O closure ainda enxerga a conversa atual.
+            handleAiClassify().catch(() => { /* best-effort */ });
+            setSelectedId(null);
+            await loadConversations();
+          }}
+        />
+      )}
+
+      {lightbox && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+          <button className="absolute top-5 right-5 text-white/80 hover:text-white"><X size={26} /></button>
+        </div>
+      )}
+
+      {/* Fase M: dashboard de atendimento */}
+      {showDashboard && (
+        <AttendanceDashboard onClose={() => setShowDashboard(false)} />
+      )}
+
+      {/* Fase M: modal de resumo automático por IA */}
+      {summaryOpen && selected && (
+        <ConversationSummaryModal
+          conversation={selected}
+          staffByUser={staffByUser}
+          onClose={() => setSummaryOpen(false)}
+        />
+      )}
+
+      {/* Fase I: modal de solicitação de documento */}
+      {docRequestOpen && selected && selected.client_id && (
+        <RequestDocumentModal
+          conversationId={selected.id}
+          clientId={selected.client_id}
+          clientName={selected.contact_name}
+          createdBy={user?.id ?? null}
+          onClose={() => setDocRequestOpen(false)}
+          onCreated={reloadOverview}
+        />
+      )}
+
+      {/* Fase H: modais de ação jurídica a partir de mensagem */}
+      {deadlineSource && selected && (
+        <CreateDeadlineFromMessageModal
+          message={deadlineSource}
+          clientId={selected.client_id!}
+          processes={overview?.processes ?? []}
+          onClose={() => setDeadlineSource(null)}
+        />
+      )}
+      {taskSource && selected && (
+        <CreateTaskFromMessageModal
+          message={taskSource}
+          clientId={selected.client_id!}
+          processes={overview?.processes ?? []}
+          onClose={() => setTaskSource(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ── Bolha de mensagem ──
+/** Fase L: oculta CPF (###.###.###-##) e telefones (10-13 dígitos) no texto. */
+function maskSensitive(text: string): string {
+  return text
+    .replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '***.***.***-**')
+    .replace(/\b(\+?55\s?)?(\(?\d{2}\)?\s?)(\d{4,5}[-\s]?\d{4})\b/g, '(**) *****-****');
+}
+/** Fase L: no modo privado, reduz o nome do contato a iniciais (preserva orientação visual sem expor o nome). */
+function maskName(name: string | null): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'Contato';
+  return parts.map(p => `${p[0].toUpperCase()}•••`).join(' ');
+}
+/** Fase L: telefone totalmente oculto no modo privado. */
+function maskPhoneFull(): string { return '•••• ••••'; }
+
+const MessageBubble: React.FC<{
+  m: WhatsAppMessage;
+  repliedTo: WhatsAppMessage | null;
+  senderName: string | null;
+  senderRole?: string | null;
+  privateMode?: boolean;
+  onReply: () => void;
+  onEdit: () => void;
+  onOpenImage: (url: string) => void;
+  onRetry?: () => void;
+  onDiscard?: () => void;
+  onResend?: () => void;
+  uploadProgress?: number;
+  onCancel?: () => void;
+  onCreateDeadline?: () => void;
+  onCreateTask?: () => void;
+}> = ({ m, repliedTo, senderName, senderRole, privateMode, onReply, onEdit, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
+  const out = m.direction === 'out';
+  const failed = m._local === 'failed' || m.status === 'failed';
+  const busy = m._local === 'uploading' || m._local === 'sending';
+  // Reenvio rápido: só faz sentido para mídia já entregue (com objeto no storage).
+  const canResend = out && !busy && !failed && m.type !== 'text' && !!m.storage_path;
+
+  return (
+    <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
+      {/* Ações (hover) */}
+      {out && (
+        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
+          {m.type === 'text' && m.evolution_message_id && (
+            <button title="Editar" onClick={onEdit} className="text-slate-400 hover:text-amber-600"><Pencil size={13} /></button>
+          )}
+          {canResend && onResend && (
+            <button title="Reenviar arquivo" onClick={onResend} className="text-slate-400 hover:text-amber-600"><RotateCcw size={13} /></button>
+          )}
+          {onCreateDeadline && <button title="Criar prazo" onClick={onCreateDeadline} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
+          {onCreateTask && <button title="Criar tarefa" onClick={onCreateTask} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
+          <button title="Responder" onClick={onReply} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
+        </div>
+      )}
+
+      <div className={`max-w-[70%] rounded-2xl px-3 py-2 text-[13.5px] leading-snug shadow-sm ${out ? 'bg-amber-600 text-white rounded-br-sm' : 'bg-white text-slate-800 rounded-bl-sm'}`}>
+        {senderName && (
+          <span className={`flex items-center gap-1 text-[11px] font-bold mb-0.5 ${out ? 'text-amber-100' : 'text-amber-700'}`}>
+            {senderName}
+            {senderRole && (
+              <span className={`px-1 py-px rounded text-[9px] font-semibold uppercase tracking-wide ${out ? 'bg-amber-500/40 text-amber-50' : 'bg-amber-100 text-amber-700'}`}>{senderRole}</span>
+            )}
+          </span>
+        )}
+
+        {repliedTo && (
+          <div className={`mb-1 px-2 py-1 rounded-md border-l-2 text-[12px] ${out ? 'bg-amber-500/40 border-amber-200' : 'bg-slate-100 border-amber-400'}`}>
+            <span className={`block font-semibold ${out ? 'text-amber-50' : 'text-amber-700'}`}>{repliedTo.direction === 'out' ? 'Você' : 'Contato'}</span>
+            <span className={`block truncate ${out ? 'text-amber-50/90' : 'text-slate-500'}`}>{repliedTo.content || typeLabel(repliedTo.type)}</span>
+          </div>
+        )}
+
+        <MediaContent m={m} out={out} onOpenImage={onOpenImage} />
+
+        {m.content && m.type !== 'text' && (
+          <span className="block mt-1 whitespace-pre-wrap break-words">
+            {privateMode ? maskSensitive(m.content) : m.content}
+          </span>
+        )}
+        {m.content && m.type === 'text' && (
+          <span className="whitespace-pre-wrap break-words">
+            {(() => {
+              const raw = out ? m.content.replace(/^\*[^*]+:\*\n/, '') : m.content;
+              return privateMode ? maskSensitive(raw) : raw;
+            })()}
+          </span>
+        )}
+
+        <span className={`flex items-center gap-1 justify-end mt-1 text-[10px] ${out ? 'text-amber-100' : 'text-slate-400'}`}>
+          {m.edited_at && <span className="italic opacity-80">editado</span>}
+          {busy && <Loader2 size={11} className="animate-spin" />}
+          {formatTime(m.wa_timestamp)}
+          {out && !busy && (failed
+            ? <AlertCircle size={12} className="text-red-200" />
+            : m.status === 'read'
+              ? <CheckCheck size={12} className="text-sky-300" />
+            : m.status === 'delivered'
+              ? <CheckCheck size={12} className="opacity-60" />
+            : <Check size={12} className="opacity-60" />)}
+        </span>
+
+        {/* Barra de progresso de upload + botão cancelar (Fase D) */}
+        {m._local === 'uploading' && uploadProgress !== undefined && (
+          <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex-1 h-1 rounded-full bg-amber-400/30 overflow-hidden">
+              <div className="h-full bg-amber-200 rounded-full transition-[width] duration-300"
+                style={{ width: `${uploadProgress}%` }} />
+            </div>
+            <span className="text-[10px] text-amber-100 tabular-nums">{uploadProgress}%</span>
+            {onCancel && (
+              <button onClick={onCancel} title="Cancelar envio"
+                className="text-amber-100 hover:text-white transition leading-none">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Falha no envio: tentar de novo ou descartar da fila */}
+        {failed && m._tempId && (onRetry || onDiscard) && (
+          <span className="flex items-center gap-2 justify-end mt-1 text-[11px] font-semibold">
+            <span className="text-red-100">Não enviado</span>
+            {onRetry && <button onClick={onRetry} className="underline hover:no-underline text-white/90">Tentar de novo</button>}
+            {onDiscard && <button onClick={onDiscard} className="text-white/70 hover:text-white">Descartar</button>}
+          </span>
+        )}
+      </div>
+
+      {!out && (
+        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
+          <button title="Responder" onClick={onReply} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
+          {onCreateDeadline && <button title="Criar prazo" onClick={onCreateDeadline} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
+          {onCreateTask && <button title="Criar tarefa" onClick={onCreateTask} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Conteúdo de mídia por tipo ──
+const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (url: string) => void }> = ({ m, out, onOpenImage }) => {
+  if (m.type === 'text') return null;
+  const url = m.media_url;
+
+  if (m.type === 'image') {
+    return url
+      ? <img src={url} alt={m.content || 'imagem'} onClick={() => onOpenImage(url)}
+          className="rounded-lg max-w-[260px] max-h-[300px] object-cover cursor-pointer" />
+      : <MediaPlaceholder label={typeLabel('image')} />;
+  }
+
+  if (m.type === 'video') {
+    return url
+      ? <video src={url} controls className="rounded-lg max-w-[260px] max-h-[300px]" />
+      : <MediaPlaceholder label={typeLabel('video')} />;
+  }
+
+  if (m.type === 'audio') {
+    return (
+      <div className="min-w-[220px]">
+        {url ? <audio src={url} controls className="w-full h-9" />
+          : <MediaPlaceholder label={typeLabel('audio')} />}
+        {m.transcription_status === 'pending' && (
+          <span className={`flex items-center gap-1 mt-1 text-[11px] italic ${out ? 'text-amber-100' : 'text-slate-400'}`}><Loader2 size={11} className="animate-spin" /> Transcrevendo…</span>
+        )}
+        {m.transcription_status === 'done' && m.transcription_text && (
+          <p className={`mt-1 text-[12px] italic ${out ? 'text-amber-50/90' : 'text-slate-500'}`}>“{m.transcription_text}”</p>
+        )}
+        {m.transcription_status === 'failed' && (
+          <span className={`block mt-1 text-[11px] italic ${out ? 'text-amber-100/70' : 'text-slate-400'}`}>Transcrição indisponível</span>
+        )}
+      </div>
+    );
+  }
+
+  // documento
+  return (
+    <a href={url || undefined} target="_blank" rel="noreferrer" download={m.file_name || undefined}
+      className={`flex items-center gap-2.5 min-w-[200px] px-2 py-1.5 rounded-lg ${out ? 'bg-amber-500/40 hover:bg-amber-500/60' : 'bg-slate-100 hover:bg-slate-200'} transition`}>
+      <span className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${out ? 'bg-amber-100 text-amber-700' : 'bg-white text-amber-600'}`}><FileText size={18} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12.5px] font-semibold truncate">{m.file_name || 'Documento'}</span>
+        <span className={`block text-[11px] ${out ? 'text-amber-50/80' : 'text-slate-400'}`}>{formatBytes(m.media_size)}</span>
+      </span>
+      {url && <Download size={16} className={out ? 'text-amber-50' : 'text-slate-400'} />}
+    </a>
+  );
+};
+
+const MediaPlaceholder: React.FC<{ label: string }> = ({ label }) => (
+  <span className="flex items-center gap-1.5 text-[12px] opacity-80"><Loader2 size={12} className="animate-spin" /> {label}</span>
+);
+
+// ── Álbum de imagens (estilo WhatsApp) — agrupa imagens enviadas juntas ──
+// Mostra até 4 miniaturas num grid; "+N" no excedente. Legenda da 1ª imagem e
+// hora/status da última, como no WhatsApp. Cada célula abre o lightbox.
+const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName: string | null; onOpenImage: (url: string) => void }> = ({ items, out, senderName, onOpenImage }) => {
+  const shown = items.slice(0, 4);
+  const extra = items.length - shown.length;
+  const last = items[items.length - 1];
+  const caption = items.find(i => i.content)?.content || '';
+  const busy = items.some(i => i._local === 'uploading' || i._local === 'sending');
+  return (
+    <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-[280px] rounded-2xl p-1.5 shadow-sm ${out ? 'bg-amber-600 rounded-br-sm' : 'bg-white rounded-bl-sm'}`}>
+        {senderName && <span className={`block px-1 pt-0.5 pb-1 text-[11px] font-bold ${out ? 'text-amber-100' : 'text-amber-700'}`}>{senderName}</span>}
+        <div className={`grid gap-1 w-64 ${shown.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {shown.map((m, i) => {
+            const overlay = i === shown.length - 1 && extra > 0;
+            return (
+              <button key={m._tempId || m.id} onClick={() => m.media_url && onOpenImage(m.media_url)}
+                className="relative aspect-square overflow-hidden rounded-lg bg-black/10">
+                {m.media_url
+                  ? <img src={m.media_url} alt={m.content || 'imagem'} className="w-full h-full object-cover hover:opacity-95 transition" />
+                  : <span className="w-full h-full flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white/70" /></span>}
+                {overlay && <span className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-[18px] font-bold">+{extra}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {caption && <p className={`px-1 pt-1.5 text-[13px] leading-snug whitespace-pre-wrap break-words ${out ? 'text-white' : 'text-slate-800'}`}>{caption}</p>}
+        <span className={`flex items-center gap-1 justify-end px-1 pt-1 text-[10px] ${out ? 'text-amber-100' : 'text-slate-400'}`}>
+          {busy && <Loader2 size={11} className="animate-spin" />}
+          {formatTime(last.wa_timestamp)}
+          {out && !busy && (last.status === 'read' ? <CheckCheck size={12} className="text-sky-300" /> : last.status === 'delivered' ? <CheckCheck size={12} className="opacity-60" /> : <Check size={12} className="opacity-60" />)}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ── Modal de transferência ──
+const TransferModal: React.FC<{
+  conversation: WhatsAppConversation;
+  departments: WhatsAppDepartment[];
+  staff: StaffOption[];
+  onClose: () => void;
+  onDone: () => void;
+}> = ({ conversation, departments, staff, onClose, onDone }) => {
+  const toast = useToastContext();
+  const [dept, setDept] = useState<string>(conversation.department_id || '');
+  const [person, setPerson] = useState<string>(conversation.assigned_user_id || '');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const hasDestination = !!dept || !!person;
+  const canSubmit = hasDestination;
+
+  // Monta a mensagem automática ao cliente conforme o destino (Fase 2):
+  // por pessoa usa o tratamento (Dr./Dra.); por setor usa o nome do setor.
+  const buildTransferMessage = (): string | null => {
+    if (person) {
+      const target = staff.find(s => s.user_id === person);
+      const label = agentLabel(target) || target?.name;
+      if (label) return `Aguarde um instante, estamos encaminhando seu atendimento para ${label}.`;
+    }
+    if (dept) {
+      const d = departments.find(x => x.id === dept);
+      if (d) return `Aguarde um instante, estamos encaminhando seu atendimento para o setor ${d.name}.`;
+    }
+    return null;
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSaving(true);
+    try {
+      await whatsappService.transferConversation({
+        conversationId: conversation.id,
+        toDepartmentId: dept || null,
+        toUserId: person || null,
+        note: note.trim() || undefined,
+      });
+      // Transferência nunca muda: avisa o cliente automaticamente (best-effort).
+      const msg = buildTransferMessage();
+      if (msg && !conversation.is_blocked) {
+        try { await whatsappService.sendText({ conversationId: conversation.id, text: msg }); }
+        catch { /* aviso é best-effort; a transferência já foi registrada */ }
+      }
+      onDone();
+    } catch (err: any) {
+      toast.error('Falha ao transferir', err.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Transferir conversa"
+      icon={<ArrowRightLeft size={18} />}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={submit} disabled={saving || !canSubmit}
+            title={!hasDestination ? 'Escolha um setor ou responsável' : undefined}
+            className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />} Transferir
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <label className={waLabel}>Departamento</label>
+        <select value={dept} onChange={e => setDept(e.target.value)} className={`${waInput} mb-3`}>
+          <option value="">Nenhum</option>
+          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+
+        <label className={waLabel}>Responsável</label>
+        <select value={person} onChange={e => setPerson(e.target.value)} className={`${waInput} mb-3`}>
+          <option value="">Ninguém</option>
+          {staff.map(s => <option key={s.user_id} value={s.user_id}>{s.name}</option>)}
+        </select>
+
+        <label className={waLabel}>Motivo da transferência <span className="font-normal text-slate-400">(opcional, interno)</span></label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Ex: cliente quer falar com o financeiro"
+          className={`${waInput} mb-1 resize-none`} />
+        <p className="text-[11px] text-slate-400">O motivo fica só no histórico interno. O cliente recebe um aviso automático de encaminhamento.</p>
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Vínculo conversa ↔ cliente ──
+const prettyDoc = (doc: string | null) => {
+  if (!doc) return '';
+  const d = doc.replace(/\D/g, '');
+  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  return doc;
+};
+
+// ── Seção recolhível (acordeão) para economizar espaço no painel ──
+const CollapsibleSection: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}> = ({ icon, title, defaultOpen = false, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border border-[#e7e5df] overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-[#f9f8f6] transition">
+        <span className="text-amber-600 flex-shrink-0">{icon}</span>
+        <span className="flex-1 text-left text-[12.5px] font-semibold text-slate-700">{title}</span>
+        <ChevronRight size={15} className={`text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && <div className="px-3 pb-3 border-t border-[#f1f0ec]">{children}</div>}
+    </div>
+  );
+};
+
+const ClientLinkPanel: React.FC<{
+  conversation: WhatsAppConversation;
+  onChanged: () => void;
+  onOpenWorkspace: (modal: WaModal) => void;
+  embedded?: boolean;
+}> = ({ conversation, onChanged, onOpenWorkspace, embedded }) => {
+  const toast = useToastContext();
+  const [client, setClient] = useState<WhatsAppClientLite | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [autoChecking, setAutoChecking] = useState(false);
+  const [candidates, setCandidates] = useState<WhatsAppClientLite[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Fase E: criação inline de contato
+  const [createMode, setCreateMode] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  // Fase E: oferta de atualização de telefone após vincular
+  const [phonePrompt, setPhonePrompt] = useState<{ clientId: string; name: string } | null>(null);
+  const [addingPhone, setAddingPhone] = useState(false);
+  // Fase F: histórico de conversas anteriores do cliente
+  type PastConv = Pick<WhatsAppConversation, 'id' | 'contact_phone' | 'status' | 'last_message_at' | 'last_message_preview' | 'last_message_direction' | 'closed_at' | 'contact_reason'>;
+  const [history, setHistory] = useState<PastConv[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setClient(null); setCandidates([]); setCreateMode(false);
+    setHistory([]); setHistoryOpen(false);
+    if (conversation.client_id) {
+      setLoading(true);
+      whatsappService.getClient(conversation.client_id)
+        .then(c => { if (alive) setClient(c); })
+        .finally(() => { if (alive) setLoading(false); });
+      // Carrega histórico de conversas anteriores em paralelo (Fase F).
+      whatsappService.listConversationsByClient(conversation.client_id, conversation.id)
+        .then(h => { if (alive) setHistory(h); })
+        .catch(() => {});
+    } else {
+      setPhonePrompt(null);
+      // 1 match → vincula automático. Vários → lista para escolher (anti-ambiguidade).
+      setAutoChecking(true);
+      whatsappService.matchClientsByPhone(conversation.contact_phone)
+        .then(list => {
+          if (!alive) return;
+          if (list.length === 1) return whatsappService.linkClient(conversation.id, list[0].id).then(onChanged);
+          setCandidates(list);
+        })
+        .catch(() => {})
+        .finally(() => { if (alive) setAutoChecking(false); });
+    }
+    return () => { alive = false; };
+  }, [conversation.id, conversation.client_id, conversation.contact_phone, onChanged]);
+
+  // Vincula e, se o telefone da conversa não estiver no cadastro, oferece adicioná-lo.
+  const link = async (clientId: string | null, picked?: WhatsAppClientLite) => {
+    setBusy(true);
+    try {
+      await whatsappService.linkClient(conversation.id, clientId);
+      onChanged();
+      if (clientId && picked) {
+        const myPhone = normalizePhone(conversation.contact_phone);
+        const existing = [picked.mobile, picked.phone].map(p => (p ? normalizePhone(p) : null));
+        if (myPhone && !existing.includes(myPhone)) {
+          setPhonePrompt({ clientId, name: picked.full_name });
+        } else {
+          setPhonePrompt(null);
+        }
+      }
+    } catch (e: any) { toast.error('Falha ao vincular', e.message); }
+    finally { setBusy(false); setPickerOpen(false); }
+  };
+
+  // Cria contato básico inline e vincula imediatamente à conversa.
+  const handleCreateContact = async () => {
+    setCreating(true);
+    try {
+      const newClient = await whatsappService.createQuickContact({
+        fullName: newName,
+        phone: conversation.contact_phone,
+      });
+      await whatsappService.linkClient(conversation.id, newClient.id);
+      setCreateMode(false);
+      onChanged();
+      toast.success('Contato criado e vinculado.');
+    } catch (e: any) { toast.error('Falha ao criar contato', e.message); }
+    finally { setCreating(false); }
+  };
+
+  // Adiciona o telefone da conversa ao campo correto do cadastro do cliente.
+  const handleAddPhone = async () => {
+    if (!phonePrompt) return;
+    setAddingPhone(true);
+    try {
+      const { added, field } = await whatsappService.addPhoneToClient(phonePrompt.clientId, conversation.contact_phone);
+      setPhonePrompt(null);
+      if (added) toast.success(`Telefone adicionado ao campo ${field === 'mobile' ? 'Celular' : 'Telefone'} do cadastro.`);
+    } catch (e: any) { toast.error('Falha ao atualizar telefone', e.message); }
+    finally { setAddingPhone(false); }
+  };
+
+  // Conversa já vinculada a um cliente.
+  if (conversation.client_id) {
+    // Rótulo amigável de status/tipo do cliente.
+    const clientStatusLabel = (c: WhatsAppClientLite) => {
+      const typeMap: Record<string, string> = { pessoa_fisica: 'Pessoa física', pessoa_juridica: 'Pessoa jurídica' };
+      const statusMap: Record<string, string> = { ativo: 'Ativo', inativo: 'Inativo', lead: 'Lead', ex_cliente: 'Ex-cliente' };
+      const parts = [c.client_type ? typeMap[c.client_type] ?? c.client_type : null, c.status ? statusMap[c.status] ?? c.status : null].filter(Boolean);
+      return parts.join(' · ');
+    };
+    return (
+      <div className="mt-2 space-y-2">
+        {!embedded && <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>}
+        <div className="rounded-xl border border-[#e7e5df] p-3">
+          {loading ? (
+            <div className="flex items-center gap-2 text-slate-400 text-[12.5px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
+          ) : client ? (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0"><UserCheck size={16} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold text-slate-800 truncate">{client.full_name}</p>
+                  {client.cpf_cnpj && <p className="text-[11.5px] text-slate-400 flex items-center gap-1"><IdCard size={12} /> {prettyDoc(client.cpf_cnpj)}</p>}
+                </div>
+              </div>
+
+              {/* Fase P: informações de contato e localização expandidas */}
+              <div className="mt-2.5 space-y-1">
+                {(clientStatusLabel(client)) && (
+                  <p className="text-[11px] text-slate-400 font-medium">{clientStatusLabel(client)}</p>
+                )}
+                {client.email && (
+                  <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 text-[12px] text-amber-700 hover:underline truncate">
+                    <Mail size={11} className="flex-shrink-0" />
+                    <span className="truncate">{client.email}</span>
+                  </a>
+                )}
+                {client.mobile && normalizePhone(client.mobile) !== normalizePhone(conversation.contact_phone) && (
+                  <p className="flex items-center gap-1.5 text-[12px] text-slate-500">
+                    <Phone size={11} className="flex-shrink-0" />
+                    <span>{prettyPhone(client.mobile)}</span>
+                    <span className="text-[10px] text-slate-400">celular</span>
+                  </p>
+                )}
+                {client.phone && normalizePhone(client.phone) !== normalizePhone(conversation.contact_phone) && (
+                  <p className="flex items-center gap-1.5 text-[12px] text-slate-500">
+                    <Phone size={11} className="flex-shrink-0" />
+                    <span>{prettyPhone(client.phone)}</span>
+                    <span className="text-[10px] text-slate-400">fixo</span>
+                  </p>
+                )}
+                {(client.address_city || client.address_state) && (
+                  <p className="flex items-center gap-1.5 text-[12px] text-slate-400">
+                    <MapPin size={11} className="flex-shrink-0" />
+                    {[client.address_city, client.address_state].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-[#f1f0ec] flex-wrap">
+                <button onClick={() => onOpenWorkspace({ type: 'client_view', clientId: client.id })}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500 hover:text-amber-700">
+                  <UserIcon size={11} /> Ver
+                </button>
+                <button onClick={() => onOpenWorkspace({ type: 'client_edit', clientId: client.id })}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500 hover:text-amber-700">
+                  <Pencil size={11} /> Editar
+                </button>
+                <span className="text-slate-200">|</span>
+                <button onClick={() => setPickerOpen(true)} disabled={busy} className="text-[12px] font-semibold text-amber-700 hover:underline disabled:opacity-50">Trocar</button>
+                <button onClick={() => link(null)} disabled={busy} className="inline-flex items-center gap-1 text-[12px] font-semibold text-slate-400 hover:text-red-500 disabled:opacity-50"><Unlink size={12} /> Desvincular</button>
+              </div>
+              {/* Fase F: histórico de conversas anteriores */}
+              {history.length > 0 && (
+                <div className="mt-3 border-t border-[#f1f0ec] pt-3">
+                  <button onClick={() => setHistoryOpen(o => !o)}
+                    className="flex items-center gap-1 text-[11.5px] font-semibold text-slate-500 hover:text-slate-700 w-full">
+                    {historyOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    {history.length} conversa{history.length > 1 ? 's' : ''} anterior{history.length > 1 ? 'es' : ''}
+                  </button>
+                  {historyOpen && (
+                    <div className="mt-2 space-y-1.5">
+                      {history.map(h => (
+                        <div key={h.id} className="rounded-lg bg-[#f9f8f6] px-3 py-2 text-[11.5px]">
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <span className={`px-1.5 py-px rounded text-[9.5px] font-semibold ${h.status === 'closed' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {h.status === 'closed' ? 'Encerrada' : h.status === 'open' ? 'Aberta' : 'Pendente'}
+                            </span>
+                            <span className="text-slate-400 text-[10px]">{h.last_message_at ? formatTime(h.last_message_at) : '—'}</span>
+                          </div>
+                          {h.contact_reason && <p className="text-[11px] font-medium text-amber-700 truncate">{h.contact_reason}</p>}
+                          <p className="text-slate-500 truncate">{h.last_message_preview || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-[12.5px] text-slate-400">Cliente não encontrado.</p>
+          )}
+        </div>
+        {/* Fase E: banner de oferta de atualização de telefone */}
+        {phonePrompt && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+            <p className="text-[12px] font-semibold text-sky-800 mb-0.5">Adicionar número ao cadastro?</p>
+            <p className="text-[11.5px] text-sky-600 mb-2">{prettyPhone(conversation.contact_phone)} não estava em {phonePrompt.name}.</p>
+            <div className="flex items-center gap-2">
+              <button onClick={handleAddPhone} disabled={addingPhone}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 text-white text-[11.5px] font-semibold hover:bg-sky-700 disabled:opacity-50">
+                {addingPhone ? <Loader2 size={11} className="animate-spin" /> : <Phone size={11} />} Adicionar
+              </button>
+              <button onClick={() => setPhonePrompt(null)} className="text-[11.5px] font-semibold text-sky-600 hover:text-sky-800">Ignorar</button>
+            </div>
+          </div>
+        )}
+        {pickerOpen && <ClientPickerModal phone={conversation.contact_phone} onClose={() => setPickerOpen(false)} onPick={c => link(c.id, c)} />}
+      </div>
+    );
+  }
+
+  // Sem cliente: enquanto verifica o telefone, spinner; senão, busca manual ou criação inline.
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>
+      {autoChecking ? (
+        <div className="rounded-xl border border-[#e7e5df] p-4 flex items-center gap-2 text-slate-400 text-[12.5px]">
+          <Loader2 size={14} className="animate-spin" /> Procurando cliente pelo telefone…
+        </div>
+      ) : candidates.length > 1 ? (
+        <div className="rounded-xl border border-[#e7e5df] overflow-hidden">
+          <p className="px-3 py-2 text-[11.5px] text-slate-500 bg-[#faf9f7] border-b border-[#f1f0ec]">
+            <span className="font-semibold text-slate-700">{candidates.length} cadastros</span> com este telefone — escolha qual vincular
+          </p>
+          <div className="divide-y divide-[#f1f0ec]">
+            {candidates.map(c => (
+              <button key={c.id} onClick={() => link(c.id, c)} disabled={busy}
+                className="group w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-amber-50 transition disabled:opacity-50">
+                <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{initials(c.full_name, '')}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</span>
+                  <span className="block text-[11px] text-slate-400">{c.cpf_cnpj ? prettyDoc(c.cpf_cnpj) : 'sem CPF/CNPJ'}</span>
+                </span>
+                <Link2 size={14} className="text-slate-300 group-hover:text-amber-600 flex-shrink-0 transition" />
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setPickerOpen(true)}
+            className="w-full px-3 py-2 text-[12px] font-semibold text-amber-700 hover:bg-amber-50 border-t border-[#f1f0ec] transition">
+            Buscar outro cliente
+          </button>
+        </div>
+      ) : createMode ? (
+        // Fase E: mini-formulário de criação inline
+        <div className="rounded-xl border border-[#e7e5df] p-4 space-y-3">
+          <p className="text-[12px] font-semibold text-slate-700">Novo contato</p>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome completo" autoFocus
+            className="w-full px-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#f3f2ef] text-[12.5px] text-slate-500">
+            <Phone size={13} className="flex-shrink-0" /> {prettyPhone(conversation.contact_phone)}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setCreateMode(false)} className="px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
+            <button onClick={handleCreateContact} disabled={creating || !newName.trim()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700 disabled:opacity-50">
+              {creating ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />} Criar e vincular
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-[#e0ded8] p-4 text-center">
+          <UserIcon size={22} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-[12.5px] font-semibold text-slate-600">Sem cliente associado</p>
+          <p className="text-[11.5px] text-slate-400 mt-1">Nenhum cadastro com este telefone. Vincule manualmente para ver processos, prazos e documentos aqui.</p>
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <button onClick={() => setPickerOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 text-[12px] font-semibold transition">
+              <Link2 size={13} /> Buscar cliente
+            </button>
+            <button onClick={() => { setNewName(conversation.contact_name || ''); setCreateMode(true); }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[12px] font-semibold transition">
+              <UserPlus size={13} /> Criar contato
+            </button>
+          </div>
+        </div>
+      )}
+      {pickerOpen && <ClientPickerModal phone={conversation.contact_phone} onClose={() => setPickerOpen(false)} onPick={c => link(c.id, c)} />}
+    </div>
+  );
+};
+
+// ── Processos do cliente (Seção 8) ──
+const PROC_STATUS: Record<ProcessStatus, { label: string; badge: string }> = {
+  nao_protocolado: { label: 'Não protocolado', badge: 'bg-slate-100 text-slate-600' },
+  distribuido: { label: 'Distribuído', badge: 'bg-amber-100 text-amber-700' },
+  aguardando_confeccao: { label: 'Aguardando confecção', badge: 'bg-blue-100 text-blue-700' },
+  citacao: { label: 'Citação', badge: 'bg-cyan-100 text-cyan-700' },
+  conciliacao: { label: 'Conciliação', badge: 'bg-teal-100 text-teal-700' },
+  contestacao: { label: 'Contestação', badge: 'bg-orange-100 text-orange-700' },
+  instrucao: { label: 'Instrução', badge: 'bg-indigo-100 text-indigo-700' },
+  andamento: { label: 'Em andamento', badge: 'bg-emerald-100 text-emerald-700' },
+  sentenca: { label: 'Sentença', badge: 'bg-purple-100 text-purple-700' },
+  recurso: { label: 'Recurso', badge: 'bg-yellow-100 text-yellow-700' },
+  cumprimento: { label: 'Cumprimento', badge: 'bg-rose-100 text-rose-700' },
+  arquivado: { label: 'Arquivado', badge: 'bg-slate-100 text-slate-500' },
+};
+const PROC_AREA: Record<ProcessPracticeArea, string> = {
+  trabalhista: 'Trabalhista', familia: 'Família', consumidor: 'Consumidor',
+  previdenciario: 'Previdenciário', civel: 'Cível',
+};
+
+/** Linha do tempo compacta do processo (Seção 9): movimentações DataJud locais.
+ *  `movements` pode vir pré-carregado em lote pelo painel (evita N+1); só busca
+ *  sozinho quando não recebe a lista pronta (uso isolado/fallback). */
+const ProcessTimelineMini: React.FC<{ processId: string; movements?: ProcessMovement[] }> = ({ processId, movements }) => {
+  const [movs, setMovs] = useState<ProcessMovement[] | null>(movements ?? null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    if (movements !== undefined) { setMovs(movements); return; } // lista veio do painel
+    let alive = true;
+    setMovs(null); setShowAll(false);
+    processService.listProcessMovements(processId)
+      .then(list => { if (alive) setMovs(list); })
+      .catch(() => { if (alive) setMovs([]); });
+    return () => { alive = false; };
+  }, [processId, movements]);
+
+  if (movs === null) {
+    return <div className="mt-2 pl-1 flex items-center gap-2 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" /> Carregando movimentações…</div>;
+  }
+  if (movs.length === 0) {
+    return <p className="mt-2 pl-1 text-[11px] text-slate-400">Sem movimentações sincronizadas.</p>;
+  }
+
+  const visible = showAll ? movs : movs.slice(0, 4);
+  return (
+    <div className="mt-2.5 pl-1">
+      <ol className="relative border-l border-[#e7e5df] ml-1 space-y-2.5">
+        {visible.map(m => (
+          <li key={m.id} className="pl-3 relative">
+            <span className="absolute -left-[4.5px] top-1 w-2 h-2 rounded-full bg-amber-400" />
+            <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+              <Clock size={10} className="text-slate-400" />
+              {new Date(m.data_hora).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+            </p>
+            <p className="text-[12px] text-slate-700 leading-snug">{m.nome}</p>
+          </li>
+        ))}
+      </ol>
+      {movs.length > 4 && (
+        <button onClick={() => setShowAll(s => !s)}
+          className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:underline">
+          {showAll ? <><ChevronUp size={12} /> Ver menos</> : <><ChevronDown size={12} /> Ver mais {movs.length - 4} movimentações</>}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ── Painel de Casos 360: processos + requerimentos + ações workspace ──────────
+type WaOpenWorkspaceFn = (modal: WaModal) => void;
+
+const REQ_STATUS_BADGE: Record<string, string> = {
+  aguardando_confeccao: 'bg-blue-100 text-blue-700',
+  em_analise: 'bg-sky-100 text-sky-700',
+  em_exigencia: 'bg-orange-100 text-orange-700',
+  aguardando_pericia: 'bg-violet-100 text-violet-700',
+  deferido: 'bg-emerald-100 text-emerald-700',
+  indeferido: 'bg-red-100 text-red-700',
+  ajuizado: 'bg-amber-100 text-amber-700',
+};
+const REQ_STATUS_LABEL: Record<string, string> = {
+  aguardando_confeccao: 'Aguard. confecção',
+  em_analise: 'Em análise',
+  em_exigencia: 'Em exigência',
+  aguardando_pericia: 'Aguard. perícia',
+  deferido: 'Deferido',
+  indeferido: 'Indeferido',
+  ajuizado: 'Ajuizado',
+};
+
+const CasosPanel: React.FC<{
+  clientId: string;
+  clientName?: string;
+  processes: Process[] | null;
+  pendings: ClientPendings | null;
+  onOpenWorkspace: WaOpenWorkspaceFn;
+}> = ({ clientId, clientName, processes: procs, pendings, onOpenWorkspace }) => {
+  const [openTimeline, setOpenTimeline] = useState<string | null>(null);
+  const [movsByProc, setMovsByProc] = useState<Record<string, ProcessMovement[]> | null>(null);
+
+  const procIds = useMemo(() => (procs || []).map(p => p.id), [procs]);
+  useEffect(() => {
+    if (procIds.length === 0) { setMovsByProc({}); return; }
+    let alive = true;
+    processService.listProcessMovementsBatch(procIds)
+      .then(map => { if (alive) setMovsByProc(map); })
+      .catch(() => { if (alive) setMovsByProc({}); });
+    return () => { alive = false; };
+  }, [procIds]);
+
+  const requirements: Requirement[] = (pendings as any)?.requirements ?? [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const totalCount = (procs?.length ?? 0) + requirements.length;
+  const loading = procs === null;
+
+  return (
+    <div className="mt-2 space-y-2">
+      {/* Cabeçalho único: Casos (processos + requerimentos juntos) */}
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+          Casos {!loading ? `(${totalCount})` : ''}
+        </p>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onOpenWorkspace({ type: 'case_process_create', clientId, clientName })}
+            title="Novo processo"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition">
+            <Plus size={11} /> Processo
+          </button>
+          <button onClick={() => onOpenWorkspace({ type: 'case_requirement_create', clientId, clientName })}
+            title="Novo requerimento"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition">
+            <Plus size={11} /> Req.
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-lg border border-[#e7e5df] p-2.5 flex items-center gap-2 text-slate-400 text-[12.5px]">
+          <Loader2 size={14} className="animate-spin" /> Carregando casos…
+        </div>
+      ) : totalCount === 0 ? (
+        <div className="rounded-lg border border-dashed border-[#e0ded8] p-2.5 text-[12px] text-slate-400 flex items-center gap-2">
+          <Scale size={14} className="text-slate-300" /> Nenhum processo ou requerimento.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {/* Processos */}
+          {[...(procs ?? [])].sort((a, b) => (b.priority === 'urgente' ? 1 : 0) - (a.priority === 'urgente' ? 1 : 0)).map(p => {
+            const st = PROC_STATUS[p.status] || { label: p.status, badge: 'bg-slate-100 text-slate-600' };
+            const urgent = p.priority === 'urgente';
+            const hearing = p.hearing_scheduled && p.hearing_date ? new Date(p.hearing_date + 'T00:00:00') : null;
+            const hearingFuture = hearing && hearing >= today;
+            return (
+              <div key={p.id} className={`rounded-lg border p-2.5 ${urgent ? 'border-red-200 bg-red-50/40' : 'border-[#e7e5df]'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[12px] font-semibold text-slate-700 truncate">{p.process_code || 'Sem número'}</span>
+                  {urgent && <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">Urgente</span>}
+                </div>
+                {/* Status, tipo, Timeline e movimentações na MESMA linha */}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.badge}`}>{st.label}</span>
+                  <span className="text-[11px] text-slate-400">{PROC_AREA[p.practice_area] || p.practice_area}</span>
+                  <button onClick={() => onOpenWorkspace({ type: 'timeline_process', processId: p.id, processCode: p.process_code, clientName })}
+                    className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-amber-700 transition">
+                    <Clock size={10} /> Timeline
+                  </button>
+                  <button onClick={() => setOpenTimeline(id => id === p.id ? null : p.id)}
+                    className="inline-flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500 hover:text-amber-700 transition">
+                    {openTimeline === p.id ? <ChevronUp size={10} /> : <ChevronDown size={10} />} movimentações
+                  </button>
+                </div>
+                {hearingFuture && (
+                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                    <Calendar size={12} /> Audiência {hearing!.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                    {p.hearing_time ? ` às ${p.hearing_time.slice(0, 5)}` : ''}
+                  </p>
+                )}
+                {openTimeline === p.id && <ProcessTimelineMini processId={p.id} movements={movsByProc?.[p.id]} />}
+              </div>
+            );
+          })}
+
+          {/* Requerimentos no mesmo bloco */}
+          {requirements.map((r: Requirement) => (
+            <div key={r.id} className="rounded-lg border border-[#e7e5df] p-2.5">
+              <p className="text-[12.5px] font-semibold text-slate-700 truncate">{r.beneficiary}</p>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${REQ_STATUS_BADGE[r.status] || 'bg-slate-100 text-slate-500'}`}>
+                  {REQ_STATUS_LABEL[r.status] || r.status}
+                </span>
+                <span className="text-[11px] text-slate-400">Requerimento</span>
+                {r.protocol && <span className="text-[11px] text-slate-400 font-mono">{r.protocol}</span>}
+                <button onClick={() => onOpenWorkspace({ type: 'case_requirement_edit', requirementId: r.id })}
+                  className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-amber-700 transition">
+                  <Pencil size={10} /> Editar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Alias de compatibilidade para o painel antigo (usado via prop no aside)
+const ClientProcessesPanel: React.FC<{ processes: Process[] | null }> = ({ processes: procs }) => {
+  const [openTimeline, setOpenTimeline] = useState<string | null>(null);
+  // Movimentações de todos os processos em UMA query (anti-N+1): a mini timeline
+  // de cada processo consome a fatia já carregada em vez de buscar sozinha.
+  const [movsByProc, setMovsByProc] = useState<Record<string, ProcessMovement[]> | null>(null);
+
+  const procIds = useMemo(() => (procs || []).map(p => p.id), [procs]);
+  useEffect(() => {
+    if (procIds.length === 0) { setMovsByProc({}); return; }
+    let alive = true;
+    setMovsByProc(null);
+    processService.listProcessMovementsBatch(procIds)
+      .then(map => { if (alive) setMovsByProc(map); })
+      .catch(() => { if (alive) setMovsByProc({}); });
+    return () => { alive = false; };
+  }, [procIds]);
+
+  if (procs === null) {
+    return (
+      <div className="mt-2 space-y-2">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Processos</p>
+        <div className="rounded-xl border border-[#e7e5df] p-3 flex items-center gap-2 text-slate-400 text-[12.5px]">
+          <Loader2 size={14} className="animate-spin" /> Carregando processos…
+        </div>
+      </div>
+    );
+  }
+  if (procs.length === 0) {
+    return (
+      <div className="mt-2 space-y-2">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Processos</p>
+        <div className="rounded-xl border border-dashed border-[#e0ded8] p-3 text-[12px] text-slate-400 flex items-center gap-2">
+          <Scale size={14} className="text-slate-300" /> Nenhum processo cadastrado.
+        </div>
+      </div>
+    );
+  }
+
+  // Urgentes e audiências futuras primeiro.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const sorted = [...procs].sort((a, b) => {
+    const ua = a.priority === 'urgente' ? 1 : 0;
+    const ub = b.priority === 'urgente' ? 1 : 0;
+    return ub - ua;
+  });
+
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+        Processos <span className="text-slate-300">({procs.length})</span>
+      </p>
+      <div className="space-y-2">
+        {sorted.map(p => {
+          const st = PROC_STATUS[p.status] || { label: p.status, badge: 'bg-slate-100 text-slate-600' };
+          const urgent = p.priority === 'urgente';
+          const hearing = p.hearing_scheduled && p.hearing_date ? new Date(p.hearing_date + 'T00:00:00') : null;
+          const hearingFuture = hearing && hearing >= today;
+          return (
+            <div key={p.id}
+              className={`rounded-xl border p-3 ${urgent ? 'border-red-200 bg-red-50/40' : 'border-[#e7e5df]'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[12px] font-semibold text-slate-700 truncate">
+                  {p.process_code || 'Sem número'}
+                </span>
+                {urgent && (
+                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">Urgente</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.badge}`}>{st.label}</span>
+                <span className="text-[11px] text-slate-400">{PROC_AREA[p.practice_area] || p.practice_area}</span>
+              </div>
+              {hearingFuture && (
+                <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                  <Calendar size={12} /> Audiência {hearing!.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                  {p.hearing_time ? ` às ${p.hearing_time.slice(0, 5)}` : ''}
+                </p>
+              )}
+              <button onClick={() => setOpenTimeline(id => id === p.id ? null : p.id)}
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-amber-700 transition">
+                <Clock size={12} />
+                {openTimeline === p.id ? 'Ocultar linha do tempo' : 'Ver linha do tempo'}
+                {openTimeline === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+              {openTimeline === p.id && <ProcessTimelineMini processId={p.id} movements={movsByProc?.[p.id]} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── Agenda do cliente: prazos + compromissos (Seção 10) ──
+const EVENT_TYPE_LABEL: Record<CalendarEventType, string> = {
+  deadline: 'Prazo', hearing: 'Audiência', requirement: 'Requerimento',
+  payment: 'Pagamento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
+};
+
+/** Classifica um vencimento (data ISO/yyyy-mm-dd) em alerta visual. */
+function dueInfo(iso: string): { label: string; tone: 'red' | 'amber' | 'slate' } {
+  const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  if (diff < 0) return { label: `vencido há ${-diff}d`, tone: 'red' };
+  if (diff === 0) return { label: 'vence hoje', tone: 'amber' };
+  if (diff === 1) return { label: 'amanhã', tone: 'amber' };
+  if (diff <= 7) return { label: `em ${diff} dias`, tone: 'slate' };
+  return { label: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), tone: 'slate' };
+}
+const TONE: Record<'red' | 'amber' | 'slate', string> = {
+  red: 'text-red-600 bg-red-50 border-red-200',
+  amber: 'text-amber-700 bg-amber-50 border-amber-200',
+  slate: 'text-slate-500 bg-white border-[#e7e5df]',
+};
+
+const ClientAgendaPanel: React.FC<{ schedule: ClientSchedule | null }> = ({ schedule: data }) => {
+  if (data === null) {
+    return (
+      <div className="mt-2 space-y-2">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Agenda</p>
+        <div className="rounded-xl border border-[#e7e5df] p-3 flex items-center gap-2 text-slate-400 text-[12.5px]">
+          <Loader2 size={14} className="animate-spin" /> Carregando agenda…
+        </div>
+      </div>
+    );
+  }
+  if (data.deadlines.length === 0 && data.events.length === 0) return null;
+
+  const deadlines = data.deadlines.slice(0, 5);
+  const events = data.events.slice(0, 5);
+
+  return (
+    <div className="mt-2 space-y-3">
+      {deadlines.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            Prazos <span className="text-slate-300">({data.deadlines.length})</span>
+          </p>
+          <div className="space-y-1.5">
+            {deadlines.map(d => {
+              const di = dueInfo(d.due);
+              return (
+                <div key={d.id} className={`rounded-lg border px-2.5 py-2 ${TONE[di.tone]}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-semibold text-slate-700 truncate">{d.title}</span>
+                    <span className={`flex-shrink-0 inline-flex items-center gap-1 text-[10.5px] font-bold ${di.tone === 'slate' ? 'text-slate-400' : ''}`}>
+                      {di.tone === 'red' && <AlertCircle size={11} />} {di.label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {events.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            Compromissos <span className="text-slate-300">({data.events.length})</span>
+          </p>
+          <div className="space-y-1.5">
+            {events.map(e => {
+              const dt = new Date(e.start_at);
+              return (
+                <div key={e.id} className="rounded-lg border border-[#e7e5df] px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-semibold text-slate-700 truncate">{e.title}</span>
+                    <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-700">
+                      <Calendar size={11} />
+                      {dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} {dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <span className="text-[10.5px] text-slate-400">{EVENT_TYPE_LABEL[e.event_type] || e.event_type}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Pendências do cliente: requerimentos + documentos (Seção 11) ──
+const REQ_STATUS: Record<RequirementStatus, { label: string; badge: string }> = {
+  aguardando_confeccao: { label: 'Aguardando confecção', badge: 'bg-slate-100 text-slate-600' },
+  em_analise: { label: 'Em análise', badge: 'bg-blue-100 text-blue-700' },
+  em_exigencia: { label: 'Em exigência', badge: 'bg-red-100 text-red-700' },
+  aguardando_pericia: { label: 'Aguardando perícia', badge: 'bg-amber-100 text-amber-700' },
+  deferido: { label: 'Deferido', badge: 'bg-emerald-100 text-emerald-700' },
+  indeferido: { label: 'Indeferido', badge: 'bg-slate-100 text-slate-500' },
+  ajuizado: { label: 'Ajuizado', badge: 'bg-indigo-100 text-indigo-700' },
+};
+const DOC_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando envio', partial: 'Envio parcial' };
+
+const ClientPendingsPanel: React.FC<{ pendings: ClientPendings | null; confirm?: ConfirmFn; onChanged?: () => void }> = ({ pendings: data, confirm, onChanged }) => {
+  const toast = useToastContext();
+  const [canceling, setCanceling] = useState<string | null>(null);
+
+  const cancelDocRequest = async (id: string, title: string) => {
+    if (confirm && !await confirm({ title: 'Cancelar solicitação', message: `A solicitação "${title}" deixará de ser cobrada do cliente e sai das pendências.`, confirmLabel: 'Cancelar solicitação', tone: 'danger' })) return;
+    setCanceling(id);
+    try { await whatsappService.cancelDocumentRequest(id); onChanged?.(); }
+    catch (e: any) { toast.error('Falha ao cancelar solicitação', e.message); }
+    finally { setCanceling(null); }
+  };
+
+  if (data === null) {
+    return (
+      <div className="mt-2 space-y-2">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Pendências</p>
+        <div className="rounded-xl border border-[#e7e5df] p-3 flex items-center gap-2 text-slate-400 text-[12.5px]">
+          <Loader2 size={14} className="animate-spin" /> Carregando pendências…
+        </div>
+      </div>
+    );
+  }
+  if (data.requirements.length === 0 && data.documents.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-3">
+      {data.requirements.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            Requerimentos <span className="text-slate-300">({data.requirements.length})</span>
+          </p>
+          <div className="space-y-1.5">
+            {data.requirements.slice(0, 5).map(r => {
+              const st = REQ_STATUS[r.status] || { label: r.status, badge: 'bg-slate-100 text-slate-600' };
+              const exig = r.status === 'em_exigencia' && r.exigency_due_date ? dueInfo(r.exigency_due_date) : null;
+              return (
+                <div key={r.id} className="rounded-lg border border-[#e7e5df] px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-semibold text-slate-700 truncate">{r.beneficiary || r.protocol || 'Requerimento'}</span>
+                    <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.badge}`}>{st.label}</span>
+                  </div>
+                  {r.protocol && <span className="text-[10.5px] text-slate-400">Protocolo {r.protocol}</span>}
+                  {exig && (
+                    <p className={`mt-0.5 inline-flex items-center gap-1 text-[10.5px] font-bold ${exig.tone === 'red' ? 'text-red-600' : 'text-amber-700'}`}>
+                      <AlertCircle size={10} /> Exigência {exig.label}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {data.documents.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            Documentos pendentes <span className="text-slate-300">({data.documents.length})</span>
+          </p>
+          <div className="space-y-1.5">
+            {data.documents.slice(0, 5).map(d => {
+              const di = d.due_date ? dueInfo(d.due_date) : null;
+              const total = d.items.length;
+              const done = d.items.filter(i => i.status === 'approved').length;
+              return (
+                <div key={d.id} className={`group rounded-lg border px-2.5 py-2 ${di && di.tone === 'red' ? TONE.red : 'border-[#e7e5df]'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-semibold text-slate-700 truncate">{d.title}</span>
+                    <span className="flex-shrink-0 inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500">
+                        <FileText size={11} /> {total > 0 ? `${done}/${total}` : (DOC_STATUS_LABEL[d.status] || d.status)}
+                      </span>
+                      {confirm && (
+                        <button onClick={() => cancelDocRequest(d.id, d.title)} disabled={canceling === d.id}
+                          title="Cancelar solicitação" className="p-0.5 rounded text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-500 transition disabled:opacity-50">
+                          {canceling === d.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  {di && <span className={`text-[10.5px] font-semibold ${di.tone === 'red' ? 'text-red-600' : 'text-slate-400'}`}>{di.label}</span>}
+                  {total > 0 && (
+                    <ul className="mt-1.5 space-y-1">
+                      {d.items.map(it => {
+                        const ok = it.status === 'approved';
+                        const sent = it.status === 'uploaded';
+                        const rejected = it.status === 'rejected';
+                        return (
+                          <li key={it.id} className="flex items-center gap-1.5 text-[11.5px]">
+                            {ok ? <CheckCircle2 size={12} className="text-emerald-500 flex-shrink-0" />
+                              : sent ? <Clock size={12} className="text-sky-500 flex-shrink-0" />
+                              : rejected ? <X size={12} className="text-rose-500 flex-shrink-0" />
+                              : <span className="w-2 h-2 rounded-full border border-slate-300 flex-shrink-0 ml-[2px]" />}
+                            <span className={`truncate ${ok ? 'line-through text-slate-400' : rejected ? 'text-rose-500' : 'text-slate-600'}`}>
+                              {it.label}{!it.required && <span className="text-slate-300"> · opcional</span>}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Assinaturas pendentes do cliente (Fase G) ──
+const ClientSignaturesPanel: React.FC<{ signatures: import('../types/signature.types').SignatureRequestWithSigners[] | null }> = ({ signatures }) => {
+  const toast = useToastContext();
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const pending = (signatures ?? []).filter(s => s.status === 'pending' && !s.archived_at && !s.deleted_at);
+  if (pending.length === 0) return null;
+
+  // Copia o link público de assinatura (/#/assinar/<token>) do signatário — para
+  // enviar ao cliente pelo WhatsApp, espelhando o link de documento.
+  const copyLink = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(signatureService.generatePublicSigningUrl(token));
+      setCopiedToken(token);
+      toast.success('Link de assinatura copiado.');
+      setTimeout(() => setCopiedToken(t => (t === token ? null : t)), 2000);
+    } catch (e: any) {
+      toast.error('Não foi possível copiar o link', e?.message);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+        <PenLine size={10} /> Assinaturas pendentes
+        <span className="ml-auto px-1.5 py-px rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold">{pending.length}</span>
+      </p>
+      <div className="rounded-xl border border-[#e7e5df] divide-y divide-[#f1f0ec] overflow-hidden">
+        {pending.map(s => {
+          const exp = s.expires_at ? dueInfo(s.expires_at) : null;
+          // Signatários ainda sem assinar e com link público disponível.
+          const openSigners = (s.signers ?? []).filter(sg => sg.status !== 'signed' && !sg.refused_at && sg.public_token);
+          return (
+            <div key={s.id} className="px-3 py-2.5">
+              <p className="text-[12.5px] font-semibold text-slate-800 truncate">{s.document_name}</p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-semibold bg-amber-100 text-amber-700">
+                  <Clock size={9} /> Aguardando assinatura
+                </span>
+                {exp && (
+                  <span className={`text-[10.5px] font-semibold ${exp.tone === 'red' ? 'text-red-600' : exp.tone === 'amber' ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {exp.label}
+                  </span>
+                )}
+              </div>
+              {/* Links públicos por signatário — copiar e enviar ao cliente */}
+              {openSigners.length > 0 && (
+                <div className="mt-1.5 space-y-1">
+                  {openSigners.map(sg => {
+                    const copied = copiedToken === sg.public_token;
+                    return (
+                      <div key={sg.id} className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500 truncate flex-1">{sg.name || sg.email || 'Signatário'}</span>
+                        <button onClick={() => copyLink(sg.public_token!)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition flex-shrink-0">
+                          {copied ? <Check size={11} /> : <Link2 size={11} />}
+                          {copied ? 'Copiado' : 'Link'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── Acordos/contratos financeiros ativos (Fase G) ──
+const ClientAgreementsPanel: React.FC<{
+  agreements: import('../types/financial.types').Agreement[] | null;
+  onOpenWorkspace?: WaOpenWorkspaceFn;
+}> = ({ agreements, onOpenWorkspace }) => {
+  const list = agreements ?? [];
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  const STATUS_CLS: Record<string, string> = {
+    ativo: 'bg-emerald-100 text-emerald-700', pendente: 'bg-amber-100 text-amber-700',
+    concluido: 'bg-slate-100 text-slate-500', cancelado: 'bg-red-100 text-red-600',
+  };
+  const STATUS_LABEL: Record<string, string> = { ativo: 'Ativo', pendente: 'Pendente', concluido: 'Concluído', cancelado: 'Cancelado' };
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+        <HandCoins size={10} /> Financeiro
+      </p>
+      {list.length === 0 ? (
+        <p className="text-[12px] text-slate-400">Nenhum lançamento para este cliente.</p>
+      ) : (
+        <div className="rounded-xl border border-[#e7e5df] divide-y divide-[#f1f0ec] overflow-hidden">
+          {list.map(a => (
+            <button key={a.id} type="button"
+              onClick={() => onOpenWorkspace?.({ type: 'financial_view', agreementId: a.id })}
+              className="w-full text-left px-3 py-2.5 hover:bg-amber-50/60 transition">
+              <div className="flex items-start justify-between gap-1">
+                <p className="text-[12.5px] font-semibold text-slate-800 truncate flex-1">{a.title}</p>
+                <span className={`flex-shrink-0 px-1.5 py-px rounded text-[9.5px] font-semibold ${STATUS_CLS[a.status] ?? 'bg-slate-100 text-slate-500'}`}>
+                  {STATUS_LABEL[a.status] ?? a.status}
+                </span>
+              </div>
+              <p className="text-[11.5px] text-slate-500 mt-0.5">
+                {fmt(a.total_value)} · {a.installments_count > 1 ? `${a.installments_count}×${fmt(a.installment_value)}` : 'À vista'}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Resumo rápido do cliente/processo no topo da thread (Fase 6/10/G) ──
+// Cada segmento abre um cartão de detalhes (fade) ao passar o mouse.
+const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children: React.ReactNode }> = ({ trigger, width = 'w-72', children }) => (
+  <span className="relative group/hd inline-flex items-center gap-1 cursor-default">
+    {trigger}
+    <span className={`pointer-events-none group-hover/hd:pointer-events-auto absolute left-0 top-full z-40 pt-2 ${width} origin-top-left scale-95 opacity-0 transition-all duration-150 group-hover/hd:scale-100 group-hover/hd:opacity-100`}>
+      <span className="block rounded-xl border border-[#e7e5df] bg-white p-3 shadow-xl text-slate-600 normal-case tracking-normal font-normal">
+        {children}
+      </span>
+    </span>
+  </span>
+);
+
+const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const DOC_REQ_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando', partial: 'Parcial', complete: 'Concluído', cancelled: 'Cancelado' };
+
+const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; onDismissDocReady?: () => void }> = ({ overview, docStatus, onDismissDocReady }) => {
+  if (!overview) return null;
+  const s = summarizeOverview(overview);
+  // Sem contexto relevante → não polui o topo da thread.
+  if (s.processCount === 0 && !s.nextDeadline && !s.nextEvent && s.pendingCount === 0 && s.pendingSignatures === 0 && !docStatus) return null;
+
+  const dl = s.nextDeadline ? dueInfo(s.nextDeadline.due) : null;
+  const procs = [...overview.processes].sort((a, b) => (b.priority === 'urgente' ? 1 : 0) - (a.priority === 'urgente' ? 1 : 0));
+  const deadlines = overview.schedule.deadlines;
+  const events = overview.schedule.events;
+  const reqs = overview.pendings.requirements;
+  const docs = overview.pendings.documents;
+  return (
+    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-5 py-2 bg-amber-50/70 border-b border-amber-100 text-[12px] text-slate-600">
+      <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-800">
+        <UserCheck size={12} /> Resumo
+      </span>
+      {docStatus && (
+        <span className={`inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-[11px] font-semibold ${docStatus === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+          <FileText size={12} /> {docStatus === 'awaiting' ? 'Aguardando documentos solicitados' : 'Documentos prontos'}
+          {docStatus === 'ready' && onDismissDocReady && (
+            <button onClick={onDismissDocReady} title="Fechar aviso"
+              className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-200/70 text-emerald-700 hover:bg-emerald-600 hover:text-white transition">
+              <X size={11} strokeWidth={2.75} />
+            </button>
+          )}
+        </span>
+      )}
+      {s.processCount > 0 && (
+        <HoverDetail trigger={
+          <span className="inline-flex items-center gap-1">
+            <Scale size={13} className="text-slate-400" />
+            <strong className="text-slate-700">{s.processCount}</strong> processo{s.processCount > 1 ? 's' : ''}
+            {s.urgentCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">{s.urgentCount} urgente{s.urgentCount > 1 ? 's' : ''}</span>
+            )}
+          </span>
+        } width="w-96">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Processos ({procs.length})</p>
+          <div className="space-y-2 max-h-80 overflow-auto -mr-1 pr-1">
+            {procs.map(p => {
+              const st = PROC_STATUS[p.status] || { label: p.status, badge: 'bg-slate-100 text-slate-600' };
+              const urgent = p.priority === 'urgente';
+              const hearing = p.hearing_scheduled && p.hearing_date ? new Date(p.hearing_date + 'T00:00:00') : null;
+              const hearingFuture = hearing && hearing >= new Date(new Date().toDateString());
+              return (
+                <div key={p.id} className={`rounded-lg border p-2.5 ${urgent ? 'border-red-200 bg-red-50/40' : 'border-[#eceae4] bg-[#faf9f7]'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[12px] font-semibold text-slate-800 truncate">{p.process_code || 'Sem número'}</span>
+                    {urgent && <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">Urgente</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${st.badge}`}>{st.label}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-medium bg-slate-100 text-slate-500">{PROC_AREA[p.practice_area] || p.practice_area}</span>
+                  </div>
+                  <div className="mt-1.5 space-y-1 text-[11px] text-slate-500">
+                    {p.court && <p className="flex items-start gap-1.5"><MapPin size={11} className="mt-px flex-shrink-0 text-slate-400" /><span className="leading-snug">{p.court}</span></p>}
+                    {p.responsible_lawyer && <p className="flex items-center gap-1.5"><UserIcon size={11} className="flex-shrink-0 text-slate-400" /> {p.responsible_lawyer}</p>}
+                    {p.distributed_at && <p className="flex items-center gap-1.5"><Calendar size={11} className="flex-shrink-0 text-slate-400" /> Distribuído em {new Date(p.distributed_at).toLocaleDateString('pt-BR')}</p>}
+                    {hearingFuture && (
+                      <p className="flex items-center gap-1.5 font-semibold text-amber-700"><CalendarClock size={11} className="flex-shrink-0" /> Audiência {hearing!.toLocaleDateString('pt-BR')}{p.hearing_time ? ` às ${p.hearing_time.slice(0, 5)}` : ''}{p.hearing_mode ? ` · ${p.hearing_mode === 'online' ? 'Online' : 'Presencial'}` : ''}</p>
+                    )}
+                  </div>
+                  {p.notes && <p className="mt-1.5 text-[11px] text-slate-400 leading-snug line-clamp-2 whitespace-pre-wrap">{p.notes}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </HoverDetail>
+      )}
+      {s.nextDeadline && (
+        <HoverDetail trigger={
+          <span className="inline-flex items-center gap-1">
+            <Calendar size={13} className="text-slate-400" />
+            Próx. prazo: <strong className="text-slate-700 truncate max-w-[180px]">{s.nextDeadline.title}</strong>
+            {dl && <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${dl.tone === 'red' ? 'text-red-600 bg-red-50' : dl.tone === 'amber' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'}`}>{dl.label}</span>}
+          </span>
+        } width="w-80">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Prazos abertos ({deadlines.length})</p>
+          <div className="space-y-2 max-h-72 overflow-auto -mr-1 pr-1">
+            {deadlines.map(d => {
+              const di = dueInfo(d.due);
+              const due = new Date(d.due + (d.due.length <= 10 ? 'T00:00:00' : ''));
+              return (
+                <div key={d.id} className="rounded-lg border border-[#eceae4] bg-[#faf9f7] p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[12px] font-medium text-slate-700 leading-snug">{d.title}</span>
+                    <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${di.tone === 'red' ? 'text-red-600 bg-red-50' : di.tone === 'amber' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'}`}>{di.label}</span>
+                  </div>
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <Calendar size={11} className="text-slate-400" />
+                    {due.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </HoverDetail>
+      )}
+      {s.nextEvent && events[0] && (
+        <HoverDetail trigger={
+          <span className="inline-flex items-center gap-1">
+            <Clock size={13} className="text-slate-400" />
+            <strong className="text-slate-700 truncate max-w-[160px]">{s.nextEvent.title}</strong>
+            <span className="text-slate-400">{new Date(s.nextEvent.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+          </span>
+        }>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Próximo compromisso</p>
+          <p className="text-[12.5px] font-semibold text-slate-800 leading-snug">{events[0].title}</p>
+          <p className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-amber-700"><Clock size={11} /> {fmtDateTime(events[0].start_at)}</p>
+          {events[0].description && <p className="mt-1.5 text-[11.5px] text-slate-500 leading-snug whitespace-pre-wrap">{events[0].description}</p>}
+          {events.length > 1 && <p className="mt-2 text-[11px] text-slate-400">+{events.length - 1} compromisso{events.length - 1 > 1 ? 's' : ''} adiante</p>}
+        </HoverDetail>
+      )}
+      {s.pendingCount > 0 && (
+        <HoverDetail trigger={
+          <span className="inline-flex items-center gap-1">
+            <FileText size={13} className="text-slate-400" />
+            <strong className="text-slate-700">{s.pendingCount}</strong> pendência{s.pendingCount > 1 ? 's' : ''}
+          </span>
+        } width="w-96">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Pendências ({s.pendingCount})</p>
+          <div className="space-y-2 max-h-80 overflow-auto -mr-1 pr-1">
+            {docs.map(d => {
+              const missing = d.items.filter(i => i.status === 'pending' || i.status === 'rejected');
+              return (
+                <div key={`doc-${d.id}`} className="rounded-lg border border-[#eceae4] bg-[#faf9f7] p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <FilePlus size={12} className="text-amber-500 flex-shrink-0" />
+                      <span className="text-[12px] font-medium text-slate-700 truncate">{d.title}</span>
+                    </span>
+                    <span className="flex items-center gap-1 flex-shrink-0">
+                      {d.due_date && <span className="text-[10px] text-slate-400">{new Date(d.due_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>}
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-700">{DOC_REQ_STATUS_LABEL[d.status] || d.status}</span>
+                    </span>
+                  </div>
+                  {d.items.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {d.items.map(it => (
+                        <span key={it.id} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${it.status === 'received' || it.status === 'approved' ? 'bg-emerald-50 text-emerald-700 line-through decoration-emerald-400/60' : it.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-white border border-[#e7e5df] text-slate-600'}`}>
+                          {(it.status === 'received' || it.status === 'approved') && <Check size={9} />}
+                          {it.label}{it.required ? '' : ' (opc.)'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {missing.length > 0 && <p className="mt-1.5 text-[10.5px] text-amber-600 font-medium">{missing.length} item{missing.length > 1 ? 's' : ''} aguardando o cliente</p>}
+                </div>
+              );
+            })}
+            {reqs.map((r: Requirement) => (
+              <div key={`req-${r.id}`} className="rounded-lg border border-[#eceae4] bg-[#faf9f7] p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <Scale size={12} className="text-slate-400 flex-shrink-0" />
+                    <span className="text-[12px] font-medium text-slate-700 truncate">{r.beneficiary}</span>
+                  </span>
+                  <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold ${REQ_STATUS_BADGE[r.status] || 'bg-slate-100 text-slate-500'}`}>{REQ_STATUS_LABEL[r.status] || r.status}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                  <span>Requerimento</span>
+                  {r.protocol && <span className="font-mono">{r.protocol}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </HoverDetail>
+      )}
+      {/* Fase G: assinaturas pendentes no banner */}
+      {s.pendingSignatures > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <PenLine size={13} className="text-amber-600" />
+          <strong className="text-amber-700">{s.pendingSignatures}</strong> assinatura{s.pendingSignatures > 1 ? 's' : ''} pendente{s.pendingSignatures > 1 ? 's' : ''}
+        </span>
+      )}
+    </div>
+  );
+};
+
+// ── Notas internas da conversa (Fase 7) — só a equipe vê ──
+const fmtNoteDate = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+const InternalNotesPanel: React.FC<{
+  conversationId: string;
+  staffByUser: Map<string, string>;
+  currentUserId: string | null;
+  confirm: ConfirmFn;
+  embedded?: boolean;
+  limit?: number;
+  onExpand?: () => void;
+}> = ({ conversationId, staffByUser, currentUserId, confirm, embedded, limit, onExpand }) => {
+  const toast = useToastContext();
+  const [notes, setNotes] = useState<WhatsAppInternalNote[] | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Painel "Notas internas" = só notas MANUAIS da equipe. Oculta lançamentos
+  // automáticos: IA/cron inserem sem autor (author_id null); trilha de "Documentos
+  // solicitados"; e notas legadas de navegação de módulo. O histórico completo desses
+  // eventos continua disponível na Timeline.
+  const isAutomatic = (n: WhatsAppInternalNote) => {
+    if (!n.author_id) return true;
+    const b = n.body.trim();
+    return /^📄\s*Documentos?\s+solicitad/i.test(b)
+      || /abert[oa] a partir desta conversa|m[óo]dulo .* abert|iniciada desta conversa/i.test(b);
+  };
+  const visibleNotes = notes?.filter(n => !isAutomatic(n)) ?? null;
+
+  const load = useCallback(() => {
+    whatsappService.listNotes(conversationId).then(setNotes).catch(() => setNotes([]));
+  }, [conversationId]);
+  useEffect(() => { setNotes(null); load(); }, [conversationId, load]);
+
+  const add = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setSaving(true);
+    try { await whatsappService.addNote(conversationId, body); setDraft(''); load(); }
+    catch (e: any) { toast.error('Falha ao salvar nota', e.message); }
+    finally { setSaving(false); }
+  };
+  const remove = async (id: string) => {
+    if (!await confirm({ title: 'Excluir nota', message: 'Esta nota interna será removida.', confirmLabel: 'Excluir', tone: 'danger' })) return;
+    try { await whatsappService.deleteNote(id); setNotes(n => (n || []).filter(x => x.id !== id)); }
+    catch (e: any) { toast.error('Falha ao excluir', e.message); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {!embedded && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <StickyNote size={12} /> Notas internas{(visibleNotes?.length ?? 0) > 0 ? ` (${visibleNotes!.length})` : ''}
+          </p>
+          {onExpand && (
+            <button onClick={onExpand} title="Abrir em tela cheia"
+              className="p-0.5 rounded text-slate-300 hover:text-amber-600 transition"><Maximize2 size={12} /></button>
+          )}
+        </div>
+      )}
+      <p className="text-[10.5px] text-slate-400 -mt-1">Só a equipe vê — não vai para o cliente.</p>
+      <div className="flex items-start gap-2">
+        <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); add(); } }}
+          placeholder="Anote algo para a equipe…"
+          className="flex-1 resize-none px-2.5 py-2 text-[12.5px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+        <button onClick={add} disabled={saving || !draft.trim()} title="Adicionar nota (Ctrl+Enter)"
+          className="flex-shrink-0 w-9 h-9 rounded-lg bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 disabled:opacity-50">
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={16} />}
+        </button>
+      </div>
+      {notes === null ? (
+        <div className="flex items-center gap-2 text-slate-400 text-[12px] py-1"><Loader2 size={13} className="animate-spin" /> Carregando…</div>
+      ) : (visibleNotes ?? []).length === 0 ? (
+        <p className="text-[11.5px] text-slate-400">Nenhuma nota ainda.</p>
+      ) : (() => {
+        const all = visibleNotes ?? [];
+        const shown = limit ? all.slice(0, limit) : all;
+        const hidden = all.length - shown.length;
+        return (
+          <div className="space-y-1.5">
+            {shown.map(n => (
+              <div key={n.id} className="rounded-lg border border-amber-100 bg-amber-50/50 px-2.5 py-2 group">
+                <p className="text-[12.5px] text-slate-700 whitespace-pre-wrap break-words">{n.body}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10.5px] text-slate-400">
+                    {(n.author_id && staffByUser.get(n.author_id)) || 'Equipe'} · {fmtNoteDate(n.created_at)}
+                  </span>
+                  {n.author_id === currentUserId && (
+                    <button onClick={() => remove(n.id)} title="Excluir nota"
+                      className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><Trash2 size={12} /></button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {hidden > 0 && (
+              <button onClick={onExpand}
+                className="w-full text-center py-1.5 text-[11.5px] font-semibold text-amber-600 hover:text-amber-700">
+                Ver todas ({all.length}) →
+              </button>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
+
+// Sidebar: mostra só as notas recentes (compacto) e abre o histórico completo em
+// modal — evita poluir a coluna lateral quando há muitas notas automáticas da IA.
+const InternalNotesSection: React.FC<{
+  conversationId: string;
+  staffByUser: Map<string, string>;
+  currentUserId: string | null;
+  confirm: ConfirmFn;
+}> = (props) => {
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState(0); // remonta o painel compacto ao fechar o modal (recarrega)
+  return (
+    <>
+      <InternalNotesPanel key={v} {...props} limit={3} onExpand={() => setOpen(true)} />
+      <Modal open={open} onClose={() => { setOpen(false); setV(x => x + 1); }} size="lg"
+        title="Notas internas" icon={<StickyNote size={18} />}>
+        <ModalBody>
+          <InternalNotesPanel {...props} embedded />
+        </ModalBody>
+      </Modal>
+    </>
+  );
+};
+
+// ── Timeline unificada da conversa (Fase 7) ──
+const TL_META: Record<TimelineKind, { label: string; icon: React.ReactNode; color: string }> = {
+  transfer: { label: 'Transferências', icon: <ArrowRightLeft size={13} />, color: '#d97706' },
+  note: { label: 'Notas', icon: <StickyNote size={13} />, color: '#0ea5e9' },
+  closed: { label: 'Ciclo', icon: <CheckCircle2 size={13} />, color: '#64748b' },
+  reopened: { label: 'Ciclo', icon: <RotateCcw size={13} />, color: '#16a34a' },
+  blocked: { label: 'Ciclo', icon: <Ban size={13} />, color: '#dc2626' },
+  process: { label: 'Processo', icon: <Scale size={13} />, color: '#7c3aed' },
+};
+const TL_FILTERS: { key: 'all' | TimelineKind; label: string }[] = [
+  { key: 'all', label: 'Tudo' },
+  { key: 'transfer', label: 'Transferências' },
+  { key: 'note', label: 'Notas' },
+  { key: 'closed', label: 'Ciclo' },
+  { key: 'process', label: 'Processo' },
+];
+
+// ── Preview de anexos com legenda antes do envio ──
+// Design WhatsApp Web: fundo escuro com preview grande, tira de miniaturas,
+// legenda na base. URLs criadas via useEffect (não useMemo) para evitar
+// revogação prematura em HMR ou dupla-renderização do StrictMode.
+const AttachmentPreviewModal: React.FC<{
+  files: File[];
+  onClose: () => void;
+  onConfirm: (caption: string, files: File[]) => void;
+}> = ({ files, onClose, onConfirm }) => {
+  const [items, setItems] = useState<File[]>(files);
+  const [active, setActive] = useState(0);
+  const [caption, setCaption] = useState('');
+  const [urls, setUrls] = useState<(string | null)[]>([]);
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_BYTES = 100 * 1024 * 1024;
+  const addMore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []).filter(f => f.size > 0 && f.size <= MAX_BYTES);
+    e.target.value = '';
+    if (picked.length) setItems(prev => { const next = [...prev, ...picked]; setActive(next.length - 1); return next; });
+  };
+
+  // Gera URLs de blob via efeito — mais robusto que useMemo em HMR/StrictMode.
+  useEffect(() => {
+    const created = items.map(f =>
+      (f.type.startsWith('image/') || f.type.startsWith('video/')) ? URL.createObjectURL(f) : null);
+    setUrls(created);
+    return () => { created.forEach(u => u && URL.revokeObjectURL(u)); };
+  }, [items]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') setActive(a => Math.min(a + 1, items.length - 1));
+      if (e.key === 'ArrowLeft') setActive(a => Math.max(a - 1, 0));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, items.length]);
+
+  const removeAt = (i: number) => {
+    const next = items.filter((_, idx) => idx !== i);
+    if (next.length === 0) { onClose(); return; }
+    setActive(a => Math.min(a, next.length - 1));
+    setItems(next);
+  };
+
+  const cur = items[active];
+  const curUrl = urls[active] ?? null;
+  const isImg = cur?.type.startsWith('image/');
+  const isVid = cur?.type.startsWith('video/');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-[520px] max-w-[96vw] flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 bg-[#0b141a]"
+        style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+
+        {/* Cabeçalho escuro */}
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33]">
+          <button onClick={onClose} className="text-white/60 hover:text-white transition flex-shrink-0">
+            <X size={20} />
+          </button>
+          <span className="text-[13px] font-medium text-white/80 truncate flex-1">
+            {cur?.name || '—'}
+          </span>
+          {items.length > 1 && <span className="text-[12px] text-white/40 flex-shrink-0">{active + 1}/{items.length}</span>}
+        </div>
+
+        {/* Preview principal */}
+        <div className="flex-1 flex items-center justify-center bg-[#0b141a] min-h-0"
+          style={{ minHeight: 280, maxHeight: 400 }}>
+          {curUrl && isImg ? (
+            <img src={curUrl} alt={cur?.name}
+              className="max-w-full max-h-full object-contain select-none"
+              style={{ maxHeight: 380 }} />
+          ) : curUrl && isVid ? (
+            <video src={curUrl} controls className="max-w-full max-h-full" style={{ maxHeight: 380 }} />
+          ) : cur ? (
+            <div className="flex flex-col items-center gap-3 px-8 py-10 text-center">
+              <span className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
+                <FileText size={32} className="text-white/60" />
+              </span>
+              <p className="text-white/80 text-[13px] font-medium">{cur.name}</p>
+              <p className="text-white/40 text-[11px]">{formatBytes(cur.size)}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <input ref={addInputRef} type="file" accept="image/*,video/*,*/*" multiple className="hidden" onChange={addMore} />
+
+        {/* Tira de miniaturas — só quando há mais de 1 item (estilo WhatsApp) */}
+        {items.length > 1 && (
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-[#1a1a1a] overflow-x-auto">
+            {items.map((f, i) => {
+              const u = urls[i];
+              const isActive = i === active;
+              return (
+                <button key={i} onClick={() => setActive(i)}
+                  className={`group/th relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-white/5 ring-2 transition ${isActive ? 'ring-[#00a884]' : 'ring-transparent opacity-70 hover:opacity-100'}`}>
+                  {u && f.type.startsWith('image/') ? (
+                    <img src={u} alt={f.name} className="w-full h-full object-cover" />
+                  ) : u && f.type.startsWith('video/') ? (
+                    <video src={u} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="w-full h-full bg-white/10 flex items-center justify-center">
+                      <FileText size={16} className="text-white/60" />
+                    </span>
+                  )}
+                  <span onClick={e => { e.stopPropagation(); removeAt(i); }}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover/th:opacity-100 transition cursor-pointer">
+                    <X size={9} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Rodapé: + adicionar · legenda · enviar (estilo WhatsApp) */}
+        <div className="flex items-end gap-2 px-3 py-3 bg-[#202c33]">
+          <button onClick={() => addInputRef.current?.click()} title="Adicionar mídia"
+            className="flex-shrink-0 w-10 h-10 rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white flex items-center justify-center transition">
+            <Plus size={20} />
+          </button>
+          <textarea autoFocus value={caption} onChange={e => setCaption(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onConfirm(caption, items); } }}
+            rows={1} placeholder={items.length > 1 ? `Legenda · ${items.length} itens…` : 'Adicionar uma legenda…'}
+            className="flex-1 resize-none max-h-28 px-3.5 py-2.5 text-[13.5px] rounded-lg bg-white/10 text-white placeholder:text-white/40 border border-transparent focus:bg-white/15 outline-none" />
+          <button onClick={() => onConfirm(caption, items)} title="Enviar"
+            className="flex-shrink-0 w-11 h-11 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#017561] transition shadow-lg">
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Fase H: criar prazo a partir de mensagem ──
+function msgTitle(m: WhatsAppMessage): string {
+  if (m.content) return m.content.slice(0, 80).trim();
+  if (m.file_name) return m.file_name;
+  return typeLabel(m.type);
+}
+function msgDescription(m: WhatsAppMessage): string {
+  return `Originado da conversa WhatsApp em ${new Date(m.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.\n${m.content || ''}`.trim();
+}
+
+const CreateDeadlineFromMessageModal: React.FC<{
+  message: WhatsAppMessage;
+  clientId: string;
+  processes: Process[];
+  onClose: () => void;
+}> = ({ message, clientId, processes, onClose }) => {
+  const toast = useToastContext();
+  const [title, setTitle] = useState(msgTitle(message));
+  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState<DeadlinePriority>('media');
+  const [type, setType] = useState<DeadlineType>('geral');
+  const [processId, setProcessId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const minDate = new Date().toISOString().slice(0, 10);
+
+  const handleSave = async () => {
+    if (!title.trim() || !dueDate) return;
+    setSaving(true);
+    try {
+      await deadlineService.createDeadline({
+        title: title.trim(),
+        description: msgDescription(message),
+        due_date: dueDate,
+        priority,
+        type,
+        client_id: clientId,
+        process_id: processId || null,
+      });
+      toast.success('Prazo criado.');
+      onClose();
+    } catch (e: any) { toast.error('Erro ao criar prazo', e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Criar prazo"
+      icon={<Calendar size={18} />}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving || !title.trim() || !dueDate} className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />} Criar prazo
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody className="space-y-3">
+        {/* Origem da mensagem */}
+        <div className="px-3 py-2.5 rounded-xl bg-[#f0f2f5] border-l-2 border-[#00a884]">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#017561] mb-0.5">Mensagem de origem</p>
+          <p className="text-[12px] text-slate-600 line-clamp-2">{message.content || typeLabel(message.type)}</p>
+          <p className="text-[10.5px] text-slate-400 mt-0.5">{new Date(message.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+        </div>
+
+        <div>
+          <label className={waLabel}>Título *</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={waLabel}>Vencimento *</label>
+            <input type="date" value={dueDate} min={minDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
+          </div>
+          <div>
+            <label className={waLabel}>Prioridade</label>
+            <select value={priority} onChange={e => setPriority(e.target.value as DeadlinePriority)} className={waInput}>
+              <option value="baixa">Baixa</option>
+              <option value="media">Média</option>
+              <option value="alta">Alta</option>
+              <option value="urgente">Urgente</option>
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={waLabel}>Tipo</label>
+            <select value={type} onChange={e => setType(e.target.value as DeadlineType)} className={waInput}>
+              <option value="geral">Geral</option>
+              <option value="processo">Processo</option>
+              <option value="requerimento">Requerimento</option>
+            </select>
+          </div>
+          {processes.length > 0 && (
+            <div>
+              <label className={waLabel}>Processo</label>
+              <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
+                <option value="">Nenhum</option>
+                {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Fase H: criar tarefa a partir de mensagem ──
+const CreateTaskFromMessageModal: React.FC<{
+  message: WhatsAppMessage;
+  clientId: string;
+  processes: Process[];
+  onClose: () => void;
+}> = ({ message, clientId, processes, onClose }) => {
+  const toast = useToastContext();
+  const [title, setTitle] = useState(msgTitle(message));
+  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('medium');
+  const [processId, setProcessId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const minDate = new Date().toISOString().slice(0, 10);
+
+  const handleSave = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    try {
+      await taskService.createTask({
+        title: title.trim(),
+        description: msgDescription(message),
+        due_date: dueDate || undefined,
+        priority,
+        client_id: clientId,
+        process_id: processId || undefined,
+      });
+      toast.success('Tarefa criada.');
+      onClose();
+    } catch (e: any) { toast.error('Erro ao criar tarefa', e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Criar tarefa"
+      icon={<ListTodo size={18} />}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving || !title.trim()} className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <ListTodo size={14} />} Criar tarefa
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody className="space-y-3">
+        <div className="px-3 py-2.5 rounded-xl bg-[#f0f2f5] border-l-2 border-[#00a884]">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#017561] mb-0.5">Mensagem de origem</p>
+          <p className="text-[12px] text-slate-600 line-clamp-2">{message.content || typeLabel(message.type)}</p>
+          <p className="text-[10.5px] text-slate-400 mt-0.5">{new Date(message.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+        </div>
+
+        <div>
+          <label className={waLabel}>Título *</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={waLabel}>Prazo</label>
+            <input type="date" value={dueDate} min={minDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
+          </div>
+          <div>
+            <label className={waLabel}>Prioridade</label>
+            <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={waInput}>
+              <option value="low">Baixa</option>
+              <option value="medium">Média</option>
+              <option value="high">Alta</option>
+            </select>
+          </div>
+        </div>
+        {processes.length > 0 && (
+          <div>
+            <label className={waLabel}>Processo</label>
+            <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
+              <option value="">Nenhum</option>
+              {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
+            </select>
+          </div>
+        )}
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Fase M: painel de etiquetas da conversa ──
+const ConversationLabelsPanel: React.FC<{
+  conversation: WhatsAppConversation;
+  onChanged: (conv: WhatsAppConversation) => void;
+}> = ({ conversation, onChanged }) => {
+  const toast = useToastContext();
+  const [saving, setSaving] = useState(false);
+  const current = conversation.labels ?? [];
+
+  const toggle = async (key: string) => {
+    const next = current.includes(key) ? current.filter(l => l !== key) : [...current, key];
+    setSaving(true);
+    try {
+      await whatsappService.updateLabels(conversation.id, next);
+      onChanged({ ...conversation, labels: next });
+    } catch (e: any) { toast.error('Falha ao salvar etiqueta', e.message); }
+    finally { setSaving(false); }
+  };
+
+  const available = WA_LABELS.filter(l => !current.includes(l.key));
+
+  return (
+    <div className="space-y-1.5">
+      {/* Select compacto para adicionar etiqueta (não poluir com chips soltos) */}
+      <select value="" onChange={e => toggle(e.target.value)} disabled={saving}
+        className="w-full min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none disabled:opacity-60">
+        <option value="">{saving ? 'Salvando…' : '🏷 Etiquetas — adicionar…'}</option>
+        {available.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+      </select>
+      {current.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {current.map(key => {
+            const meta = WA_LABELS.find(x => x.key === key);
+            if (!meta) return null;
+            return (
+              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold" style={{ background: meta.color, color: '#fff' }}>
+                <Tag size={9} />{meta.key}
+                <button onClick={() => toggle(key)} disabled={saving} className="hover:opacity-70 ml-0.5"><X size={10} /></button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Fase M: modal de resumo automático por IA ──
+const ConversationSummaryModal: React.FC<{
+  conversation: WhatsAppConversation;
+  staffByUser: Map<string, string>;
+  onClose: () => void;
+}> = ({ conversation, staffByUser, onClose }) => {
+  const toast = useToastContext();
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    // Carrega as últimas 60 mensagens e solicita resumo ao serviço de IA.
+    whatsappService.listMessages(conversation.id)
+      .then(async msgs => {
+        if (!alive) return;
+        const lines = msgs.slice(-60).map(m => {
+          const who = m.direction === 'out'
+            ? (m.sender_user_id ? (staffByUser.get(m.sender_user_id) || 'Agente') : 'Agente')
+            : (conversation.contact_name || conversation.contact_phone);
+          const body = m.content || (m.file_name ? `[Arquivo: ${m.file_name}]` : `[${m.type}]`);
+          const ts = new Date(m.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+          return `[${ts}] ${who}: ${body}`;
+        }).join('\n');
+
+        const conversationText = `Conversa WhatsApp — ${conversation.contact_name || conversation.contact_phone}\n\n${lines}\n\nDestaque: assunto principal, o que foi solicitado ou combinado, pendências e próximos passos.`;
+        const result = await aiService.generateSummary(conversationText, 150);
+        if (alive) setSummary(result);
+      })
+      .catch(() => { if (alive) setSummary(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [conversation.id, conversation.contact_name, conversation.contact_phone, staffByUser]);
+
+  const saveAsNote = async () => {
+    if (!summary) return;
+    setSaving(true);
+    try {
+      await whatsappService.addNote(conversation.id, `\u{1F916} Resumo automático:\n${summary}`);
+      toast.success('Resumo salvo como nota interna.');
+      onClose();
+    } catch (e: any) { toast.error('Falha ao salvar nota', e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Resumo automático por IA"
+      icon={<Sparkles size={18} />}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Fechar</button>
+          {summary && (
+            <button onClick={saveAsNote} disabled={saving} className={waBtnPrimary}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <StickyNote size={14} />} Salvar como nota
+            </button>
+          )}
+        </div>
+      }
+    >
+      <WaDialogBody className="min-h-[120px]">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-8 gap-3 text-slate-400">
+            <Loader2 size={24} className="animate-spin text-[#00a884]" />
+            <span className="text-[13px]">Gerando resumo da conversa…</span>
+          </div>
+        ) : summary ? (
+          <p className="text-[13.5px] text-slate-700 leading-relaxed whitespace-pre-wrap">{summary}</p>
+        ) : (
+          <p className="text-[13px] text-slate-400 italic text-center py-6">Não foi possível gerar o resumo. Verifique se a IA está configurada.</p>
+        )}
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Fase I: modal de solicitação de documento (modo lista) ──
+const DOC_QUICK_ADD = ['RG', 'CPF', 'Comprovante de residência', 'Carteira de trabalho', 'Certidão de nascimento', 'Certidão de casamento', 'Comprovante de renda', 'Foto 3x4'];
+
+type DocReqItem = { label: string; required: boolean };
+
+const RequestDocumentModal: React.FC<{
+  conversationId: string;
+  clientId: string;
+  clientName: string | null;
+  createdBy: string | null;
+  onClose: () => void;
+  onCreated?: () => void;
+}> = ({ conversationId, clientId, clientName, createdBy, onClose, onCreated }) => {
+  const toast = useToastContext();
+  const [items, setItems] = useState<DocReqItem[]>([{ label: '', required: true }]);
+  const [dueDate, setDueDate] = useState('');
+  const [sendMsg, setSendMsg] = useState(true);
+  const [clientMsg, setClientMsg] = useState('');
+  const [msgDirty, setMsgDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const buildMsg = (its: DocReqItem[], name: string | null) => {
+    const firstName = (name || '').split(' ')[0] || '';
+    const valid = its.filter(i => i.label.trim());
+    const list = valid.map(i => `• ${i.label.trim()}${i.required ? '' : ' (opcional)'}`).join('\n');
+    const head = `Olá${firstName ? `, ${firstName}` : ''}! Para darmos continuidade ao seu atendimento, precisamos que nos envie:`;
+    return valid.length ? `${head}\n\n${list}` : `${head}\n\n`;
+  };
+
+  // Mantém a mensagem em sincronia com a lista de documentos, até o usuário editá-la.
+  useEffect(() => {
+    if (!msgDirty) setClientMsg(buildMsg(items, clientName));
+  }, [items, clientName, msgDirty]);
+
+  const setItem = (idx: number, patch: Partial<DocReqItem>) =>
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  const addItem = (label = '') => setItems(prev => [...prev, { label, required: true }]);
+  const removeItem = (idx: number) => setItems(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
+
+  const validItems = items.filter(i => i.label.trim());
+
+  const handleSave = async () => {
+    if (validItems.length === 0) return;
+    setSaving(true);
+    try {
+      const cleaned = validItems.map(i => ({ label: i.label.trim(), required: i.required }));
+      const title = cleaned.length === 1 ? cleaned[0].label : 'Solicitação de documentos';
+      // Registro rastreável: cria document_request + itens (status 'pending'),
+      // que passa a aparecer em "Documentos pendentes" e no portal do cliente.
+      await whatsappService.createDocumentRequest({
+        clientId, title, dueDate: dueDate || null, createdBy, items: cleaned,
+      });
+      // Trilha interna na conversa (efeito colateral, não o registro principal).
+      const noteList = cleaned.map(i => `${i.label}${i.required ? '' : ' (opcional)'}`).join(', ');
+      await whatsappService.addNote(
+        conversationId,
+        `\u{1F4C4} Documentos solicitados: ${noteList}${dueDate ? ` (prazo ${new Date(dueDate + 'T00:00:00').toLocaleDateString('pt-BR')})` : ''}`,
+      ).catch(() => {});
+      if (sendMsg && clientMsg.trim()) {
+        await whatsappService.sendText({ conversationId, text: clientMsg.trim() });
+      }
+      toast.success('Solicitação de documento registrada' + (sendMsg ? ' e mensagem enviada.' : '.'));
+      onCreated?.();
+      onClose();
+    } catch (e: any) { toast.error('Erro ao registrar solicitação', e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Solicitar documento"
+      icon={<FilePlus size={18} />}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving || validItems.length === 0} className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <FilePlus size={14} />}
+            {sendMsg ? 'Solicitar e enviar' : 'Registrar solicitação'}
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody className="space-y-4">
+        <div>
+          <label className={waLabel}>Documentos necessários *</label>
+          <div className="space-y-1.5">
+            {items.map((it, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <input autoFocus={idx === 0} value={it.label} onChange={e => setItem(idx, { label: e.target.value })}
+                  placeholder="Ex: RG, comprovante de residência…"
+                  className={`${waInput} flex-1 min-w-0`} />
+                <button type="button" onClick={() => setItem(idx, { required: !it.required })}
+                  title={it.required ? 'Obrigatório — clique para tornar opcional' : 'Opcional — clique para tornar obrigatório'}
+                  className={`flex-shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-semibold border transition ${it.required ? 'border-[#00a884]/30 bg-[#00a884]/10 text-[#017561]' : 'border-[#e7e5df] bg-white text-slate-400'}`}>
+                  {it.required ? 'Obrigatório' : 'Opcional'}
+                </button>
+                <button type="button" onClick={() => removeItem(idx)} disabled={items.length === 1}
+                  className="flex-shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 disabled:opacity-30 disabled:hover:bg-transparent transition">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => addItem()}
+            className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[#017561] hover:text-[#008069]">
+            <Plus size={13} /> Adicionar documento
+          </button>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {DOC_QUICK_ADD.filter(q => !items.some(i => i.label.trim().toLowerCase() === q.toLowerCase())).map(q => (
+              <button key={q} type="button"
+                onClick={() => setItems(prev => { const blank = prev.findIndex(i => !i.label.trim()); if (blank >= 0) return prev.map((i, ix) => ix === blank ? { ...i, label: q } : i); return [...prev, { label: q, required: true }]; })}
+                className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-[#f9f8f6] px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-[#00a884] hover:bg-[#00a884]/10 hover:text-[#017561] transition">
+                <Plus size={11} /> {q}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className={waLabel}>Prazo para envio (opcional)</label>
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={sendMsg} onChange={e => setSendMsg(e.target.checked)}
+            className="w-4 h-4 rounded accent-[#00a884]" />
+          <span className="text-[12.5px] font-medium text-slate-700">Enviar mensagem ao cliente</span>
+        </label>
+
+        {sendMsg && (
+          <div>
+            <label className={waLabel}>Mensagem ao cliente</label>
+            <textarea value={clientMsg} onChange={e => { setClientMsg(e.target.value); setMsgDirty(true); }} rows={6}
+              className={`${waInput} resize-none`} />
+            <p className="mt-1 text-[11px] text-slate-400">{msgDirty ? 'Mensagem editada manualmente.' : 'Atualiza automaticamente com a lista acima.'} Enviada pelo WhatsApp para o contato.</p>
+          </div>
+        )}
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+const ConversationTimelineModal: React.FC<{
+  conversation: WhatsAppConversation;
+  staffByUser: Map<string, string>;
+  onClose: () => void;
+}> = ({ conversation, staffByUser, onClose }) => {
+  const [events, setEvents] = useState<TimelineEvent[] | null>(null);
+  const [agents, setAgents] = useState<string[]>([]);
+  const [filter, setFilter] = useState<'all' | TimelineKind>('all');
+
+  useEffect(() => {
+    let alive = true;
+    whatsappService.getConversationTimeline(conversation)
+      .then(e => { if (alive) setEvents(e); })
+      .catch(() => { if (alive) setEvents([]); });
+    whatsappService.getConversationAgents(conversation)
+      .then(a => { if (alive) setAgents(a); })
+      .catch(() => { if (alive) setAgents([]); });
+    return () => { alive = false; };
+  }, [conversation]);
+
+  // O filtro "closed" agrupa todos os eventos de ciclo de vida.
+  const matchFilter = (k: TimelineKind) => filter === 'all' || k === filter
+    || (filter === 'closed' && (k === 'closed' || k === 'reopened' || k === 'blocked'));
+  const shown = (events || []).filter(e => matchFilter(e.kind));
+
+  return (
+    <WaDialog title="Histórico da conversa" icon={<History size={18} />} onClose={onClose} size="lg">
+      {agents.length > 0 && (
+        <div className="flex items-center gap-1.5 px-4 sm:px-5 py-2.5 border-b border-[#f1f0ec] flex-wrap">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400"><UserCheck size={13} /> Atendentes:</span>
+          {agents.map((id, i) => (
+            <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#f0f2f5] text-slate-600">
+              {staffByUser.get(id) || 'Usuário'}
+              {i === agents.length - 1 && conversation.assigned_user_id === id && conversation.status !== 'closed' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Responsável atual" />
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 px-4 sm:px-5 py-3 border-b border-[#f1f0ec] flex-wrap">
+        <Filter size={13} className="text-slate-400" />
+        {TL_FILTERS.map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)}
+            className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold transition ${filter === f.key ? 'bg-[#00a884] text-white' : 'text-slate-500 hover:bg-[#f0f2f5]'}`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className="px-4 sm:px-5 py-4">
+        {events === null ? (
+          <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+        ) : shown.length === 0 ? (
+          <p className="text-center text-[13px] text-slate-400 py-8">Nenhum evento para este filtro.</p>
+        ) : (
+          <div className="space-y-3">
+            {shown.map(e => {
+              const meta = TL_META[e.kind];
+              return (
+                <div key={e.id} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: meta.color + '22', color: meta.color }}>{meta.icon}</span>
+                    <span className="flex-1 w-px bg-[#e7e5df] mt-1" />
+                  </div>
+                  <div className="pb-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-700">{e.title}</p>
+                    {e.detail && <p className="text-[12px] text-slate-500 whitespace-pre-wrap break-words">{e.detail}</p>}
+                    <p className="text-[10.5px] text-slate-400 mt-0.5">
+                      {e.actorId && staffByUser.get(e.actorId) ? `${staffByUser.get(e.actorId)} · ` : ''}
+                      {new Date(e.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </WaDialog>
+  );
+};
+
+// ── Seletor de templates/macros (Fase 8) ──
+const TemplatePickerModal: React.FC<{
+  context: { clientName?: string | null; clientPhone?: string | null; agentName?: string | null; greeting?: string | null };
+  onClose: () => void;
+  onPick: (text: string) => void;
+}> = ({ context, onClose, onPick }) => {
+  const toast = useToastContext();
+  const [templates, setTemplates] = useState<WhatsAppTemplate[] | null>(null);
+  const [q, setQ] = useState('');
+  const [creating, setCreating] = useState(false);     // mostra o formulário de novo modelo
+  const [newName, setNewName] = useState('');
+  const [newBody, setNewBody] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    whatsappService.listTemplates({ activeOnly: true })
+      .then(setTemplates).catch(() => setTemplates([]));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = (templates || []).filter(t =>
+    !q.trim() || t.name.toLowerCase().includes(q.toLowerCase()) || (t.category || '').toLowerCase().includes(q.toLowerCase()));
+
+  const createNew = async () => {
+    if (!newName.trim() || !newBody.trim()) return;
+    setSaving(true);
+    try {
+      await whatsappService.createTemplate({ name: newName.trim(), body: newBody.trim() });
+      toast.success('Modelo criado.');
+      setNewName(''); setNewBody(''); setCreating(false);
+      load();
+    } catch (e: any) { toast.error('Falha ao criar modelo', e.message); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (t: WhatsAppTemplate) => {
+    setDeletingId(t.id);
+    try {
+      await whatsappService.deleteTemplate(t.id);
+      setTemplates(prev => (prev || []).filter(x => x.id !== t.id));
+    } catch (e: any) { toast.error('Falha ao excluir modelo', e.message); }
+    finally { setDeletingId(null); }
+  };
+
+  return (
+    <WaDialog title="Modelos de mensagem" icon={<MessageSquare size={18} />} onClose={onClose}
+      headerActions={
+        <button onClick={() => setCreating(c => !c)} title="Novo modelo"
+          className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[12px] font-semibold text-white transition">
+          <Plus size={13} /> Novo
+        </button>
+      }>
+      {/* Formulário de novo modelo */}
+      {creating && (
+        <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec] bg-[#f7f9fa] space-y-2">
+          <div>
+            <label className={waLabel}>Atalho / título <span className="font-normal text-slate-400">(ex: boas-vindas → digite /boas)</span></label>
+            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="boas-vindas" className={waInput} />
+          </div>
+          <div>
+            <label className={waLabel}>Texto da mensagem</label>
+            <textarea value={newBody} onChange={e => setNewBody(e.target.value)} rows={3}
+              placeholder="Olá! Seja bem-vindo(a) ao nosso escritório…" className={`${waInput} resize-none`} />
+            <p className="mt-1 text-[10.5px] text-slate-400">Variáveis: {'{{cliente.nome}}'}, {'{{saudacao}}'}, {'{{agente.nome}}'}.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setCreating(false); setNewName(''); setNewBody(''); }} className={waBtnGhost}>Cancelar</button>
+            <button onClick={createNew} disabled={saving || !newName.trim() || !newBody.trim()} className={waBtnPrimary}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Salvar modelo
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec]">
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modelo…" className={waInput} />
+      </div>
+      <div className="px-4 sm:px-5 py-3 space-y-2">
+        {templates === null ? (
+          <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-[13px] text-slate-400 py-6">Nenhum modelo. Clique em <strong>Novo</strong> para cadastrar.</p>
+        ) : filtered.map(t => {
+          const preview = renderTemplate(t.body, context);
+          return (
+            <div key={t.id}
+              className="group/tpl relative rounded-xl border border-[#e7e5df] hover:border-[#00a884] hover:bg-[#00a884]/5 transition">
+              <button onClick={() => onPick(preview)} className="w-full text-left p-3 pr-9">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-700">
+                    <span className="text-[#00a884]">/</span>{t.name}
+                  </span>
+                  {t.category && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">{t.category}</span>}
+                </div>
+                <p className="text-[12px] text-slate-500 line-clamp-3 whitespace-pre-wrap break-words">{preview}</p>
+              </button>
+              <button onClick={() => remove(t)} disabled={deletingId === t.id} title="Excluir modelo"
+                className="absolute top-2 right-2 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 opacity-0 group-hover/tpl:opacity-100 transition disabled:opacity-50">
+                {deletingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </WaDialog>
+  );
+};
+
+// ── Agendar mensagem (Fase 8.1) ──
+const ScheduleMessageModal: React.FC<{
+  conversation: WhatsAppConversation;
+  initialText: string;
+  onClose: () => void;
+  onDone: () => void;
+}> = ({ conversation, initialText, onClose, onDone }) => {
+  const toast = useToastContext();
+  const [text, setText] = useState(initialText);
+  const [when, setWhen] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // datetime-local mínimo: agora + 90s (buffer de envio). Recomputa a cada 30s para
+  // que o input não aceite datas que já ficaram no passado enquanto o modal estava aberto.
+  const computeMin = () => {
+    const d = new Date(Date.now() + 90000 - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  };
+  const [minLocal, setMinLocal] = useState(computeMin);
+  useEffect(() => {
+    const t = setInterval(() => setMinLocal(computeMin()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const submit = async () => {
+    if (!text.trim() || !when) return;
+    // Valida localmente com 30s de tolerância para absorver latência de rede.
+    if (new Date(when).getTime() < Date.now() + 30000) {
+      toast.error('Horário inválido', 'Escolha uma data e hora com pelo menos 1 minuto no futuro.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await whatsappService.scheduleMessage({
+        conversationId: conversation.id,
+        channelId: conversation.instance_id,
+        scheduledAt: new Date(when).toISOString(),
+        text,
+      });
+      onDone();
+    } catch (e: any) { toast.error('Falha ao agendar', e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Agendar mensagem"
+      icon={<CalendarClock size={18} />}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={submit} disabled={saving || !text.trim() || !when} className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={14} />} Agendar
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <label className={waLabel}>Mensagem</label>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Texto a enviar…"
+          className={`${waInput} mb-3 resize-none`} />
+        <label className={waLabel}>Data e hora</label>
+        <input type="datetime-local" value={when} min={minLocal} onChange={e => setWhen(e.target.value)}
+          className={waInput} />
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Bolhas-fantasma das mensagens agendadas dentro da thread ──
+const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean }> = ({ conversationId, privateMode }) => {
+  const toast = useToastContext();
+  const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
+  const load = useCallback(() => {
+    whatsappService.listScheduled(conversationId).then(setItems).catch(() => setItems([]));
+  }, [conversationId]);
+  useEffect(() => {
+    setItems(null);
+    load();
+    const unsub = whatsappService.subscribeScheduled(conversationId, load);
+    return () => unsub();
+  }, [conversationId, load]);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editWhen, setEditWhen] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const startEdit = (s: WhatsAppScheduledMessage) => { setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at)); };
+  const cancelEdit = () => { setEditingId(null); setEditText(''); setEditWhen(''); };
+  const saveEdit = async (id: string) => {
+    if (!editWhen) return;
+    setBusy(true);
+    try {
+      await whatsappService.updateScheduled(id, { text: editText, scheduledAt: new Date(editWhen).toISOString() });
+      cancelEdit(); load();
+    } catch (e: any) { toast.error('Falha ao salvar', e.message); }
+    finally { setBusy(false); }
+  };
+
+  const pending = (items || []).filter(s => s.status === 'pending');
+  if (pending.length === 0) return null;
+  return (
+    <div className="space-y-1.5 mt-2">
+      {pending.map(s => {
+        const editing = editingId === s.id;
+        return (
+        <div key={s.id} className="flex justify-end">
+          <div className="group max-w-[75%] rounded-2xl rounded-br-sm border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <CalendarClock size={12} className="text-amber-600" />
+              <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Agendada</span>
+              <span className="text-[10px] text-slate-400">
+                {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+              {!editing && (
+                <button onClick={() => startEdit(s)} title="Editar agendamento"
+                  className="ml-auto p-0.5 rounded text-amber-400 opacity-0 group-hover:opacity-100 hover:text-amber-600 transition">
+                  <Pencil size={12} />
+                </button>
+              )}
+            </div>
+            {editing ? (
+              <div className="mt-1 space-y-1.5">
+                <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
+                  className="w-full px-2.5 py-1.5 text-[12.5px] rounded-lg bg-white border border-amber-200 focus:border-amber-400 outline-none resize-none" />
+                <input type="datetime-local" value={editWhen} onChange={e => setEditWhen(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-[12px] rounded-lg bg-white border border-amber-200 focus:border-amber-400 outline-none" />
+                <div className="flex justify-end gap-1.5">
+                  <button onClick={cancelEdit} className="px-2.5 py-1 text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
+                  <button onClick={() => saveEdit(s.id)} disabled={busy || !editWhen}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11.5px] font-semibold hover:bg-amber-700 disabled:opacity-50">
+                    {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Salvar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              s.body && <p className="text-[13px] text-slate-700 whitespace-pre-wrap break-words">{privateMode ? maskSensitive(s.body) : s.body}</p>
+            )}
+          </div>
+        </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ── Painel de mensagens agendadas no aside (Fase 8.1) ──
+const SCHED_STATUS: Record<string, { label: string; cls: string }> = {
+  pending: { label: 'Agendada', cls: 'bg-sky-100 text-sky-700' },
+  sent: { label: 'Enviada', cls: 'bg-emerald-100 text-emerald-700' },
+  canceled: { label: 'Cancelada', cls: 'bg-slate-100 text-slate-500' },
+  failed: { label: 'Falha', cls: 'bg-red-100 text-red-600' },
+};
+const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSchedule: boolean; confirm: ConfirmFn }> = ({ conversationId, confirm }) => {
+  const toast = useToastContext();
+  const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
+
+  const load = useCallback(() => {
+    whatsappService.listScheduled(conversationId).then(setItems).catch(() => setItems([]));
+  }, [conversationId]);
+
+  useEffect(() => {
+    setItems(null);
+    load();
+    const unsub = whatsappService.subscribeScheduled(conversationId, load);
+    return () => unsub();
+  }, [conversationId, load]);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editWhen, setEditWhen] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const startEdit = (s: WhatsAppScheduledMessage) => {
+    setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at));
+  };
+  const cancelEdit = () => { setEditingId(null); setEditText(''); setEditWhen(''); };
+
+  const saveEdit = async (s: WhatsAppScheduledMessage) => {
+    if (!editWhen) return;
+    setBusy(s.id);
+    try {
+      const scheduledAt = new Date(editWhen).toISOString();
+      if (s.status === 'pending') {
+        await whatsappService.updateScheduled(s.id, { text: editText, scheduledAt });
+      } else {
+        // Falhou/cancelada → reagenda voltando para 'pending'.
+        await whatsappService.retryScheduled(s.id, { text: editText, scheduledAt });
+      }
+      cancelEdit(); load();
+    } catch (e: any) { toast.error('Falha ao salvar', e.message); }
+    finally { setBusy(null); }
+  };
+
+  const cancel = async (id: string) => {
+    if (!await confirm({ title: 'Cancelar agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Cancelar envio', tone: 'danger' })) return;
+    try { await whatsappService.cancelScheduled(id); load(); }
+    catch (e: any) { toast.error('Falha ao cancelar', e.message); }
+  };
+
+  const del = async (id: string) => {
+    if (!await confirm({ title: 'Excluir agendamento', message: 'Remove a mensagem agendada do histórico. Não pode ser desfeito.', confirmLabel: 'Excluir', tone: 'danger' })) return;
+    try { await whatsappService.deleteScheduled(id); load(); }
+    catch (e: any) { toast.error('Falha ao excluir', e.message); }
+  };
+
+  const retryNow = async (id: string) => {
+    setBusy(id);
+    try { await whatsappService.retryScheduled(id); load(); }
+    catch (e: any) { toast.error('Falha ao reenviar', e.message); }
+    finally { setBusy(null); }
+  };
+
+  // Mensagens já enviadas não interessam aqui — viram histórico na thread.
+  const visible = (items || []).filter(s => s.status !== 'sent');
+
+  // Sem nada pendente/falho/cancelado → não ocupa espaço.
+  if (visible.length === 0) return null;
+
+  const iconBtn = 'p-1 rounded text-slate-300 transition';
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+        <CalendarClock size={12} /> Mensagens agendadas
+      </p>
+      <div className="space-y-1.5">
+        {visible.map(s => {
+          const st = SCHED_STATUS[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-500' };
+          const editing = editingId === s.id;
+          return (
+            <div key={s.id} className="rounded-lg border border-[#e7e5df] px-2.5 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>{st.label}</span>
+                <span className="text-[10.5px] text-slate-400 flex-1">
+                  {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                {!editing && (
+                  <span className="flex items-center gap-0.5">
+                    {(s.status === 'pending' || s.status === 'failed' || s.status === 'canceled') && (
+                      <button onClick={() => startEdit(s)} title={s.status === 'pending' ? 'Editar' : 'Editar e reagendar'} className={`${iconBtn} hover:text-amber-600`}><Pencil size={13} /></button>
+                    )}
+                    {s.status === 'failed' && (
+                      <button onClick={() => retryNow(s.id)} disabled={busy === s.id} title="Tentar enviar agora" className={`${iconBtn} hover:text-emerald-600`}>
+                        {busy === s.id ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                      </button>
+                    )}
+                    {s.status === 'pending' && (
+                      <button onClick={() => cancel(s.id)} title="Cancelar agendamento" className={`${iconBtn} hover:text-amber-600`}><X size={13} /></button>
+                    )}
+                    <button onClick={() => del(s.id)} title="Excluir" className={`${iconBtn} hover:text-rose-500`}><Trash2 size={13} /></button>
+                  </span>
+                )}
+              </div>
+
+              {editing ? (
+                <div className="mt-2 space-y-1.5">
+                  <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
+                    className="w-full px-2.5 py-1.5 text-[12px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none resize-none" />
+                  <input type="datetime-local" value={editWhen} onChange={e => setEditWhen(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-[12px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                  <div className="flex justify-end gap-1.5">
+                    <button onClick={cancelEdit} className="px-2.5 py-1 text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
+                    <button onClick={() => saveEdit(s)} disabled={busy === s.id || !editWhen}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11.5px] font-semibold hover:bg-amber-700 disabled:opacity-50">
+                      {busy === s.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {s.status === 'pending' ? 'Salvar' : 'Reagendar'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {s.body && <p className="mt-1 text-[12px] text-slate-600 whitespace-pre-wrap break-words line-clamp-3">{s.body}</p>}
+                  {s.status === 'failed' && s.error && <p className="mt-0.5 text-[10.5px] text-red-500">{s.error}</p>}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const ClientPickerModal: React.FC<{
+  phone: string;
+  onClose: () => void;
+  onPick: (c: WhatsAppClientLite) => void;
+}> = ({ phone, onClose, onPick }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<WhatsAppClientLite[]>([]);
+  const [loading, setLoading] = useState(false);
+  // Fase F: alerta de duplicado — cliente com o mesmo telefone na base
+  const [phoneOwners, setPhoneOwners] = useState<WhatsAppClientLite[]>([]);
+  const [confirm, setConfirm] = useState<WhatsAppClientLite | null>(null);
+
+  // Carrega candidatos por telefone uma única vez (anti-duplicado).
+  useEffect(() => {
+    whatsappService.matchClientsByPhone(phone).then(setPhoneOwners).catch(() => {});
+  }, [phone]);
+
+  // Abre já sugerindo por telefone; depois busca pelo que for digitado (debounce).
+  useEffect(() => {
+    let alive = true;
+    const q = query.trim();
+    setLoading(true);
+    const run = q.length >= 2
+      ? whatsappService.searchClients(q)
+      : whatsappService.matchClientsByPhone(phone);
+    const t = setTimeout(() => {
+      run.then(list => { if (alive) setResults(list); })
+        .catch(() => { if (alive) setResults([]); })
+        .finally(() => { if (alive) setLoading(false); });
+    }, q ? 280 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query, phone]);
+
+  const normPhone = normalizePhone(phone);
+  const phoneMatchIds = new Set(phoneOwners.map(o => o.id));
+
+  // Verifica se o cliente escolhido tem telefone diferente e o telefone pertence a outro cliente.
+  const handlePick = (c: WhatsAppClientLite) => {
+    const clientPhones = [c.mobile, c.phone].map(p => p ? normalizePhone(p) : null).filter(Boolean);
+    const phoneIsAlreadyOwned = phoneOwners.length > 0 && !phoneMatchIds.has(c.id);
+    if (phoneIsAlreadyOwned && !clientPhones.includes(normPhone)) {
+      setConfirm(c); // pede confirmação antes de vincular
+    } else {
+      onPick(c);
+    }
+  };
+
+  return (
+    <WaDialog title="Vincular cliente" icon={<Link2 size={18} />} onClose={onClose} size="sm">
+      <WaDialogBody>
+        {/* Alerta de duplicado (Fase F) */}
+        {confirm ? (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+            <p className="text-[13px] font-bold text-amber-800 mb-1 flex items-center gap-1.5">
+              <AlertCircle size={15} /> Telefone pertence a outro cliente
+            </p>
+            <p className="text-[12px] text-amber-700 mb-3">
+              O número <strong>{prettyPhone(phone)}</strong> já está cadastrado em{' '}
+              <strong>{phoneOwners.map(o => o.full_name).join(', ')}</strong>.
+              Deseja mesmo vincular a conversa a <strong>{confirm.full_name}</strong>?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => { onPick(confirm); setConfirm(null); }}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700">
+                Vincular mesmo assim
+              </button>
+              <button onClick={() => setConfirm(null)}
+                className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 text-[12px] font-semibold text-amber-700 hover:bg-amber-50">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (<>
+          <div className="relative mb-3">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome, CPF/CNPJ ou telefone…"
+              className={`${waInput} pl-9`} />
+          </div>
+          <div className="max-h-[320px] overflow-y-auto -mx-1">
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+            ) : results.length === 0 ? (
+              <p className="text-center py-8 text-[13px] text-slate-400">{query.trim().length >= 2 ? 'Nenhum cliente encontrado.' : 'Digite para buscar um cliente.'}</p>
+            ) : results.map(c => {
+              const isPhoneMatch = phoneMatchIds.has(c.id);
+              return (
+                <button key={c.id} onClick={() => handlePick(c)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition">
+                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                    {initials(c.full_name, '')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</p>
+                    <p className="text-[11.5px] text-slate-400 truncate">
+                      {[prettyDoc(c.cpf_cnpj), c.mobile || c.phone].filter(Boolean).join(' · ') || '—'}
+                    </p>
+                  </div>
+                  {/* Fase F: indica qual candidato tem o telefone desta conversa cadastrado */}
+                  {isPhoneMatch && (
+                    <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-emerald-100 text-emerald-700">
+                      <Phone size={9} /> telefone cadastrado
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>)}
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Modal: Nova conversa (Fase 0) ──
+// Campo único: busca cliente por nome/CPF/telefone e, se nada casar, permite
+// usar o telefone digitado. Reabre conversa existente do mesmo número/canal.
+const NewConversationModal: React.FC<{
+  channels: WhatsAppChannel[];
+  onClose: () => void;
+  onOpened: (conversationId: string) => void;
+}> = ({ channels, onClose, onOpened }) => {
+  const toast = useToastContext();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<WhatsAppClientLite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [channelId, setChannelId] = useState(channels[0]?.id || '');
+  const [picked, setPicked] = useState<WhatsAppClientLite | null>(null); // cliente c/ +1 telefone
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); setLoading(false); return; }
+    setLoading(true);
+    const t = setTimeout(() => {
+      whatsappService.searchClients(q)
+        .then(list => { if (alive) setResults(list); })
+        .catch(() => { if (alive) setResults([]); })
+        .finally(() => { if (alive) setLoading(false); });
+    }, 280);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query]);
+
+  const digits = query.replace(/\D/g, '');
+  const typedPhone = digits.length >= 10 ? normalizePhone(query) : '';
+
+  const open = async (phone: string, client: WhatsAppClientLite | null) => {
+    if (!channelId) { toast.warning('Selecione um canal conectado'); return; }
+    setBusy(true);
+    try {
+      const { conversation_id } = await whatsappService.openConversation({
+        phone, channelId, clientId: client?.id ?? null, contactName: client?.full_name ?? null,
+      });
+      onOpened(conversation_id);
+    } catch (e: any) {
+      toast.error('Falha ao abrir conversa', e.message);
+    } finally { setBusy(false); }
+  };
+
+  // Telefones únicos do cliente (móvel primeiro), já normalizados.
+  const phonesOf = (c: WhatsAppClientLite): string[] => {
+    const raw = [c.mobile, c.phone].filter((p): p is string => !!p);
+    const norm = raw.map(normalizePhone).filter(Boolean);
+    return Array.from(new Set(norm));
+  };
+
+  const onPickClient = (c: WhatsAppClientLite) => {
+    const phones = phonesOf(c);
+    if (phones.length === 0) { toast.warning('Cliente sem telefone cadastrado', 'Digite um número para conversar.'); return; }
+    if (phones.length === 1) { void open(phones[0], c); return; }
+    setPicked(c); // escolher qual número
+  };
+
+  return (
+    <WaDialog title="Nova conversa" icon={<Plus size={18} />} onClose={onClose} size="sm">
+      <WaDialogBody>
+        {channels.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[#e0ded8] p-5 text-center text-[12.5px] text-slate-500">
+            Nenhum canal conectado. Conecte um número do WhatsApp para iniciar conversas.
+          </div>
+        ) : picked ? (
+          // Passo de escolha de número (cliente com vários telefones).
+          <div>
+            <button onClick={() => setPicked(null)} className="text-[12px] font-semibold text-[#017561] hover:underline mb-2">← Voltar</button>
+            <p className="text-[13px] text-slate-600 mb-2">Qual número de <strong>{picked.full_name}</strong> usar?</p>
+            <div className="space-y-1.5">
+              {phonesOf(picked).map(ph => (
+                <button key={ph} onClick={() => open(ph, picked)} disabled={busy}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left border border-[#e7e5df] hover:bg-[#00a884]/10 hover:border-[#00a884] transition disabled:opacity-50">
+                  <Phone size={14} className="text-slate-400" />
+                  <span className="text-[13px] font-semibold text-slate-700">{prettyPhone(ph)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            {channels.length > 1 && (
+              <>
+                <label className={waLabel}>Canal</label>
+                <select value={channelId} onChange={e => setChannelId(e.target.value)} className={`${waInput} mb-3`}>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
+                </select>
+              </>
+            )}
+
+            <div className="relative mb-3">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome, CPF/CNPJ ou telefone…"
+                className={`${waInput} pl-9`} />
+            </div>
+
+            <div className="max-h-[320px] overflow-y-auto -mx-1">
+              {/* Telefone digitado sem cliente: oferta direta. */}
+              {typedPhone && (
+                <button onClick={() => open(typedPhone, null)} disabled={busy}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50 border border-dashed border-[#00a884] mb-1">
+                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center flex-shrink-0"><Phone size={16} /></span>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-800">Conversar com este telefone</p>
+                    <p className="text-[11.5px] text-slate-400">{prettyPhone(typedPhone)}</p>
+                  </div>
+                </button>
+              )}
+
+              {loading ? (
+                <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+              ) : results.length === 0 ? (
+                !typedPhone && <p className="text-center py-8 text-[13px] text-slate-400">{query.trim().length >= 2 ? 'Nenhum cliente encontrado.' : 'Busque um cliente ou digite um telefone.'}</p>
+              ) : results.map(c => (
+                <button key={c.id} onClick={() => onPickClient(c)} disabled={busy}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50">
+                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                    {initials(c.full_name, '')}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</p>
+                    <p className="text-[11.5px] text-slate-400 truncate">
+                      {[prettyDoc(c.cpf_cnpj), c.mobile || c.phone].filter(Boolean).join(' · ') || 'sem telefone'}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Modal: Bloquear contato (Fase 0.2) — motivo obrigatório ──
+const BlockContactModal: React.FC<{
+  conversation: WhatsAppConversation;
+  onClose: () => void;
+  onDone: (reason: string) => void;
+}> = ({ conversation, onClose, onDone }) => {
+  const toast = useToastContext();
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!reason.trim()) return;
+    setSaving(true);
+    try {
+      const { wa_blocked, wa_error } = await whatsappService.blockContact(conversation.id, reason);
+      if (!wa_blocked) toast.warning('Bloqueado só internamente', `O WhatsApp não confirmou o bloqueio, mas as novas mensagens já não entram na fila.${wa_error ? ` Detalhe: ${wa_error}` : ''}`);
+      onDone(reason.trim());
+    } catch (e: any) {
+      toast.error('Falha ao bloquear', e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Bloquear contato"
+      subtitle={conversation.contact_name || prettyPhone(conversation.contact_phone)}
+      icon={<Ban size={18} />}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={submit} disabled={saving || !reason.trim()} className={waBtnDanger}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Bloquear
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <p className="text-[12.5px] text-slate-500 mb-3">
+          O contato sai da fila normal de atendimento. A ação fica registrada.
+        </p>
+        <label className={waLabel}>Motivo do bloqueio <span className="text-red-500">*</span></label>
+        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Ex: spam, número trote, contato indevido"
+          className={`${waInput} resize-none`} />
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Modal: Encerrar atendimento (Fase 3) ──
+const CloseConversationModal: React.FC<{
+  conversation: WhatsAppConversation;
+  agent?: StaffOption | null;
+  onClose: () => void;
+  onDone: () => void;
+}> = ({ conversation, onClose, onDone }) => {
+  const toast = useToastContext();
+  const [reason, setReason] = useState('');
+  const [farewell, setFarewell] = useState('Seu atendimento foi encerrado. Se surgir qualquer dúvida, pode nos chamar novamente por aqui.');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!reason.trim()) return;
+    setSaving(true);
+    try {
+      await whatsappService.closeConversation(conversation.id, reason, { farewell: farewell.trim() || undefined });
+      onDone();
+    } catch (e: any) {
+      toast.error('Falha ao encerrar', e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <WaDialog
+      title="Encerrar atendimento"
+      subtitle="Sai da fila ativa; reabre se o cliente voltar a falar."
+      icon={<CheckCircle2 size={18} />}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={submit} disabled={saving || !reason.trim()} className={waBtnPrimary}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Encerrar
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <label className={waLabel}>Motivo do encerramento <span className="text-red-500">*</span> <span className="font-normal text-slate-400">(interno)</span></label>
+        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Ex: dúvida resolvida"
+          className={`${waInput} mb-3 resize-none`} />
+
+        <label className={waLabel}>Mensagem ao cliente <span className="font-normal text-slate-400">(deixe vazio para não enviar)</span></label>
+        <textarea value={farewell} onChange={e => setFarewell(e.target.value)} rows={2}
+          className={`${waInput} resize-none`} />
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Fase O: Banner de aprovação de resposta IA ───────────────────────────────
+
+const AiApprovalBanner: React.FC<{
+  session: import('../types/whatsapp.types').WhatsAppAiSession;
+  onDone: () => void;
+}> = ({ session, onDone }) => {
+  const [editMode, setEditMode] = useState(false);
+  const [editedText, setEditedText] = useState(session.pending_ai_reply ?? '');
+  const [loading, setLoading] = useState<'approve' | 'edit' | 'reject' | null>(null);
+  const toast = useToastContext();
+
+  const act = async (action: 'approve' | 'edit' | 'reject') => {
+    setLoading(action);
+    try {
+      const { supabase } = await import('../config/supabase');
+      const { error } = await supabase.functions.invoke('whatsapp-ai-approve', {
+        body: { session_id: session.id, action, edited_text: action === 'edit' ? editedText : undefined },
+      });
+      if (error) throw new Error(error.message);
+      if (action === 'reject') toast.success('Resposta IA rejeitada — conversa devolvida para você');
+      else toast.success(action === 'edit' ? 'Resposta editada e enviada' : 'Resposta IA aprovada e enviada');
+      onDone();
+    } catch (e) {
+      toast.error('Erro', e instanceof Error ? e.message : 'Falha ao processar aprovação');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const isHandoff = session.pending_ai_next_step === -1;
+
+  return (
+    <div style={{ background: '#fef3c7', borderBottom: '1px solid #fde68a', padding: '10px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <Bot size={14} style={{ color: '#d97706', flexShrink: 0 }} />
+        <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#92400e' }}>
+          {isHandoff ? 'IA quer encerrar o atendimento' : 'IA quer enviar mensagem — aguardando sua aprovação'}
+        </span>
+      </div>
+
+      {editMode ? (
+        <textarea
+          value={editedText}
+          onChange={e => setEditedText(e.target.value)}
+          rows={3}
+          style={{ width: '100%', fontSize: '12.5px', padding: '8px', borderRadius: '8px', border: '1px solid #fde68a', background: '#fffbeb', resize: 'vertical', outline: 'none', marginBottom: '8px' }}
+        />
+      ) : (
+        <div style={{ fontSize: '12.5px', color: '#78350f', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {session.pending_ai_reply}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {editMode ? (
+          <>
+            <button
+              disabled={loading !== null || !editedText.trim()}
+              onClick={() => act('edit')}
+              style={{ padding: '5px 12px', borderRadius: '7px', background: '#d97706', color: '#fff', border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: loading !== null ? 0.6 : 1 }}>
+              {loading === 'edit' ? '…' : 'Enviar editada'}
+            </button>
+            <button onClick={() => setEditMode(false)} style={{ padding: '5px 12px', borderRadius: '7px', background: 'transparent', color: '#92400e', border: '1px solid #fde68a', fontSize: '12px', cursor: 'pointer' }}>
+              Cancelar edição
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              disabled={loading !== null}
+              onClick={() => act('approve')}
+              style={{ padding: '5px 12px', borderRadius: '7px', background: '#16a34a', color: '#fff', border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: loading !== null ? 0.6 : 1 }}>
+              {loading === 'approve' ? '…' : '✓ Aprovar e enviar'}
+            </button>
+            <button
+              disabled={loading !== null}
+              onClick={() => setEditMode(true)}
+              style={{ padding: '5px 12px', borderRadius: '7px', background: '#f59e0b', color: '#fff', border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: loading !== null ? 0.6 : 1 }}>
+              Editar
+            </button>
+            <button
+              disabled={loading !== null}
+              onClick={() => act('reject')}
+              style={{ padding: '5px 12px', borderRadius: '7px', background: 'transparent', color: '#b45309', border: '1px solid #fde68a', fontSize: '12px', cursor: 'pointer', opacity: loading !== null ? 0.6 : 1 }}>
+              {loading === 'reject' ? '…' : 'Rejeitar'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Fase M: Dashboard de atendimento ─────────────────────────────────────────
+
+interface DashboardStats {
+  by_status: Record<string, number> | null;
+  by_agent: { agent_name: string; total: number; waiting_reply: number }[] | null;
+  sla_breached: number;
+  sla_warning: number;
+  unassigned: number;
+  opened_today: number;
+  closed_today: number;
+  messages_sent_today: number;
+  avg_first_response_min: number | null;
+}
+
+const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { supabase } = await import('../config/supabase');
+      const { data, error: rpcError } = await supabase.rpc('whatsapp_dashboard_stats');
+      if (rpcError) throw new Error(rpcError.message);
+      setStats(data as DashboardStats);
+      setLastRefresh(new Date());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao carregar métricas');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const totalOpen = stats ? Object.entries(stats.by_status ?? {}).reduce((s, [, v]) => s + v, 0) : 0;
+
+  const StatCard: React.FC<{
+    icon: React.ReactNode; label: string; value: string | number;
+    sub?: string; tone?: 'default' | 'danger' | 'warning' | 'success';
+  }> = ({ icon, label, value, sub, tone = 'default' }) => {
+    const toneMap = {
+      default: 'bg-[#f9f8f6] text-slate-600',
+      danger: 'bg-red-50 text-red-600',
+      warning: 'bg-amber-50 text-amber-700',
+      success: 'bg-emerald-50 text-emerald-700',
+    };
+    return (
+      <div className={`rounded-xl p-4 ${toneMap[tone]}`}>
+        <div className="flex items-center gap-2 mb-1 text-[11px] font-semibold uppercase tracking-wide opacity-70">
+          {icon} {label}
+        </div>
+        <div className="text-[28px] font-bold leading-none">{value}</div>
+        {sub && <div className="text-[11px] mt-1 opacity-60">{sub}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <WaDialog
+      title="Dashboard de atendimento"
+      subtitle={`Atualizado às ${lastRefresh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+      icon={<BarChart2 size={18} />}
+      onClose={onClose}
+      size="xl"
+      zIndex={60}
+      headerActions={
+        <button onClick={load} disabled={loading} title="Atualizar"
+          className="shrink-0 rounded-full p-1.5 text-white/80 hover:bg-white/15 hover:text-white disabled:opacity-40 transition">
+          <TrendingUp size={16} className={loading ? 'animate-pulse' : ''} />
+        </button>
+      }
+    >
+      <div className="p-5 space-y-5">
+        {loading && !stats && (
+            <div className="flex items-center justify-center py-16 text-slate-400">
+              <Loader2 size={22} className="animate-spin mr-2" /> Carregando métricas…
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 rounded-lg p-3 text-[13px]">
+              <AlertTriangle size={15} /> {error}
+            </div>
+          )}
+
+          {stats && (
+            <>
+              {/* Linha 1: volume */}
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Volume</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCard icon={<Inbox size={13} />} label="Abertas agora" value={totalOpen} />
+                  <StatCard icon={<Users size={13} />} label="Sem responsável" value={stats.unassigned}
+                    tone={stats.unassigned > 5 ? 'warning' : 'default'} />
+                  <StatCard icon={<CheckCircle size={13} />} label="Encerradas hoje" value={stats.closed_today} tone="success" />
+                  <StatCard icon={<TrendingUp size={13} />} label="Abertas hoje" value={stats.opened_today} />
+                </div>
+              </div>
+
+              {/* Linha 2: SLA */}
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">SLA de resposta</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <StatCard icon={<AlertTriangle size={13} />} label="Estouradas (>4h)" value={stats.sla_breached}
+                    tone={stats.sla_breached > 0 ? 'danger' : 'default'}
+                    sub={stats.sla_breached > 0 ? 'Requer atenção imediata' : 'Tudo dentro do prazo'} />
+                  <StatCard icon={<Clock3 size={13} />} label="Atenção (2-4h)" value={stats.sla_warning}
+                    tone={stats.sla_warning > 0 ? 'warning' : 'default'} />
+                  <StatCard icon={<Clock3 size={13} />} label="TMR médio (7d)" value={
+                    stats.avg_first_response_min != null
+                      ? stats.avg_first_response_min < 60
+                        ? `${stats.avg_first_response_min}min`
+                        : `${Math.floor(stats.avg_first_response_min / 60)}h${String(stats.avg_first_response_min % 60).padStart(2, '0')}`
+                      : '—'
+                  } sub="Tempo médio de 1ª resposta" />
+                </div>
+              </div>
+
+              {/* Linha 3: mensagens */}
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Produtividade</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatCard icon={<MessageCircle size={13} />} label="Mensagens enviadas hoje" value={stats.messages_sent_today} />
+                  <StatCard icon={<CheckCircle size={13} />} label="Taxa de encerramento"
+                    value={stats.opened_today > 0 ? `${Math.round((stats.closed_today / (stats.opened_today || 1)) * 100)}%` : '—'}
+                    sub={`${stats.closed_today} enc. / ${stats.opened_today} abert.`} />
+                </div>
+              </div>
+
+              {/* Por agente */}
+              {stats.by_agent && stats.by_agent.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Por agente (conversas abertas)</p>
+                  <div className="rounded-xl border border-[#f1f0ec] overflow-hidden">
+                    <table className="w-full text-[12.5px]">
+                      <thead>
+                        <tr className="bg-[#f9f8f6] text-slate-500 text-left">
+                          <th className="px-3.5 py-2 font-semibold">Agente</th>
+                          <th className="px-3.5 py-2 font-semibold text-right">Total</th>
+                          <th className="px-3.5 py-2 font-semibold text-right">Aguardando resp.</th>
+                          <th className="px-3.5 py-2 font-semibold text-right">Carga %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.by_agent.map((row, i) => {
+                          const pct = totalOpen > 0 ? Math.round((row.total / totalOpen) * 100) : 0;
+                          return (
+                            <tr key={i} className="border-t border-[#f1f0ec] hover:bg-[#fafaf9]">
+                              <td className="px-3.5 py-2 font-medium text-slate-700">{row.agent_name}</td>
+                              <td className="px-3.5 py-2 text-right text-slate-600">{row.total}</td>
+                              <td className="px-3.5 py-2 text-right">
+                                <span className={row.waiting_reply > 0 ? 'text-amber-600 font-semibold' : 'text-slate-400'}>
+                                  {row.waiting_reply}
+                                </span>
+                              </td>
+                              <td className="px-3.5 py-2 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <div className="w-16 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-amber-500" style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className="text-slate-500 w-7 text-right">{pct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Por status */}
+              {stats.by_status && Object.keys(stats.by_status).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Por status (abertas)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(stats.by_status).map(([status, cnt]) => (
+                      <span key={status} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-semibold bg-[#f3f2ef] text-slate-600">
+                        {cnt} <span className="font-normal opacity-60">{status}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+      </div>
+    </WaDialog>
+  );
+};
+
+export default WhatsAppModule;

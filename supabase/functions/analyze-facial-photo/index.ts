@@ -121,6 +121,15 @@ Deno.serve(async (req) => {
     // Remover prefixo data:image/... se existir
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
+    // Guarda de tamanho: foto de rosto é pequena. Acima disso recusa sem gastar token.
+    const MAX_FACE_BYTES = 8 * 1024 * 1024;
+    if (Math.floor(base64Data.length * 0.75) > MAX_FACE_BYTES) {
+      return new Response(
+        JSON.stringify({ error: 'Imagem muito grande para análise (máx. 8 MB).' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
