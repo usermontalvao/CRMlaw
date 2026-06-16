@@ -16,12 +16,18 @@ const PUBLIC_APP_ORIGIN = Deno.env.get('PUBLIC_APP_ORIGIN') || 'https://jurius.c
 const TZ = 'America/Cuiaba';
 const BIZ_START = 8;
 const BIZ_END = 18;
-// TESTE: horário comercial DESLIGADO para podermos testar fora do expediente.
-// Trocar para true antes do uso real com clientes.
-const BUSINESS_HOURS_ENABLED = false;
+// Produção: só envia dentro do horário comercial (a função inteira é pulada
+// fora dele — o cron seguinte, já dentro do expediente, retoma o lembrete
+// vencido, então isso por si só implementa "no dia seguinte, horário comercial").
+const BUSINESS_HOURS_ENABLED = true;
 
-// TESTE: lembrete a cada 10 minutos após o cliente sair da página sem assinar.
-const STEP_INTERVAL_MIN = 10;
+// Cadência crescente após o cliente sair da página sem assinar: 1º lembrete em
+// 4h, 2º no "dia seguinte" (24h — cai no próximo expediente por causa do
+// BUSINESS_HOURS_ENABLED acima), depois o espaçamento vai aumentando (3d, 7d,
+// 14d) até o limite de MAX_AGE_DAYS. Índice = wa_followup_count (lembretes já
+// enviados); tempo é contado a partir do lembrete anterior (ou da saída da
+// página, no 1º).
+const STEP_DELAY_HOURS = [4, 24, 24 * 3, 24 * 7, 24 * 14];
 // Não pinga enquanto o cliente está AGORA na página (heartbeat recente).
 const LIVE_WINDOW_MS = 30_000;
 // Só lembra assinaturas criadas nos últimos N dias (evita ressuscitar antigas).
@@ -138,7 +144,7 @@ Deno.serve(async (req) => {
       // Âncora do tempo: após o ÚLTIMO lembrete; senão, o momento em que saiu da
       // página (last_seen_at). Se nunca abriu, a criação do pedido.
       const anchorIso = r.wa_followup_last_at || pending.last_seen_at || pending.opened_at || r.created_at;
-      const dueAt = new Date(anchorIso).getTime() + STEP_INTERVAL_MIN * 60_000;
+      const dueAt = new Date(anchorIso).getTime() + STEP_DELAY_HOURS[step] * 60 * 60_000;
       if (now < dueAt) { skipped++; continue; }
 
       // Conversa de WhatsApp do cliente (aberta e não bloqueada).

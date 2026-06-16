@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.229': { name: 'Café Workflow Estruturado', emoji: '🧭' },
   '1.10.227': { name: 'Café WhatsApp Orquestrado', emoji: '🟢' },
   '1.10.226': { name: 'Café Assinatura Resiliente', emoji: '🛡️' },
   '1.10.225': { name: 'Café Assinatura Orquestrada', emoji: '✍️' },
@@ -883,6 +884,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.229',
+    date: '16/06/2026',
+    summary: 'Configurações e WhatsApp: o CRM ganhou uma navegação de configurações mais estruturada, ajustes de rastreamento operacional e a fundação tipada/documentada para workflows e agentes.',
+    modules: [
+      { moduleId: 'configuracoes', changes: [
+        { type: 'feature' as const, title: 'Configurações como módulo com hub e navegação interna', description: 'A área de configurações deixou de depender só de modal e passou a funcionar como página com visão geral, busca de seções, breadcrumb e deep-link por seção.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Leitura mais fiel de presença e follow-up', description: 'O WhatsApp passou a distinguir melhor quando o cliente apenas abriu, saiu da página ou ficou ativo, além de ajustar a cadência de follow-up de assinatura para comportamento de produção.' },
+        { type: 'feature' as const, title: 'Base de workflows, agentes e políticas de follow-up', description: 'Foram adicionados tipos, constantes, documentação operacional e migration inicial para suportar canais vinculados a workflows, etapas, regras, estado persistido da conversa e políticas de follow-up.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Dedupe concorrente no scheduler de notificações', description: 'A criação de notificações passou a tratar violação de índice único como duplicata esperada, evitando erro operacional em execuções concorrentes.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.228',
     date: '15/06/2026',

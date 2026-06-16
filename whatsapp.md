@@ -1,503 +1,369 @@
-# WhatsApp 360 - Implementacao Real no CRM
-
-Este documento substitui integralmente o planejamento anterior.
+# Modulo WhatsApp - Plano Operacional
 
-O modulo WhatsApp precisa deixar de ser um painel lateral com atalhos soltos e virar uma estacao de trabalho juridica 360 dentro do CRM.
-
-O objetivo nao e "ter contexto". O objetivo e operar o escritorio sem sair da conversa.
-
-## Diagnostico do CRM hoje
-
-### O que o CRM ja tem e pode ser reaproveitado
+Este documento substitui o conteudo anterior.
 
-- modulo de clientes
-- modulo de processos com modal de criacao, edicao, visualizacao e timeline
-- modulo de requerimentos com modal de criacao e edicao
-- modulo de prazos com `DeadlineFormModal`
-- modulo de agenda com modal de criacao e edicao
-- modulo financeiro com modais de criacao, edicao, detalhes e baixa
-- modulo de documentos com modais de templates, preview, edicao e geracao
-- modulo de assinaturas com `prefillData` e `focusRequestId`
-- servicos de processos, prazos, agenda, financeiro, documentos e assinaturas
-- modulo WhatsApp com conversa, notas, etiquetas, vinculo de cliente, quick actions e paineis de contexto
-
-### O que o modulo WhatsApp faz hoje
-
-- lista conversas e mensagens
-- envia texto e midia
-- mostra cliente vinculado
-- mostra processos, prazos, compromissos, pendencias, assinaturas e acordos em formato resumido
-- possui notas internas, etiquetas, timeline operacional e algumas acoes rapidas
+O objetivo agora nao e descrever visao ampla. O objetivo e guiar execucao com etapas objetivas, criterios de concluido e foco em operacao real.
 
-### Onde ele falha hoje
+O Claude deve usar este arquivo como backlog executavel.
 
-- o contexto e superficial e fragmentado
-- varias acoes ainda jogam o usuario para outro modulo em vez de abrir dentro do WhatsApp
-- a timeline processual visivel na lateral e mini e baseada so em movimentacoes locais
-- nao existe uma visao unificada de casos do cliente
-- nao existe um workspace modal para criar e editar tudo sem sair da conversa
-- templates e geracao de contratos nao estao integrados ao fluxo da conversa
-- o modulo nao opera como cockpit juridico; opera como inbox com cards auxiliares
-
-## Direcao obrigatoria
-
-O WhatsApp passa a ser um shell de operacao.
+## Varredura real do modulo
 
-Tudo que for necessario para atender o cliente deve abrir em modal, drawer ou overlay dentro do proprio modulo WhatsApp.
+Esta secao existe para evitar backlog falso.
 
-Nao deve ser necessario navegar para Clientes, Processos, Requerimentos, Prazos, Agenda, Financeiro, Documentos ou Assinaturas para executar o fluxo principal do atendimento.
+Antes de abrir nova etapa, o Claude deve validar se a funcionalidade ja existe no codigo e classificar em um destes estados:
 
-## Regra principal
+- `EXISTE`: fluxo implementado e visivel no modulo
+- `PARCIAL`: existe base real, mas falta automacao, fechamento de fluxo ou integracao completa
+- `NAO ENCONTRADO`: nao apareceu implementacao real na varredura atual
 
-- tudo criar em modal
-- tudo editar em modal
-- tudo visualizar em modal
-- tudo vincular em modal
-- tudo gerar em modal
-- toda acao deve preservar o contexto da conversa aberta
-- fechar modal deve devolver o usuario exatamente para a conversa onde estava
-
-## Experiencia alvo
+### Resultado da varredura atual
 
-Ao abrir uma conversa, o operador deve conseguir:
+#### 1. Macros/templates por assunto
 
-- identificar e editar o cliente
-- vincular ou trocar cliente
-- criar cliente novo
-- abrir todos os casos do cliente
-- criar processo
-- criar requerimento
-- editar processo e requerimento
-- ver timeline processual completa
-- criar prazo
-- editar prazo
-- criar compromisso de agenda
-- editar compromisso
-- abrir financeiro do cliente
-- criar acordo ou lancamento
-- gerar contrato ou documento a partir de template
-- mandar para assinatura
-- acompanhar documentos ja gerados
-- registrar nota interna
-- classificar assunto e contexto
+Status: `PARCIAL`
 
-Tudo isso sem sair do WhatsApp.
+Evidencias encontradas:
 
-## Estrutura funcional obrigatoria
+- existe cadastro de modelos de mensagem com `name`, `body` e `category`
+- existe seletor de templates dentro do modulo
+- existe busca por nome e categoria
+- existe renderizacao com variaveis como `{{cliente.nome}}`, `{{agente.nome}}` e `{{saudacao}}`
+- existe configuracao administrativa de templates/macros
+- existem playbooks de IA com categoria
 
-### 1. Cabecalho da conversa
+Limite atual:
 
-Deve mostrar:
+- nao ficou comprovado acoplamento automatico entre assunto classificado da conversa e sugestao/filtragem de macro
+- categoria existe, mas "por assunto" ainda parece classificacao manual/organizacional, nao roteamento inteligente
 
-- nome do contato
-- telefone
-- canal
-- responsavel
-- setor
-- assunto
-- status operacional
-- sinal de SLA
+#### 2. Classificacao automatica de assunto, setor e prioridade
 
-Deve ter acoes:
+Status: `PARCIAL`
 
-- assumir
-- transferir
-- encerrar
-- reabrir
-- bloquear
-- abrir painel 360
+Evidencias encontradas:
 
-### 2. Coluna lateral 360
+- existe classificacao de assunto por IA via `aiService.classifySubject(...)`
+- o resultado e salvo em `contact_reason`
+- o assunto aparece na conversa como `Assunto (IA)`
+- existe estrutura de departamentos, transferencia por setor e filtros por setor
+- existe prioridade em processos, prazos e tarefas
 
-Deve virar um painel juridico real, com secoes:
+Limite atual:
 
-- cliente
-- casos
-- prazos
-- agenda
-- documentos e contratos
-- assinaturas
-- financeiro
-- notas internas
-- etiquetas
-- governanca
+- a classificacao de assunto encontrada e disparo manual, nao automacao comprovada de entrada
+- nao apareceu classificacao automatica de setor
+- nao apareceu classificacao automatica de prioridade da conversa
 
-### 3. Workspace modal do WhatsApp
+#### 3. Criacao rapida sem sair da conversa
 
-Toda acao relevante deve abrir um modal padronizado sobre o modulo WhatsApp.
+Status: `EXISTE`
 
-Esse workspace modal sera a base para:
+Evidencias encontradas:
 
-- cadastro e edicao de cliente
-- processo
-- requerimento
-- prazo
-- compromisso
-- financeiro
-- contrato
-- assinatura
-- historico completo
+- criacao e vinculacao rapida de cliente no proprio modulo
+- abertura de cliente, processo, requerimento, prazo, agenda e financeiro por workspace/modal
+- acoes rapidas no painel lateral para prazo, agenda, documento e lancamento
+- criacao de processo e requerimento dentro da secao de casos
+- timeline de processo em modal
 
-## Casos: unificacao obrigatoria
+Observacao:
 
-O modulo nao deve exibir apenas "Processos".
+- para o escopo citado agora, esta frente ja existe no modulo e nao deve voltar como backlog generico
 
-Precisa existir a secao `Casos`, reunindo:
+#### 4. Follow-up automatico quando cliente some ou nao assina
 
-- processos
-- requerimentos
+Status: `PARCIAL`
 
-Cada item deve mostrar:
+Evidencias encontradas:
 
-- tipo do caso
-- identificador
-- status
-- area
-- responsavel
-- alertas criticos
-- proximos eventos e prazos
+- existe tracking de kit/preenchimento e assinatura
+- existe leitura de `opened_at`, `last_seen_at`, `submitted_at`, `signed_at`, `refused_at`
+- existe painel que mostra estados como `Pagina aberta`, `Saiu sem assinar`, `Aguardando assinatura` e `Cliente na tela`
+- existe interrupcao manual do tracking
+- existe agendamento de mensagens no modulo
 
-Cada caso deve ter acoes em modal:
+Limite atual:
 
-- ver detalhes
-- editar
-- ver timeline
-- criar prazo
-- criar compromisso
-- vincular documento
+- nao apareceu regra automatica comprovada de follow-up enviando mensagem quando o cliente some
+- nao apareceu automacao comprovada de cobranca/reengajamento por nao assinatura
+- o modulo monitora bem, mas ainda nao fecha o ciclo automaticamente
 
-## Timeline processual: obrigatoria e completa
+## Regra de execucao
 
-O resumo atual de movimentacoes nao basta.
+Cada etapa deve ser marcada com `[x]` somente quando:
 
-### Regra
+- o codigo estiver implementado
+- a integracao principal estiver funcional
+- o fluxo estiver validado manualmente
+- riscos remanescentes estiverem anotados no proprio item, se houver
 
-Ao clicar em timeline de processo no WhatsApp, deve abrir a timeline processual completa em modal, reutilizando a infraestrutura existente de timeline do CRM.
+Nao marcar como concluido apenas porque a UI apareceu.
 
-### Implementacao esperada
+## Prioridade atual
 
-- parar de depender apenas da mini timeline local de `listProcessMovements`
-- abrir um modal completo por processo
-- usar o componente/servico de timeline processual do CRM como fonte principal
-- manter a mini timeline apenas como preview
-- permitir abrir a timeline completa sem sair da conversa
+1. confiabilidade e governanca
+2. sustentacao tecnica
+3. fechar lacunas do que hoje esta parcial
+4. integracao futura com projeto externo de automacao
 
-### Resultado esperado
+## Regra de isolamento da automacao externa
 
-O operador enxerga:
+A automacao por agentes/workflows deve ficar fora do modulo WhatsApp.
 
-- movimentacoes
-- analise
-- contexto temporal
-- leitura juridica da evolucao do caso
+Regras:
 
-## Cliente: operacao completa em modal
+- [x] manter o `WhatsAppModule` como operacao base do CRM
+- [ ] nao acoplar inbox, conversa, composer e painel 360 diretamente ao motor externo
+- [ ] concentrar integracao em camada separada ou MCP/API
+- [ ] permitir desligar o projeto externo sem reescrever o modulo base
 
-O card de cliente deve deixar de ser apenas resumo.
+#### Concluido quando
 
-### Deve permitir
+- o WhatsApp continua operacional sem automacao externa
+- desligar o projeto externo nao derruba atendimento manual, templates, notas, transferencias e agendamentos
 
-- ver cadastro completo em modal
-- editar cadastro em modal
-- trocar cliente em modal
-- desvincular cliente
-- criar cliente novo em modal
-- adicionar telefone da conversa ao cadastro
+## Fase atual do projeto externo de automacao
 
-### Regras
+- [x] fase de documentacao e arquitetura
+- [ ] fase de modelagem tecnica
+- [ ] fase de implementacao base
+- [ ] fase de builder visual
+- [ ] fase de piloto com Leads integrados
 
-- nao navegar para o modulo Clientes como fluxo padrao
-- usar prefill da conversa
-- manter o card lateral sincronizado apos salvar
+---
 
-## Prazos: integracao total
+## Frente 1 - Confiabilidade e Governanca
 
-O operador precisa criar e editar prazos dentro do WhatsApp.
+### Objetivo
 
-### Implementacao
+Parar de esconder falha operacional com comportamento best-effort e transformar status, erro, retry e auditoria em partes visiveis do modulo.
 
-- reutilizar `DeadlineFormModal`
-- abrir com `client_id`, `process_id` ou `requirement_id` predefinidos
-- permitir criar prazo a partir de:
-  - conversa
-  - mensagem
-  - caso selecionado
+### Etapa 1. Health check do canal e do numero
 
-### Vista lateral
+- [ ] Criar camada de health check por canal WhatsApp
+- [ ] Exibir status tecnico do canal: conectado, instavel, desconectado, erro de autenticacao, webhook sem resposta
+- [ ] Exibir ultima sincronizacao bem-sucedida
+- [ ] Exibir ultima falha detectada com data/hora e motivo
+- [ ] Exibir status do numero/instancia dentro do painel administrativo
+- [ ] Exibir banner operacional quando o canal da conversa selecionada estiver degradado
+- [ ] Criar acao manual de revalidar status do canal
 
-Os prazos devem mostrar:
+#### Concluido quando
 
-- titulo
-- vencimento
-- status
-- caso relacionado
-- acao de editar em modal
+- o operador consegue identificar rapidamente se o problema esta na conversa ou no canal
+- o status nao depende de abrir console ou banco
+- a tela mostra data/hora da ultima verificacao
 
-## Agenda: integracao total
+### Etapa 2. Log de falhas de envio por conversa e por canal
 
-O operador precisa criar compromisso sem sair da conversa.
+- [ ] Persistir log de falhas de envio de mensagem
+- [ ] Registrar falhas de texto, midia, edicao e agendamento
+- [ ] Salvar contexto minimo do erro: conversa, canal, tipo, payload resumido, horario, mensagem de erro
+- [ ] Exibir falhas recentes dentro da conversa
+- [ ] Exibir falhas agregadas por canal em painel administrativo
+- [ ] Permitir filtro por periodo, canal, conversa e tipo de falha
+- [ ] Destacar recorrencia de falhas iguais
 
-### Implementacao
+#### Concluido quando
 
-- reutilizar modal de criacao/edicao do modulo Agenda
-- permitir prefill por cliente, processo ou requerimento
-- permitir tipos como:
-  - audiencia
-  - reuniao
-  - pericia
-  - compromisso interno
+- cada falha relevante vira evento consultavel
+- o time consegue responder "o que falhou, onde falhou e desde quando falha"
 
-### Vista lateral
+### Etapa 3. Retry manual de mensagens falhas
 
-Deve mostrar:
+- [ ] Permitir retry manual de mensagem com status `failed`
+- [ ] Permitir retry de texto sem recriar mensagem do zero
+- [ ] Permitir retry de midia reaproveitando metadados e storage path quando valido
+- [ ] Exibir resultado do retry: sucesso, nova falha ou erro de validacao
+- [ ] Impedir retry cego quando o canal estiver desconectado
+- [ ] Registrar auditoria do retry manual
 
-- proximos compromissos
-- data e hora
-- tipo
-- caso vinculado
-- acao de editar em modal
+#### Concluido quando
 
-## Financeiro: integracao total
+- o operador consegue recuperar envio falho sem workaround externo
+- o retry nao gera duplicidade silenciosa
 
-Hoje o WhatsApp so "abre financeiro".
+### Etapa 4. Auditoria operacional
 
-Isso e insuficiente.
+- [ ] Consolidar trilha de auditoria para assumir, transferir, bloquear, desbloquear, encerrar e reabrir
+- [ ] Registrar autor, data/hora, estado anterior e estado novo
+- [ ] Exibir auditoria na timeline operacional da conversa
+- [ ] Exibir visao administrativa filtravel por periodo e usuario
+- [ ] Garantir que eventos automaticos e humanos sejam distinguiveis
 
-### O WhatsApp deve permitir
+#### Concluido quando
 
-- ver resumo financeiro do cliente
-- abrir detalhes de acordo em modal
-- criar novo acordo ou lancamento em modal
-- editar acordo em modal
-- registrar pagamento em modal
+- qualquer alteracao critica da conversa pode ser auditada sem consultar banco manualmente
 
-### Regras
+### Etapa 5. Runbook de desconexao e reconexao
 
-- usar os modais do modulo Financeiro
-- abrir filtrado pelo cliente da conversa
-- permitir atalho por caso quando necessario
+- [ ] Criar secao no painel com procedimento operacional para canal desconectado
+- [ ] Documentar sinais de falha: QR expirado, webhook parado, token invalido, instancia offline
+- [ ] Documentar acao esperada para cada tipo de falha
+- [ ] Adicionar comando ou botao operacional de reconexao quando a integracao suportar
+- [ ] Exibir ultimo momento em que o canal esteve saudavel
+- [ ] Exibir responsavel pela ultima acao operacional no canal
 
-## Documentos e contratos: integracao real
+#### Concluido quando
 
-Esta e uma das partes mais importantes.
+- um operador consegue seguir procedimento sem depender de memoria ou suporte tecnico informal
 
-O operador precisa gerar contrato ou documento ali mesmo dentro da conversa.
+---
 
-### O WhatsApp deve permitir
+## Frente 2 - Sustentacao Tecnica
 
-- acessar templates cadastrados
-- buscar template por nome e categoria
-- abrir preview do template
-- preencher variaveis do template
-- gerar documento
-- salvar documento gerado
-- abrir documento gerado
-- transformar documento em fluxo de assinatura
+### Objetivo
 
-### Regras
+Reduzir risco de regressao, acoplamento e lentidao de manutencao no modulo WhatsApp.
 
-- tudo em modal
-- sem mandar o usuario para o modulo Documentos como fluxo principal
-- aproveitar `DocumentsModule`, `documentTemplate.service` e `templateFill.service`
-- manter vinculacao com cliente, processo ou requerimento
+### Diagnostico atual
 
-## Assinaturas: integracao total
+- `src/components/WhatsAppModule.tsx` concentra inbox, conversa, composer, painel lateral, timeline, governanca, agendamento, IA e modais
+- `src/components/WaWorkspace.tsx` concentra renderizacao e logica de multiplos fluxos operacionais
+- nao existe suite de testes focada no modulo
+- o build nao concluiu dentro da janela testada, indicando necessidade de medir gargalos e validar estabilidade com disciplina
 
-Nao basta um botao "Solicitar assinatura".
+### Etapa 1. Fatiar `WhatsAppModule.tsx`
 
-### O WhatsApp deve permitir
+- [ ] Extrair inbox/fila para componente proprio
+- [ ] Extrair cabecalho e acoes da conversa
+- [ ] Extrair painel 360
+- [ ] Extrair composer, midia e agendamento
+- [ ] Extrair notas e timeline
+- [ ] Extrair governanca e SLA
+- [ ] Extrair IA e playbooks
+- [ ] Reduzir o componente principal a coordenacao de estado e composicao
 
-- iniciar assinatura com documento ja gerado
-- abrir modal com dados prefill do cliente
-- acompanhar assinaturas pendentes
-- abrir requisicao existente em modal
-- copiar ou reenviar link
-- registrar nota interna automatica quando houver disparo relevante
+#### Concluido quando
 
-### Regras
+- o arquivo principal deixa de ser ponto unico de tudo
+- cada area relevante pode evoluir sem aumentar acoplamento global
 
-- reutilizar `SignatureModule` com `prefillData` e `focusRequestId`
-- abrir como workspace modal dentro do WhatsApp
+### Etapa 2. Fatiar `WaWorkspace.tsx`
 
-## Requerimentos: integracao total
+- [ ] Separar renderers por dominio: cliente, casos, prazos, agenda, financeiro, documentos, assinatura
+- [ ] Extrair utilitarios e tipos para arquivos dedicados
+- [ ] Padronizar interface de abertura e retorno dos modais
+- [ ] Garantir que cada fluxo preserve contexto da conversa
 
-O WhatsApp precisa tratar requerimentos como caso de primeira classe.
+#### Concluido quando
 
-### O modulo deve permitir
+- o workspace deixa de ser concentrador monolitico
+- cada modal pode ser alterado sem risco transversal desnecessario
 
-- criar requerimento em modal
-- editar requerimento em modal
-- ver detalhes em modal
-- criar prazo vinculado ao requerimento
-- criar compromisso vinculado ao requerimento
-- abrir exigencia e pericia quando aplicavel
+### Etapa 3. Suite minima de testes do modulo
 
-## Acoes rapidas obrigatorias
+- [ ] Definir stack de testes do frontend
+- [ ] Criar testes para listagem e selecao de conversa
+- [ ] Criar testes para assumir, transferir e devolver para fila
+- [ ] Criar testes para encerrar e reabrir conversa
+- [ ] Criar testes para composer e envio otimista
+- [ ] Criar testes para falha de envio e retry manual
+- [ ] Criar testes para abertura do workspace e preservacao de contexto
 
-As acoes rapidas atuais devem virar gatilhos reais de workspace modal.
+#### Concluido quando
 
-### Acoes minimas
+- os fluxos criticos do modulo possuem cobertura minima automatizada
+- regressao em fluxo operacional central passa a ser detectavel antes de producao
 
-- novo cliente
-- editar cliente
-- novo processo
-- novo requerimento
-- novo prazo
-- novo compromisso
-- gerar contrato
-- solicitar assinatura
-- novo lancamento financeiro
-- solicitar documento
+### Etapa 4. Verificacao tecnica de build e performance
 
-## Padrao de modal
+- [ ] Medir tempo de build de forma repetivel
+- [ ] Identificar arquivos ou etapas que degradam compilacao
+- [ ] Corrigir gargalos obvios de tipagem, importacao ou acoplamento
+- [ ] Registrar baseline antes e depois das mudancas
 
-Todos os modais do WhatsApp 360 devem seguir o mesmo comportamento.
+#### Concluido quando
 
-### Regras obrigatorias
+- o time consegue comparar evolucao tecnica do modulo com um baseline claro
 
-- fecha com `Esc`
-- fecha no backdrop quando seguro
-- nao perde a conversa ao fechar
-- salva e atualiza o painel lateral sem recarregar o modulo inteiro
-- permite abrir modal filho somente quando houver stack controlada
-- nao deixa overlays presos
-- deve existir padrao unico de header, footer e acoes
+---
 
-## Integracao tecnica desejada
+## Ordem recomendada de execucao
 
-### Camada de shell do WhatsApp
+### Sprint 1
 
-O modulo WhatsApp deve controlar:
+- [ ] health check do canal e do numero
+- [ ] log de falhas de envio
+- [ ] auditoria operacional basica
 
-- conversa selecionada
-- cliente selecionado
-- caso selecionado
-- modal aberto
-- payload de prefill
-- refresh segmentado por dominio
+### Sprint 2
 
-### Tipos de modal a suportar
+- [ ] retry manual de mensagens falhas
+- [ ] runbook de desconexao e reconexao
+- [ ] extracao inicial do inbox/fila e cabecalho
 
-- `client_view`
-- `client_edit`
-- `client_create`
-- `case_process_create`
-- `case_process_edit`
-- `case_requirement_create`
-- `case_requirement_edit`
-- `timeline_process`
-- `deadline_create`
-- `deadline_edit`
-- `calendar_create`
-- `calendar_edit`
-- `financial_create`
-- `financial_view`
-- `financial_edit`
-- `document_generate`
-- `document_preview`
-- `signature_create`
-- `signature_view`
+### Sprint 3
 
-### Regra de refresh
+- [ ] extracao do painel 360, composer e timeline
+- [ ] fatiamento inicial do workspace
+- [ ] stack de testes definida
 
-Ao fechar um modal com sucesso:
+### Sprint 4
 
-- atualizar so os dados impactados
-- nao recarregar toda a inbox
-- manter scroll e selecao da conversa
+- [ ] testes de fluxos criticos
+- [ ] baseline de build e ajustes de performance
+- [ ] fechamento de pendencias abertas das sprints anteriores
 
-## Mapa de reaproveitamento do CRM
+---
 
-### Reaproveitar diretamente
+## Frente 3 - Fechar lacunas do que ja existe parcialmente
 
-- `ProcessesModule`
-- `RequirementsModule`
-- `DeadlinesModule`
-- `DeadlineFormModal`
-- `CalendarModule`
-- `FinancialModule`
-- `DocumentsModule`
-- `SignatureModule`
-- `ProcessTimeline`
-- `processTimelineService`
+### Etapa 1. Templates realmente orientados por assunto
 
-### Reaproveitar via servicos
+- [ ] Filtrar ou sugerir templates com base no `contact_reason`
+- [ ] Permitir mapear categoria de template para assunto classificado
+- [ ] Exibir recomendacoes de macro no composer com base na conversa atual
 
-- `processService`
-- `requirementService`
-- `deadlineService`
-- `calendar.service`
-- `financialService`
-- `documentTemplate.service`
-- `templateFill.service`
-- `signatureService`
+#### Concluido quando
 
-### Adaptacoes obrigatorias
+- o operador nao precisa buscar tudo manualmente quando o assunto da conversa ja foi identificado
 
-- expor variantes embutiveis dos modulos que hoje assumem navegacao de pagina
-- criar wrappers especificos para uso dentro do WhatsApp
-- reduzir dependencias de hash navigation quando a acao vier do modal shell
+### Etapa 2. Classificacao automatica completa
 
-## Itens que devem deixar de existir como fluxo padrao
+- [ ] Disparar classificacao de assunto sem acao manual quando houver contexto suficiente
+- [ ] Criar heuristica ou IA para sugerir setor automaticamente
+- [ ] Criar heuristica ou IA para sugerir prioridade operacional da conversa
+- [ ] Permitir aprovacao humana antes de gravar setor/prioridade quando necessario
 
-- botao que so navega para outro modulo
-- ver cadastro fora do WhatsApp como acao principal
-- abrir financeiro fora do WhatsApp como acao principal
-- timeline processual resumida como experiencia final
-- painel lateral apenas informativo sem capacidade de acao
+#### Concluido quando
 
-## Fases da implementacao
+- a conversa entra melhor classificada sem depender sempre de triagem manual
 
-### Fase 1 - Fundacao do shell modal
+### Etapa 3. Follow-up automatico real
 
-- [ ] criar controlador central de `workspace modal` no WhatsApp
-- [ ] padronizar abertura, fechamento e stack de overlays
-- [ ] criar contrato unico de `prefill` e `onSaved`
-- [ ] garantir refresh segmentado sem perder conversa
+- [ ] Criar regra automatica para cliente que abriu e saiu sem concluir
+- [ ] Criar regra automatica para cliente que recebeu assinatura e nao concluiu
+- [ ] Permitir janela de tempo configuravel antes do follow-up
+- [ ] Registrar quando o follow-up automatico foi disparado
+- [ ] Permitir pausar o follow-up por conversa ou por assinatura
 
-### Fase 2 - Cliente e casos
+#### Concluido quando
 
-- [ ] transformar cliente em CRUD modal completo
-- [ ] unificar `Casos` com processos e requerimentos
-- [ ] abrir processo e requerimento em modal
-- [ ] criar processo e requerimento em modal a partir da conversa
+- o modulo nao apenas monitora abandono; ele reage operacionalmente com regra controlada
 
-### Fase 3 - Timeline, prazos e agenda
+---
 
-- [ ] substituir timeline mini por abertura da timeline completa em modal
-- [ ] integrar criacao e edicao de prazo em modal
-- [ ] integrar criacao e edicao de compromisso em modal
-- [ ] permitir criar prazo e compromisso a partir de caso e mensagem
+## Regras para o Claude marcar como concluido
 
-### Fase 4 - Documentos, contratos e assinaturas
+- [ ] so marcar `[x]` apos implementacao real
+- [ ] so marcar `[x]` apos validacao manual do fluxo principal
+- [ ] descrever no commit ou changelog curto o que foi entregue
+- [ ] se houver bloqueio tecnico, manter `[ ]` e adicionar observacao logo abaixo do item
+- [ ] se entregar parcialmente, quebrar o item em subitens menores antes de marcar qualquer um
 
-- [ ] abrir biblioteca de templates em modal
-- [ ] permitir gerar contrato/documento na conversa
-- [ ] salvar e listar documentos gerados no contexto do cliente/caso
-- [ ] disparar assinatura em modal com fluxo completo
+---
 
-### Fase 5 - Financeiro e consolidacao 360
+## Definicao de pronto do modulo
 
-- [ ] integrar resumo financeiro real no lateral
-- [ ] criar e editar acordo/lancamento em modal
-- [ ] registrar pagamento em modal
-- [ ] consolidar quick actions para abrir cada fluxo correto dentro do shell
+O modulo WhatsApp sera considerado mais operacional quando:
 
-## Criterios de aceite
+- falhas de canal e envio estiverem visiveis
+- houver retry manual seguro
+- a trilha de auditoria estiver acessivel
+- existir procedimento claro para desconexao
+- o componente principal estiver fatiado
+- o workspace estiver modularizado
+- os fluxos criticos tiverem testes minimos
 
-Esta implementacao so sera considerada pronta quando:
-
-- o operador conseguir atender sem sair do WhatsApp
-- os modulos do CRM abrirem embutidos em modal a partir da conversa
-- processos e requerimentos aparecerem como `Casos`
-- a timeline processual completa abrir dentro do WhatsApp
-- for possivel gerar contrato por template dentro da conversa
-- for possivel iniciar assinatura sem sair da conversa
-- for possivel criar cliente, processo, requerimento, prazo, compromisso e financeiro em modal
-- o contexto lateral atualizar apos cada salvamento
-
-## Regra final
-
-O modulo WhatsApp nao pode mais ser tratado como inbox com widgets.
-
-Ele deve virar a mesa central de operacao juridica do CRM.
+Enquanto isso nao estiver entregue, o modulo ainda depende demais de conhecimento tacito e manutencao arriscada.

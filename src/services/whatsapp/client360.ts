@@ -284,6 +284,16 @@ export const client360Api = {
     }
 
     const now = Date.now();
+    /** "visto por último" com data e hora reais, no estilo do WhatsApp. */
+    const lastSeenLabel = (iso: string) => {
+      const d = new Date(iso);
+      const hhmm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const today = new Date();
+      const yest = new Date(); yest.setDate(today.getDate() - 1);
+      if (d.toDateString() === today.toDateString()) return `visto por último hoje às ${hhmm}`;
+      if (d.toDateString() === yest.toDateString()) return `visto por último ontem às ${hhmm}`;
+      return `visto por último em ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })} às ${hhmm}`;
+    };
     const META: Record<ClientTrackedSignatureStatus['kind'], { label: string; cls: string; live: boolean; rank: number; terminal?: boolean }> = {
       signature_signed: { label: 'Assinado',                 cls: 'bg-emerald-100 text-emerald-700', live: false, rank: 8, terminal: true },
       signature_refused:{ label: 'Recusado',                 cls: 'bg-rose-100 text-rose-700',     live: false, rank: 7, terminal: true },
@@ -295,11 +305,11 @@ export const client360Api = {
       fill_sent:        { label: 'Link enviado',             cls: 'bg-slate-100 text-slate-500',   live: false, rank: 1 },
     };
     const out: Record<string, ClientTrackedSignatureStatus> = {};
-    const consider = (clientId: string, linkId: string, reqId: string | null, kind: ClientTrackedSignatureStatus['kind']) => {
+    const consider = (clientId: string, linkId: string, reqId: string | null, kind: ClientTrackedSignatureStatus['kind'], labelOverride?: string) => {
       const cur = out[clientId];
       if (cur && META[cur.kind].rank >= META[kind].rank) return;
       const m = META[kind];
-      out[clientId] = { client_id: clientId, link_id: linkId, signature_request_id: reqId, kind, label: m.label, cls: m.cls, live: m.live, terminal: m.terminal };
+      out[clientId] = { client_id: clientId, link_id: linkId, signature_request_id: reqId, kind, label: labelOverride ?? m.label, cls: m.cls, live: m.live, terminal: m.terminal };
     };
 
     // Candidatos de ASSINATURA (de ambas as fontes — direto ou via kit).
@@ -322,7 +332,10 @@ export const client360Api = {
       const pendingSigner = signers.find((s) => s.status !== 'signed' && !s.refused_at) || signers[0] || null;
       const activeSignatureOnPage = !!pendingSigner?.last_seen_at && (now - new Date(pendingSigner.last_seen_at).getTime() <= 30_000);
       if (activeSignatureOnPage) consider(clientId, linkId, req.id, 'signature_live');
-      else if (pendingSigner?.viewed_at || pendingSigner?.opened_at) consider(clientId, linkId, req.id, 'signature_viewed');
+      else if (pendingSigner?.viewed_at || pendingSigner?.opened_at) {
+        // Já saiu da tela — mostra "visto por último" em vez de travar em "aberta".
+        consider(clientId, linkId, req.id, 'signature_viewed', pendingSigner?.last_seen_at ? `Saiu sem assinar — ${lastSeenLabel(pendingSigner.last_seen_at)}` : undefined);
+      }
       else consider(clientId, linkId, req.id, 'signature_pending');
     }
 
@@ -333,7 +346,10 @@ export const client360Api = {
       const activeOnPage = !!row.last_seen_at && (now - new Date(row.last_seen_at).getTime() <= 30_000);
       if (activeOnPage) consider(clientId, row.id, null, 'fill_live');
       else if (row.submitted_at) consider(clientId, row.id, null, 'signature_pending');
-      else if (row.opened_at) consider(clientId, row.id, null, 'fill_opened');
+      else if (row.opened_at) {
+        // Já saiu da tela — mostra "visto por último" em vez de travar em "aberta".
+        consider(clientId, row.id, null, 'fill_opened', row.last_seen_at ? `Saiu — ${lastSeenLabel(row.last_seen_at)}` : undefined);
+      }
       else consider(clientId, row.id, null, 'fill_sent');
     }
 

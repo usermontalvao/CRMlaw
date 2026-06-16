@@ -209,6 +209,12 @@ async function createNotification(payload: NotificationPayload) {
     .single();
 
   if (error) {
+    // 23505 = violação do índice único de dedupe (uq_user_notifications_dedupe):
+    // outra execução concorrente já criou esta notificação. Trata como dedupe, não erro.
+    if ((error as any).code === "23505") {
+      console.log(`⏭️ Notificação duplicada ignorada (índice único): ${payload.title}`);
+      return null;
+    }
     console.error("Erro ao criar notificação:", error);
     return null;
   }

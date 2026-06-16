@@ -263,3 +263,271 @@ export interface WhatsAppTransfer {
   performed_by: string | null;
   created_at: string;
 }
+
+// —— Workflow / agents autopilot ------------------------------------------------
+
+export type WhatsAppWorkflowAgentType =
+  | 'assistant'
+  | 'triage'
+  | 'qualification'
+  | 'documents'
+  | 'followup'
+  | 'handoff'
+  | 'closer';
+
+export interface WhatsAppWorkflowAgent {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  agent_type: WhatsAppWorkflowAgentType;
+  prompt_base: string;
+  prompt_context_template: string | null;
+  objective: string | null;
+  fields_to_collect: string[];
+  behavior_config: Record<string, any>;
+  can_send_automatically: boolean;
+  requires_human_approval: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsAppRequiredDocument {
+  key: string;
+  label: string;
+  required: boolean;
+  description?: string | null;
+  sort_order?: number;
+}
+
+export interface WhatsAppWorkflowFieldDefinition {
+  key: string;
+  label: string;
+  required?: boolean;
+  type?: 'text' | 'phone' | 'date' | 'choice' | 'boolean' | 'number';
+  choices?: string[];
+}
+
+export type WhatsAppFollowupAttemptStatus = 'pending' | 'sent' | 'canceled' | 'failed';
+
+export interface WhatsAppFollowupPolicy {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  stop_on_reply: boolean;
+  stop_on_disqualify: boolean;
+  stop_on_close: boolean;
+  business_hours_only: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsAppFollowupPolicyStep {
+  id: string;
+  policy_id: string;
+  order_index: number;
+  delay_minutes: number;
+  template_id: string | null;
+  message_body: string | null;
+  cancel_if_customer_replied: boolean;
+  business_hours_only: boolean;
+  created_at: string;
+}
+
+export type WhatsAppWorkflowType = 'campaign' | 'intake' | 'documents' | 'followup' | 'custom';
+
+export interface WhatsAppWorkflow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  workflow_type: WhatsAppWorkflowType;
+  version: number;
+  entry_message: string | null;
+  fallback_message: string | null;
+  handoff_summary_template: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WhatsAppWorkflowStepKind = 'start' | 'conversation' | 'decision' | 'documents' | 'followup' | 'handoff' | 'end';
+
+export interface WhatsAppWorkflowStep {
+  id: string;
+  workflow_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  order_index: number;
+  agent_id: string | null;
+  step_kind: WhatsAppWorkflowStepKind;
+  required_fields: WhatsAppWorkflowFieldDefinition[];
+  required_documents_json: WhatsAppRequiredDocument[];
+  ai_config: Record<string, any>;
+  timeout_minutes: number | null;
+  allow_auto_reply: boolean;
+  requires_business_hours: boolean;
+  followup_policy_id: string | null;
+  terminal: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WhatsAppWorkflowConditionType =
+  | 'message_contains'
+  | 'message_contains_any'
+  | 'message_equals'
+  | 'field_equals'
+  | 'field_filled'
+  | 'classified_subject'
+  | 'additional_issue_detected'
+  | 'channel_is'
+  | 'department_is'
+  | 'priority_is'
+  | 'tag_present'
+  | 'timeout_reached'
+  | 'document_delivered'
+  | 'all_required_documents_delivered'
+  | 'required_document_missing'
+  | 'signature_completed'
+  | 'signature_refused'
+  | 'kit_opened'
+  | 'kit_abandoned'
+  | 'within_business_hours'
+  | 'qualification_status';
+
+export interface WhatsAppWorkflowCondition {
+  type: WhatsAppWorkflowConditionType;
+  field?: string;
+  operator?: 'equals' | 'not_equals' | 'contains' | 'contains_any' | 'gt' | 'gte' | 'lt' | 'lte' | 'in';
+  value?: any;
+}
+
+export type WhatsAppWorkflowActionType =
+  | 'go_to_step'
+  | 'transfer_to_agent'
+  | 'transfer_to_user'
+  | 'transfer_to_department'
+  | 'send_message'
+  | 'schedule_followup'
+  | 'cancel_followup'
+  | 'apply_tag'
+  | 'remove_tag'
+  | 'set_subject'
+  | 'set_department'
+  | 'set_priority'
+  | 'set_qualification'
+  | 'handoff_human'
+  | 'pause_workflow'
+  | 'close_conversation'
+  | 'raise_exception';
+
+export interface WhatsAppWorkflowAction {
+  type: WhatsAppWorkflowActionType;
+  target?: string | null;
+  message?: string | null;
+  template_id?: string | null;
+  payload?: Record<string, any>;
+}
+
+export interface WhatsAppWorkflowRule {
+  id: string;
+  workflow_id: string;
+  step_id: string;
+  name: string;
+  description: string | null;
+  priority: number;
+  match_mode: 'all' | 'any';
+  conditions_json: WhatsAppWorkflowCondition[];
+  action_json: WhatsAppWorkflowAction;
+  else_action_json: WhatsAppWorkflowAction | null;
+  stop_on_match: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsAppChannelWorkflowBinding {
+  channel_id: string;
+  workflow_id: string;
+  is_default: boolean;
+  entry_agent_id: string | null;
+  config_json: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WhatsAppWorkflowConversationStateStatus =
+  | 'active'
+  | 'waiting_customer'
+  | 'waiting_internal'
+  | 'followup_scheduled'
+  | 'paused'
+  | 'handed_off'
+  | 'qualified'
+  | 'disqualified'
+  | 'completed'
+  | 'cancelled'
+  | 'exception';
+
+export type WhatsAppWorkflowQualificationStatus =
+  | 'unknown'
+  | 'qualified'
+  | 'disqualified'
+  | 'warm'
+  | 'cold'
+  | 'needs_review';
+
+export interface WhatsAppDetectedAdditionalIssue {
+  subject: string;
+  confidence?: number | null;
+  notes?: string | null;
+}
+
+export interface WhatsAppConversationWorkflowState {
+  conversation_id: string;
+  workflow_id: string | null;
+  current_step_id: string | null;
+  current_agent_id: string | null;
+  state: WhatsAppWorkflowConversationStateStatus;
+  primary_subject: string | null;
+  detected_additional_issues: WhatsAppDetectedAdditionalIssue[];
+  collected_data_json: Record<string, any>;
+  pending_documents_json: WhatsAppRequiredDocument[];
+  suggested_department_id: string | null;
+  suggested_priority: string | null;
+  confidence_score: number | null;
+  qualification_status: WhatsAppWorkflowQualificationStatus;
+  qualification_reason: string | null;
+  handoff_target_user_id: string | null;
+  handoff_target_department_id: string | null;
+  latest_summary: string | null;
+  active_followup_policy_id: string | null;
+  active_followup_step: number | null;
+  next_followup_at: string | null;
+  followup_attempts: number;
+  last_customer_reply_at: string | null;
+  last_agent_action_at: string | null;
+  last_rule_id: string | null;
+  exception_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsAppWorkflowTransitionLog {
+  id: string;
+  conversation_id: string;
+  workflow_id: string | null;
+  from_step_id: string | null;
+  to_step_id: string | null;
+  triggered_rule_id: string | null;
+  action_type: string;
+  actor_user_id: string | null;
+  actor_kind: 'system' | 'agent' | 'user';
+  detail_json: Record<string, any>;
+  created_at: string;
+}

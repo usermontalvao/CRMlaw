@@ -20,6 +20,15 @@ export const TRANSFER_TABLE = 'whatsapp_transfers';
 export const NOTES_TABLE = 'whatsapp_internal_notes';
 export const TEMPLATES_TABLE = 'whatsapp_templates';
 export const SCHEDULED_TABLE = 'whatsapp_scheduled_messages';
+export const WF_AGENTS_TABLE = 'whatsapp_workflow_agents';
+export const WF_TABLE = 'whatsapp_workflows';
+export const WF_STEPS_TABLE = 'whatsapp_workflow_steps';
+export const WF_RULES_TABLE = 'whatsapp_workflow_rules';
+export const WF_CHANNELS_TABLE = 'whatsapp_channel_workflows';
+export const WF_STATE_TABLE = 'whatsapp_conversation_workflow_state';
+export const WF_TRANSITIONS_TABLE = 'whatsapp_workflow_transition_log';
+export const FOLLOWUP_POLICIES_TABLE = 'whatsapp_followup_policies';
+export const FOLLOWUP_POLICY_STEPS_TABLE = 'whatsapp_followup_policy_steps';
 
 export const MEDIA_BUCKET = 'whatsapp-media';
 export const SIGNED_URL_TTL = 60 * 60; // 1h

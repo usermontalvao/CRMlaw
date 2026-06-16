@@ -153,35 +153,49 @@ const ClientFillLinksPanel: React.FC<{
           let stageLabel = 'Link enviado';
           let stageTone = 'bg-slate-100 text-slate-600';
           let stageDetail = `Enviado ${formatTime(link.created_at)}`;
+          let stageIcon: 'check' | 'eye' | 'x' | 'clock' = 'clock';
 
           if (signer?.signed_at || req?.status === 'signed') {
             stageLabel = 'Assinado';
             stageTone = 'bg-emerald-100 text-emerald-700';
             stageDetail = `Assinado ${formatTime(signer?.signed_at || req?.signed_at || link.submitted_at || link.created_at)}`;
+            stageIcon = 'check';
           } else if (signer?.refused_at || req?.status === 'refused') {
             stageLabel = 'Recusado';
             stageTone = 'bg-rose-100 text-rose-700';
             stageDetail = `Recusado ${formatTime(signer?.refused_at || link.submitted_at || link.created_at)}`;
+            stageIcon = 'x';
           } else if (signer?.last_seen_at && (now - new Date(signer.last_seen_at).getTime() <= 30_000)) {
             stageLabel = 'Página de assinatura aberta';
             stageTone = 'bg-sky-100 text-sky-700';
             stageDetail = 'Está na tela de assinatura agora';
+            stageIcon = 'eye';
           } else if (signer?.viewed_at || signer?.opened_at) {
             stageLabel = 'Saiu sem assinar';
             stageTone = 'bg-orange-100 text-orange-700';
-            stageDetail = `Abriu e saiu sem assinar — visto ${formatTime(signer.last_seen_at || signer.opened_at || signer.viewed_at || null)}`;
+            stageDetail = `Abriu e saiu sem assinar — ${lastSeenLabel(signer.last_seen_at || signer.opened_at || signer.viewed_at || link.created_at)}`;
+            stageIcon = 'eye';
           } else if (link.submitted_at || req) {
             stageLabel = 'Preenchido';
             stageTone = 'bg-amber-100 text-amber-700';
             stageDetail = `Preencheu e foi para assinatura ${formatTime(link.submitted_at || req?.created_at || link.created_at)}`;
+            stageIcon = 'clock';
           } else if (activeOnPage) {
             stageLabel = 'Na tela agora';
             stageTone = 'bg-violet-100 text-violet-700';
             stageDetail = 'Ativo no formulário agora';
+            stageIcon = 'eye';
+          } else if (link.last_seen_at) {
+            // Já saiu da tela — mostra "visto por último" em vez de travar em "aberta".
+            stageLabel = 'Saiu da página';
+            stageTone = 'bg-blue-100 text-blue-700';
+            stageDetail = `Abriu o formulário ${formatTime(link.opened_at || link.last_seen_at)} — ${lastSeenLabel(link.last_seen_at)}`;
+            stageIcon = 'eye';
           } else if (link.opened_at) {
             stageLabel = 'Página aberta';
             stageTone = 'bg-blue-100 text-blue-700';
             stageDetail = `Abriu o formulário ${formatTime(link.opened_at)}`;
+            stageIcon = 'eye';
           }
 
           return (
@@ -193,7 +207,7 @@ const ClientFillLinksPanel: React.FC<{
                 </div>
                 <div className="flex items-center gap-1">
                   <span className={`inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-semibold ${stageTone}`}>
-                    {stageLabel === 'Assinado' ? <CheckCircle size={9} /> : stageLabel === 'Página de assinatura aberta' || stageLabel === 'Página aberta' || stageLabel === 'Na tela agora' ? <Eye size={9} /> : stageLabel === 'Recusado' ? <X size={9} /> : <Clock size={9} />}
+                    {stageIcon === 'check' ? <CheckCircle size={9} /> : stageIcon === 'eye' ? <Eye size={9} /> : stageIcon === 'x' ? <X size={9} /> : <Clock size={9} />}
                     {stageLabel}
                   </span>
                   {onStopTracking && (
@@ -785,7 +799,9 @@ const WhatsAppModule: React.FC = () => {
 
   // Atalho "/" do compositor (estilo WhatsApp): quando o texto é só "/algo" (sem
   // espaço), abre um menu de modelos filtrados pelo nome; selecionar insere o corpo.
-  const slashMatch = !editing ? /^\/(\S*)$/.exec(draft) : null;
+  // Permite espaços na busca ("/kit tr" → continua filtrando) — só fecha o menu
+  // se o usuário pular de linha (mensagem multilinha de verdade, não comando).
+  const slashMatch = !editing ? /^\/([^\n]*)$/.exec(draft) : null;
   const slashQuery = slashMatch?.[1].toLowerCase() ?? '';
   const slashResults = slashMatch
     ? [
@@ -4146,6 +4162,10 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
     } else if (trackedActive) {
       fillLabel = 'Cliente na tela do kit';
       fillTone = 'bg-violet-100 text-violet-700';
+    } else if (trackedFill.last_seen_at) {
+      // Já saiu da tela — mostra "visto por último" em vez de travar em "aberta".
+      fillLabel = `Saiu do kit — ${lastSeenLabel(trackedFill.last_seen_at)}`;
+      fillTone = 'bg-blue-100 text-blue-700';
     } else if (trackedFill.opened_at) {
       fillLabel = 'Página do kit aberta';
       fillTone = 'bg-blue-100 text-blue-700';

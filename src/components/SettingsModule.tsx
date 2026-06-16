@@ -44,6 +44,7 @@ import {
   MapPin,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   DollarSign,
   Percent,
   CreditCard,
@@ -154,6 +155,7 @@ interface UserWithProfile extends Profile {
 }
 
 type SettingsSection =
+  | 'overview'
   | 'identity'
   | 'users'
   | 'roles'
@@ -351,17 +353,19 @@ const MODULES = [
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
-const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSection; onParamConsumed?: () => void; onClose?: () => void }> = ({
+const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSection; onParamConsumed?: () => void; onClose?: () => void; variant?: 'page' | 'modal' }> = ({
   open = true,
   initialSection,
   onParamConsumed,
   onClose,
+  variant = 'page',
 }) => {
   const { user } = useAuth();
   const { requirePin } = useSecurityPin();
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'identity');
+  // 'overview' = hub/visão geral (tela inicial). Sem deep-link, abre no hub.
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'overview');
 
   // Consumir o param de seção inicial uma vez
   useEffect(() => {
@@ -371,9 +375,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     }
   }, [initialSection]);
 
-  // Fechar com Escape + travar scroll
+  // Fechar com Escape + travar scroll — apenas no modo modal
   useEffect(() => {
-    if (!open) return;
+    if (variant !== 'modal' || !open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.(); };
     window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
@@ -381,7 +385,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       window.removeEventListener('keydown', handler);
       document.body.style.overflow = '';
     };
-  }, [open, onClose]);
+  }, [variant, open, onClose]);
 
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
@@ -1269,6 +1273,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     : SETTINGS_GROUPS;
 
   const activeItem = allSectionItems.find(s => s.key === activeSection);
+  const activeGroup = SETTINGS_GROUPS.find(g => g.items.some(i => i.key === activeSection));
 
   const cssStyles = `
   /* ── Scrollbar ── */
@@ -1372,60 +1377,40 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   .settings-nav-item {
     transition: background .13s ease, color .13s ease;
   }
+
+  /* ── Hub (visão geral) ── */
+  .settings-hub-item {
+    transition: background .12s ease;
+  }
+  .settings-hub-item:hover { background: #fff6ec !important; }
+  .settings-hub-row {
+    transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+  }
+  .settings-hub-row:hover {
+    border-color: rgba(234,108,0,0.35) !important;
+    box-shadow: 0 2px 12px rgba(234,108,0,0.10);
+  }
 `;
 
-  return createPortal(
-    <AnimatePresence>
-      {open && (
-      <>
-      <style>{cssStyles}</style>
-      <div
-        className="fixed inset-0 z-[90] flex items-center justify-center"
-        style={{ padding: '24px', background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-        onClick={onClose}
-      >
-        {/* Modal card */}
-        <motion.div
-          className="relative flex overflow-hidden"
-          style={{
-            width: 'min(1180px, calc(100vw - 48px))',
-            height: 'min(860px, calc(100vh - 48px))',
-            minHeight: '560px',
-            background: '#ffffff',
-            border: '1px solid rgba(0,0,0,0.09)',
-            borderRadius: '16px',
-            boxShadow: '0 32px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.03)',
-          }}
-          initial={{ opacity: 0, scale: 0.97, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.97, y: 8 }}
-          transition={{ duration: 0.20, ease: [0.22, 0.68, 0, 1.2] }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* X — canto superior direito */}
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Fechar"
-              style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, width: '30px', height: '30px',
-                borderRadius: '50%', border: '1px solid rgba(15,23,42,0.10)', background: 'transparent',
-                color: '#747878', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background .12s ease, border-color .12s ease, color .12s ease' }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.20)'; e.currentTarget.style.color = '#191c1e'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; e.currentTarget.style.color = '#747878'; }}
-            >
-              <X size={16} />
-            </button>
-          )}
+  // Corpo compartilhado (sidebar + conteúdo) — usado tanto na página quanto no modal
+  const settingsBody = (
+        <div className="settings-shell" style={{ display: 'flex', width: '100%', flex: '1 1 auto', alignSelf: 'stretch', minHeight: 0, overflow: 'hidden' }}>
 
           {/* ── Left sidebar ── */}
           <div style={{ width: '256px', flexShrink: 0, background: '#f9fafb', borderRight: '1px solid rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-            {/* Cabeçalho da sidebar */}
-            <div style={{ padding: '28px 20px 16px', flexShrink: 0 }}>
-              <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#b0b5bc', marginBottom: '3px' }}>Sistema</p>
-              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>Configurações</h2>
+            {/* Cabeçalho da sidebar — volta ao hub */}
+            <div style={{ padding: '22px 16px 14px', flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => setActiveSection('overview')}
+                style={{ display: 'flex', alignItems: 'center', gap: '7px', width: '100%', padding: '6px 8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#6b7280', fontSize: '12px', fontWeight: 600, transition: 'background .12s ease, color .12s ease' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#f0f1f3'; e.currentTarget.style.color = '#c45c00'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }}
+              >
+                <ChevronLeft style={{ width: '14px', height: '14px', flexShrink: 0 }} />
+                <span>Visão geral</span>
+              </button>
             </div>
 
             {/* Busca */}
@@ -1562,7 +1547,25 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#ffffff', overflow: 'hidden' }}>
 
             {/* Header fixo da seção ativa */}
-            <div style={{ flexShrink: 0, padding: '28px 48px 20px 40px', borderBottom: '1px solid rgba(15,23,42,0.05)' }}>
+            <div style={{ flexShrink: 0, padding: '22px 48px 18px 40px', borderBottom: '1px solid rgba(15,23,42,0.05)' }}>
+              {/* Breadcrumb */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('overview')}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#9ca3af', fontWeight: 600, padding: 0, transition: 'color .12s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#c45c00'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#9ca3af'; }}
+                >
+                  Configurações
+                </button>
+                {activeGroup && (
+                  <>
+                    <ChevronRight style={{ width: '13px', height: '13px', color: '#cbd0d6', flexShrink: 0 }} />
+                    <span style={{ color: '#9ca3af', fontWeight: 600 }}>{activeGroup.label}</span>
+                  </>
+                )}
+              </div>
               <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
                 {activeItem?.label ?? 'Configurações'}
               </h2>
@@ -2053,6 +2056,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
                       {/* Barra de filtros */}
+                      <div className="settings-card" style={{ padding: '16px 18px' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>De</label>
@@ -2119,6 +2123,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             Limpar
                           </button>
                         )}
+                      </div>
                       </div>
 
                       {/* Totalizador */}
@@ -2522,7 +2527,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 input.value = '';
                               }
                             }}
-                            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                            className="px-4 py-2 rounded-lg bg-[#ea6c00] text-white text-sm font-medium hover:bg-[#d46000]"
                           >
                             <Plus className="w-4 h-4" />
                           </button>
@@ -5804,8 +5809,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
             )}
           </div>{/* /flex-1 section content */}
           </div>{/* /right content area */}
-        </motion.div>{/* /modal card */}
-      </div>{/* /fixed overlay */}
+        </div>
+  );
+
+  // Modais auxiliares — usam portal próprio (zIndex 100); válidos nos dois modos
+  const settingsModals = (
+    <>
       {/* Modal de regra de notificação */}
       <Modal
         open={ruleModal.open}
@@ -5961,7 +5970,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Nome completo *</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.name}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, name: e.target.value }))}
                   />
@@ -5980,7 +5989,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 <div>
                   <label className="text-xs font-semibold text-slate-500">Papel *</label>
                   <select
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.role}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, role: e.target.value }))}
                   >
@@ -5995,7 +6004,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">CPF</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.cpf}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, cpf: formatCpf(e.target.value) }))}
                     placeholder="000.000.000-00"
@@ -6006,7 +6015,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Telefone</label>
                   <input
                     type="tel"
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.phone}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, phone: e.target.value }))}
                   />
@@ -6015,7 +6024,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">OAB</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.oab}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, oab: e.target.value }))}
                   />
@@ -6024,7 +6033,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   <label className="text-xs font-semibold text-slate-500">Nome completo no DJEN</label>
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="mt-1 w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                     value={userFormData.lawyer_full_name}
                     onChange={(e) => setUserFormData((prev) => ({ ...prev, lawyer_full_name: e.target.value }))}
                   />
@@ -6062,7 +6071,185 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
           )}
         </ModalBody>
       </Modal>
+    </>
+  );
+
+  // ── Hub / Visão geral — tela inicial calma com cards por categoria ──
+  const hubSearchActive = navSearch.trim().length > 0;
+  const hubResults = hubSearchActive
+    ? allSectionItems.filter(s => matchesNormalizedSearch(navSearch, [s.label, s.description]))
+    : [];
+  const sectionBadge = (key: SettingsSection) => {
+    if (key === 'access_requests' && pendingAccessCount > 0) {
+      return <span style={{ minWidth: '18px', height: '18px', padding: '0 5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px', background: '#ff8a00', color: '#fff', fontSize: '10px', fontWeight: 700 }}>{pendingAccessCount}</span>;
+    }
+    const st = SECTION_STATUS[key];
+    if (st) {
+      return <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: st === 'parcial' ? '#fef9c3' : '#fee2e2', color: st === 'parcial' ? '#854d0e' : '#991b1b' }}>{st === 'parcial' ? 'Parcial' : 'Pendente'}</span>;
+    }
+    return null;
+  };
+
+  const hubView = (
+    <div className="settings-scroll" style={{ flex: '1 1 auto', minHeight: 0 }}>
+      <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '40px 40px 56px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+        {/* Cabeçalho do hub */}
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#b0b5bc', marginBottom: '6px' }}>Sistema</p>
+          <h1 style={{ fontSize: '26px', fontWeight: 700, color: '#111827', lineHeight: 1.2, letterSpacing: '-0.02em' }}>Configurações</h1>
+          <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Escolha uma área para configurar o sistema, ou busque pela seção desejada.</p>
+        </div>
+
+        {/* Busca grande */}
+        <div style={{ position: 'relative', maxWidth: '560px' }}>
+          <Search style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '17px', height: '17px', color: '#b0b5bc', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            autoFocus
+            value={navSearch}
+            onChange={e => setNavSearch(e.target.value)}
+            placeholder="Buscar configuração… (ex.: WhatsApp, prazos, permissões)"
+            style={{ width: '100%', paddingLeft: '42px', paddingRight: '14px', paddingTop: '13px', paddingBottom: '13px', fontSize: '14.5px', background: '#fff', border: '1px solid rgba(15,23,42,0.13)', borderRadius: '12px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s, box-shadow .15s' }}
+            onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,138,0,0.10)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.13)'; e.currentTarget.style.boxShadow = 'none'; }}
+          />
+        </div>
+
+        {/* Resultados da busca OU grid de grupos */}
+        {hubSearchActive ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {hubResults.length === 0 && (
+              <p style={{ padding: '24px 4px', fontSize: '13.5px', color: '#9ca3af' }}>Nenhuma seção encontrada para “{navSearch}”.</p>
+            )}
+            {hubResults.map(item => (
+              <button
+                key={item.key}
+                onClick={() => { setActiveSection(item.key); setNavSearch(''); }}
+                className="settings-hub-row"
+                style={{ display: 'flex', alignItems: 'center', gap: '13px', width: '100%', textAlign: 'left', padding: '13px 15px', borderRadius: '11px', border: '1px solid rgba(15,23,42,0.07)', background: '#fff', cursor: 'pointer' }}
+              >
+                <span style={{ width: '34px', height: '34px', borderRadius: '9px', background: '#fff6ec', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <item.icon style={{ width: '16px', height: '16px', color: '#ea6c00' }} />
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#1f2937' }}>{item.label}</span>
+                  <span style={{ display: 'block', fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</span>
+                </span>
+                {sectionBadge(item.key)}
+                <ChevronRight style={{ width: '15px', height: '15px', color: '#cbd0d6', flexShrink: 0 }} />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '18px' }}>
+            {SETTINGS_GROUPS.map(group => (
+              <div key={group.key} style={{ background: '#fafafa', border: '1px solid rgba(15,23,42,0.06)', borderRadius: '14px', padding: '18px 18px 10px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px', paddingLeft: '4px' }}>
+                  <group.icon style={{ width: '15px', height: '15px', color: '#ea6c00' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6b7280' }}>{group.label}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  {group.items.map(item => (
+                    <button
+                      key={item.key}
+                      onClick={() => setActiveSection(item.key)}
+                      className="settings-hub-item"
+                      style={{ display: 'flex', alignItems: 'center', gap: '11px', width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: '9px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                    >
+                      <item.icon style={{ width: '15px', height: '15px', color: '#9ca3af', flexShrink: 0 }} />
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151' }}>{item.label}</span>
+                        <span style={{ display: 'block', fontSize: '11.5px', color: '#a3a8af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</span>
+                      </span>
+                      {sectionBadge(item.key)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // Conteúdo principal: hub na visão geral, layout 2 colunas numa seção
+  const mainContent = activeSection === 'overview' ? hubView : settingsBody;
+
+  // ── Modo página: ocupa o módulo inteiro, sem overlay/modal ──
+  if (variant === 'page') {
+    return (
+      <>
+        <style>{cssStyles}</style>
+        <div
+          className="relative flex flex-col overflow-hidden"
+          style={{
+            height: 'calc(100vh - 148px)',
+            minHeight: '480px',
+            width: '100%',
+            background: '#ffffff',
+            border: '1px solid rgba(15,23,42,0.07)',
+            borderRadius: '16px',
+            boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
+          }}
+        >
+          {mainContent}
+        </div>
+        {settingsModals}
       </>
+    );
+  }
+
+  // ── Modo modal (fallback) ──
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <>
+          <style>{cssStyles}</style>
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center"
+            style={{ padding: '24px', background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+            onClick={onClose}
+          >
+            {/* Modal card */}
+            <motion.div
+              className="relative flex overflow-hidden"
+              style={{
+                width: 'min(1180px, calc(100vw - 48px))',
+                height: 'min(860px, calc(100vh - 48px))',
+                minHeight: '560px',
+                background: '#ffffff',
+                border: '1px solid rgba(0,0,0,0.09)',
+                borderRadius: '16px',
+                boxShadow: '0 32px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.03)',
+              }}
+              initial={{ opacity: 0, scale: 0.97, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 8 }}
+              transition={{ duration: 0.20, ease: [0.22, 0.68, 0, 1.2] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* X — canto superior direito */}
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Fechar"
+                  style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, width: '30px', height: '30px',
+                    borderRadius: '50%', border: '1px solid rgba(15,23,42,0.10)', background: 'transparent',
+                    color: '#747878', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background .12s ease, border-color .12s ease, color .12s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#f2f4f6'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.20)'; e.currentTarget.style.color = '#191c1e'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(15,23,42,0.10)'; e.currentTarget.style.color = '#747878'; }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+              {mainContent}
+            </motion.div>
+          </div>
+          {settingsModals}
+        </>
       )}
     </AnimatePresence>,
     document.body,

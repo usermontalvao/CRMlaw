@@ -936,20 +936,16 @@ const MainApp: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { sidebarMode, setSidebarMode } = useSidebarMode();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
 
-  // Intercepta navegação direta para 'configuracoes' e abre como modal
-  useEffect(() => {
-    if (activeModule === 'configuracoes') {
-      const params = moduleParams['configuracoes'];
-      const section = params ? (JSON.parse(params).section as string) : undefined;
-      setSettingsInitialSection(section);
-      setShowSettings(true);
-      clearModuleParams('configuracoes');
-      safeNavigateTo('dashboard');
+  // Seção inicial das Configurações (deep-link via moduleParams.section)
+  const settingsInitialSection = useMemo(() => {
+    const params = moduleParams['configuracoes'];
+    try {
+      return params ? (JSON.parse(params).section as string | undefined) : undefined;
+    } catch {
+      return undefined;
     }
-  }, [activeModule]);
+  }, [moduleParams]);
   const [cloudMobileSearchTerm, setCloudMobileSearchTerm] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
@@ -2385,8 +2381,7 @@ useEffect(() => {
                           <button
                             onClick={() => {
                               setProfileMenuOpen(false);
-                              setSettingsInitialSection(undefined);
-                              setShowSettings(true);
+                              navigateTo('configuracoes');
                             }}
                             className="flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] text-slate-700 transition-colors hover:bg-[#faf9f7]"
                           >
@@ -2486,6 +2481,13 @@ useEffect(() => {
                 onNavigateToModule={handleNavigateToModule}
                 initialFolderId={moduleParams['cloud'] ? JSON.parse(moduleParams['cloud']).folderId : undefined}
                 onParamConsumed={() => clearModuleParams('cloud')}
+              />
+            )}
+            {activeModule === 'configuracoes' && (
+              <SettingsModule
+                variant="page"
+                initialSection={settingsInitialSection as any}
+                onParamConsumed={() => clearModuleParams('configuracoes')}
               />
             )}
             {activeModule === 'processos' && (
@@ -2642,14 +2644,6 @@ useEffect(() => {
         onNavigate={(module, params) => safeNavigateTo(module as any, params as any)}
       />
 
-      {/* Modal de configurações — portal sobre qualquer módulo */}
-      <Suspense fallback={null}>
-        <SettingsModule
-          open={showSettings}
-          initialSection={settingsInitialSection as any}
-          onClose={() => setShowSettings(false)}
-        />
-      </Suspense>
     </div>
     </CacheProvider>
   );
