@@ -661,9 +661,10 @@ class SignatureService {
   }
 
   async markSignerAsViewed(signerId: string, ipAddress?: string, userAgent?: string): Promise<void> {
+    const nowIso = new Date().toISOString();
     const { error } = await supabase
       .from(this.signersTable)
-      .update({ viewed_at: new Date().toISOString() })
+      .update({ viewed_at: nowIso })
       .eq('id', signerId)
       .is('viewed_at', null); // Só atualiza se ainda não foi visualizado
 
@@ -680,6 +681,23 @@ class SignatureService {
       });
     } catch (e) {
       console.warn('Não foi possível registrar audit log (acesso público):', e);
+    }
+  }
+
+  async heartbeatSignerPresence(signerId: string): Promise<void> {
+    const nowIso = new Date().toISOString();
+    try {
+      await supabase
+        .from(this.signersTable)
+        .update({ opened_at: nowIso, last_seen_at: nowIso })
+        .eq('id', signerId)
+        .is('opened_at', null);
+      await supabase
+        .from(this.signersTable)
+        .update({ last_seen_at: nowIso })
+        .eq('id', signerId);
+    } catch (error) {
+      console.warn('NÃ£o foi possÃ­vel atualizar heartbeat da assinatura:', error);
     }
   }
 

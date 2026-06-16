@@ -63,6 +63,8 @@ export interface Signer {
   status: SignatureStatus;
   auth_method: SignerAuthMethod;
   viewed_at?: string | null;
+  opened_at?: string | null;
+  last_seen_at?: string | null;
   signed_at?: string | null;
   refused_at?: string | null;
   refusal_reason?: string | null;

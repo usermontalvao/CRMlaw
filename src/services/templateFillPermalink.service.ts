@@ -13,7 +13,7 @@ export const templateFillPermalinkService = {
    * Cria um novo token de preenchimento a partir de um slug de permalink.
    * Cada chamada gera um token único (o permalink nunca expira).
    */
-  async mintToken(slug: string): Promise<PermalinkMintResult> {
+  async mintToken(slug: string, opts?: { clientId?: string | null; conversationId?: string | null }): Promise<PermalinkMintResult> {
     try {
       const response = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
@@ -21,7 +21,11 @@ export const templateFillPermalinkService = {
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ slug }),
+        body: JSON.stringify({
+          slug,
+          client_id: opts?.clientId || null,
+          conversation_id: opts?.conversationId || null,
+        }),
       });
 
       const data = await response.json();

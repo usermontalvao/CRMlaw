@@ -100,6 +100,33 @@ export interface ClientDocRequestItem { id: string; label: string; required: boo
 /** Uma solicitação de documento ao cliente (resumo + itens para checklist). */
 export interface ClientDocRequest { id: string; title: string; due_date: string | null; status: string; items: ClientDocRequestItem[] }
 
+export interface ClientTemplateFillLink {
+  id: string;
+  public_token: string;
+  template_id: string;
+  template_name: string;
+  status: 'pending' | 'submitted' | 'cancelled' | 'expired';
+  followup_stopped: boolean;
+  created_at: string;
+  opened_at: string | null;
+  last_seen_at: string | null;
+  submitted_at: string | null;
+  signature_request_id: string | null;
+}
+
+export interface ClientTrackedSignatureStatus {
+  client_id: string;
+  link_id: string;
+  signature_request_id: string | null;
+  kind: 'fill_sent' | 'fill_opened' | 'fill_live' | 'signature_pending' | 'signature_viewed' | 'signature_live' | 'signature_signed' | 'signature_refused';
+  label: string;
+  cls: string;
+  /** Presença ativa AGORA na página pública (heartbeat recente). Prevalece sobre "Aguardando você". */
+  live: boolean;
+  /** Estado terminal (assinado/recusado): mostra badge até a equipe fechar o acompanhamento. */
+  terminal?: boolean;
+}
+
 /** Pendências do cliente para o painel da conversa (Seção 11). */
 export interface ClientPendings {
   requirements: Requirement[];      // requerimentos em andamento (não terminais)
@@ -115,6 +142,7 @@ export interface ClientOverview {
   processes: Process[];
   schedule: ClientSchedule;
   pendings: ClientPendings;
+  templateFillLinks: ClientTemplateFillLink[];
   /** Assinaturas do cliente (Fase G) — pendentes e ativas. */
   signatures: SignatureRequestWithSigners[];
   /** Acordos/contratos financeiros do cliente (Fase G). */
@@ -139,7 +167,7 @@ export function summarizeOverview(o: ClientOverview): ClientQuickSummary {
     nextDeadline: o.schedule.deadlines[0] || null,
     nextEvent: o.schedule.events[0] ? { title: o.schedule.events[0].title, start_at: o.schedule.events[0].start_at } : null,
     pendingCount: o.pendings.requirements.length + o.pendings.documents.length,
-    pendingSignatures: o.signatures.filter(s => s.status === 'pending').length,
+    pendingSignatures: o.signatures.filter(s => s.status === 'pending').length + o.templateFillLinks.filter(l => l.status === 'pending').length,
   };
 }
 

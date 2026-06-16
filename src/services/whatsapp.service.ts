@@ -16,7 +16,7 @@ export {
 export type {
   AgentPermissions, TemplateContext, StaffOption, AgentPrefs, ScheduleDeadline,
   ClientSchedule, ClientDocRequest, ClientPendings, ClientOverview, ClientQuickSummary,
-  WhatsAppInternalNote,
+  WhatsAppInternalNote, ClientTrackedSignatureStatus,
 } from './whatsapp/shared';
 export type { WhatsAppAiSession, WhatsAppAiPlaybook, WhatsAppAiChannelConfig, AiPlaybookQuestion } from '../types/whatsapp.types';
 

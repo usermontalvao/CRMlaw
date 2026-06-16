@@ -21,6 +21,15 @@ class TemplateFillService {
     return data as TemplateFillBundle;
   }
 
+  async heartbeat(token: string): Promise<void> {
+    const { data, error } = await supabase.functions.invoke('template-fill', {
+      body: { action: 'heartbeat', token },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.error || 'Erro ao registrar atividade');
+  }
+
   async submit(params: {
     token: string;
     signer: { name: string; email?: string | null; cpf?: string | null; phone?: string | null };

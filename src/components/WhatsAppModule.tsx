@@ -14,7 +14,7 @@ import {
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
   Mail, MapPin,
 } from 'lucide-react';
-import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote } from '../services/whatsapp.service';
+import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppTemplate, WhatsAppScheduledMessage, TimelineEvent, TimelineKind } from '../types/whatsapp.types';
 import { processService, type ProcessMovement } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
@@ -36,6 +36,9 @@ import { signatureService } from '../services/signature.service';
 import { type WaModal, WaWorkspaceRenderer } from './WaWorkspace';
 import { ClientCloudDocsLink } from './CloudFolderModal';
 import { Modal, ModalBody } from './ui/Modal';
+import { documentTemplateService } from '../services/documentTemplate.service';
+import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
+import type { DocumentTemplate } from '../types/document.types';
 
 /** Retorna dia da semana e minutos desde meia-noite no timezone IANA informado. */
 function getCurrentTimeInTz(timezone: string): { dow: number; curMins: number } {
@@ -101,6 +104,142 @@ const waBtnDanger = 'inline-flex items-center justify-center gap-1.5 px-4 py-2 r
 
 const WA_DIALOG_WIDTH: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
   sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl',
+};
+
+const ClientFillLinksPanel: React.FC<{
+  links: import('../services/whatsapp/shared').ClientTemplateFillLink[] | null;
+  signatures: import('../types/signature.types').SignatureRequestWithSigners[] | null;
+  onStopTracking?: (linkId: string) => void;
+}> = ({ links, signatures, onStopTracking }) => {
+  const toast = useToastContext();
+  const list = (links ?? []).filter((l) => {
+    if (l.followup_stopped || l.status === 'cancelled' || l.status === 'expired') return false;
+    const req = (signatures ?? []).find(s => s.id === l.signature_request_id);
+    if (!req) return true;
+    if (req.status === 'signed' || req.status === 'refused' || req.signed_at) return false;
+    if ((req.signers ?? []).some(sg => !!sg.signed_at || !!sg.refused_at)) return false;
+    return true;
+  });
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  if (list.length === 0) return null;
+
+  const copyText = async (key: string, label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      toast.success(label);
+      setTimeout(() => setCopiedKey(curr => (curr === key ? null : curr)), 1800);
+    } catch (e: any) {
+      toast.error('Não foi possível copiar o link', e?.message);
+    }
+  };
+
+  const now = Date.now();
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+        <FileText size={10} /> Acompanhamento do kit
+        <span className="ml-auto px-1.5 py-px rounded-full bg-sky-100 text-sky-700 text-[9px] font-bold">{list.length}</span>
+      </p>
+      <div className="rounded-xl border border-[#e7e5df] divide-y divide-[#f1f0ec] overflow-hidden">
+        {list.map((link) => {
+          const req = (signatures ?? []).find(s => s.id === link.signature_request_id) ?? null;
+          const signer = req?.signers?.find(sg => sg.status !== 'signed' && !sg.refused_at) ?? req?.signers?.[0] ?? null;
+          const fillUrl = `${window.location.origin}/#/preencher/${link.public_token}`;
+          const signUrl = signer?.public_token ? signatureService.generatePublicSigningUrl(signer.public_token) : null;
+          const activeOnPage = !!link.last_seen_at && (now - new Date(link.last_seen_at).getTime() <= 30_000);
+
+          let stageLabel = 'Link enviado';
+          let stageTone = 'bg-slate-100 text-slate-600';
+          let stageDetail = `Enviado ${formatTime(link.created_at)}`;
+
+          if (signer?.signed_at || req?.status === 'signed') {
+            stageLabel = 'Assinado';
+            stageTone = 'bg-emerald-100 text-emerald-700';
+            stageDetail = `Assinado ${formatTime(signer?.signed_at || req?.signed_at || link.submitted_at || link.created_at)}`;
+          } else if (signer?.refused_at || req?.status === 'refused') {
+            stageLabel = 'Recusado';
+            stageTone = 'bg-rose-100 text-rose-700';
+            stageDetail = `Recusado ${formatTime(signer?.refused_at || link.submitted_at || link.created_at)}`;
+          } else if (signer?.last_seen_at && (now - new Date(signer.last_seen_at).getTime() <= 30_000)) {
+            stageLabel = 'Página de assinatura aberta';
+            stageTone = 'bg-sky-100 text-sky-700';
+            stageDetail = 'Está na tela de assinatura agora';
+          } else if (signer?.viewed_at || signer?.opened_at) {
+            stageLabel = 'Saiu sem assinar';
+            stageTone = 'bg-orange-100 text-orange-700';
+            stageDetail = `Abriu e saiu sem assinar — visto ${formatTime(signer.last_seen_at || signer.opened_at || signer.viewed_at || null)}`;
+          } else if (link.submitted_at || req) {
+            stageLabel = 'Preenchido';
+            stageTone = 'bg-amber-100 text-amber-700';
+            stageDetail = `Preencheu e foi para assinatura ${formatTime(link.submitted_at || req?.created_at || link.created_at)}`;
+          } else if (activeOnPage) {
+            stageLabel = 'Na tela agora';
+            stageTone = 'bg-violet-100 text-violet-700';
+            stageDetail = 'Ativo no formulário agora';
+          } else if (link.opened_at) {
+            stageLabel = 'Página aberta';
+            stageTone = 'bg-blue-100 text-blue-700';
+            stageDetail = `Abriu o formulário ${formatTime(link.opened_at)}`;
+          }
+
+          return (
+            <div key={link.id} className="px-3 py-2.5 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-semibold text-slate-800 truncate">{link.template_name}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{stageDetail}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-semibold ${stageTone}`}>
+                    {stageLabel === 'Assinado' ? <CheckCircle size={9} /> : stageLabel === 'Página de assinatura aberta' || stageLabel === 'Página aberta' || stageLabel === 'Na tela agora' ? <Eye size={9} /> : stageLabel === 'Recusado' ? <X size={9} /> : <Clock size={9} />}
+                    {stageLabel}
+                  </span>
+                  {onStopTracking && (
+                    <button
+                      onClick={() => onStopTracking(link.id)}
+                      title="Parar de acompanhar"
+                      className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white transition"
+                    >
+                      <X size={11} strokeWidth={2.75} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10.5px] text-slate-400 w-14 flex-shrink-0">Preencher</span>
+                  <input readOnly value={fillUrl} className="flex-1 min-w-0 px-2 py-1 rounded-md border border-[#e7e5df] bg-slate-50 text-[10.5px] text-slate-500" />
+                  <button
+                    onClick={() => copyText(`fill:${link.id}`, 'Link de preenchimento copiado.', fillUrl)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 transition"
+                  >
+                    {copiedKey === `fill:${link.id}` ? <Check size={11} /> : <Link2 size={11} />}
+                    {copiedKey === `fill:${link.id}` ? 'Copiado' : 'Copiar'}
+                  </button>
+                </div>
+                {signUrl && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10.5px] text-slate-400 w-14 flex-shrink-0">Assinar</span>
+                    <input readOnly value={signUrl} className="flex-1 min-w-0 px-2 py-1 rounded-md border border-[#e7e5df] bg-amber-50 text-[10.5px] text-amber-700" />
+                    <button
+                      onClick={() => copyText(`sign:${link.id}`, 'Link de assinatura copiado.', signUrl)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition"
+                    >
+                      {copiedKey === `sign:${link.id}` ? <Check size={11} /> : <Link2 size={11} />}
+                      {copiedKey === `sign:${link.id}` ? 'Copiado' : 'Reenviar'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 };
 
 const WaDialog: React.FC<{
@@ -418,6 +557,18 @@ const Avatar: React.FC<{ url: string | null; name: string | null; phone: string;
 
 const MSG_PAGE = 60; // mensagens por bloco de paginação
 
+type SlashKitItem = {
+  kind: 'kit';
+  id: string;
+  name: string;
+  description: string | undefined;
+  slug: string;
+};
+
+type SlashResultItem =
+  | { kind: 'template'; id: string; name: string; description?: string; body: string; template: WhatsAppTemplate }
+  | SlashKitItem;
+
 const WhatsAppModule: React.FC = () => {
   const { user } = useAuth();
   const toast = useToastContext();
@@ -488,10 +639,44 @@ const WhatsAppModule: React.FC = () => {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   // Templates carregados uma vez para o atalho "/" no compositor (estilo WhatsApp).
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const [kitTemplates, setKitTemplates] = useState<SlashKitItem[]>([]);
   const reloadTemplates = useCallback(() => {
     whatsappService.listTemplates({ activeOnly: true }).then(setTemplates).catch(() => {});
   }, []);
   useEffect(() => { reloadTemplates(); }, [reloadTemplates]);
+  useEffect(() => {
+    const isRequirementsMsTemplate = (template: DocumentTemplate) => {
+      const norm = (value?: string) => (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      return norm(template.name).startsWith('MODELO MS (REQUERIMENTOS)') || norm(template.description).includes('[REQUERIMENTOS_MS]');
+    };
+
+    let alive = true;
+    documentTemplateService.listTemplates()
+      .then(async (allTemplates) => {
+        const visibleTemplates = allTemplates.filter(t => !isRequirementsMsTemplate(t));
+        const permalinkChecks = await Promise.all(
+          visibleTemplates.map(async (template) => {
+            try {
+              const permalinks = await templateFillPermalinkService.listPermalinks(template.id);
+              const active = permalinks.find((p: any) => p.is_active) ?? permalinks[0];
+              if (!active?.slug) return null;
+              return {
+                kind: 'kit' as const,
+                id: template.id,
+                name: template.name,
+                description: template.description,
+                slug: active.slug,
+              };
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (alive) setKitTemplates(permalinkChecks.filter((t): t is NonNullable<typeof t> => !!t));
+      })
+      .catch(() => { if (alive) setKitTemplates([]); });
+    return () => { alive = false; };
+  }, []);
   const [slashIndex, setSlashIndex] = useState(0); // item destacado no dropdown do "/"
   // Anexos selecionados aguardando preview/legenda antes do envio (Fase 0.1+).
   const [attachStaged, setAttachStaged] = useState<File[] | null>(null);
@@ -601,15 +786,56 @@ const WhatsAppModule: React.FC = () => {
   // Atalho "/" do compositor (estilo WhatsApp): quando o texto é só "/algo" (sem
   // espaço), abre um menu de modelos filtrados pelo nome; selecionar insere o corpo.
   const slashMatch = !editing ? /^\/(\S*)$/.exec(draft) : null;
+  const slashQuery = slashMatch?.[1].toLowerCase() ?? '';
   const slashResults = slashMatch
-    ? templates.filter(t => t.name.toLowerCase().includes(slashMatch[1].toLowerCase())).slice(0, 6)
+    ? [
+        ...templates.map((t) => ({
+          kind: 'template' as const,
+          id: t.id,
+          name: t.name,
+          description: t.category || undefined,
+          body: t.body,
+          template: t,
+        })),
+        ...kitTemplates,
+      ].filter((item) => item.name.toLowerCase().includes(slashQuery)).slice(0, 6)
     : [];
   const slashActive = slashResults.length > 0;
   const slashIdx = Math.min(slashIndex, Math.max(0, slashResults.length - 1));
-  const applyTemplate = useCallback((t: WhatsAppTemplate) => {
-    setDraft(renderTemplate(t.body, templateCtx));
+  // Trava anti-duplicação do mint de kit: o menu fica clicável durante o await
+  // (mint ~200ms), então duplo-clique / clique+Enter geravam DOIS links. Ignora
+  // chamada concorrente (inFlight) e repetição do mesmo kit dentro de 1,5s.
+  const kitMintRef = useRef<{ inFlight: boolean; lastSlug: string; lastAt: number }>({ inFlight: false, lastSlug: '', lastAt: 0 });
+  const applyTemplate = useCallback(async (item: SlashResultItem) => {
+    if (item.kind === 'kit') {
+      const guard = kitMintRef.current;
+      const nowTs = Date.now();
+      if (guard.inFlight) return;
+      if (guard.lastSlug === item.slug && nowTs - guard.lastAt < 1500) return;
+      guard.inFlight = true;
+      try {
+        const result = await templateFillPermalinkService.mintToken(item.slug, {
+          clientId: selected?.client_id ?? null,
+          conversationId: selectedId,
+        });
+        if (!result.success || !result.token) {
+          throw new Error(result.error || 'Não foi possível gerar o link de preenchimento.');
+        }
+        guard.lastSlug = item.slug;
+        guard.lastAt = Date.now();
+        const url = `${window.location.origin}/#/preencher/${result.token}`;
+        setDraft(`Segue o link para preenchimento e assinatura dos seus documentos:\n${url}`);
+        setSlashIndex(0);
+      } catch (e: any) {
+        toast.error('Falha ao gerar link do kit', e?.message || 'Não foi possível gerar o link de preenchimento.');
+      } finally {
+        guard.inFlight = false;
+      }
+      return;
+    }
+    setDraft(renderTemplate(item.body, templateCtx));
     setSlashIndex(0);
-  }, [templateCtx]);
+  }, [selected?.client_id, selectedId, templateCtx, toast]);
 
   // Pacote 360 do cliente carregado uma vez ao abrir a conversa (Fase 10).
   // Banner-resumo e painéis laterais consomem deste estado — sem refetch por bloco.
@@ -620,7 +846,7 @@ const WhatsAppModule: React.FC = () => {
     if (!selectedClientId) { setOverview(null); return; }
     whatsappService.getClientOverview(selectedClientId)
       .then(setOverview)
-      .catch(() => setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, signatures: [], agreements: [] }));
+      .catch(() => setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, templateFillLinks: [], signatures: [], agreements: [] }));
   }, [selectedClientId]);
   useEffect(() => {
     if (!selectedClientId) { setOverview(null); return; }
@@ -628,7 +854,7 @@ const WhatsAppModule: React.FC = () => {
     setOverview(null);
     whatsappService.getClientOverview(selectedClientId)
       .then(o => { if (alive) setOverview(o); })
-      .catch(() => { if (alive) setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, signatures: [], agreements: [] }); });
+      .catch(() => { if (alive) setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, templateFillLinks: [], signatures: [], agreements: [] }); });
     return () => { alive = false; };
   }, [selectedClientId]);
 
@@ -636,6 +862,7 @@ const WhatsAppModule: React.FC = () => {
   // Resolve o "não está realtime": quando a IA dá baixa em um item, lista, cabeçalho
   // e painel de pendências reagem na hora.
   const [docStatusByClient, setDocStatusByClient] = useState<Record<string, 'awaiting' | 'ready'>>({});
+  const [trackedSignatureStatusByClient, setTrackedSignatureStatusByClient] = useState<Record<string, ClientTrackedSignatureStatus>>({});
   const convClientIds = useMemo(
     () => Array.from(new Set(conversations.map(c => c.client_id).filter(Boolean) as string[])),
     [conversations],
@@ -649,6 +876,49 @@ const WhatsAppModule: React.FC = () => {
     const unsub = whatsappService.subscribeDocRequests(() => { loadDocStatus(); reloadOverview(); });
     return unsub;
   }, [loadDocStatus, reloadOverview]);
+  const loadTrackedSignatureStatus = useCallback(() => {
+    if (convClientIds.length === 0) { setTrackedSignatureStatusByClient({}); return; }
+    whatsappService.getTrackedSignatureStatusByClients(convClientIds).then(setTrackedSignatureStatusByClient).catch(() => {});
+  }, [convClientIds]);
+  const stopTemplateFillTracking = useCallback(async (linkId: string) => {
+    try {
+      await whatsappService.stopTemplateFillTracking(linkId);
+      loadTrackedSignatureStatus();
+      reloadOverview();
+      toast.success('Acompanhamento do kit encerrado.');
+    } catch (e: any) {
+      toast.error('Falha ao encerrar acompanhamento', e?.message);
+    }
+  }, [loadTrackedSignatureStatus, reloadOverview, toast]);
+  const stopSignatureTracking = useCallback(async (requestId: string) => {
+    try {
+      await whatsappService.stopSignatureTracking(requestId);
+      setOverview(prev => prev ? {
+        ...prev,
+        signatures: prev.signatures.map(sig => sig.id === requestId ? ({ ...sig, wa_tracking_stopped: true } as any) : sig),
+      } : prev);
+      loadTrackedSignatureStatus();
+      reloadOverview();
+      toast.success('Acompanhamento da assinatura encerrado.');
+    } catch (e: any) {
+      toast.error('Falha ao encerrar acompanhamento', e?.message);
+    }
+  }, [loadTrackedSignatureStatus, reloadOverview, toast]);
+  useEffect(() => { loadTrackedSignatureStatus(); }, [loadTrackedSignatureStatus]);
+  useEffect(() => {
+    const unsub = whatsappService.subscribeSignatures(() => { loadTrackedSignatureStatus(); reloadOverview(); });
+    return unsub;
+  }, [loadTrackedSignatureStatus, reloadOverview]);
+  // A "presença ativa" (live) é calculada por janela de 45s no momento do fetch.
+  // O heartbeat (a cada 20s) chega via realtime e mantém o badge fresco enquanto
+  // o cliente está na tela; quando ele sai, os heartbeats param e não há mais
+  // evento. Este tick reavalia periodicamente para o "Assinatura aberta" expirar
+  // sozinho em vez de ficar grudado. Só roda quando há conversas com cliente.
+  useEffect(() => {
+    if (convClientIds.length === 0) return;
+    const id = window.setInterval(() => loadTrackedSignatureStatus(), 12_000);
+    return () => window.clearInterval(id);
+  }, [convClientIds.length, loadTrackedSignatureStatus]);
 
   // ── Dispensar o aviso "Documentos prontos" por cliente (só visual; não toca nos
   // document_requests). Persiste em localStorage. Só o estado 'ready' é dispensável —
@@ -686,6 +956,39 @@ const WhatsAppModule: React.FC = () => {
     if (st === 'ready' && dismissedDocReady.has(clientId)) return null;
     return st;
   }, [docStatusByClient, dismissedDocReady]);
+  const trackedSignatureStatus = useCallback((clientId: string | null | undefined): ClientTrackedSignatureStatus | null => {
+    if (!clientId) return null;
+    return trackedSignatureStatusByClient[clientId] || null;
+  }, [trackedSignatureStatusByClient]);
+  const effectiveConversationStatus = useCallback((c: {
+    client_id?: string | null;
+    is_blocked: boolean;
+    status: string;
+    last_message_direction: WhatsAppDirection | null;
+    assigned_user_id?: string | null;
+    department_id?: string | null;
+    awaiting_accept?: boolean;
+  }) => {
+    const base = convStatus(c);
+    // Estados terminais/duros nunca são sobrescritos pelo tracking.
+    if (base.key === 'blocked' || base.key === 'closed') return base;
+    const tracked = trackedSignatureStatus(c.client_id);
+    if (tracked) {
+      // Estado "forte": presença ativa AGORA (live) OU assinatura já existindo
+      // (aguardando/visualizada/aberta). Prevalece sobre tudo — inclusive
+      // "Aguardando você"/"Aguardando setor": a etapa da assinatura é o que
+      // importa operacionalmente, e é isso que o usuário quer enxergar.
+      const strong = tracked.live || tracked.kind.startsWith('signature_');
+      if (strong) return { key: 'waiting_client' as const, label: tracked.label, cls: tracked.cls };
+      // Estado "fraco" de kit pré-assinatura ("Link enviado"/"Página aberta"):
+      // não mascara uma mensagem pendente do cliente — só cobre aguardando
+      // cliente/aberta.
+      if (base.key !== 'waiting_you' && base.key !== 'waiting_internal') {
+        return { key: 'waiting_client' as const, label: tracked.label, cls: tracked.cls };
+      }
+    }
+    return base;
+  }, [trackedSignatureStatus]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -898,11 +1201,6 @@ const WhatsAppModule: React.FC = () => {
     if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }, []);
 
-  // Ordem de urgência para ordenar a inbox (Fase A): cliente esperando resposta vem primeiro.
-  const STATUS_URGENCY: Record<ConvStatusKey, number> = {
-    waiting_you: 0, waiting_internal: 1, open: 2, waiting_client: 3, blocked: 4, closed: 5,
-  };
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return conversations
@@ -925,20 +1223,9 @@ const WhatsAppModule: React.FC = () => {
         if (!q) return true;
         return (c.contact_name || '').toLowerCase().includes(q) || c.contact_phone.includes(q);
       })
+      // Ordem igual ao WhatsApp: mensagem mais recente sempre no topo, sem
+      // reordenar por status/urgência (a triagem fica nos filtros e badges de SLA).
       .sort((a, b) => {
-        const stA = convStatus(a).key;
-        const stB = convStatus(b).key;
-        const ua = STATUS_URGENCY[stA] ?? 9;
-        const ub = STATUS_URGENCY[stB] ?? 9;
-        if (ua !== ub) return ua - ub;
-        // Dentro de grupos onde tempo de espera define urgência: mais antigo primeiro
-        // (quem espera há mais tempo precisa de atenção primeiro).
-        if (stA === 'waiting_you' || stA === 'waiting_internal') {
-          const ta = a.last_customer_message_at || a.last_message_at || a.created_at;
-          const tb = b.last_customer_message_at || b.last_message_at || b.created_at;
-          return ta < tb ? -1 : ta > tb ? 1 : 0; // ascendente = mais antigo primeiro
-        }
-        // Demais grupos: mais recente primeiro.
         const ta = a.last_message_at || a.created_at;
         const tb = b.last_message_at || b.created_at;
         return tb < ta ? -1 : tb > ta ? 1 : 0;
@@ -1629,7 +1916,7 @@ const WhatsAppModule: React.FC = () => {
             const active = c.id === selectedId;
             const ch = c.instance_id ? channelById.get(c.instance_id) : null;
             const dept = c.department_id ? deptById.get(c.department_id) : null;
-            const st = convStatus(c);
+            const st = effectiveConversationStatus(c);
             const sla = slaSignal(c);
             const slaInt = slaInternalSignal(c);
             // Borda esquerda colorida por severidade de SLA (radar operacional — Fase B).
@@ -1768,9 +2055,26 @@ const WhatsAppModule: React.FC = () => {
                       {deptById.get(selected.department_id)!.name}
                     </span>
                   )}
-                  {(() => { const st = convStatus(selected); return (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>{st.label}</span>
-                  ); })()}
+                  {(() => {
+                    const st = effectiveConversationStatus(selected);
+                    const tracked = trackedSignatureStatus(selected.client_id);
+                    return (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>
+                        {st.label}
+                        {tracked && (
+                          <button
+                            onClick={() => tracked.signature_request_id
+                              ? stopSignatureTracking(tracked.signature_request_id)
+                              : stopTemplateFillTracking(tracked.link_id)}
+                            title="Fechar acompanhamento"
+                            className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-white/60 hover:bg-slate-700 hover:text-white transition"
+                          >
+                            <X size={10} strokeWidth={2.75} />
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })()}
                   {(() => { const sla = slaSignal(selected); return sla ? (
                     <span className="inline-flex items-center gap-1 font-semibold" style={{ color: sla.color }}>
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: sla.color }} /> {sla.label}
@@ -1860,7 +2164,7 @@ const WhatsAppModule: React.FC = () => {
               </div>
             </header>
 
-            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} onDismissDocReady={() => dismissDocReady(selected.client_id!)} />}
+            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
 
             {/* Fase J: banner de sessão de IA ativa */}
             {aiSession?.status === 'active' && (
@@ -2076,7 +2380,11 @@ const WhatsAppModule: React.FC = () => {
                             <button key={t.id} onMouseEnter={() => setSlashIndex(i)} onClick={() => applyTemplate(t)}
                               className={`w-full text-left px-3 py-2 transition ${i === slashIdx ? 'bg-[#00a884]/10' : 'hover:bg-slate-50'}`}>
                               <p className="text-[12.5px] font-semibold text-slate-700"><span className="text-[#00a884]">/</span>{t.name}</p>
-                              <p className="text-[11.5px] text-slate-500 line-clamp-1 whitespace-pre-wrap break-words">{renderTemplate(t.body, templateCtx)}</p>
+                              <p className="text-[11.5px] text-slate-500 line-clamp-1 whitespace-pre-wrap break-words">
+                                {t.kind === 'kit'
+                                  ? `Kit de preenchimento e assinatura · gera link único /#/preencher/...`
+                                  : renderTemplate(t.body, templateCtx)}
+                              </p>
                             </button>
                           ))}
                         </div>
@@ -2271,7 +2579,8 @@ const WhatsAppModule: React.FC = () => {
 
           {selected.client_id && <ClientPendingsPanel pendings={overview?.pendings ?? null} confirm={confirm} onChanged={reloadOverview} />}
           {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.contact_name || undefined} />}
-          {selected.client_id && <ClientSignaturesPanel signatures={overview?.signatures ?? null} />}
+          {selected.client_id && <ClientFillLinksPanel links={overview?.templateFillLinks ?? null} signatures={overview?.signatures ?? null} onStopTracking={stopTemplateFillTracking} />}
+          {selected.client_id && <ClientSignaturesPanel signatures={overview?.signatures ?? null} links={overview?.templateFillLinks ?? null} onStopTracking={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />}
 
           {/* 360: Financeiro — acordos clicáveis abrem detalhes em modal */}
           {selected.client_id && (
@@ -3628,10 +3937,20 @@ const ClientPendingsPanel: React.FC<{ pendings: ClientPendings | null; confirm?:
 };
 
 // ── Assinaturas pendentes do cliente (Fase G) ──
-const ClientSignaturesPanel: React.FC<{ signatures: import('../types/signature.types').SignatureRequestWithSigners[] | null }> = ({ signatures }) => {
+const ClientSignaturesPanel: React.FC<{
+  signatures: import('../types/signature.types').SignatureRequestWithSigners[] | null;
+  links?: import('../services/whatsapp/shared').ClientTemplateFillLink[] | null;
+  onStopTracking?: (linkId: string) => void;
+  onStopSignatureTracking?: (requestId: string) => void;
+}> = ({ signatures, links, onStopTracking, onStopSignatureTracking }) => {
   const toast = useToastContext();
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const pending = (signatures ?? []).filter(s => s.status === 'pending' && !s.archived_at && !s.deleted_at);
+  const activeLinks = (links ?? []).filter(link => !link.followup_stopped && link.status !== 'cancelled' && link.status !== 'expired');
+  const pending = (signatures ?? []).filter((s) => {
+    if (s.status !== 'pending' || s.archived_at || s.deleted_at || (s as any).wa_tracking_stopped) return false;
+    const linked = activeLinks.find(link => link.signature_request_id === s.id);
+    return linked ? !linked.followup_stopped : true;
+  });
   if (pending.length === 0) return null;
 
   // Copia o link público de assinatura (/#/assinar/<token>) do signatário — para
@@ -3656,19 +3975,33 @@ const ClientSignaturesPanel: React.FC<{ signatures: import('../types/signature.t
       <div className="rounded-xl border border-[#e7e5df] divide-y divide-[#f1f0ec] overflow-hidden">
         {pending.map(s => {
           const exp = s.expires_at ? dueInfo(s.expires_at) : null;
+          const linked = activeLinks.find(link => link.signature_request_id === s.id) ?? null;
           // Signatários ainda sem assinar e com link público disponível.
           const openSigners = (s.signers ?? []).filter(sg => sg.status !== 'signed' && !sg.refused_at && sg.public_token);
           return (
             <div key={s.id} className="px-3 py-2.5">
-              <p className="text-[12.5px] font-semibold text-slate-800 truncate">{s.document_name}</p>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-semibold bg-amber-100 text-amber-700">
-                  <Clock size={9} /> Aguardando assinatura
-                </span>
-                {exp && (
-                  <span className={`text-[10.5px] font-semibold ${exp.tone === 'red' ? 'text-red-600' : exp.tone === 'amber' ? 'text-amber-600' : 'text-slate-400'}`}>
-                    {exp.label}
-                  </span>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-semibold text-slate-800 truncate">{s.document_name}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-semibold bg-amber-100 text-amber-700">
+                      <Clock size={9} /> Aguardando assinatura
+                    </span>
+                    {exp && (
+                      <span className={`text-[10.5px] font-semibold ${exp.tone === 'red' ? 'text-red-600' : exp.tone === 'amber' ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {exp.label}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {(linked || onStopSignatureTracking) && (
+                  <button
+                    onClick={() => linked ? onStopTracking?.(linked.id) : onStopSignatureTracking?.(s.id)}
+                    title="Parar de acompanhar"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white transition flex-shrink-0"
+                  >
+                    <X size={11} strokeWidth={2.75} />
+                  </button>
                 )}
               </div>
               {/* Links públicos por signatário — copiar e enviar ao cliente */}
@@ -3755,7 +4088,7 @@ const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children
 const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const DOC_REQ_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando', partial: 'Parcial', complete: 'Concluído', cancelled: 'Cancelado' };
 
-const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; onDismissDocReady?: () => void }> = ({ overview, docStatus, onDismissDocReady }) => {
+const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, onDismissDocReady, onDismissTemplateFill }) => {
   if (!overview) return null;
   const s = summarizeOverview(overview);
   // Sem contexto relevante → não polui o topo da thread.
@@ -3767,6 +4100,60 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
   const events = overview.schedule.events;
   const reqs = overview.pendings.requirements;
   const docs = overview.pendings.documents;
+  const activeTrackedFills = [...(overview.templateFillLinks || [])]
+    .filter(l => !l.followup_stopped && l.status !== 'cancelled' && l.status !== 'expired');
+  const trackedSignatureRequestIds = new Set(activeTrackedFills.map(link => link.signature_request_id).filter(Boolean));
+  const activeSignatureRequests = overview.signatures.filter(sig =>
+    sig.status === 'pending'
+    && !sig.archived_at
+    && !sig.deleted_at
+    && !(sig as any).wa_tracking_stopped
+    && trackedSignatureRequestIds.has(sig.id)
+  );
+  const openedSignatureCount = activeSignatureRequests.filter(sig =>
+    (sig.signers ?? []).some(sg => sg.status === 'pending' && !!sg.last_seen_at && (Date.now() - new Date(sg.last_seen_at).getTime() <= 30_000) && !sg.refused_at)
+  ).length;
+  const pendingSignatureCount = activeSignatureRequests.filter(sig =>
+    !(sig.signers ?? []).some(sg => sg.status === 'pending' && !!sg.last_seen_at && (Date.now() - new Date(sg.last_seen_at).getTime() <= 30_000) && !sg.refused_at)
+  ).length;
+  const trackedFill = activeTrackedFills
+    .sort((a, b) => (b.last_seen_at || b.opened_at || b.submitted_at || b.created_at).localeCompare(a.last_seen_at || a.opened_at || a.submitted_at || a.created_at))[0];
+  const trackedReq = trackedFill ? overview.signatures.find(sg => sg.id === trackedFill.signature_request_id) ?? null : null;
+  const trackedSigner = trackedReq?.signers?.find(sg => sg.status !== 'signed' && !sg.refused_at) ?? trackedReq?.signers?.[0] ?? null;
+  const trackedClosed = trackedReq?.status === 'signed'
+    || trackedReq?.status === 'refused'
+    || !!trackedReq?.signed_at
+    || (trackedReq?.signers ?? []).some(sg => !!sg.signed_at || !!sg.refused_at);
+  const trackedActive = !!trackedFill?.last_seen_at && (Date.now() - new Date(trackedFill.last_seen_at).getTime() <= 30_000);
+  let fillLabel: string | null = null;
+  let fillTone = 'bg-slate-100 text-slate-600';
+  if (trackedFill && !trackedClosed) {
+    if (trackedSigner?.signed_at || trackedReq?.status === 'signed') {
+      fillLabel = 'Kit assinado';
+      fillTone = 'bg-emerald-100 text-emerald-700';
+    } else if (trackedSigner?.refused_at || trackedReq?.status === 'refused') {
+      fillLabel = 'Kit recusado';
+      fillTone = 'bg-rose-100 text-rose-700';
+    } else if (trackedSigner?.last_seen_at && (Date.now() - new Date(trackedSigner.last_seen_at).getTime() <= 30_000)) {
+      fillLabel = 'Página de assinatura aberta';
+      fillTone = 'bg-sky-100 text-sky-700';
+    } else if (trackedSigner?.viewed_at || trackedSigner?.opened_at) {
+      fillLabel = 'Saiu sem assinar';
+      fillTone = 'bg-orange-100 text-orange-700';
+    } else if (trackedFill.submitted_at || trackedReq) {
+      fillLabel = 'Kit preenchido';
+      fillTone = 'bg-amber-100 text-amber-700';
+    } else if (trackedActive) {
+      fillLabel = 'Cliente na tela do kit';
+      fillTone = 'bg-violet-100 text-violet-700';
+    } else if (trackedFill.opened_at) {
+      fillLabel = 'Página do kit aberta';
+      fillTone = 'bg-blue-100 text-blue-700';
+    } else {
+      fillLabel = 'Link do kit enviado';
+      fillTone = 'bg-slate-100 text-slate-600';
+    }
+  }
   return (
     <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-5 py-2 bg-amber-50/70 border-b border-amber-100 text-[12px] text-slate-600">
       <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-800">
@@ -3778,6 +4165,17 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
           {docStatus === 'ready' && onDismissDocReady && (
             <button onClick={onDismissDocReady} title="Fechar aviso"
               className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-200/70 text-emerald-700 hover:bg-emerald-600 hover:text-white transition">
+              <X size={11} strokeWidth={2.75} />
+            </button>
+          )}
+        </span>
+      )}
+      {trackedFill && fillLabel && (
+        <span className={`inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-[11px] font-semibold ${fillTone}`}>
+          <FilePlus size={12} /> {fillLabel}
+          {onDismissTemplateFill && (
+            <button onClick={() => onDismissTemplateFill(trackedFill.id)} title="Fechar aviso"
+              className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded-full bg-black/10 hover:bg-slate-600 hover:text-white transition">
               <X size={11} strokeWidth={2.75} />
             </button>
           )}
@@ -3925,10 +4323,16 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
         </HoverDetail>
       )}
       {/* Fase G: assinaturas pendentes no banner */}
-      {s.pendingSignatures > 0 && (
+      {openedSignatureCount > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <Eye size={13} className="text-sky-600" />
+          <strong className="text-sky-700">{openedSignatureCount}</strong> assinatura{openedSignatureCount > 1 ? 's' : ''} aberta{openedSignatureCount > 1 ? 's' : ''}
+        </span>
+      )}
+      {pendingSignatureCount > 0 && (
         <span className="inline-flex items-center gap-1">
           <PenLine size={13} className="text-amber-600" />
-          <strong className="text-amber-700">{s.pendingSignatures}</strong> assinatura{s.pendingSignatures > 1 ? 's' : ''} pendente{s.pendingSignatures > 1 ? 's' : ''}
+          <strong className="text-amber-700">{pendingSignatureCount}</strong> assinatura{pendingSignatureCount > 1 ? 's' : ''} pendente{pendingSignatureCount > 1 ? 's' : ''}
         </span>
       )}
     </div>

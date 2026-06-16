@@ -10,7 +10,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Action = 'get' | 'submit';
+type Action = 'get' | 'submit' | 'heartbeat';
 
 type GetRequestBody = {
   action: 'get';
@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as RequestBody;
     const action = body?.action as Action;
 
-    if (action !== 'get' && action !== 'submit') {
+    if (action !== 'get' && action !== 'submit' && action !== 'heartbeat') {
       throw new Error('Ação inválida');
     }
 
@@ -188,6 +188,15 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'get') {
+      const nowIso = new Date().toISOString();
+      await admin
+        .from('template_fill_links')
+        .update({
+          opened_at: link.opened_at ?? nowIso,
+          last_seen_at: nowIso,
+        })
+        .eq('id', link.id);
+
       if (!mainFilePath) {
         throw new Error('Template sem arquivo');
       }
@@ -232,6 +241,22 @@ Deno.serve(async (req) => {
           templateCustomFields: templateCustomFields ?? [],
           prefill: link.prefill ?? null,
         }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (action === 'heartbeat') {
+      const nowIso = new Date().toISOString();
+      await admin
+        .from('template_fill_links')
+        .update({
+          opened_at: link.opened_at ?? nowIso,
+          last_seen_at: nowIso,
+        })
+        .eq('id', link.id);
+
+      return new Response(
+        JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

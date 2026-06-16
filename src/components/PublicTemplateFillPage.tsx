@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PizZip from 'pizzip';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { templateFillService } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
@@ -219,6 +219,54 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
   const [bundle, setBundle] = useState<Awaited<ReturnType<typeof templateFillService.getBundle>> | null>(null);
   const [placeholders, setPlaceholders] = useState<string[]>([]);
+  const heartbeatStartedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const touch = async () => {
+      if (cancelled) return;
+      try {
+        await templateFillService.heartbeat(token);
+      } catch {
+        // best effort
+      }
+    };
+
+    const start = () => {
+      if (intervalId !== null) return;
+      void touch();
+      intervalId = window.setInterval(() => {
+        if (document.visibilityState === 'visible') void touch();
+      }, 20000);
+    };
+
+    const stop = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') start();
+      else stop();
+    };
+
+    if (!heartbeatStartedRef.current) {
+      heartbeatStartedRef.current = true;
+      if (document.visibilityState === 'visible') start();
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      heartbeatStartedRef.current = false;
+    };
+  }, [token]);
 
   const [signerName, setSignerName] = useState('');
 

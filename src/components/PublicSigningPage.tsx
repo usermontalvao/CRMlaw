@@ -706,6 +706,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const attachmentRenderTokenRef = useRef(0);
   const attachmentRenderInProgressRef = useRef<Set<number>>(new Set());
   const attachmentRenderedRef = useRef<Set<number>>(new Set());
+  const presenceStartedRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<'signers' | 'history'>('signers');
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
@@ -1619,6 +1620,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         phone: data.signer.phone || '',
       });
       if (data.creator) setCreator(data.creator);
+      if (data.signer.status !== 'signed') {
+        const viewedKey = `public_signing_viewed_${data.signer.id}`;
+        const alreadyLogged = typeof window !== 'undefined' ? window.sessionStorage.getItem(viewedKey) : null;
+        if (!alreadyLogged) {
+          try {
+            window.sessionStorage.setItem(viewedKey, String(Date.now()));
+          } catch {
+            // noop
+          }
+          void signatureService.markSignerAsViewed(data.signer.id, undefined, navigator.userAgent);
+        }
+      }
 
       // Tentar carregar preview do documento principal
       if (data.request.document_path) {
@@ -1742,6 +1755,51 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     if (!authStepDisabled) return;
     setModalStep(getFirstAuthStep(authConfig));
   }, [isSignModalOpen, modalStep, authConfig]);
+
+  useEffect(() => {
+    if (!signer?.id || signer.status !== 'pending') return;
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const touch = async () => {
+      if (cancelled) return;
+      await signatureService.heartbeatSignerPresence(signer.id);
+    };
+
+    const start = () => {
+      if (intervalId !== null) return;
+      void touch();
+      intervalId = window.setInterval(() => {
+        if (document.visibilityState === 'visible') void touch();
+      }, 10000);
+    };
+
+    const stop = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') start();
+      else stop();
+    };
+
+    if (!presenceStartedRef.current) {
+      presenceStartedRef.current = true;
+      if (document.visibilityState === 'visible') start();
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      presenceStartedRef.current = false;
+    };
+  }, [signer?.id, signer?.status]);
 
   const initCanvas = () => {
     const canvas = canvasRef.current;

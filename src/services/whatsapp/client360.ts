@@ -13,7 +13,7 @@ import type { Process } from '../../types/process.types';
 import type { SignatureRequestWithSigners } from '../../types/signature.types';
 import type { Agreement } from '../../types/financial.types';
 import type { WhatsAppClientLite } from '../../types/whatsapp.types';
-import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview } from './shared';
+import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview, ClientTemplateFillLink, ClientTrackedSignatureStatus } from './shared';
 
 export const client360Api = {
   /** Busca manual de cliente por nome, CPF/CNPJ ou telefone. */
@@ -219,6 +219,127 @@ export const client360Api = {
     return map;
   },
 
+  async getTrackedSignatureStatusByClients(clientIds: string[]): Promise<Record<string, ClientTrackedSignatureStatus>> {
+    if (clientIds.length === 0) return {};
+
+    // Fonte A: links de preenchimento de kit (presença na página de preenchimento +
+    // assinatura gerada a partir do kit).
+    // Fonte B: assinaturas criadas DIRETO (sem kit) — antes ficavam invisíveis na
+    // conversa porque a função só olhava template_fill_links.
+    const [{ data: links, error: linksError }, { data: directReqs, error: directError }] = await Promise.all([
+      supabase
+        .from('template_fill_links')
+        .select('id, client_id, created_at, opened_at, last_seen_at, submitted_at, signature_request_id, status, followup_stopped')
+        .in('client_id', clientIds)
+        .eq('followup_stopped', false)
+        .in('status', ['pending', 'submitted']),
+      // Inclui também assinadas/recusadas (terminal) para mostrar "Assinado"/
+      // "Recusado" com opção de fechar; só recentes (30d) p/ não acender tudo.
+      supabase
+        .from('signature_requests')
+        .select('id, client_id, status, signed_at, archived_at, deleted_at, wa_tracking_stopped, created_at')
+        .in('client_id', clientIds)
+        .in('status', ['pending', 'signed', 'refused'])
+        .eq('wa_tracking_stopped', false)
+        .is('archived_at', null)
+        .is('deleted_at', null)
+        .gte('created_at', new Date(Date.now() - 30 * 86_400_000).toISOString()),
+    ]);
+    if (linksError) throw new Error(linksError.message);
+    if (directError) throw new Error(directError.message);
+
+    const linkRows = ((links || []) as any[]).filter((row) => !!row.client_id);
+    const linkByReq = new Map<string, string>();
+    for (const l of linkRows) if (l.signature_request_id) linkByReq.set(l.signature_request_id, l.id);
+
+    // Requests a carregar: das duas fontes (direto + os referenciados por links).
+    const requestMap = new Map<string, any>();
+    for (const r of (directReqs || []) as any[]) requestMap.set(r.id, r);
+    const linkReqIds = Array.from(new Set(linkRows.map((l) => l.signature_request_id).filter(Boolean))) as string[];
+    const requestIds = Array.from(new Set([...requestMap.keys(), ...linkReqIds]));
+
+    const signerMap = new Map<string, any[]>();
+    if (requestIds.length > 0) {
+      const missing = linkReqIds.filter((id) => !requestMap.has(id));
+      const [reqResp, { data: signers, error: signersError }] = await Promise.all([
+        missing.length
+          ? supabase
+              .from('signature_requests')
+              .select('id, client_id, status, signed_at, archived_at, deleted_at, wa_tracking_stopped, created_at')
+              .in('id', missing)
+          : Promise.resolve({ data: [] as any[], error: null } as any),
+        supabase
+          .from('signature_signers')
+          .select('id, signature_request_id, status, viewed_at, opened_at, last_seen_at, signed_at, refused_at')
+          .in('signature_request_id', requestIds),
+      ]);
+      if (reqResp.error) throw new Error(reqResp.error.message);
+      if (signersError) throw new Error(signersError.message);
+      for (const req of (reqResp.data || []) as any[]) requestMap.set(req.id, req);
+      for (const signer of (signers || []) as any[]) {
+        const bucket = signerMap.get(signer.signature_request_id) || [];
+        bucket.push(signer);
+        signerMap.set(signer.signature_request_id, bucket);
+      }
+    }
+
+    const now = Date.now();
+    const META: Record<ClientTrackedSignatureStatus['kind'], { label: string; cls: string; live: boolean; rank: number; terminal?: boolean }> = {
+      signature_signed: { label: 'Assinado',                 cls: 'bg-emerald-100 text-emerald-700', live: false, rank: 8, terminal: true },
+      signature_refused:{ label: 'Recusado',                 cls: 'bg-rose-100 text-rose-700',     live: false, rank: 7, terminal: true },
+      signature_live:   { label: 'Página de assinatura aberta', cls: 'bg-sky-100 text-sky-700',    live: true,  rank: 6 },
+      fill_live:        { label: 'Cliente na tela',          cls: 'bg-violet-100 text-violet-700', live: true,  rank: 5 },
+      signature_viewed: { label: 'Saiu sem assinar',         cls: 'bg-orange-100 text-orange-700', live: false, rank: 4 },
+      signature_pending:{ label: 'Aguardando assinatura',    cls: 'bg-amber-100 text-amber-700',   live: false, rank: 3 },
+      fill_opened:      { label: 'Página aberta',            cls: 'bg-blue-100 text-blue-700',     live: false, rank: 2 },
+      fill_sent:        { label: 'Link enviado',             cls: 'bg-slate-100 text-slate-500',   live: false, rank: 1 },
+    };
+    const out: Record<string, ClientTrackedSignatureStatus> = {};
+    const consider = (clientId: string, linkId: string, reqId: string | null, kind: ClientTrackedSignatureStatus['kind']) => {
+      const cur = out[clientId];
+      if (cur && META[cur.kind].rank >= META[kind].rank) return;
+      const m = META[kind];
+      out[clientId] = { client_id: clientId, link_id: linkId, signature_request_id: reqId, kind, label: m.label, cls: m.cls, live: m.live, terminal: m.terminal };
+    };
+
+    // Candidatos de ASSINATURA (de ambas as fontes — direto ou via kit).
+    for (const req of requestMap.values()) {
+      if (req.archived_at || req.deleted_at || req.wa_tracking_stopped) continue;
+      const clientId = req.client_id ? String(req.client_id) : null;
+      if (!clientId) continue;
+      const signers = signerMap.get(req.id) || [];
+      const linkId = linkByReq.get(req.id) || req.id;
+      // "Remota" = assinatura conduzida pela página pública (algum signatário
+      // abriu/visualizou) OU veio de um kit. Só essas mostram badge terminal —
+      // assinaturas feitas presencialmente não devem acender "Assinado" na conversa.
+      const remote = linkByReq.has(req.id) || signers.some((s) => !!s.viewed_at || !!s.opened_at || !!s.last_seen_at);
+
+      const isSigned = req.status === 'signed' || !!req.signed_at || signers.some((s) => !!s.signed_at);
+      const isRefused = req.status === 'refused' || signers.some((s) => !!s.refused_at);
+      if (isSigned) { if (remote) consider(clientId, linkId, req.id, 'signature_signed'); continue; }
+      if (isRefused) { if (remote) consider(clientId, linkId, req.id, 'signature_refused'); continue; }
+
+      const pendingSigner = signers.find((s) => s.status !== 'signed' && !s.refused_at) || signers[0] || null;
+      const activeSignatureOnPage = !!pendingSigner?.last_seen_at && (now - new Date(pendingSigner.last_seen_at).getTime() <= 30_000);
+      if (activeSignatureOnPage) consider(clientId, linkId, req.id, 'signature_live');
+      else if (pendingSigner?.viewed_at || pendingSigner?.opened_at) consider(clientId, linkId, req.id, 'signature_viewed');
+      else consider(clientId, linkId, req.id, 'signature_pending');
+    }
+
+    // Candidatos de PREENCHIMENTO (links de kit ainda sem assinatura gerada).
+    for (const row of linkRows) {
+      if (row.signature_request_id) continue; // já coberto como assinatura acima
+      const clientId = String(row.client_id);
+      const activeOnPage = !!row.last_seen_at && (now - new Date(row.last_seen_at).getTime() <= 30_000);
+      if (activeOnPage) consider(clientId, row.id, null, 'fill_live');
+      else if (row.submitted_at) consider(clientId, row.id, null, 'signature_pending');
+      else if (row.opened_at) consider(clientId, row.id, null, 'fill_opened');
+      else consider(clientId, row.id, null, 'fill_sent');
+    }
+
+    return out;
+  },
+
   /** Realtime das solicitações de documento (lista/cabeçalho/pendências reagem à baixa por IA). */
   subscribeDocRequests(onChange: () => void): () => void {
     const ch = supabase
@@ -229,19 +350,93 @@ export const client360Api = {
     return () => { supabase.removeChannel(ch); };
   },
 
+  /** Realtime das assinaturas para a lateral 360 da conversa refletir preenchimento/assinatura em aberto. */
+  subscribeSignatures(onChange: () => void): () => void {
+    const ch = supabase
+      .channel('wa-signatures')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_requests' }, () => onChange())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_signers' }, () => onChange())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'template_fill_links' }, () => onChange())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  },
+
+  async listClientTemplateFillLinks(clientId: string): Promise<ClientTemplateFillLink[]> {
+    const { data, error } = await supabase
+      .from('template_fill_links')
+      .select(`
+        id,
+        public_token,
+        template_id,
+        status,
+        followup_stopped,
+        created_at,
+        opened_at,
+        last_seen_at,
+        submitted_at,
+        signature_request_id,
+        document_templates(name)
+      `)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw new Error(error.message);
+
+    return ((data || []) as any[]).map((row) => ({
+      id: row.id,
+      public_token: row.public_token,
+      template_id: row.template_id,
+      template_name: row.document_templates?.name || 'Kit sem nome',
+      status: row.status,
+      followup_stopped: row.followup_stopped === true,
+      created_at: row.created_at,
+      opened_at: row.opened_at || null,
+      last_seen_at: row.last_seen_at || null,
+      submitted_at: row.submitted_at || null,
+      signature_request_id: row.signature_request_id || null,
+    }));
+  },
+
+  async stopTemplateFillTracking(linkId: string): Promise<void> {
+    const { error } = await supabase
+      .from('template_fill_links')
+      .update({ followup_stopped: true })
+      .eq('id', linkId);
+    if (error) throw new Error(error.message);
+  },
+
+  async stopSignatureTracking(signatureRequestId: string): Promise<void> {
+    // Encerra o acompanhamento marcando a própria assinatura — funciona mesmo
+    // quando NÃO há template_fill_link vinculado (assinatura criada fora do
+    // fluxo de kit). Antes, atualizar só o link não afetava nenhuma linha e o
+    // card "Assinaturas pendentes" continuava aparecendo sem como fechar.
+    const { error } = await supabase
+      .from('signature_requests')
+      .update({ wa_tracking_stopped: true })
+      .eq('id', signatureRequestId);
+    if (error) throw new Error(error.message);
+    // Se existir link de preenchimento vinculado, também interrompe o follow-up dele.
+    await supabase
+      .from('template_fill_links')
+      .update({ followup_stopped: true })
+      .eq('signature_request_id', signatureRequestId);
+  },
+
   /**
    * Carrega o pacote 360 do cliente de uma vez (processos + agenda + pendências),
    * em paralelo. Banner-resumo e painéis laterais consomem este único resultado,
    * evitando os fetches duplicados de antes. Falha parcial vira vazio.
    */
   async getClientOverview(clientId: string): Promise<ClientOverview> {
-    const [processes, schedule, pendings, signatures, agreements] = await Promise.all([
+    const [processes, schedule, pendings, templateFillLinks, signatures, agreements] = await Promise.all([
       processService.listProcesses({ client_id: clientId }).catch(() => [] as Process[]),
       client360Api.getClientSchedule(clientId).catch(() => ({ deadlines: [], events: [] } as ClientSchedule)),
       client360Api.getClientPendings(clientId).catch(() => ({ requirements: [], documents: [] } as ClientPendings)),
+      client360Api.listClientTemplateFillLinks(clientId).catch(() => [] as ClientTemplateFillLink[]),
       signatureService.listRequestsWithSigners({ client_id: clientId }).catch(() => [] as SignatureRequestWithSigners[]),
       financialService.listAgreements({ client_id: clientId }).catch(() => [] as Agreement[]),
     ]);
-    return { processes, schedule, pendings, signatures, agreements };
+    return { processes, schedule, pendings, templateFillLinks, signatures, agreements };
   },
 };

@@ -884,6 +884,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.228',
+    date: '15/06/2026',
+    summary: 'Assinaturas, preenchimento pÃºblico e WhatsApp: o CRM passou a rastrear presenÃ§a e follow-ups com mais precisÃ£o, incluindo novas automaÃ§Ãµes server-side e telemetria dos links.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'feature' as const, title: 'PresenÃ§a do signatÃ¡rio no fluxo pÃºblico', description: 'A experiÃªncia de assinatura ganhou rastreamento de presenÃ§a, estados em tempo real e indicadores adicionais para distinguir abertura do link, atividade do assinante e interrupÃ§Ã£o do acompanhamento.' },
+        { type: 'improvement' as const, title: 'Telemetria e persistÃªncia dos links pÃºblicos', description: 'Os serviÃ§os e edge functions de assinatura e template fill passaram a registrar melhor o uso dos links, preparando reengajamento automÃ¡tico e leitura mais confiÃ¡vel do funil.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'feature' as const, title: 'Follow-up automÃ¡tico para assinatura e template fill', description: 'Foram adicionadas edge functions dedicadas de follow-up por WhatsApp, com integraÃ§Ã£o aos serviÃ§os do CRM e novas migrations para controlar envios, pausas e retomadas de acompanhamento.' },
+        { type: 'improvement' as const, title: 'Atendimento 360 alinhado aos novos eventos', description: 'O mÃ³dulo de WhatsApp e o client 360 passaram a refletir melhor status de assinatura, preenchimento e rastreamento operacional dentro da jornada do cliente.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.227',
     date: '15/06/2026',
     summary: 'WhatsApp: checkpoint amplo do módulo com workspace dedicado, integrações 360, envio por Evolution, automações, IA e base server-side para atendimento e documentos.',

@@ -34,6 +34,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const slug = (body?.slug || '').trim();
+    const clientId = (body?.client_id || '').trim() || null;
+    const conversationId = (body?.conversation_id || '').trim() || null;
 
     if (!slug) {
       throw new Error('Slug é obrigatório');
@@ -71,6 +73,8 @@ Deno.serve(async (req) => {
         template_id: permalink.template_id,
         template_file_id: permalink.template_file_id || null,
         created_by: permalink.created_by,
+        client_id: clientId,
+        conversation_id: conversationId,
         prefill: permalink.prefill || null,
         expires_at: expiresAt,
         status: 'pending',
