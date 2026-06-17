@@ -101,8 +101,8 @@ export const client360Api = {
       e.event_type === 'deadline' && e.status === 'pendente' && !(e.deadline_id && tableIds.has(e.deadline_id)));
 
     const deadlines: ScheduleDeadline[] = [
-      ...tableDeadlines.map(d => ({ id: d.id, title: d.title, due: d.due_date })),
-      ...orphanCalDeadlines.map(e => ({ id: e.id, title: e.title, due: e.start_at })),
+      ...tableDeadlines.map(d => ({ id: d.id, title: d.title, due: d.due_date, kind: 'deadline' as const })),
+      ...orphanCalDeadlines.map(e => ({ id: e.id, title: e.title, due: e.start_at, kind: 'event' as const })),
     ].sort((a, b) => a.due.localeCompare(b.due));
 
     // Compromissos = eventos de calendário que não são prazos, daqui pra frente.

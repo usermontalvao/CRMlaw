@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle, XCircle, AlertCircle, Info, X, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Info, X, Loader2, MessageCircle } from 'lucide-react';
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
+export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading' | 'whatsapp';
 
 export interface Toast {
   id: string;
@@ -72,33 +72,42 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
             <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
           </div>
         );
+      case 'whatsapp':
+        return (
+          <div className="w-9 h-9 rounded-full bg-[#25D366] flex items-center justify-center flex-shrink-0 shadow-sm">
+            <MessageCircle className="w-5 h-5 text-white" fill="white" />
+          </div>
+        );
     }
   };
 
   const getStyles = () => {
+    if (toast.type === 'whatsapp') {
+      return 'bg-white shadow-lg rounded-xl border border-[#e7e5df] border-l-4 border-l-[#25D366]';
+    }
     return 'bg-white shadow-lg rounded-lg border border-[#e7e5df]';
   };
 
   return (
     <div
-      className={`${getStyles()} mb-2 w-[min(100vw-24px,28rem)] p-3 transition-all duration-300 sm:min-w-[340px] sm:max-w-md ${
-        isExiting ? 'opacity-0 transform scale-95' : 'opacity-100 transform scale-100'
+      className={`${getStyles()} mb-2 w-[min(100vw-24px,22rem)] p-3 transition-all duration-300 ${
+        isExiting ? 'opacity-0 transform translate-x-4' : 'opacity-100 transform translate-x-0'
       }`}
       style={{
-        animation: isExiting ? 'none' : 'slideDown 0.3s ease-out',
+        animation: isExiting ? 'none' : 'slideInRight 0.3s ease-out',
       }}
     >
       <div className="flex items-center gap-3">
         {getIcon()}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-900">{toast.message}</p>
+          <p className={`text-sm text-slate-900 truncate ${toast.type === 'whatsapp' ? 'font-bold' : 'font-medium'}`}>{toast.message}</p>
           {toast.description && (
-            <p className="text-xs text-slate-600 mt-0.5">{toast.description}</p>
+            <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{toast.description}</p>
           )}
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 mt-1.5"
+              className={`text-xs font-semibold mt-1.5 ${toast.type === 'whatsapp' ? 'text-[#1da851] hover:text-[#15803d]' : 'text-blue-600 hover:text-blue-700'}`}
             >
               {toast.action.label}
             </button>
@@ -127,17 +136,17 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
     <>
       <style>
         {`
-          @keyframes slideDown {
+          @keyframes slideInRight {
             from {
-              transform: translateY(-100%);
+              transform: translateX(110%);
               opacity: 0;
             }
             to {
-              transform: translateY(0);
+              transform: translateX(0);
               opacity: 1;
             }
           }
-          
+
           @keyframes shrink {
             from {
               width: 100%;
@@ -148,8 +157,8 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           }
         `}
       </style>
-      <div className="fixed top-4 left-1/2 z-[2147483647] w-full max-w-[100vw] -translate-x-1/2 px-3 pointer-events-none sm:px-0">
-        <div className="pointer-events-auto flex flex-col items-center">
+      <div className="fixed top-4 right-4 z-[2147483647] max-w-[calc(100vw-24px)] px-0 pointer-events-none">
+        <div className="pointer-events-auto flex flex-col items-end">
           {toasts.map((toast) => (
             <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
           ))}

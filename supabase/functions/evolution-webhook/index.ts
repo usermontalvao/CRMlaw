@@ -367,10 +367,12 @@ async function maybeAutoSendAbsence(
     if (!ch?.absence_enabled || !ch?.absence_message?.trim()) return;
 
     const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('is_blocked, absence_sent_at')
+      .select('is_blocked, absence_sent_at, absence_suppressed')
       .eq('id', convId)
       .maybeSingle();
-    if (!conv || conv.is_blocked) return;
+    // absence_suppressed: o atendente pausou o aviso comercial só nesta conversa
+    // (volta ao normal ao encerrar). Bloqueado também não recebe auto-mensagem.
+    if (!conv || conv.is_blocked || conv.absence_suppressed) return;
     if (conv.absence_sent_at) {
       const diffH = (Date.now() - new Date(conv.absence_sent_at).getTime()) / 3_600_000;
       if (diffH < 2) return; // dentro do cooldown

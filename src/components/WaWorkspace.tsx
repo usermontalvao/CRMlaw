@@ -6,7 +6,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Loader2, Scale, FileText, Calendar, DollarSign,
-  Clock, User as UserIcon, Check, Search, Copy, ExternalLink,
+  Clock, User as UserIcon, Check, Search, Copy, ExternalLink, Pencil,
+  ShieldCheck, AlertTriangle, HelpCircle, ChevronRight, Phone, Trash2,
 } from 'lucide-react';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -30,6 +31,7 @@ import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/proce
 import type { Requirement, BenefitType } from '../types/requirement.types';
 import type { Client, CreateClientDTO } from '../types/client.types';
 import type { Deadline } from '../types/deadline.types';
+import type { CalendarEvent } from '../types/calendar.types';
 import type { DocumentTemplate } from '../types/document.types';
 import { supabase } from '../config/supabase';
 
@@ -47,6 +49,8 @@ export type WaModal =
   | { type: 'deadline_create'; clientId: string; processId?: string; requirementId?: string }
   | { type: 'deadline_edit'; deadlineId: string; clientId: string }
   | { type: 'calendar_create'; clientId: string; processId?: string }
+  | { type: 'calendar_view'; eventId: string }
+  | { type: 'calendar_edit'; eventId: string }
   | { type: 'financial_create'; clientId: string; clientName?: string; processId?: string }
   | { type: 'financial_view'; agreementId: string }
   | { type: 'document_generate'; clientId: string; clientName?: string; processCode?: string }
@@ -275,6 +279,255 @@ const WaTimelineModal: React.FC<{
     </div>,
     document.body,
   );
+
+// ─── Modal: Detalhes do compromisso (visualização) ────────────────────────────
+
+const WA_EVENT_TYPE_LABEL: Record<string, string> = {
+  deadline: 'Prazo', hearing: 'Audiência', requirement: 'Requerimento',
+  payment: 'Pagamento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
+};
+const WA_EVENT_STATUS_LABEL: Record<string, string> = {
+  pendente: 'Pendente', concluido: 'Concluído', cancelado: 'Cancelado',
+};
+
+type DjenInfo = {
+  numero_processo: string | null; nome_orgao: string | null; sigla_tribunal: string | null;
+  texto: string; data_disponibilizacao: string | null;
+  datesFound: string[]; timesFound: string[]; detectedMode: 'online' | 'presencial' | null;
+};
+
+// Detalhes do compromisso (read-only) — espelha o modal da Agenda: chips de
+// tipo/situação, data/hora, cliente (com ligar), processo/vara, modalidade e a
+// Verificação DJEN para audiência/perícia. "Editar" alterna para o form real.
+const WaEventViewModal: React.FC<{
+  eventId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ eventId, onClose, onSaved }) => {
+  const toast = useToastContext();
+  const [ev, setEv] = useState<CalendarEvent | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
+  const [process, setProcess] = useState<Process | null>(null);
+  const [djen, setDjen] = useState<DjenInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setClient(null); setProcess(null); setDjen(null);
+    (async () => {
+      const e = await calendarService.getEventById(eventId).catch(() => null);
+      if (!alive) return;
+      setEv(e);
+      setLoading(false);
+      if (!e) return;
+      if (e.client_id) clientService.getClientById(e.client_id).then(c => { if (alive) setClient(c); }).catch(() => {});
+      if (e.process_id) processService.getProcessById(e.process_id).then(p => { if (alive) setProcess(p); }).catch(() => {});
+      // DJEN: intimação que confirmou/divergiu (audiência/perícia)
+      if (e.djen_intimation_id) {
+        const { data } = await supabase.from('djen_comunicacoes')
+          .select('numero_processo, nome_orgao, sigla_tribunal, texto, data_disponibilizacao')
+          .eq('id', e.djen_intimation_id).maybeSingle();
+        if (!alive || !data) return;
+        const texto = data.texto ?? '';
+        const datesFound = [...new Set([...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)].map(m => m[1]))];
+        const timesFound = [...new Set([...texto.matchAll(/(\d{1,2})[h:](\d{2})(?:min)?(?:h)?/gi)].map(m => `${m[1].padStart(2, '0')}:${m[2].padStart(2, '0')}`))];
+        const tl = texto.toLowerCase();
+        const detectedMode: 'online' | 'presencial' | null =
+          /videoconfer[eê]ncia|virtual|zoom|teams|online|teleaudiência|plataforma/.test(tl) ? 'online'
+          : /presencial|in\s+loco/.test(tl) ? 'presencial' : null;
+        setDjen({ numero_processo: data.numero_processo, nome_orgao: data.nome_orgao, sigla_tribunal: data.sigla_tribunal, texto, data_disponibilizacao: data.data_disponibilizacao, datesFound, timesFound, detectedMode });
+      }
+    })();
+    return () => { alive = false; };
+  }, [eventId]);
+
+  if (editing) {
+    return <EventFormModal open onClose={onClose} onSaved={onSaved} eventId={eventId} />;
+  }
+
+  const handleDelete = async () => {
+    setBusy(true);
+    try {
+      await calendarService.deleteEvent(eventId);
+      toast.success('Compromisso excluído.');
+      onSaved(); onClose();
+    } catch (e: any) { toast.error('Falha ao excluir', e?.message); setBusy(false); }
+  };
+
+  const fmtFull = (iso: string) => new Date(iso).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const phone = client?.mobile || client?.phone || null;
+  const orgao = process?.court || djen?.nome_orgao || null;
+  const isHearing = ev ? ['hearing', 'pericia'].includes(ev.event_type) : false;
+  const djenStatus = ev?.djen_status ?? null;
+  const eventDate = ev ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ev.start_at)) : null;
+  const eventTime = ev ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(new Date(ev.start_at)) : null;
+
+  const DjStatusIcon = djenStatus === 'confirmed' ? ShieldCheck : djenStatus === 'divergence' ? AlertTriangle : HelpCircle;
+  const djIconColor = djenStatus === 'confirmed' ? 'text-green-600' : djenStatus === 'divergence' ? 'text-amber-500' : 'text-slate-400';
+  const djBadge = djenStatus === 'confirmed' ? 'bg-green-100 text-green-700 ring-green-200' : djenStatus === 'divergence' ? 'bg-amber-100 text-amber-700 ring-amber-200' : 'bg-slate-100 text-slate-500 ring-slate-200';
+  const djLabel = djenStatus === 'confirmed' ? 'Confirmado' : djenStatus === 'divergence' ? 'Divergência' : 'Não confirmado';
+
+  const cell = (icon: React.ReactNode, label: string, value: React.ReactNode, extra?: React.ReactNode) => (
+    <div className="flex items-start gap-2 min-w-0">
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+        <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{value}</div>
+      </div>
+      {extra}
+    </div>
+  );
+
+  return (
+    <WaOverlay
+      title={ev?.title || 'Compromisso'}
+      icon={<Calendar size={18} />}
+      onClose={onClose}
+      size="md"
+      footer={
+        <div className="flex items-center justify-between gap-2 w-full">
+          {confirmingDelete ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11.5px] font-semibold text-red-600">Excluir mesmo?</span>
+              <button onClick={handleDelete} disabled={busy}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-[11.5px] font-semibold hover:bg-red-700 disabled:opacity-50">
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Confirmar
+              </button>
+              <button onClick={() => setConfirmingDelete(false)} className="px-2 py-1.5 text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Não</button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmingDelete(true)}
+              className="px-3 py-1.5 text-[12px] font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition">
+              Excluir
+            </button>
+          )}
+          <div className="flex items-center gap-1.5">
+            <button onClick={onClose} className="px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-700">Fechar</button>
+            <button onClick={() => setEditing(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700">
+              <Pencil size={13} /> Editar compromisso
+            </button>
+          </div>
+        </div>
+      }
+    >
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={20} className="animate-spin mr-2" /> Carregando…</div>
+      ) : !ev ? (
+        <p className="text-[13px] text-slate-400 py-6 text-center">Compromisso não encontrado.</p>
+      ) : (
+        <div className="space-y-3">
+          {/* Chips de tipo + situação */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border bg-amber-50 text-amber-700 border-amber-200">
+              {WA_EVENT_TYPE_LABEL[ev.event_type] || ev.event_type}
+            </span>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+              ev.status === 'concluido' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : ev.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+              {WA_EVENT_STATUS_LABEL[ev.status] || ev.status}
+            </span>
+          </div>
+
+          {/* Resumo compacto */}
+          <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+              {cell(<Calendar className="w-3.5 h-3.5 text-amber-500" />, 'Data e hora', fmtFull(ev.start_at))}
+              {ev.client_name && cell(
+                <UserIcon className="w-3.5 h-3.5 text-violet-400" />, 'Cliente',
+                <span className="text-amber-600">{ev.client_name}</span>,
+                phone ? (
+                  <a href={`tel:${phone}`} title="Ligar" className="w-6 h-6 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0 mt-0.5">
+                    <Phone className="w-3 h-3" />
+                  </a>
+                ) : undefined,
+              )}
+              {process && cell(<span className="w-1.5 h-1.5 rounded-full bg-blue-400 block mt-1.5" />, 'Processo',
+                <span className="font-mono">{process.process_code}</span>)}
+              {orgao && cell(<span className="w-1.5 h-1.5 rounded-full bg-slate-400 block mt-1.5" />, 'Vara / Tribunal', orgao)}
+              {ev.event_mode && cell(<span className="text-sm leading-none">{ev.event_mode === 'online' ? '📹' : '📍'}</span>, 'Modalidade', ev.event_mode === 'online' ? 'Online' : 'Presencial')}
+            </div>
+          </div>
+
+          {/* Verificação DJEN (audiência/perícia) */}
+          {isHearing && (
+            <div className={`rounded-xl border bg-[#f8f7f5] px-3 py-2.5 space-y-2 ${djenStatus === 'confirmed' ? 'border-green-100' : djenStatus === 'divergence' ? 'border-amber-100' : 'border-slate-100'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DjStatusIcon className={`w-3.5 h-3.5 shrink-0 ${djIconColor}`} />
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Verificação DJEN</p>
+                </div>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ${djBadge}`}>{djLabel}</span>
+              </div>
+              {eventDate && (
+                <div className="rounded-lg overflow-hidden border border-slate-100">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="text-left px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide w-[26%]">Campo</th>
+                        <th className="text-right px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Agenda</th>
+                        <th className="text-right px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">DJEN</th>
+                        <th className="w-8 px-2 py-1"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      <tr>
+                        <td className="px-2 py-1.5 text-slate-500">Data</td>
+                        <td className="px-2 py-1.5 text-right font-semibold text-slate-700 tabular-nums">{eventDate}</td>
+                        <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${djenStatus === 'confirmed' ? 'text-green-700' : djenStatus === 'divergence' ? 'text-amber-700' : 'text-slate-400'}`}>{djen?.datesFound[0] ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-center">{djenStatus === 'confirmed' ? <Check className="w-3.5 h-3.5 text-green-500 mx-auto" /> : djenStatus === 'divergence' ? <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                      </tr>
+                      {eventTime && (
+                        <tr>
+                          <td className="px-2 py-1.5 text-slate-500">Hora</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-slate-700 tabular-nums">{eventTime}</td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${djen?.timesFound.length ? 'text-green-700' : 'text-slate-400'}`}>{djen?.timesFound.join(' / ') || '—'}</td>
+                          <td className="px-2 py-1.5 text-center">{djen?.timesFound.length ? <Check className="w-3.5 h-3.5 text-green-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {djen && (
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-1">
+                  {djen.numero_processo && <span className="text-[10px] text-slate-400">Proc. <span className="font-semibold text-slate-600 tabular-nums">{djen.numero_processo}</span></span>}
+                  {djen.sigla_tribunal && <span className="text-[10px] text-slate-400">{djen.sigla_tribunal}{djen.nome_orgao ? ` · ${djen.nome_orgao}` : ''}</span>}
+                  {djen.data_disponibilizacao && <span className="text-[10px] text-slate-400">Pub. <span className="font-semibold text-slate-600">{new Intl.DateTimeFormat('pt-BR').format(new Date(djen.data_disponibilizacao))}</span></span>}
+                </div>
+              )}
+              {djen?.texto && (
+                <details className="group">
+                  <summary className="cursor-pointer list-none flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition select-none">
+                    <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" /> Ver trecho da intimação
+                  </summary>
+                  <div className="mt-1.5 max-h-32 overflow-y-auto rounded-lg bg-slate-50 border border-[#e7e5df] px-2.5 py-2">
+                    <p className="text-[11px] text-slate-600 leading-relaxed">{djen.texto.slice(0, 800)}{djen.texto.length > 800 ? '…' : ''}</p>
+                  </div>
+                </details>
+              )}
+              {(!djenStatus || djenStatus === 'unconfirmed') && !djen && (
+                <p className="text-[10px] text-slate-400 italic text-center py-0.5">Nenhuma intimação DJEN localizada para este evento.</p>
+              )}
+            </div>
+          )}
+
+          {/* Observações */}
+          {ev.description && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Observações</p>
+              <p className="text-[13px] text-slate-700 whitespace-pre-wrap">{ev.description}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </WaOverlay>
+  );
+};
 
 // ─── Modal: Templates de documento (copiar link) ──────────────────────────────
 
@@ -505,6 +758,10 @@ export const WaWorkspaceRenderer: React.FC<WaWorkspaceRendererProps> = ({ modal,
 
     case 'calendar_create':
       return <EventFormModal open onClose={onClose} onSaved={() => done('calendar')} initialClientId={modal.clientId} initialProcessId={modal.processId} lockClient={!!modal.clientId} />;
+    case 'calendar_view':
+      return <WaEventViewModal eventId={modal.eventId} onClose={onClose} onSaved={() => done('calendar')} />;
+    case 'calendar_edit':
+      return <EventFormModal open onClose={onClose} onSaved={() => done('calendar')} eventId={modal.eventId} />;
 
     case 'financial_create':
       return (

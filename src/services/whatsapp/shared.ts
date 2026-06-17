@@ -95,7 +95,10 @@ export interface AgentPrefs {
 }
 
 /** Um prazo normalizado (vem da tabela deadlines OU de evento de calendário). */
-export interface ScheduleDeadline { id: string; title: string; due: string }
+// `kind` discrimina a origem: 'deadline' = linha em deadlines (editável via
+// deadline_edit); 'event' = compromisso de agenda do tipo prazo (editável via
+// calendar_edit). O id muda de tabela conforme o kind.
+export interface ScheduleDeadline { id: string; title: string; due: string; kind: 'deadline' | 'event' }
 
 /** Agenda enxuta do cliente para o painel da conversa (Seção 10). */
 export interface ClientSchedule {

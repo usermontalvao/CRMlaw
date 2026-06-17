@@ -1,8 +1,14 @@
 import React, { createContext, useContext } from 'react';
 import { useToast } from '../hooks/useToast';
-import { ToastContainer } from '../components/Toast';
+import { ToastContainer, type ToastType } from '../components/Toast';
 
 interface ToastContextType {
+  // Forma de baixo nível: permite ações clicáveis (action) no toast.
+  toast: (
+    type: ToastType,
+    message: string,
+    options?: { description?: string; duration?: number; action?: { label: string; onClick: () => void } },
+  ) => string;
   success: (message: string, description?: string) => string;
   error: (message: string, description?: string) => string;
   warning: (message: string, description?: string) => string;

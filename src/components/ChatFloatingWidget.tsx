@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { buildPortalFarewellMessage, chatService } from '../services/chat.service';
@@ -221,6 +221,10 @@ const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, 
   );
 };
 
+// Galeria da conversa: caminhos das imagens em ordem, para o viewer navegar
+// (slider ‹ ›) entre todas as imagens — preenchida pela lista de mensagens.
+const ChatImagesContext = React.createContext<string[]>([]);
+
 const AttachmentSignedMedia: React.FC<{
   attachment: ChatAttachmentPayload;
   kind: 'audio' | 'image';
@@ -228,6 +232,43 @@ const AttachmentSignedMedia: React.FC<{
 }> = ({ attachment, kind, onMediaLoaded }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+
+  // Lista de imagens da conversa (ordem das mensagens); fallback só a desta.
+  const gallery = useContext(ChatImagesContext);
+  const list = useMemo(
+    () => (gallery.length ? gallery : [attachment.filePath]),
+    [gallery, attachment.filePath],
+  );
+
+  const openViewer = useCallback(() => {
+    const idx = list.indexOf(attachment.filePath);
+    setViewerIndex(idx < 0 ? 0 : idx);
+    setViewerOpen(true);
+  }, [list, attachment.filePath]);
+
+  // Assina a URL da imagem atual do viewer (sob demanda, ao navegar).
+  useEffect(() => {
+    if (!viewerOpen) return;
+    let active = true;
+    setViewerUrl(null);
+    supabase.storage.from(ATTACHMENT_BUCKET).createSignedUrl(list[viewerIndex], 60 * 5)
+      .then(({ data }) => { if (active && data?.signedUrl) setViewerUrl(data.signedUrl); });
+    return () => { active = false; };
+  }, [viewerOpen, viewerIndex, list]);
+
+  // Navegação por teclado (← → Esc) enquanto o viewer está aberto.
+  useEffect(() => {
+    if (!viewerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setViewerOpen(false);
+      else if (e.key === 'ArrowRight') setViewerIndex(i => Math.min(i + 1, list.length - 1));
+      else if (e.key === 'ArrowLeft') setViewerIndex(i => Math.max(i - 1, 0));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewerOpen, list.length]);
 
   useEffect(() => {
     let active = true;
@@ -257,7 +298,7 @@ const AttachmentSignedMedia: React.FC<{
         {/* Thumbnail — margem negativa para preencher a bolha sem frame */}
         <button
           type="button"
-          onClick={() => setViewerOpen(true)}
+          onClick={openViewer}
           className="block p-0 border-0 bg-transparent overflow-hidden rounded-[inherit]"
           style={{ margin: '-8px -14px', display: 'block' }}
           title="Ampliar imagem"
@@ -295,17 +336,46 @@ const AttachmentSignedMedia: React.FC<{
             style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setViewerOpen(false)}
           >
-            <div className="relative max-w-[92vw] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="relative max-w-[92vw] max-h-[92vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="absolute -top-4 -right-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition"
+                className="absolute -top-4 -right-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition z-10"
                 onClick={() => setViewerOpen(false)}
                 title="Fechar"
               >
                 <X className="w-5 h-5" />
               </button>
+
+              {/* Setas de navegação (slider) — só quando há mais de uma imagem */}
+              {list.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    disabled={viewerIndex === 0}
+                    onClick={() => setViewerIndex(i => Math.max(i - 1, 0))}
+                    className="absolute left-2 sm:-left-16 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition disabled:opacity-30 disabled:cursor-default z-10"
+                    title="Imagem anterior"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={viewerIndex === list.length - 1}
+                    onClick={() => setViewerIndex(i => Math.min(i + 1, list.length - 1))}
+                    className="absolute right-2 sm:-right-16 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition disabled:opacity-30 disabled:cursor-default z-10"
+                    title="Próxima imagem"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                  {/* Contador */}
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full bg-black/70 text-white text-xs font-semibold ring-1 ring-white/20">
+                    {viewerIndex + 1} / {list.length}
+                  </span>
+                </>
+              )}
+
               <img
-                src={signedUrl}
+                src={viewerUrl || signedUrl}
                 alt={attachment.fileName}
                 className="max-w-[92vw] max-h-[92vh] object-contain rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,.8)]"
               />
@@ -1700,6 +1770,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return unreadRooms[0] ?? null;
   }, [rooms, getEffectiveRoomUnread]);
 
+  // Caminhos das imagens da conversa, em ordem — alimenta o slider do viewer.
+  // Declarado antes de qualquer early return para respeitar as regras de hooks.
+  const imageFilePaths = useMemo(
+    () => messages
+      .map(m => parseAttachment(m.content))
+      .filter((a): a is ChatAttachmentPayload => !!a && a.mimeType.startsWith('image/'))
+      .map(a => a.filePath),
+    [messages],
+  );
+
   const visible = !!user && currentModule !== 'chat';
   if (!visible) return null;
 
@@ -1724,6 +1804,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   if (hidden) return null;
 
   return createPortal(
+    <ChatImagesContext.Provider value={imageFilePaths}>
     <div className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
       <style>{`
         @keyframes chatShake{0%{transform:translate(0,0) rotate(0) scale(1)}4%{transform:translate(-9px,5px) rotate(-3deg) scale(1.02)}8%{transform:translate(9px,-5px) rotate(3deg) scale(1.02)}12%{transform:translate(-9px,-5px) rotate(-3deg) scale(1.02)}16%{transform:translate(9px,5px) rotate(3deg) scale(1.02)}20%{transform:translate(-8px,-4px) rotate(-2.5deg) scale(1.01)}24%{transform:translate(8px,4px) rotate(2.5deg) scale(1.01)}28%{transform:translate(-7px,-3px) rotate(-2deg)}32%{transform:translate(7px,3px) rotate(2deg)}38%{transform:translate(-5px,-2px) rotate(-1.5deg)}44%{transform:translate(5px,2px) rotate(1.5deg)}52%{transform:translate(-3px,-1px) rotate(-1deg)}62%{transform:translate(3px,1px) rotate(0.5deg)}74%{transform:translate(-1px,0) rotate(0)}86%{transform:translate(1px,0)}100%{transform:translate(0,0) rotate(0) scale(1)}}
@@ -2883,7 +2964,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           )}
         </div>
       </button>
-    </div>,
+    </div>
+    </ChatImagesContext.Provider>,
     document.body
   );
 };

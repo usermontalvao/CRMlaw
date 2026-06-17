@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.231': { name: 'Cafe Silencio Inteligente', emoji: '🔕' },
   '1.10.230': { name: 'Cafe Limpeza Assistida', emoji: 'clean' },
   '1.10.229': { name: 'Café Workflow Estruturado', emoji: '🧭' },
   '1.10.227': { name: 'Café WhatsApp Orquestrado', emoji: '🟢' },
@@ -885,6 +886,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.231',
+    date: '17/06/2026',
+    summary: 'WhatsApp: o CRM ganhou notificacoes mais previsiveis, controle de silenciamento por conversa e novos ajustes no workspace, servicos e webhook do canal.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'feature' as const, title: 'Silenciamento por conversa e persistencia dedicada', description: 'Foram adicionados store local, migration e servicos para mutar conversas do WhatsApp com persistencia propria e leitura compartilhada entre os fluxos do modulo.' },
+        { type: 'improvement' as const, title: 'Notificacoes e sons mais controlados no atendimento', description: 'O atendimento passou a usar um hook dedicado para notificacoes, refinando toasts, sons e a forma como novas mensagens sao sinalizadas no widget e no workspace.' },
+        { type: 'improvement' as const, title: 'Workspace, tipos e integracoes ajustados', description: 'Componentes principais, tipos, cliente 360, shared helpers e webhook Evolution foram alinhados para suportar o novo comportamento de conversas e reduzir ruido operacional.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.230',
     date: '16/06/2026',

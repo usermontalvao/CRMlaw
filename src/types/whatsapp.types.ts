@@ -51,6 +51,9 @@ export interface WhatsAppConversation {
   // Fase L: guarda jurídica — impede purga pela retenção
   legal_hold: boolean;
   legal_hold_reason: string | null;
+  // Pausa a auto-mensagem de ausência (fora do horário) só nesta conversa; o
+  // encerramento limpa o flag (volta ao normal no próximo contato).
+  absence_suppressed: boolean;
   created_at: string;
   updated_at: string;
 }

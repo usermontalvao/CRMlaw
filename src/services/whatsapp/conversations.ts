@@ -33,6 +33,32 @@ export const conversationsApi = {
     await supabase.from(CONV_TABLE).update({ unread_count: 0 }).eq('id', conversationId);
   },
 
+  // ── Silenciar conversa (notificações), por usuário ───────────
+  /** Silencia a conversa para o usuário atual. `mutedUntil` null = para sempre. */
+  async muteConversation(conversationId: string, mutedUntil: string | null): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Não autenticado');
+    const { error } = await supabase
+      .from('whatsapp_conversation_mutes')
+      .upsert(
+        { conversation_id: conversationId, user_id: user.id, muted_until: mutedUntil },
+        { onConflict: 'conversation_id,user_id' },
+      );
+    if (error) throw new Error(error.message);
+  },
+
+  /** Reativa o som da conversa para o usuário atual. */
+  async unmuteConversation(conversationId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Não autenticado');
+    const { error } = await supabase
+      .from('whatsapp_conversation_mutes')
+      .delete()
+      .eq('conversation_id', conversationId)
+      .eq('user_id', user.id);
+    if (error) throw new Error(error.message);
+  },
+
   /**
    * Pede à Evolution para entregar a presença do contato (online/visto por
    * último). Best-effort: silencioso em caso de falha, nunca atrapalha o chat.
@@ -188,6 +214,8 @@ export const conversationsApi = {
       closed_at: new Date().toISOString(),
       closed_by: auth?.user?.id ?? null,
       closure_reason: note,
+      // Encerrar zera a pausa do aviso de horário: volta ao normal no próximo contato.
+      absence_suppressed: false,
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
   },
@@ -198,6 +226,20 @@ export const conversationsApi = {
       status: 'open', reopened_at: new Date().toISOString(),
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Limpa a conversa: apaga todas as mensagens da thread, mantendo a conversa na
+   * lista (sem preview, contador zerado). Destrutivo e para toda a equipe — a UI
+   * confirma antes e bloqueia quando há guarda jurídica. Mídia no storage é
+   * deixada para a política de retenção (evita listagem/exclusão custosa aqui).
+   */
+  async clearConversation(conversationId: string): Promise<void> {
+    const { error } = await supabase.from(MSG_TABLE).delete().eq('conversation_id', conversationId);
+    if (error) throw new Error(error.message);
+    await supabase.from(CONV_TABLE)
+      .update({ last_message_preview: null, unread_count: 0 })
+      .eq('id', conversationId);
   },
 
   /** Vincula (ou desvincula com null) a conversa a um cliente. */
@@ -214,6 +256,18 @@ export const conversationsApi = {
     const { error } = await supabase
       .from(CONV_TABLE)
       .update({ contact_reason: reason || null })
+      .eq('id', conversationId);
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Pausa/retoma a auto-mensagem de ausência (fora do horário comercial) só desta
+   * conversa. O webhook consulta este flag antes de enviar; o encerramento o limpa.
+   */
+  async setAbsenceSuppressed(conversationId: string, suppressed: boolean): Promise<void> {
+    const { error } = await supabase
+      .from(CONV_TABLE)
+      .update({ absence_suppressed: suppressed })
       .eq('id', conversationId);
     if (error) throw new Error(error.message);
   },
@@ -446,5 +500,49 @@ export const conversationsApi = {
       .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+  },
+
+  /**
+   * Canal dedicado para o notificador global (sino/som de mensagem nova) — vive
+   * fora do módulo, então usa um nome de canal próprio para não colidir com o
+   * `subscribe` do módulo. Recebe toda mudança de conversa; usado para manter
+   * fresco o cache de atribuição (assigned_user_id) do notificador.
+   */
+  subscribeConversationNotifications(
+    onChange: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
+  ) {
+    const channel = supabase
+      .channel('whatsapp-notify')
+      .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => onChange(p))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  /**
+   * Assina o INSERT de mensagens — o sinal MAIS CEDO de "mensagem nova" (dispara
+   * assim que a linha é inserida, antes do UPDATE da conversa). Usado pelo
+   * notificador para reduzir a latência percebida do aviso.
+   */
+  subscribeInboundMessages(
+    onInsert: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
+  ) {
+    const channel = supabase
+      .channel('whatsapp-notify-msg')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: MSG_TABLE }, p => onInsert(p))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  /** Metadados enxutos da conversa para o notificador (fallback de cache-miss). */
+  async getConversationMeta(id: string): Promise<{
+    id: string; assigned_user_id: string | null; contact_name: string | null;
+    contact_phone: string; is_blocked: boolean;
+  } | null> {
+    const { data } = await supabase
+      .from(CONV_TABLE)
+      .select('id, assigned_user_id, contact_name, contact_phone, is_blocked')
+      .eq('id', id)
+      .maybeSingle();
+    return (data as any) ?? null;
   },
 };

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
@@ -6,14 +6,16 @@ import {
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
   Pencil, Download, UserCheck, Unlink, IdCard, Scale, Calendar,
-  Clock, ChevronDown, ChevronUp, ChevronRight, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw,
+  Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw,
   StickyNote, Trash2, History, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
   Sparkles, Tag, Tags, Bot,
   Shield, ShieldCheck, Eye, EyeOff,
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
-  Mail, MapPin,
+  Mail, MapPin, Play, Pause, Bell, BellOff,
 } from 'lucide-react';
+import { isNotifySoundMuted, setNotifySoundMuted, playNotificationSound } from '../utils/notificationSound';
+import { muteStore } from '../services/whatsapp/muteStore';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppTemplate, WhatsAppScheduledMessage, TimelineEvent, TimelineKind } from '../types/whatsapp.types';
 import { processService, type ProcessMovement } from '../services/process.service';
@@ -91,6 +93,10 @@ function useConfirm(): { confirm: ConfirmFn; pending: (ConfirmOpts & { resolve: 
 // Header em teal (#008069), card arredondado, overlay com blur, ESC/clique-fora
 // fecham, trava o scroll do body e entra com micro-animação. Todos os modais do
 // módulo usam este shell para parecer uma aplicação profissional e consistente.
+// Alturas-base (scaleY) das barras do equalizador de gravação — perfil de onda
+// estático que a animação waEq faz "respirar"; dá o visual de áudio do WhatsApp.
+const WA_REC_BARS = [0.35, 0.6, 0.9, 0.5, 0.75, 1, 0.45, 0.7, 0.55, 0.85, 0.4, 0.65, 0.95, 0.5, 0.8, 0.6, 0.45, 0.9, 0.55, 0.7, 0.5, 0.85, 0.4, 0.6];
+
 const WA_TEAL = '#008069';        // faixa de cabeçalho (WhatsApp)
 const WA_GREEN = '#00a884';       // verde de ação (botões primários)
 const WA_GREEN_DARK = '#017561';  // hover do verde
@@ -608,8 +614,9 @@ const ConversationListItem: React.FC<{
   statusLabel: string;
   statusCls: string;
   docStatus: 'awaiting' | 'ready' | null;
+  muted: boolean;
   onSelect: (id: string) => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, onSelect }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, onSelect }) => {
   const sla = slaSignal(c);
   const slaInt = slaInternalSignal(c);
   const ta = transferAlert(c);
@@ -633,6 +640,7 @@ const ConversationListItem: React.FC<{
             <span className="truncate">{privateMode ? maskName(c.contact_name) : (c.contact_name || prettyPhone(c.contact_phone))}</span>
           </span>
           <span className="flex items-center gap-1 flex-shrink-0">
+            {muted && <BellOff size={11} className="text-slate-400 flex-shrink-0" />}
             {sla
               ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
                   <Clock size={9} />{sla.label}
@@ -715,7 +723,14 @@ type SlashResultItem =
   | { kind: 'template'; id: string; name: string; description?: string; body: string; template: WhatsAppTemplate }
   | SlashKitItem;
 
-const WhatsAppModule: React.FC = () => {
+interface WhatsAppModuleProps {
+  /** Deep-link: conversa a abrir ao entrar no módulo (ex.: clique na notificação). */
+  openConversationId?: string;
+  /** Avisa o App para limpar o param de navegação após consumi-lo. */
+  onParamConsumed?: () => void;
+}
+
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed }) => {
   const { user } = useAuth();
   const toast = useToastContext();
   const { navigateTo } = useNavigation();
@@ -741,6 +756,12 @@ const WhatsAppModule: React.FC = () => {
   });
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const [deptFilter, setDeptFilter] = useState<string>('all');
+  // Som das notificações (mensagem nova fora do módulo). Persistido em localStorage.
+  const [soundMuted, setSoundMuted] = useState(() => isNotifySoundMuted());
+  // Silenciamento por conversa (no banco, por usuário). Re-renderiza ao mudar o store.
+  useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
+  useEffect(() => { void muteStore.init(); }, []);
+  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [hasMoreMsgs, setHasMoreMsgs] = useState(false);
@@ -906,6 +927,9 @@ const WhatsAppModule: React.FC = () => {
   const avatarTriedRef = useRef<Set<string>>(new Set());
   const atBottomRef = useRef(true);
   const lastConvRef = useRef<string | null>(null);
+  // Marca se já fixamos a thread no fim para a conversa atual (após as mensagens
+  // realmente carregarem). Evita "abrir no topo" quando o 1º paint vem vazio.
+  const didInitialScrollRef = useRef(false);
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
   const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
@@ -1228,6 +1252,14 @@ const WhatsAppModule: React.FC = () => {
     }).catch(() => {});
   }, [selectedId, loadMessages]);
 
+  // Deep-link: ao clicar na notificação de mensagem nova (fora do módulo), o App
+  // navega para cá com a conversa-alvo. Seleciona e limpa o param para não reabrir.
+  useEffect(() => {
+    if (!openConversationId) return;
+    setSelectedId(openConversationId);
+    onParamConsumed?.();
+  }, [openConversationId, onParamConsumed]);
+
   // Fase N: verifica horário de atendimento ao trocar de canal/conversa (timezone-aware).
   useEffect(() => {
     const instanceId = selected?.instance_id;
@@ -1312,6 +1344,26 @@ const WhatsAppModule: React.FC = () => {
     return units;
   }, [allMessages]);
 
+  // Galeria do lightbox: URLs das imagens da conversa, em ordem — permite navegar
+  // (slider ‹ ›) entre todas as imagens ao ampliar uma.
+  const lightboxImages = useMemo(
+    () => allMessages.filter(m => m.type === 'image' && m.media_url).map(m => m.media_url as string),
+    [allMessages],
+  );
+  // Navegação por teclado no lightbox (← → Esc).
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setLightbox(null); return; }
+      const idx = lightboxImages.indexOf(lightbox);
+      if (idx < 0) return;
+      if (e.key === 'ArrowRight') setLightbox(lightboxImages[Math.min(idx + 1, lightboxImages.length - 1)]);
+      else if (e.key === 'ArrowLeft') setLightbox(lightboxImages[Math.max(idx - 1, 0)]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox, lightboxImages]);
+
   useEffect(() => {
     if (messages.length === 0) return;
     setPending(prev => {
@@ -1331,8 +1383,26 @@ const WhatsAppModule: React.FC = () => {
     const el = threadRef.current;
     if (!el) return;
     const isSwitch = lastConvRef.current !== selectedId;
-    lastConvRef.current = selectedId;
-    if (isSwitch) { el.scrollTop = el.scrollHeight; atBottomRef.current = true; return; }
+    if (isSwitch) {
+      // Render da troca: `messages` ainda é da conversa anterior (o clear só aplica
+      // no próximo render). Salta pro fim, zera o "pronto" e NÃO marca como feito
+      // aqui — a fixação real acontece quando as mensagens DESTA conversa chegam.
+      lastConvRef.current = selectedId;
+      didInitialScrollRef.current = false;
+      atBottomRef.current = true;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    // Enquanto não fixamos o fim desta conversa, salta para baixo a cada leva de
+    // mensagens (o 1º paint vem vazio); só marca como pronto quando há conteúdo.
+    // Garante abrir SEMPRE na mensagem mais recente, sem scroll suave a partir do topo.
+    if (!didInitialScrollRef.current) {
+      el.scrollTop = el.scrollHeight;
+      atBottomRef.current = true;
+      if (allMessages.length > 0) didInitialScrollRef.current = true;
+      return;
+    }
+    // Já fixado no fim: mensagem nova só puxa o scroll se o usuário está no fim.
     if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [allMessages, selectedId]);
 
@@ -1497,6 +1567,34 @@ const WhatsAppModule: React.FC = () => {
         ? { ...c, assigned_user_id: null, awaiting_accept: false, transfer_pending_since: null } : c));
     } catch (e: any) { toast.error('Falha ao devolver à fila', e.message); }
   }, [selected, confirm, toast]);
+
+  // ── Silenciar / reativar conversa (notificações), por usuário ──
+  const muteSelected = useCallback(async (durationMs: number | null, label: string) => {
+    if (!selected) return;
+    setMuteMenuOpen(false);
+    const until = durationMs === null ? null : new Date(Date.now() + durationMs).toISOString();
+    muteStore.setLocal(selected.id, until); // otimista
+    try {
+      await whatsappService.muteConversation(selected.id, until);
+      toast.success(durationMs === null ? 'Conversa silenciada' : `Silenciada por ${label}`);
+    } catch (e: any) {
+      muteStore.setLocal(selected.id, undefined); // reverte
+      toast.error('Não foi possível silenciar', e.message);
+    }
+  }, [selected, toast]);
+
+  const unmuteSelected = useCallback(async () => {
+    if (!selected) return;
+    const prev = muteStore.mutedUntil(selected.id);
+    muteStore.setLocal(selected.id, undefined); // otimista
+    try {
+      await whatsappService.unmuteConversation(selected.id);
+      toast.success('Som reativado');
+    } catch (e: any) {
+      muteStore.setLocal(selected.id, prev); // reverte
+      toast.error('Falha ao reativar o som', e.message);
+    }
+  }, [selected, toast]);
 
   // ── Envio otimista de texto / edição ──
   const bumpConversationPreview = useCallback((conversationId: string, preview: string, at: string) => {
@@ -1679,6 +1777,54 @@ const WhatsAppModule: React.FC = () => {
     a.download = `conversa-${(selected.contact_name || selected.contact_phone).replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Limpa a conversa (apaga as mensagens da thread; a conversa fica na lista).
+  // Destrutivo e vale para toda a equipe → confirmação de perigo. Bloqueado sob
+  // guarda jurídica (preserva evidência, igual à política de retenção).
+  const handleClearConversation = async () => {
+    if (!selected) return;
+    if (selected.legal_hold) {
+      toast.error('Conversa sob guarda jurídica', 'Remova a guarda antes de limpar a conversa.');
+      return;
+    }
+    if (!await confirm({
+      title: 'Limpar conversa',
+      message: 'Todas as mensagens desta conversa serão apagadas para toda a equipe. A conversa continua na lista. Esta ação não pode ser desfeita.',
+      confirmLabel: 'Limpar conversa',
+      tone: 'danger',
+    })) return;
+    try {
+      await whatsappService.clearConversation(selected.id);
+      setMessages([]); setPending([]); setReplyTo(null); setEditing(null);
+      setHasMoreMsgs(false); oldestTsRef.current = null;
+      setConversations(prev => prev.map(c =>
+        c.id === selected.id ? { ...c, last_message_preview: null, unread_count: 0 } : c
+      ));
+      toast.success('Conversa limpa.');
+    } catch (e: any) {
+      toast.error('Falha ao limpar conversa', e.message);
+    }
+  };
+
+  // Pausa/retoma a mensagem automática de ausência (fora do horário comercial)
+  // SÓ para esta conversa. Pensado para um atendimento que segue fora do horário:
+  // pausa o aviso comercial até encerrar; ao encerrar, o closeConversation limpa o
+  // flag e a limitação volta sozinha no próximo contato.
+  const handleToggleAbsenceSuppressed = async () => {
+    if (!selected) return;
+    const next = !selected.absence_suppressed;
+    try {
+      await whatsappService.setAbsenceSuppressed(selected.id, next);
+      setConversations(prev => prev.map(c =>
+        c.id === selected.id ? { ...c, absence_suppressed: next } : c
+      ));
+      toast.success(next
+        ? 'Aviso fora do horário pausado para esta conversa.'
+        : 'Aviso fora do horário reativado.');
+    } catch (e: any) {
+      toast.error('Falha ao atualizar aviso de horário', e.message);
+    }
   };
 
   const handleToggleLegalHold = async () => {
@@ -2044,6 +2190,19 @@ const WhatsAppModule: React.FC = () => {
                 <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
                 {anyConnected ? 'Online' : 'Offline'}
               </span>
+              <button
+                onClick={() => {
+                  const next = !soundMuted;
+                  setSoundMuted(next);
+                  setNotifySoundMuted(next);
+                  if (!next) { playNotificationSound(); toast.success('Som das notificações ativado'); }
+                  else toast.info('Som das notificações silenciado');
+                }}
+                title={soundMuted ? 'Som das notificações desligado — clique para ligar' : 'Som das notificações ligado — clique para silenciar'}
+                aria-pressed={!soundMuted}
+                className={`flex items-center justify-center w-7 h-7 rounded-full transition ${soundMuted ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
+                {soundMuted ? <BellOff size={15} /> : <Bell size={15} />}
+              </button>
               <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
                 className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
                 <BarChart2 size={15} />
@@ -2125,6 +2284,7 @@ const WhatsAppModule: React.FC = () => {
                 statusLabel={st.label}
                 statusCls={st.cls}
                 docStatus={effectiveDocStatus(c.client_id)}
+                muted={muteStore.isMuted(c.id)}
                 onSelect={setSelectedId}
               />
             );
@@ -2220,36 +2380,44 @@ const WhatsAppModule: React.FC = () => {
                     <UserMinus size={16} />
                   </button>
                 )}
-                <button onClick={() => setTimelineOpen(true)} title="Histórico da conversa"
-                  className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
-                  <History size={16} />
-                </button>
-                {selected.client_id && (
-                  <button onClick={() => setSummaryOpen(true)} title="Resumo por IA"
-                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-violet-50 text-slate-600 hover:text-violet-600 flex items-center justify-center transition">
-                    <Sparkles size={16} />
-                  </button>
-                )}
+                {/* Silenciar conversa (notificações), estilo WhatsApp */}
+                {(() => {
+                  const muted = muteStore.isMuted(selected.id);
+                  const until = muteStore.mutedUntil(selected.id);
+                  const untilLabel = muted
+                    ? (until == null ? 'silenciada' : `silenciada até ${new Date(until).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`)
+                    : '';
+                  return (
+                    <div className="relative flex-shrink-0">
+                      <button
+                        onClick={() => muted ? unmuteSelected() : setMuteMenuOpen(o => !o)}
+                        title={muted ? `${untilLabel} — clique para reativar o som` : 'Silenciar conversa'}
+                        aria-pressed={muted}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${muted ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-amber-50 hover:text-amber-700'}`}>
+                        {muted ? <BellOff size={16} /> : <Bell size={16} />}
+                      </button>
+                      {muteMenuOpen && !muted && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setMuteMenuOpen(false)} />
+                          <div className="absolute right-0 top-11 z-50 w-48 rounded-xl bg-white shadow-lg border border-[#e7e5df] py-1.5">
+                            <div className="px-3 py-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Silenciar notificações</div>
+                            <button onClick={() => muteSelected(8 * 60 * 60 * 1000, '8 horas')}
+                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">8 horas</button>
+                            <button onClick={() => muteSelected(7 * 24 * 60 * 60 * 1000, '1 semana')}
+                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">1 semana</button>
+                            <button onClick={() => muteSelected(null, 'sempre')}
+                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">Sempre</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 {perms.canTransfer && (
                   <button onClick={() => setTransferOpen(true)} title="Transferir conversa"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <ArrowRightLeft size={16} />
                   </button>
-                )}
-                {selected.is_blocked ? (
-                  perms.canBlock && (
-                    <button onClick={handleUnblock} title="Desbloquear contato"
-                      className="flex-shrink-0 w-9 h-9 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition">
-                      <ShieldOff size={16} />
-                    </button>
-                  )
-                ) : (
-                  perms.canBlock && (
-                    <button onClick={() => setBlockOpen(true)} title="Bloquear contato"
-                      className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-red-50 text-slate-600 hover:text-red-600 flex items-center justify-center transition">
-                      <Ban size={16} />
-                    </button>
-                  )
                 )}
                 {selected.status === 'closed' ? (
                   <button onClick={handleReopen} title="Reabrir conversa"
@@ -2262,11 +2430,11 @@ const WhatsAppModule: React.FC = () => {
                     <CheckCircle2 size={16} />
                   </button>
                 )}
-                {/* Fase L: exportar histórico */}
-                {messages.length > 0 && (
-                  <button onClick={handleExportConversation} title="Exportar histórico (.txt)"
-                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
-                    <Download size={16} />
+                {/* Limpar conversa (apaga as mensagens; mantém a conversa) */}
+                {perms.canBlock && messages.length > 0 && (
+                  <button onClick={handleClearConversation} title="Limpar conversa"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-red-50 text-slate-600 hover:text-red-600 flex items-center justify-center transition">
+                    <Trash2 size={16} />
                   </button>
                 )}
                 <button onClick={() => setSelectedId(null)} title="Sair da conversa"
@@ -2276,7 +2444,7 @@ const WhatsAppModule: React.FC = () => {
               </div>
             </header>
 
-            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
+            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
 
             {/* Fase J: banner de sessão de IA ativa */}
             {aiSession?.status === 'active' && (
@@ -2358,7 +2526,7 @@ const WhatsAppModule: React.FC = () => {
                         </React.Fragment>
                       );
                   })}
-                  <ThreadScheduledGhosts conversationId={selected.id} privateMode={privateMode} />
+                  <ThreadScheduledGhosts conversationId={selected.id} privateMode={privateMode} confirm={confirm} />
                 </>);
               })()}
               </div>
@@ -2394,8 +2562,8 @@ const WhatsAppModule: React.FC = () => {
               </div>
             )}
 
-            {/* Fase N: aviso de fora do horário de atendimento */}
-            {outsideHours && !selected.is_blocked && (
+            {/* Fase N: aviso de fora do horário — oculto quando pausado nesta conversa */}
+            {outsideHours && !selected.is_blocked && !selected.absence_suppressed && (
               <div className="px-4 py-2 border-t border-amber-200 bg-amber-50 flex items-center gap-2">
                 <Clock size={14} className="text-amber-600 flex-shrink-0" />
                 <p className="flex-1 text-[12px] text-amber-800">{outsideHours.message}</p>
@@ -2419,16 +2587,31 @@ const WhatsAppModule: React.FC = () => {
             ) : (
             <div className="px-4 py-3 border-t border-[#e7e5df] bg-white">
               {recording ? (
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold text-red-600">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-                    Gravando… {String(Math.floor(recSeconds / 60)).padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
-                  </span>
-                  <div className="flex-1" />
-                  <button onClick={() => stopRecording(false)} className="px-3 py-2 text-[13px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
-                  <button onClick={() => stopRecording(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-amber-600 text-white text-[13px] font-semibold hover:bg-amber-700">
-                    <Send size={15} /> Enviar
+                <div className="flex items-center gap-2.5">
+                  {/* Keyframes do equalizador (escopo local, estilo WhatsApp) */}
+                  <style>{`@keyframes waEq{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}`}</style>
+                  {/* Lixeira = cancelar e descartar a gravação */}
+                  <button onClick={() => stopRecording(false)} title="Cancelar gravação"
+                    className="flex-shrink-0 w-9 h-9 rounded-full text-red-500 hover:bg-red-50 flex items-center justify-center transition">
+                    <Trash2 size={18} />
+                  </button>
+                  {/* Pílula com ponto pulsante + onda animada + cronômetro */}
+                  <div className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-10 rounded-full bg-[#f3f2ef]">
+                    <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+                    <div className="flex-1 min-w-0 flex items-center justify-center gap-[3px] h-5 overflow-hidden">
+                      {WA_REC_BARS.map((h, i) => (
+                        <span key={i} className="w-[3px] flex-shrink-0 rounded-full bg-red-400/80"
+                          style={{ height: '100%', transformOrigin: 'center', transform: `scaleY(${h})`, animation: 'waEq 0.9s ease-in-out infinite', animationDelay: `${i * 70}ms` }} />
+                      ))}
+                    </div>
+                    <span className="flex-shrink-0 text-[13px] font-semibold text-red-600 tabular-nums">
+                      {String(Math.floor(recSeconds / 60)).padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
+                    </span>
+                  </div>
+                  {/* Enviar o áudio */}
+                  <button onClick={() => stopRecording(true)} title="Enviar áudio"
+                    className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 transition">
+                    <Send size={16} />
                   </button>
                 </div>
               ) : (
@@ -2517,7 +2700,7 @@ const WhatsAppModule: React.FC = () => {
       )}
       {selected && (
         <aside style={{ width: panelWidth }}
-          className="flex-shrink-0 border-l border-[#e7e5df] bg-white p-3.5 hidden xl:flex flex-col gap-3 overflow-y-auto min-h-0">
+          className="flex-shrink-0 border-l border-[#e7e5df] bg-white p-3.5 pb-24 hidden xl:flex flex-col gap-3 overflow-y-auto min-h-0">
           {/* Header compacto: avatar + nome + telefone numa linha */}
           <div className="flex items-center gap-2.5 pb-3 border-b border-[#f1f0ec]">
             <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={40}
@@ -2553,6 +2736,48 @@ const WhatsAppModule: React.FC = () => {
               className="w-full inline-flex items-center justify-center gap-1.5 py-1 rounded-md border border-[#e7e5df] text-[11px] font-semibold text-slate-500 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition">
               <ArrowRightLeft size={12} /> Transferir conversa
             </button>
+          </div>
+
+          {/* Ações da conversa (movidas do cabeçalho para não poluir a barra) */}
+          <div className="space-y-1.5">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button onClick={() => setTimelineOpen(true)} title="Histórico da conversa"
+                className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
+                <History size={13} /> Histórico
+              </button>
+              <button onClick={() => setTemplateOpen(true)} title="Usar modelo de mensagem"
+                className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
+                <MessageSquare size={13} /> Modelos
+              </button>
+              {selected.client_id && (
+                <button onClick={() => setSummaryOpen(true)} title="Resumo por IA"
+                  className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-violet-50 hover:text-violet-600 text-[10.5px] font-semibold transition">
+                  <Sparkles size={13} /> Resumo IA
+                </button>
+              )}
+              {messages.length > 0 && (
+                <button onClick={handleExportConversation} title="Exportar histórico (.txt)"
+                  className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
+                  <Download size={13} /> Exportar
+                </button>
+              )}
+              {selected.is_blocked ? (
+                perms.canBlock && (
+                  <button onClick={handleUnblock} title="Desbloquear contato"
+                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 text-[10.5px] font-semibold transition">
+                    <ShieldOff size={13} /> Desbloquear
+                  </button>
+                )
+              ) : (
+                perms.canBlock && (
+                  <button onClick={() => setBlockOpen(true)} title="Bloquear contato"
+                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-red-50 hover:text-red-600 text-[10.5px] font-semibold transition">
+                    <Ban size={13} /> Bloquear
+                  </button>
+                )
+              )}
+            </div>
           </div>
 
           {/* Assunto detectado pela IA (somente leitura; preenchido ao encerrar o atendimento) */}
@@ -2705,6 +2930,19 @@ const WhatsAppModule: React.FC = () => {
             {selected.legal_hold && selected.legal_hold_reason && (
               <p className="text-[10px] text-amber-700 px-0.5">{selected.legal_hold_reason}</p>
             )}
+            {/* Aviso fora do horário: pausa a auto-mensagem comercial só nesta conversa */}
+            <button onClick={handleToggleAbsenceSuppressed}
+              className={`w-full flex items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] font-semibold transition ${
+                selected.absence_suppressed
+                  ? 'bg-violet-100 text-violet-800 border border-violet-300'
+                  : 'bg-[#f3f2ef] text-slate-500 hover:bg-violet-50 hover:text-violet-700'
+              }`}>
+              {selected.absence_suppressed ? <ShieldOff size={12} /> : <Clock3 size={12} />}
+              {selected.absence_suppressed ? 'Aviso de horário pausado' : 'Pausar aviso de horário'}
+            </button>
+            {selected.absence_suppressed && (
+              <p className="text-[10px] text-violet-700 px-0.5">A mensagem fora do horário não será enviada até encerrar este atendimento.</p>
+            )}
           </div>
         </aside>
       )}
@@ -2805,12 +3043,37 @@ const WhatsAppModule: React.FC = () => {
         />
       )}
 
-      {lightbox && (
+      {lightbox && (() => {
+        const idx = lightboxImages.indexOf(lightbox);
+        const hasGallery = idx >= 0 && lightboxImages.length > 1;
+        return (
         <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" />
-          <button className="absolute top-5 right-5 text-white/80 hover:text-white"><X size={26} /></button>
+          <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-5 right-5 text-white/80 hover:text-white"><X size={26} /></button>
+          {hasGallery && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); setLightbox(lightboxImages[Math.max(idx - 1, 0)]); }}
+                disabled={idx === 0}
+                className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center ring-1 ring-white/20 transition disabled:opacity-30 disabled:cursor-default"
+                title="Imagem anterior">
+                <ChevronLeft size={28} />
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setLightbox(lightboxImages[Math.min(idx + 1, lightboxImages.length - 1)]); }}
+                disabled={idx === lightboxImages.length - 1}
+                className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center ring-1 ring-white/20 transition disabled:opacity-30 disabled:cursor-default"
+                title="Próxima imagem">
+                <ChevronRight size={28} />
+              </button>
+              <span className="absolute top-6 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/60 text-white text-[12px] font-semibold ring-1 ring-white/20">
+                {idx + 1} / {lightboxImages.length}
+              </span>
+            </>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Fase M: dashboard de atendimento */}
       {showDashboard && (
@@ -2901,6 +3164,9 @@ const MessageBubble: React.FC<{
   const busy = m._local === 'uploading' || m._local === 'sending';
   // Reenvio rápido: só faz sentido para mídia já entregue (com objeto no storage).
   const canResend = out && !busy && !failed && m.type !== 'text' && !!m.storage_path;
+  // Imagem/vídeo sem legenda/reply/nome → bolha sem moldura (igual WhatsApp):
+  // a mídia "sangra" até a borda e a hora fica sobreposta num canto.
+  const mediaOnly = (m.type === 'image' || m.type === 'video') && !!m.media_url && !m.content && !repliedTo && !senderName;
 
   return (
     <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
@@ -2919,20 +3185,20 @@ const MessageBubble: React.FC<{
         </div>
       )}
 
-      <div className={`max-w-[70%] rounded-2xl px-3 py-2 text-[13.5px] leading-snug shadow-sm ${out ? 'bg-amber-600 text-white rounded-br-sm' : 'bg-white text-slate-800 rounded-bl-sm'}`}>
+      <div className={`relative text-[13.5px] leading-snug text-slate-800 rounded-2xl ${m.type === 'audio' ? '' : 'shadow-sm'} ${out ? 'rounded-br-sm' : 'rounded-bl-sm'} ${mediaOnly ? 'max-w-[280px] p-0 overflow-hidden bg-black/5' : `max-w-[70%] px-3 py-2 ${out ? 'bg-[#d9fdd3]' : 'bg-white'}`}`}>
         {senderName && (
-          <span className={`flex items-center gap-1 text-[11px] font-bold mb-0.5 ${out ? 'text-amber-100' : 'text-amber-700'}`}>
+          <span className="flex items-center gap-1 text-[11px] font-bold mb-0.5 text-emerald-700">
             {senderName}
             {senderRole && (
-              <span className={`px-1 py-px rounded text-[9px] font-semibold uppercase tracking-wide ${out ? 'bg-amber-500/40 text-amber-50' : 'bg-amber-100 text-amber-700'}`}>{senderRole}</span>
+              <span className="px-1 py-px rounded text-[9px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-700">{senderRole}</span>
             )}
           </span>
         )}
 
         {repliedTo && (
-          <div className={`mb-1 px-2 py-1 rounded-md border-l-2 text-[12px] ${out ? 'bg-amber-500/40 border-amber-200' : 'bg-slate-100 border-amber-400'}`}>
-            <span className={`block font-semibold ${out ? 'text-amber-50' : 'text-amber-700'}`}>{repliedTo.direction === 'out' ? 'Você' : 'Contato'}</span>
-            <span className={`block truncate ${out ? 'text-amber-50/90' : 'text-slate-500'}`}>{repliedTo.content || typeLabel(repliedTo.type)}</span>
+          <div className={`mb-1 px-2 py-1 rounded-md border-l-2 text-[12px] border-emerald-500 ${out ? 'bg-black/[0.04]' : 'bg-slate-100'}`}>
+            <span className="block font-semibold text-emerald-700">{repliedTo.direction === 'out' ? 'Você' : 'Contato'}</span>
+            <span className="block truncate text-slate-500">{repliedTo.content || typeLabel(repliedTo.type)}</span>
           </div>
         )}
 
@@ -2952,30 +3218,32 @@ const MessageBubble: React.FC<{
           </span>
         )}
 
-        <span className={`flex items-center gap-1 justify-end mt-1 text-[10px] ${out ? 'text-amber-100' : 'text-slate-400'}`}>
+        <span className={mediaOnly
+          ? 'absolute bottom-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]'
+          : 'flex items-center gap-1 justify-end mt-1 text-[10px] text-slate-500'}>
           {m.edited_at && <span className="italic opacity-80">editado</span>}
           {busy && <Loader2 size={11} className="animate-spin" />}
           {formatTime(m.wa_timestamp)}
           {out && !busy && (failed
-            ? <AlertCircle size={12} className="text-red-200" />
+            ? <AlertCircle size={12} className="text-red-500" />
             : m.status === 'read'
-              ? <CheckCheck size={12} className="text-sky-300" />
+              ? <CheckCheck size={12} className={mediaOnly ? 'text-sky-300' : 'text-sky-500'} />
             : m.status === 'delivered'
-              ? <CheckCheck size={12} className="opacity-60" />
-            : <Check size={12} className="opacity-60" />)}
+              ? <CheckCheck size={12} className="opacity-50" />
+            : <Check size={12} className="opacity-50" />)}
         </span>
 
         {/* Barra de progresso de upload + botão cancelar (Fase D) */}
         {m._local === 'uploading' && uploadProgress !== undefined && (
           <div className="flex items-center gap-2 mt-1.5">
-            <div className="flex-1 h-1 rounded-full bg-amber-400/30 overflow-hidden">
-              <div className="h-full bg-amber-200 rounded-full transition-[width] duration-300"
+            <div className="flex-1 h-1 rounded-full bg-emerald-600/20 overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full transition-[width] duration-300"
                 style={{ width: `${uploadProgress}%` }} />
             </div>
-            <span className="text-[10px] text-amber-100 tabular-nums">{uploadProgress}%</span>
+            <span className="text-[10px] text-slate-500 tabular-nums">{uploadProgress}%</span>
             {m._tempId && (
               <button onClick={() => onCancel(m)} title="Cancelar envio"
-                className="text-amber-100 hover:text-white transition leading-none">
+                className="text-slate-500 hover:text-slate-700 transition leading-none">
                 <X size={12} />
               </button>
             )}
@@ -2985,9 +3253,9 @@ const MessageBubble: React.FC<{
         {/* Falha no envio: tentar de novo ou descartar da fila */}
         {failed && m._tempId && (
           <span className="flex items-center gap-2 justify-end mt-1 text-[11px] font-semibold">
-            <span className="text-red-100">Não enviado</span>
-            <button onClick={() => onRetry(m)} className="underline hover:no-underline text-white/90">Tentar de novo</button>
-            <button onClick={() => onDiscard(m)} className="text-white/70 hover:text-white">Descartar</button>
+            <span className="text-red-600">Não enviado</span>
+            <button onClick={() => onRetry(m)} className="underline hover:no-underline text-emerald-700">Tentar de novo</button>
+            <button onClick={() => onDiscard(m)} className="text-slate-500 hover:text-slate-700">Descartar</button>
           </span>
         )}
       </div>
@@ -3003,6 +3271,58 @@ const MessageBubble: React.FC<{
   );
 });
 MessageBubble.displayName = 'MessageBubble';
+
+// ── Player de áudio estilo WhatsApp (play/pause + onda clicável + tempo/velocidade) ──
+const fmtAudioTime = (s: number) => {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60); const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+};
+const WA_AUDIO_BARS = Array.from({ length: 30 }, (_, i) => 25 + ((i * 41 + i * i * 7) % 75));
+const WaAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) void a.play(); else a.pause(); };
+  const cycleRate = () => { const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; setRate(next); if (audioRef.current) audioRef.current.playbackRate = next; };
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const a = audioRef.current; if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = pct * duration; setCurrent(a.currentTime);
+  };
+  const progress = duration > 0 ? (current / duration) * 100 : 0;
+
+  return (
+    <div className="flex items-center gap-2.5 select-none" style={{ minWidth: '200px', maxWidth: '250px' }}>
+      <audio ref={audioRef} src={src} preload="metadata"
+        onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
+        onTimeUpdate={e => setCurrent(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrent(0); }} className="hidden" />
+      <button type="button" onClick={toggle} title={playing ? 'Pausar' : 'Reproduzir'}
+        className="shrink-0 w-9 h-9 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-sm active:scale-95 transition">
+        {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-end gap-[2px] h-6 cursor-pointer" onClick={seek} title="Avançar / retroceder">
+          {WA_AUDIO_BARS.map((h, i) => {
+            const filled = (i / WA_AUDIO_BARS.length) * 100 <= progress;
+            return <div key={i} className="flex-1 rounded-full" style={{ height: `${h}%`, background: filled ? '#059669' : 'rgba(0,0,0,0.18)' }} />;
+          })}
+        </div>
+        <div className="flex items-center justify-between mt-0.5">
+          <span className="text-[10px] text-slate-500 tabular-nums font-semibold">{playing || current > 0 ? fmtAudioTime(current) : fmtAudioTime(duration)}</span>
+          <button type="button" onClick={cycleRate} title="Velocidade"
+            className="text-[9px] font-bold text-slate-500 bg-black/[0.06] hover:bg-black/[0.12] rounded px-1 py-0.5 transition leading-none">{rate}x</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ── Conteúdo de mídia por tipo ──
 const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (url: string) => void }> = ({ m, out, onOpenImage }) => {
@@ -3025,16 +3345,16 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
   if (m.type === 'audio') {
     return (
       <div className="min-w-[220px]">
-        {url ? <audio src={url} controls className="w-full h-9" />
+        {url ? <WaAudioPlayer src={url} />
           : <MediaPlaceholder label={typeLabel('audio')} />}
         {m.transcription_status === 'pending' && (
-          <span className={`flex items-center gap-1 mt-1 text-[11px] italic ${out ? 'text-amber-100' : 'text-slate-400'}`}><Loader2 size={11} className="animate-spin" /> Transcrevendo…</span>
+          <span className="flex items-center gap-1 mt-1 text-[11px] italic text-slate-400"><Loader2 size={11} className="animate-spin" /> Transcrevendo…</span>
         )}
         {m.transcription_status === 'done' && m.transcription_text && (
-          <p className={`mt-1 text-[12px] italic ${out ? 'text-amber-50/90' : 'text-slate-500'}`}>“{m.transcription_text}”</p>
+          <p className="mt-1 text-[12px] italic text-slate-500">“{m.transcription_text}”</p>
         )}
         {m.transcription_status === 'failed' && (
-          <span className={`block mt-1 text-[11px] italic ${out ? 'text-amber-100/70' : 'text-slate-400'}`}>Transcrição indisponível</span>
+          <span className="block mt-1 text-[11px] italic text-slate-400">Transcrição indisponível</span>
         )}
       </div>
     );
@@ -3043,13 +3363,13 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
   // documento
   return (
     <a href={url || undefined} target="_blank" rel="noreferrer" download={m.file_name || undefined}
-      className={`flex items-center gap-2.5 min-w-[200px] px-2 py-1.5 rounded-lg ${out ? 'bg-amber-500/40 hover:bg-amber-500/60' : 'bg-slate-100 hover:bg-slate-200'} transition`}>
-      <span className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${out ? 'bg-amber-100 text-amber-700' : 'bg-white text-amber-600'}`}><FileText size={18} /></span>
+      className={`flex items-center gap-2.5 min-w-[200px] px-2 py-1.5 rounded-lg ${out ? 'bg-black/[0.05] hover:bg-black/[0.08]' : 'bg-slate-100 hover:bg-slate-200'} transition`}>
+      <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-white text-emerald-600 shadow-sm"><FileText size={18} /></span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[12.5px] font-semibold truncate">{m.file_name || 'Documento'}</span>
-        <span className={`block text-[11px] ${out ? 'text-amber-50/80' : 'text-slate-400'}`}>{formatBytes(m.media_size)}</span>
+        <span className="block text-[12.5px] font-semibold truncate text-slate-800">{m.file_name || 'Documento'}</span>
+        <span className="block text-[11px] text-slate-400">{formatBytes(m.media_size)}</span>
       </span>
-      {url && <Download size={16} className={out ? 'text-amber-50' : 'text-slate-400'} />}
+      {url && <Download size={16} className="text-slate-400" />}
     </a>
   );
 };
@@ -3067,16 +3387,20 @@ const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName:
   const last = items[items.length - 1];
   const caption = items.find(i => i.content)?.content || '';
   const busy = items.some(i => i._local === 'uploading' || i._local === 'sending');
+  // Mídia sangra até a borda (igual WhatsApp): sem moldura verde. Nome do remetente
+  // e legenda ficam sobrepostos; a hora vai num canto sobre a imagem.
+  const ticks = !busy && out && (last.status === 'read'
+    ? <CheckCheck size={12} className="text-sky-300" />
+    : last.status === 'delivered' ? <CheckCheck size={12} className="opacity-50" /> : <Check size={12} className="opacity-50" />);
   return (
     <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[280px] rounded-2xl p-1.5 shadow-sm ${out ? 'bg-amber-600 rounded-br-sm' : 'bg-white rounded-bl-sm'}`}>
-        {senderName && <span className={`block px-1 pt-0.5 pb-1 text-[11px] font-bold ${out ? 'text-amber-100' : 'text-amber-700'}`}>{senderName}</span>}
-        <div className={`grid gap-1 w-64 ${shown.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+      <div className="max-w-[280px]">
+        <div className={`relative grid gap-1 w-64 ${shown.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} rounded-2xl overflow-hidden shadow-sm`}>
           {shown.map((m, i) => {
             const overlay = i === shown.length - 1 && extra > 0;
             return (
               <button key={m._tempId || m.id} onClick={() => m.media_url && onOpenImage(m.media_url)}
-                className="relative aspect-square overflow-hidden rounded-lg bg-black/10">
+                className="relative aspect-square overflow-hidden bg-black/10">
                 {m.media_url
                   ? <img src={m.media_url} alt={m.content || 'imagem'} className="w-full h-full object-cover hover:opacity-95 transition" />
                   : <span className="w-full h-full flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white/70" /></span>}
@@ -3084,13 +3408,16 @@ const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName:
               </button>
             );
           })}
+          {senderName && (
+            <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px] font-bold">{senderName}</span>
+          )}
+          <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]">
+            {busy && <Loader2 size={11} className="animate-spin" />}
+            {formatTime(last.wa_timestamp)}
+            {ticks}
+          </span>
         </div>
-        {caption && <p className={`px-1 pt-1.5 text-[13px] leading-snug whitespace-pre-wrap break-words ${out ? 'text-white' : 'text-slate-800'}`}>{caption}</p>}
-        <span className={`flex items-center gap-1 justify-end px-1 pt-1 text-[10px] ${out ? 'text-amber-100' : 'text-slate-400'}`}>
-          {busy && <Loader2 size={11} className="animate-spin" />}
-          {formatTime(last.wa_timestamp)}
-          {out && !busy && (last.status === 'read' ? <CheckCheck size={12} className="text-sky-300" /> : last.status === 'delivered' ? <CheckCheck size={12} className="opacity-60" /> : <Check size={12} className="opacity-60" />)}
-        </span>
+        {caption && <p className="pt-1 text-[13px] leading-snug whitespace-pre-wrap break-words text-slate-800">{caption}</p>}
       </div>
     </div>
   );
@@ -4181,7 +4508,7 @@ const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children
 const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const DOC_REQ_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando', partial: 'Parcial', complete: 'Concluído', cancelled: 'Cancelado' };
 
-const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, onDismissDocReady, onDismissTemplateFill }) => {
+const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; clientId?: string | null; onOpenWorkspace?: WaOpenWorkspaceFn; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, clientId, onOpenWorkspace, onDismissDocReady, onDismissTemplateFill }) => {
   if (!overview) return null;
   const s = summarizeOverview(overview);
   // Sem contexto relevante → não polui o topo da thread.
@@ -4295,10 +4622,14 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
               const urgent = p.priority === 'urgente';
               const hearing = p.hearing_scheduled && p.hearing_date ? new Date(p.hearing_date + 'T00:00:00') : null;
               const hearingFuture = hearing && hearing >= new Date(new Date().toDateString());
+              const openTimeline = onOpenWorkspace
+                ? () => onOpenWorkspace({ type: 'timeline_process', processId: p.id, processCode: p.process_code || 'Sem número' })
+                : undefined;
               return (
-                <div key={p.id} className={`rounded-lg border p-2.5 ${urgent ? 'border-red-200 bg-red-50/40' : 'border-[#eceae4] bg-[#faf9f7]'}`}>
+                <button key={p.id} type="button" onClick={openTimeline} disabled={!openTimeline}
+                  className={`w-full text-left rounded-lg border p-2.5 transition ${urgent ? 'border-red-200 bg-red-50/40' : 'border-[#eceae4] bg-[#faf9f7]'} ${openTimeline ? 'hover:border-amber-300 hover:bg-amber-50/60 cursor-pointer' : 'cursor-default'}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[12px] font-semibold text-slate-800 truncate">{p.process_code || 'Sem número'}</span>
+                    <span className="font-mono text-[12px] font-semibold text-slate-800 truncate inline-flex items-center gap-1">{p.process_code || 'Sem número'}{openTimeline && <History size={11} className="text-amber-500 flex-shrink-0" />}</span>
                     {urgent && <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">Urgente</span>}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -4314,7 +4645,7 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
                     )}
                   </div>
                   {p.notes && <p className="mt-1.5 text-[11px] text-slate-400 leading-snug line-clamp-2 whitespace-pre-wrap">{p.notes}</p>}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -4333,17 +4664,21 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
             {deadlines.map(d => {
               const di = dueInfo(d.due);
               const due = new Date(d.due + (d.due.length <= 10 ? 'T00:00:00' : ''));
+              const openDeadline = !onOpenWorkspace ? undefined
+                : d.kind === 'event' ? () => onOpenWorkspace({ type: 'calendar_view', eventId: d.id })
+                : clientId ? () => onOpenWorkspace({ type: 'deadline_edit', deadlineId: d.id, clientId }) : undefined;
               return (
-                <div key={d.id} className="rounded-lg border border-[#eceae4] bg-[#faf9f7] p-2.5">
+                <button key={d.id} type="button" onClick={openDeadline} disabled={!openDeadline}
+                  className={`w-full text-left rounded-lg border border-[#eceae4] bg-[#faf9f7] p-2.5 transition ${openDeadline ? 'hover:border-amber-300 hover:bg-amber-50/60 cursor-pointer' : 'cursor-default'}`}>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[12px] font-medium text-slate-700 leading-snug">{d.title}</span>
+                    <span className="text-[12px] font-medium text-slate-700 leading-snug inline-flex items-center gap-1">{d.title}{openDeadline && <Pencil size={10} className="text-amber-500 flex-shrink-0" />}</span>
                     <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${di.tone === 'red' ? 'text-red-600 bg-red-50' : di.tone === 'amber' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'}`}>{di.label}</span>
                   </div>
                   <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
                     <Calendar size={11} className="text-slate-400" />
                     {due.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
                   </p>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -4358,9 +4693,13 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
           </span>
         }>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Próximo compromisso</p>
-          <p className="text-[12.5px] font-semibold text-slate-800 leading-snug">{events[0].title}</p>
-          <p className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-amber-700"><Clock size={11} /> {fmtDateTime(events[0].start_at)}</p>
-          {events[0].description && <p className="mt-1.5 text-[11.5px] text-slate-500 leading-snug whitespace-pre-wrap">{events[0].description}</p>}
+          <button type="button" disabled={!onOpenWorkspace}
+            onClick={onOpenWorkspace ? () => onOpenWorkspace({ type: 'calendar_view', eventId: events[0].id }) : undefined}
+            className={`block w-full text-left rounded-lg p-1.5 -mx-1.5 transition ${onOpenWorkspace ? 'hover:bg-amber-50/60 cursor-pointer' : 'cursor-default'}`}>
+            <span className="text-[12.5px] font-semibold text-slate-800 leading-snug inline-flex items-center gap-1">{events[0].title}{onOpenWorkspace && <Pencil size={10} className="text-amber-500 flex-shrink-0" />}</span>
+            <span className="mt-1 flex items-center gap-1 text-[11.5px] text-amber-700"><Clock size={11} /> {fmtDateTime(events[0].start_at)}</span>
+            {events[0].description && <span className="block mt-1.5 text-[11.5px] text-slate-500 leading-snug whitespace-pre-wrap">{events[0].description}</span>}
+          </button>
           {events.length > 1 && <p className="mt-2 text-[11px] text-slate-400">+{events.length - 1} compromisso{events.length - 1 > 1 ? 's' : ''} adiante</p>}
         </HoverDetail>
       )}
@@ -5453,7 +5792,7 @@ const ScheduleMessageModal: React.FC<{
 };
 
 // ── Bolhas-fantasma das mensagens agendadas dentro da thread ──
-const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean }> = ({ conversationId, privateMode }) => {
+const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean; confirm: ConfirmFn }> = ({ conversationId, privateMode, confirm }) => {
   const toast = useToastContext();
   const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
   const load = useCallback(() => {
@@ -5476,6 +5815,11 @@ const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boo
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
   const startEdit = (s: WhatsAppScheduledMessage) => { setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at)); };
+  const removeScheduled = async (id: string) => {
+    if (!await confirm({ title: 'Excluir agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Excluir', tone: 'danger' })) return;
+    try { await whatsappService.cancelScheduled(id); load(); toast.success('Agendamento excluído.'); }
+    catch (e: any) { toast.error('Falha ao excluir', e.message); }
+  };
   const cancelEdit = () => { setEditingId(null); setEditText(''); setEditWhen(''); };
   const saveEdit = async (id: string) => {
     if (!editWhen) return;
@@ -5503,10 +5847,16 @@ const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boo
                 {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
               </span>
               {!editing && (
-                <button onClick={() => startEdit(s)} title="Editar agendamento"
-                  className="ml-auto p-0.5 rounded text-amber-400 opacity-0 group-hover:opacity-100 hover:text-amber-600 transition">
-                  <Pencil size={12} />
-                </button>
+                <span className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                  <button onClick={() => startEdit(s)} title="Editar agendamento"
+                    className="p-0.5 rounded text-amber-400 hover:text-amber-600 transition">
+                    <Pencil size={12} />
+                  </button>
+                  <button onClick={() => removeScheduled(s.id)} title="Excluir agendamento"
+                    className="p-0.5 rounded text-amber-400 hover:text-red-600 transition">
+                    <X size={13} strokeWidth={2.5} />
+                  </button>
+                </span>
               )}
             </div>
             {editing ? (

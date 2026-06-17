@@ -90,6 +90,7 @@ const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModul
 const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidget'));
 const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'));
 import { usePresence } from './hooks/usePresence';
+import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 import { useAuth } from './contexts/AuthContext';
 import { events, SYSTEM_EVENTS } from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
@@ -1250,6 +1251,13 @@ const MainApp: React.FC = () => {
   // reassinatura de URLs, perda de scroll/rascunho) a cada volta para a inbox.
   const [whatsappEverOpened, setWhatsappEverOpened] = useState(false);
   useEffect(() => { if (activeModule === 'whatsapp') setWhatsappEverOpened(true); }, [activeModule]);
+  // Notificações globais de WhatsApp (som + visual) para mensagens das MINHAS
+  // conversas quando estamos fora do módulo. Vive no App para alcançar qualquer tela.
+  useWhatsAppNotifications({
+    userId: user?.id,
+    inModule: activeModule === 'whatsapp',
+    onOpen: (conversationId) => navigateTo('whatsapp', { conversationId }),
+  });
   const [docRequestsOpen, setDocRequestsOpen] = useState(false);
   const [docRequestsBadge, setDocRequestsBadge] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2569,7 +2577,10 @@ useEffect(() => {
                 para preservar estado da inbox e o realtime entre trocas de aba. */}
             {whatsappEverOpened && (
               <div style={{ display: activeModule === 'whatsapp' ? 'contents' : 'none' }}>
-                <WhatsAppModule />
+                <WhatsAppModule
+                  openConversationId={moduleParams['whatsapp'] ? JSON.parse(moduleParams['whatsapp']).conversationId : undefined}
+                  onParamConsumed={() => clearModuleParams('whatsapp')}
+                />
               </div>
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
