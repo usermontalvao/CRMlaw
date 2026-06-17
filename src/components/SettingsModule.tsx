@@ -1274,6 +1274,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   const activeItem = allSectionItems.find(s => s.key === activeSection);
   const activeGroup = SETTINGS_GROUPS.find(g => g.items.some(i => i.key === activeSection));
+  const ActiveIcon = activeItem?.icon;
 
   const cssStyles = `
   /* ── Scrollbar ── */
@@ -1390,223 +1391,148 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     border-color: rgba(234,108,0,0.35) !important;
     box-shadow: 0 2px 12px rgba(234,108,0,0.10);
   }
+  .settings-hub-tile {
+    position: relative;
+    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease, background .14s ease;
+  }
+  .settings-hub-tile:hover {
+    border-color: rgba(234,108,0,0.45) !important;
+    box-shadow: 0 6px 20px rgba(234,108,0,0.12), 0 1px 2px rgba(15,23,42,0.04);
+    transform: translateY(-2px);
+  }
+  .settings-hub-tile:hover .settings-hub-tile-icon {
+    background: #ff8a00 !important;
+    color: #fff !important;
+  }
+  .settings-hub-tile:hover .settings-hub-tile-arrow {
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+  }
+  .settings-hub-tile-icon {
+    transition: background .14s ease, color .14s ease;
+  }
+  .settings-hub-tile-arrow {
+    transition: opacity .14s ease, transform .14s ease;
+  }
+  @keyframes settingsHubFade {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .settings-hub-group {
+    animation: settingsHubFade .32s ease both;
+  }
+  .settings-nav-group-btn { transition: background .12s ease, color .12s ease; }
+  .settings-nav-group-btn:hover { background: #f1f2f4 !important; }
+  .settings-nav-item { transition: background .12s ease, color .12s ease, border-color .12s ease; }
+  .settings-nav-item:hover { background: #f4f5f7 !important; }
+  .settings-nav-item-active { background: #fff6ec !important; }
+  .settings-nav-item-active:hover { background: #ffeedc !important; }
+  .settings-section-head { animation: settingsHubFade .26s ease both; }
+  .settings-fade-key { animation: settingsHubFade .30s ease both; }
+  .settings-back-pill { transition: background .14s ease, color .14s ease; }
+  .settings-back-pill:hover { background: #fff6ec; color: #ea6c00 !important; }
+  .settings-back-pill:hover .settings-back-ico { transform: translateX(-2px); }
+  .settings-back-ico { transition: transform .14s ease; }
+  .settings-head-icon { animation: settingsHeadPop .32s cubic-bezier(0.22,0.68,0,1.2) both; }
+  @keyframes settingsHeadPop {
+    from { opacity: 0; transform: scale(0.82); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .settings-card { transition: border-color .16s ease, box-shadow .16s ease; }
+  .settings-card:hover { border-color: rgba(234,108,0,0.16); box-shadow: 0 2px 16px rgba(15,23,42,0.05); }
 `;
 
-  // Corpo compartilhado (sidebar + conteúdo) — usado tanto na página quanto no modal
+  // Corpo compartilhado — sem sidebar duplicado, header unificado no topo
   const settingsBody = (
-        <div className="settings-shell" style={{ display: 'flex', width: '100%', flex: '1 1 auto', alignSelf: 'stretch', minHeight: 0, overflow: 'hidden' }}>
+    <div className="flex flex-col w-full min-h-0 overflow-hidden bg-slate-50">
 
-          {/* ── Left sidebar ── */}
-          <div style={{ width: '256px', flexShrink: 0, background: '#f9fafb', borderRight: '1px solid rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-            {/* Cabeçalho da sidebar — volta ao hub */}
-            <div style={{ padding: '22px 16px 14px', flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={() => setActiveSection('overview')}
-                style={{ display: 'flex', alignItems: 'center', gap: '7px', width: '100%', padding: '6px 8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#6b7280', fontSize: '12px', fontWeight: 600, transition: 'background .12s ease, color .12s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#f0f1f3'; e.currentTarget.style.color = '#c45c00'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }}
-              >
-                <ChevronLeft style={{ width: '14px', height: '14px', flexShrink: 0 }} />
-                <span>Visão geral</span>
-              </button>
-            </div>
-
-            {/* Busca */}
-            <div style={{ padding: '0 14px 14px', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }}>
-                <Search style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '13px', height: '13px', color: '#b0b5bc', pointerEvents: 'none' }} />
-                <input
-                  type="text"
-                  value={navSearch}
-                  onChange={(e) => setNavSearch(e.target.value)}
-                  placeholder="Buscar seção…"
-                  style={{ width: '100%', paddingLeft: '30px', paddingRight: '10px', paddingTop: '7px', paddingBottom: '7px', fontSize: '12.5px', background: '#f0f1f3', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '8px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s, box-shadow .15s' }}
-                  onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(255,138,0,0.12)'; e.currentTarget.style.background = '#fff'; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.09)'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f0f1f3'; }}
-                />
-              </div>
-            </div>
-
-            {/* Nav grupos — accordion: apenas 1 aberto, itens mais altos */}
-            <nav className="settings-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px' }}>
-              {filteredGroups.length === 0 && (
-                <p style={{ padding: '20px 8px', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>Nenhuma seção encontrada</p>
+      {/* ── Header bar ── */}
+      <div className="shrink-0 bg-white border-b border-slate-200 px-8 pt-5 pb-4">
+        {activeSection !== 'overview' ? (
+          <div className="settings-section-head" key={activeSection}>
+            {/* Breadcrumb compacto / voltar */}
+            <button
+              onClick={() => setActiveSection('overview')}
+              className="settings-back-pill -ml-2 mb-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-slate-400"
+            >
+              <ChevronLeft className="settings-back-ico w-3.5 h-3.5" />
+              Configurações
+              {activeGroup && (
+                <>
+                  <span className="text-slate-300">/</span>
+                  <span>{activeGroup.label}</span>
+                </>
               )}
-              {filteredGroups.map((group) => {
-                const isExpanded = navSearch.trim() ? true : !!expandedGroups[group.key as SettingsGroupKey];
-                const groupHasActive = group.items.some(i => i.key === activeSection);
-                const groupHasBadge = group.items.some(i => i.key === 'access_requests') && pendingAccessCount > 0;
-                return (
-                  <div key={group.key} style={{ marginBottom: '1px' }}>
-                    {/* Cabeçalho do grupo */}
-                    <button
-                      onClick={() => !navSearch.trim() && toggleGroup(group.key as SettingsGroupKey)}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: '7px',
-                        padding: '7px 10px', borderRadius: '8px', border: 'none',
-                        textAlign: 'left', cursor: navSearch.trim() ? 'default' : 'pointer',
-                        fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-                        background: 'transparent',
-                        color: groupHasActive ? '#c45c00' : '#9ca3af',
-                        transition: 'background .12s ease, color .12s ease',
-                      }}
-                      onMouseEnter={e => { if (!navSearch.trim()) (e.currentTarget as HTMLButtonElement).style.background = '#f0f1f3'; }}
-                      onMouseLeave={e => { if (!navSearch.trim()) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                    >
-                      <group.icon style={{ width: '12px', height: '12px', flexShrink: 0, opacity: 0.7 }} />
-                      <span style={{ flex: 1 }}>{group.label}</span>
-                      {groupHasBadge && !isExpanded && (
-                        <span style={{ minWidth: '16px', height: '16px', padding: '0 3px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px', background: '#ff8a00', color: '#fff', fontSize: '9px', fontWeight: 700 }}>
-                          {pendingAccessCount}
-                        </span>
-                      )}
-                      {!navSearch.trim() && (
-                        isExpanded
-                          ? <ChevronDown style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.5 }} />
-                          : <ChevronRight style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.4 }} />
-                      )}
-                    </button>
-                    {/* Itens do grupo */}
-                    {isExpanded && (
-                      <div style={{ paddingLeft: '0', marginBottom: '4px' }}>
-                        {group.items.map((section) => {
-                          const isActive = activeSection === section.key;
-                          const showCountBadge = section.key === 'access_requests' && pendingAccessCount > 0;
-                          const sectionStatus = SECTION_STATUS[section.key as SettingsSection];
-                          return (
-                            <button
-                              key={section.key}
-                              onClick={() => setActiveSection(section.key as SettingsSection)}
-                              className="settings-nav-item"
-                              style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: '9px',
-                                padding: '7px 12px 7px 10px', borderRadius: '8px', border: 'none',
-                                textAlign: 'left', cursor: 'pointer', fontSize: '13px', fontWeight: isActive ? 600 : 400,
-                                background: isActive ? 'rgba(255,138,0,0.09)' : 'transparent',
-                                color: isActive ? '#d46000' : '#4b5563',
-                                position: 'relative',
-                              }}
-                              onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = '#eef0f2'; (e.currentTarget as HTMLButtonElement).style.color = '#111827'; } }}
-                              onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#4b5563'; } }}
-                            >
-                              {isActive && (
-                                <span style={{ position: 'absolute', left: 0, top: '18%', bottom: '18%', width: '3px', borderRadius: '0 3px 3px 0', background: 'linear-gradient(180deg,#ff8a00,#f97316)' }} />
-                              )}
-                              <section.icon style={{ width: '14px', height: '14px', flexShrink: 0, color: isActive ? '#f97316' : '#9ca3af' }} />
-                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{section.label}</span>
-                              {showCountBadge && (
-                                <span style={{ minWidth: '18px', height: '18px', padding: '0 4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px', background: '#ff8a00', color: '#fff', fontSize: '10px', fontWeight: 700, flexShrink: 0 }}>
-                                  {pendingAccessCount}
-                                </span>
-                              )}
-                              {!showCountBadge && sectionStatus && (
-                                <span style={{
-                                  fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '8px', flexShrink: 0,
-                                  background: sectionStatus === 'parcial' ? '#fef9c3' : '#fee2e2',
-                                  color: sectionStatus === 'parcial' ? '#854d0e' : '#991b1b',
-                                }}>
-                                  {sectionStatus === 'parcial' ? 'Parcial' : 'Pendente'}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </nav>
-
-            {/* User footer — fixo na base */}
-            <div style={{ padding: '14px 16px 18px', borderTop: '1px solid rgba(15,23,42,0.06)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #ff8a00, #ea6c00)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  fontSize: '13px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
-                  {currentProfile?.name?.charAt(0)?.toUpperCase() || 'U'}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '1px' }}>
-                    {currentProfile?.name || 'Usuário'}
-                  </p>
-                  <p style={{ fontSize: '11px', color: '#9ca3af',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
-                    {currentProfile?.role || '—'}
-                  </p>
-                </div>
+            </button>
+            {/* Título da seção com ícone */}
+            <div className="flex items-center gap-3.5">
+              {ActiveIcon && (
+                <span
+                  className="settings-head-icon flex shrink-0 items-center justify-center"
+                  style={{ width: '44px', height: '44px', borderRadius: '13px', background: '#fff6ec' }}
+                >
+                  <ActiveIcon style={{ width: '21px', height: '21px', color: '#ea6c00' }} />
+                </span>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold leading-tight text-slate-900" style={{ letterSpacing: '-0.02em' }}>{activeItem?.label}</h1>
+                {activeItem?.description && (
+                  <p className="mt-0.5 text-sm text-slate-500">{activeItem.description}</p>
+                )}
               </div>
             </div>
           </div>
-
-          {/* ── Right content area ── */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#ffffff', overflow: 'hidden' }}>
-
-            {/* Header fixo da seção ativa */}
-            <div style={{ flexShrink: 0, padding: '22px 48px 18px 40px', borderBottom: '1px solid rgba(15,23,42,0.05)' }}>
-              {/* Breadcrumb */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', marginBottom: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('overview')}
-                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#9ca3af', fontWeight: 600, padding: 0, transition: 'color .12s ease' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#c45c00'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#9ca3af'; }}
-                >
-                  Configurações
-                </button>
-                {activeGroup && (
-                  <>
-                    <ChevronRight style={{ width: '13px', height: '13px', color: '#cbd0d6', flexShrink: 0 }} />
-                    <span style={{ color: '#9ca3af', fontWeight: 600 }}>{activeGroup.label}</span>
-                  </>
-                )}
-              </div>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
-                {activeItem?.label ?? 'Configurações'}
-              </h2>
-              <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '3px', lineHeight: 1.5 }}>
-                {activeItem?.description}
-              </p>
+        ) : (
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-semibold text-slate-900">Configurações</h1>
+            <div className="relative w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                autoFocus
+                value={navSearch}
+                onChange={e => setNavSearch(e.target.value)}
+                placeholder="Buscar configuração..."
+                className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg outline-none placeholder:text-slate-400 focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-100 transition-all"
+              />
             </div>
+          </div>
+        )}
+      </div>
 
-            {/* Banners de feedback */}
-            {(globalError || globalSuccess) && (
-              <div style={{ flexShrink: 0, padding: '14px 40px 0' }}>
-                {globalError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    {globalError}
-                    <button type="button" className="ml-auto" onClick={() => setGlobalError(null)}>
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-                {globalSuccess && (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 mt-2">
-                    <Check className="w-4 h-4 flex-shrink-0" />
-                    {globalSuccess}
-                    <button type="button" className="ml-auto" onClick={() => setGlobalSuccess(null)}>
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+      {/* ── Feedback ── */}
+      {(globalError || globalSuccess) && (
+        <div className="shrink-0 px-8 pt-4">
+          {globalError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {globalError}
+              <button type="button" className="ml-auto" onClick={() => setGlobalError(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {globalSuccess && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 mt-2">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              {globalSuccess}
+              <button type="button" className="ml-auto" onClick={() => setGlobalSuccess(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-            {/* Section content */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {!settingsLoaded && activeSection === 'identity' ? (
+      {/* ── Content ── */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {!settingsLoaded && activeSection === 'identity' ? (
               <div className="p-12 text-center">
                 <Loader2 className="w-8 h-8 text-amber-600 animate-spin mx-auto" />
                 <p className="text-sm text-slate-500 mt-3">Carregando identidade...</p>
               </div>
             ) : (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div key={activeSection} className="settings-fade-key" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 {activeSection === 'identity' && (
                   <div className="settings-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ flex: 1, padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -5805,11 +5731,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 </div>
                 )}
 
-              </div>
-            )}
-          </div>{/* /flex-1 section content */}
-          </div>{/* /right content area */}
+            </div>
+          )}
         </div>
+      </div>
   );
 
   // Modais auxiliares — usam portal próprio (zIndex 100); válidos nos dois modos
@@ -6090,83 +6015,250 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     return null;
   };
 
+  const totalSections = SETTINGS_GROUPS.reduce((n, g) => n + g.items.length, 0);
+
+  const renderHubTile = (
+    item: { key: SettingsSection; label: string; icon: React.ComponentType<any>; description: string },
+    onPick: () => void,
+  ) => (
+    <button
+      key={item.key}
+      onClick={onPick}
+      className="settings-hub-tile"
+      style={{
+        display: 'flex', flexDirection: 'column', gap: '11px', width: '100%', textAlign: 'left',
+        padding: '16px 16px 15px', borderRadius: '14px', border: '1px solid rgba(15,23,42,0.08)',
+        background: '#fff', cursor: 'pointer', minHeight: '112px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+        <span
+          className="settings-hub-tile-icon"
+          style={{ width: '40px', height: '40px', borderRadius: '11px', background: '#fff6ec', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#ea6c00' }}
+        >
+          <item.icon style={{ width: '19px', height: '19px' }} />
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {sectionBadge(item.key)}
+        </span>
+      </div>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ display: 'block', fontSize: '14px', fontWeight: 650, color: '#1f2430', lineHeight: 1.25, marginBottom: '3px' }}>{item.label}</span>
+        <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: '12.5px', color: '#9aa0a8', lineHeight: 1.4 }}>{item.description}</span>
+      </span>
+      <ChevronRight
+        className="settings-hub-tile-arrow"
+        style={{ position: 'absolute', right: '14px', bottom: '14px', width: '16px', height: '16px', color: '#ea6c00', opacity: 0, transform: 'translateX(-4px)' }}
+      />
+    </button>
+  );
+
   const hubView = (
     <div className="settings-scroll" style={{ flex: '1 1 auto', minHeight: 0 }}>
-      <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '40px 40px 56px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      <div style={{ maxWidth: '1180px', margin: '0 auto', padding: '40px 44px 64px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {/* Cabeçalho do hub */}
-        <div>
-          <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#b0b5bc', marginBottom: '6px' }}>Sistema</p>
-          <h1 style={{ fontSize: '26px', fontWeight: 700, color: '#111827', lineHeight: 1.2, letterSpacing: '-0.02em' }}>Configurações</h1>
-          <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Escolha uma área para configurar o sistema, ou busque pela seção desejada.</p>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ea6c00', marginBottom: '8px' }}>Sistema</p>
+            <h1 style={{ fontSize: '28px', fontWeight: 750, color: '#0f1420', lineHeight: 1.15, letterSpacing: '-0.025em' }}>Configurações</h1>
+            <p style={{ fontSize: '14px', color: '#9aa0a8', marginTop: '7px', maxWidth: '520px' }}>Escolha uma área para configurar o sistema, ou busque pela seção desejada.</p>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '12.5px', fontWeight: 600, color: '#6b7280', background: '#f6f7f9', border: '1px solid rgba(15,23,42,0.07)', padding: '7px 13px', borderRadius: '999px', whiteSpace: 'nowrap' }}>
+            <Layers style={{ width: '14px', height: '14px', color: '#ea6c00' }} />
+            {totalSections} seções
+          </span>
         </div>
 
         {/* Busca grande */}
-        <div style={{ position: 'relative', maxWidth: '560px' }}>
-          <Search style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '17px', height: '17px', color: '#b0b5bc', pointerEvents: 'none' }} />
+        <div style={{ position: 'relative', maxWidth: '640px' }}>
+          <Search style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#b0b5bc', pointerEvents: 'none' }} />
           <input
             type="text"
             autoFocus
             value={navSearch}
             onChange={e => setNavSearch(e.target.value)}
             placeholder="Buscar configuração… (ex.: WhatsApp, prazos, permissões)"
-            style={{ width: '100%', paddingLeft: '42px', paddingRight: '14px', paddingTop: '13px', paddingBottom: '13px', fontSize: '14.5px', background: '#fff', border: '1px solid rgba(15,23,42,0.13)', borderRadius: '12px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s, box-shadow .15s' }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,138,0,0.10)'; }}
-            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.13)'; e.currentTarget.style.boxShadow = 'none'; }}
+            style={{ width: '100%', paddingLeft: '46px', paddingRight: '40px', paddingTop: '14px', paddingBottom: '14px', fontSize: '14.5px', background: '#fff', border: '1px solid rgba(15,23,42,0.13)', borderRadius: '13px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(15,23,42,0.03)', transition: 'border-color .15s, box-shadow .15s' }}
+            onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,138,0,0.12)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.13)'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(15,23,42,0.03)'; }}
           />
+          {hubSearchActive && (
+            <button
+              onClick={() => setNavSearch('')}
+              aria-label="Limpar busca"
+              style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '24px', height: '24px', borderRadius: '50%', border: 'none', background: '#f1f2f4', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X style={{ width: '13px', height: '13px' }} />
+            </button>
+          )}
         </div>
 
         {/* Resultados da busca OU grid de grupos */}
         {hubSearchActive ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {hubResults.length === 0 && (
-              <p style={{ padding: '24px 4px', fontSize: '13.5px', color: '#9ca3af' }}>Nenhuma seção encontrada para “{navSearch}”.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ fontSize: '12px', fontWeight: 600, color: '#9aa0a8' }}>
+              {hubResults.length === 0
+                ? `Nenhuma seção encontrada para “${navSearch}”.`
+                : `${hubResults.length} ${hubResults.length === 1 ? 'resultado' : 'resultados'} para “${navSearch}”`}
+            </p>
+            {hubResults.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '14px' }}>
+                {hubResults.map(item => renderHubTile(item, () => { setActiveSection(item.key); setNavSearch(''); }))}
+              </div>
             )}
-            {hubResults.map(item => (
-              <button
-                key={item.key}
-                onClick={() => { setActiveSection(item.key); setNavSearch(''); }}
-                className="settings-hub-row"
-                style={{ display: 'flex', alignItems: 'center', gap: '13px', width: '100%', textAlign: 'left', padding: '13px 15px', borderRadius: '11px', border: '1px solid rgba(15,23,42,0.07)', background: '#fff', cursor: 'pointer' }}
-              >
-                <span style={{ width: '34px', height: '34px', borderRadius: '9px', background: '#fff6ec', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <item.icon style={{ width: '16px', height: '16px', color: '#ea6c00' }} />
-                </span>
-                <span style={{ minWidth: 0, flex: 1 }}>
-                  <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#1f2937' }}>{item.label}</span>
-                  <span style={{ display: 'block', fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</span>
-                </span>
-                {sectionBadge(item.key)}
-                <ChevronRight style={{ width: '15px', height: '15px', color: '#cbd0d6', flexShrink: 0 }} />
-              </button>
-            ))}
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '18px' }}>
-            {SETTINGS_GROUPS.map(group => (
-              <div key={group.key} style={{ background: '#fafafa', border: '1px solid rgba(15,23,42,0.06)', borderRadius: '14px', padding: '18px 18px 10px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '12px', paddingLeft: '4px' }}>
-                  <group.icon style={{ width: '15px', height: '15px', color: '#ea6c00' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6b7280' }}>{group.label}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '34px' }}>
+            {SETTINGS_GROUPS.map((group, gi) => (
+              <div key={group.key} className="settings-hub-group" style={{ animationDelay: `${gi * 50}ms` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                  <span style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#fff6ec', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <group.icon style={{ width: '15px', height: '15px', color: '#ea6c00' }} />
+                  </span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#374151' }}>{group.label}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#b0b5bc' }}>{group.items.length}</span>
+                  <span style={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, rgba(15,23,42,0.08), transparent)' }} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  {group.items.map(item => (
-                    <button
-                      key={item.key}
-                      onClick={() => setActiveSection(item.key)}
-                      className="settings-hub-item"
-                      style={{ display: 'flex', alignItems: 'center', gap: '11px', width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: '9px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                    >
-                      <item.icon style={{ width: '15px', height: '15px', color: '#9ca3af', flexShrink: 0 }} />
-                      <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151' }}>{item.label}</span>
-                        <span style={{ display: 'block', fontSize: '11.5px', color: '#a3a8af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</span>
-                      </span>
-                      {sectionBadge(item.key)}
-                    </button>
-                  ))}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '14px' }}>
+                  {group.items.map(item => renderHubTile(item, () => setActiveSection(item.key)))}
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── Menu lateral (modo página) ──
+  const attentionItems = allSectionItems.filter(
+    i => SECTION_STATUS[i.key] || (i.key === 'access_requests' && pendingAccessCount > 0),
+  );
+
+  const sidebarNav = (
+    <aside
+      className="settings-scroll"
+      style={{ width: '276px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(15,23,42,0.07)', background: '#fbfbfc', overflowY: 'auto' }}
+    >
+      <div style={{ padding: '22px 20px 14px' }}>
+        <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ea6c00', marginBottom: '5px' }}>Sistema</p>
+        <h2 style={{ fontSize: '18px', fontWeight: 750, color: '#0f1420', letterSpacing: '-0.02em' }}>Configurações</h2>
+      </div>
+
+      <div style={{ padding: '0 16px 12px' }}>
+        <div style={{ position: 'relative' }}>
+          <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '15px', height: '15px', color: '#b0b5bc', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            value={navSearch}
+            onChange={e => setNavSearch(e.target.value)}
+            placeholder="Buscar…"
+            style={{ width: '100%', paddingLeft: '34px', paddingRight: navSearch ? '30px' : '12px', paddingTop: '9px', paddingBottom: '9px', fontSize: '13px', background: '#fff', border: '1px solid rgba(15,23,42,0.12)', borderRadius: '10px', color: '#191c1e', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s, box-shadow .15s' }}
+            onFocus={e => { e.currentTarget.style.borderColor = '#ff8a00'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,138,0,0.10)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(15,23,42,0.12)'; e.currentTarget.style.boxShadow = 'none'; }}
+          />
+          {navSearch && (
+            <button
+              onClick={() => setNavSearch('')}
+              aria-label="Limpar"
+              style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '20px', height: '20px', borderRadius: '50%', border: 'none', background: '#f1f2f4', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X style={{ width: '12px', height: '12px' }} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <nav style={{ padding: '2px 12px 24px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {hubSearchActive ? (
+          hubResults.length === 0 ? (
+            <p style={{ padding: '14px 10px', fontSize: '12.5px', color: '#9aa0a8' }}>Nada encontrado.</p>
+          ) : (
+            hubResults.map(item => {
+              const active = activeSection === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveSection(item.key)}
+                  className={`settings-nav-item${active ? ' settings-nav-item-active' : ''}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: '9px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                >
+                  <item.icon style={{ width: '15px', height: '15px', color: active ? '#ea6c00' : '#9aa0a8', flexShrink: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: active ? 600 : 500, color: active ? '#b35600' : '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                  {sectionBadge(item.key)}
+                </button>
+              );
+            })
+          )
+        ) : (
+          SETTINGS_GROUPS.map(group => {
+            const open = expandedGroups[group.key];
+            return (
+              <div key={group.key} style={{ marginBottom: '2px' }}>
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className="settings-nav-group-btn"
+                  style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                >
+                  <group.icon style={{ width: '14px', height: '14px', color: '#ea6c00', flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280' }}>{group.label}</span>
+                  <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#c0c5cc' }}>{group.items.length}</span>
+                  <ChevronDown style={{ width: '14px', height: '14px', color: '#b0b5bc', flexShrink: 0, transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .15s ease' }} />
+                </button>
+                {open && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', marginTop: '2px', paddingLeft: '3px' }}>
+                    {group.items.map(item => {
+                      const active = activeSection === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => setActiveSection(item.key)}
+                          className={`settings-nav-item${active ? ' settings-nav-item-active' : ''}`}
+                          style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '8px 11px', borderRadius: '9px', border: 'none', borderLeft: active ? '2px solid #ea6c00' : '2px solid transparent', background: 'transparent', cursor: 'pointer' }}
+                        >
+                          <item.icon style={{ width: '15px', height: '15px', color: active ? '#ea6c00' : '#9aa0a8', flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: active ? 600 : 500, color: active ? '#b35600' : '#3a4150', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                          {sectionBadge(item.key)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </nav>
+    </aside>
+  );
+
+  const overviewWelcome = (
+    <div className="settings-scroll" style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ margin: 'auto', maxWidth: '520px', padding: '48px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '18px' }}>
+        <span style={{ width: '64px', height: '64px', borderRadius: '18px', background: '#fff6ec', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Settings style={{ width: '30px', height: '30px', color: '#ea6c00' }} />
+        </span>
+        <div>
+          <h1 style={{ fontSize: '22px', fontWeight: 750, color: '#0f1420', letterSpacing: '-0.02em', marginBottom: '8px' }}>Configurações do sistema</h1>
+          <p style={{ fontSize: '14px', color: '#9aa0a8', lineHeight: 1.5 }}>Escolha uma área no menu à esquerda para começar, ou use a busca para ir direto à seção desejada.</p>
+        </div>
+        {attentionItems.length > 0 && (
+          <div style={{ width: '100%', marginTop: '8px', textAlign: 'left' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#b0b5bc', marginBottom: '10px', textAlign: 'center' }}>Requer atenção</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+              {attentionItems.map(item => (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveSection(item.key)}
+                  className="settings-hub-row"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(15,23,42,0.09)', background: '#fff', cursor: 'pointer' }}
+                >
+                  <item.icon style={{ width: '14px', height: '14px', color: '#ea6c00' }} />
+                  <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#374151' }}>{item.label}</span>
+                  {sectionBadge(item.key)}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -6182,10 +6274,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       <>
         <style>{cssStyles}</style>
         <div
-          className="relative flex flex-col overflow-hidden"
+          className="relative flex overflow-hidden"
           style={{
-            height: 'calc(100vh - 148px)',
-            minHeight: '480px',
+            height: '100%',
+            minHeight: 0,
             width: '100%',
             background: '#ffffff',
             border: '1px solid rgba(15,23,42,0.07)',
@@ -6193,7 +6285,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
             boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
           }}
         >
-          {mainContent}
+          {sidebarNav}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {activeSection === 'overview' ? overviewWelcome : settingsBody}
+          </div>
         </div>
         {settingsModals}
       </>

@@ -408,6 +408,30 @@ const presenceInfo = (c: { presence: WhatsAppPresence; presence_updated_at: stri
   return null;
 };
 
+/**
+ * Linha de presença do cabeçalho (online/digitando/visto por último). Possui o
+ * próprio tick de 15s para reavaliar o tempo relativo — assim o relógio vive
+ * neste componente isolado em vez de re-renderizar o módulo inteiro a cada 15s.
+ */
+const PresenceText: React.FC<{
+  conv: { presence: WhatsAppPresence; presence_updated_at: string | null; last_seen_at: string | null; contact_phone: string };
+  privateMode: boolean;
+}> = React.memo(({ conv, privateMode }) => {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => tick(t => t + 1), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const pr = presenceInfo(conv);
+  if (!pr) return <span>{privateMode ? maskPhoneFull() : prettyPhone(conv.contact_phone)}</span>;
+  return pr.live
+    ? <span className="inline-flex items-center gap-1 font-semibold text-green-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> {pr.text}
+      </span>
+    : <span className="text-slate-500">{pr.text}</span>;
+});
+PresenceText.displayName = 'PresenceText';
+
 const DateDivider: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex justify-center my-2.5">
     <span className="px-3 py-1 rounded-full bg-white/90 text-slate-500 text-[11px] font-semibold shadow-sm">{label}</span>
@@ -569,6 +593,114 @@ const Avatar: React.FC<{ url: string | null; name: string | null; phone: string;
   );
 };
 
+// Item da lista de conversas (memoizado). Os sinais de SLA/transferência/abandono
+// são funções puras de `c`, então o item os calcula sozinho; só `status`/`docStatus`
+// (que dependem de estado do módulo) chegam prontos como primitivos. Com props
+// estáveis, o React.memo só re-renderiza a linha cuja conversa de fato mudou —
+// não a lista inteira a cada evento de realtime.
+const ConversationListItem: React.FC<{
+  c: WhatsAppConversation;
+  active: boolean;
+  channel: WhatsAppChannel | null;
+  dept: WhatsAppDepartment | null;
+  privateMode: boolean;
+  statusKey: string;
+  statusLabel: string;
+  statusCls: string;
+  docStatus: 'awaiting' | 'ready' | null;
+  onSelect: (id: string) => void;
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, onSelect }) => {
+  const sla = slaSignal(c);
+  const slaInt = slaInternalSignal(c);
+  const ta = transferAlert(c);
+  const ab = abandonedSignal(c);
+  const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
+    : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
+    : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
+    : slaInt?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
+    : '';
+  return (
+    <button onClick={() => onSelect(c.id)}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
+      <div className="relative flex-shrink-0">
+        <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={40} />
+        {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[13.5px] font-semibold text-slate-800 truncate flex items-center gap-1">
+            {c.is_blocked && <Ban size={12} className="text-red-500 flex-shrink-0" />}
+            <span className="truncate">{privateMode ? maskName(c.contact_name) : (c.contact_name || prettyPhone(c.contact_phone))}</span>
+          </span>
+          <span className="flex items-center gap-1 flex-shrink-0">
+            {sla
+              ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
+                  <Clock size={9} />{sla.label}
+                </span>
+              : <span className="text-[10.5px] text-slate-400">{formatTime(c.last_message_at)}</span>}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          <span className="text-[12px] text-slate-500 truncate">
+            {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
+          </span>
+          {!c.is_blocked && c.unread_count > 0 && (
+            <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
+            {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
+          </span>
+          {ds && (
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+              <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
+            </span>
+          )}
+          {dept && (
+            <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-semibold" style={{ background: (dept.color || '#16a34a') + '22', color: dept.color || '#16a34a' }}>
+              {dept.name}
+            </span>
+          )}
+          {slaInt && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+              style={{ background: slaInt.color + '22', color: slaInt.color }}>
+              <Clock size={9} /> {slaInt.label}
+            </span>
+          )}
+          {!c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-500">
+              <UserPlus size={9} /> Na fila
+            </span>
+          )}
+          {ta && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+              style={{ background: ta.color + '22', color: ta.color }}>
+              <ArrowRightLeft size={9} /> {ta.label}
+            </span>
+          )}
+          {ab && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+              style={{ background: '#7c3aed22', color: '#7c3aed' }}>
+              <Clock size={9} /> {ab.label}
+            </span>
+          )}
+          {(c.labels ?? []).slice(0, 2).map(lbl => {
+            const meta = WA_LABELS.find(x => x.key === lbl);
+            return meta ? (
+              <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"
+                style={{ background: meta.bg, color: meta.color }}>
+                <Tag size={8} />{lbl}
+              </span>
+            ) : null;
+          })}
+        </div>
+      </div>
+    </button>
+  );
+});
+ConversationListItem.displayName = 'ConversationListItem';
+
 const MSG_PAGE = 60; // mensagens por bloco de paginação
 
 type SlashKitItem = {
@@ -706,7 +838,6 @@ const WhatsAppModule: React.FC = () => {
   const [recording, setRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [, forceTick] = useState(0);
   // Larguras das colunas com persistência local (Fase 10.1).
   const [panelWidth, setPanelWidth] = useState(() => {
     const v = Number(localStorage.getItem('wa_panel_w'));
@@ -1156,6 +1287,31 @@ const WhatsAppModule: React.FC = () => {
 
   const msgById = useMemo(() => new Map(allMessages.map(m => [m.id, m])), [allMessages]);
 
+  // Agrupa imagens consecutivas do mesmo remetente em álbuns (estilo WhatsApp).
+  // Memoizado em allMessages para (a) não reprocessar a cada render e (b) manter
+  // a identidade dos arrays de itens estável — pré-requisito para o React.memo
+  // das bolhas/álbuns surtir efeito.
+  const messageUnits = useMemo(() => {
+    const groupable = (x: WhatsAppMessage) => x.type === 'image' && !x.reply_to_id
+      && x._local !== 'failed' && x.status !== 'failed' && x._local !== 'uploading' && x._local !== 'sending';
+    const units: ({ kind: 'album'; items: WhatsAppMessage[] } | { kind: 'single'; m: WhatsAppMessage })[] = [];
+    for (let i = 0; i < allMessages.length; i++) {
+      const m = allMessages[i];
+      if (groupable(m)) {
+        const run = [m]; let j = i + 1;
+        while (j < allMessages.length) {
+          const n = allMessages[j];
+          if (!groupable(n) || n.direction !== m.direction || (n.sender_user_id || null) !== (m.sender_user_id || null)) break;
+          if (Math.abs(new Date(n.wa_timestamp).getTime() - new Date(allMessages[j - 1].wa_timestamp).getTime()) > 60000) break;
+          run.push(n); j++;
+        }
+        if (run.length >= 2) { units.push({ kind: 'album', items: run }); i = j - 1; continue; }
+      }
+      units.push({ kind: 'single', m });
+    }
+    return units;
+  }, [allMessages]);
+
   useEffect(() => {
     if (messages.length === 0) return;
     setPending(prev => {
@@ -1180,13 +1336,9 @@ const WhatsAppModule: React.FC = () => {
     if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [allMessages, selectedId]);
 
-  // Recalcula a presença ao longo do tempo (sem novo evento): "online" expira
-  // virando "visto por último" e o tempo relativo se mantém atual.
-  useEffect(() => {
-    if (!selectedId) return;
-    const id = window.setInterval(() => forceTick(t => t + 1), 15_000);
-    return () => window.clearInterval(id);
-  }, [selectedId]);
+  // O recálculo periódico da presença ("online" expira virando "visto por último")
+  // vive agora dentro de <PresenceText/>, que tem o próprio tick de 15s — evita
+  // re-renderizar o módulo inteiro (lista + thread) só para atualizar o relógio.
 
   // Mantém a presença do contato fluindo: pede à Evolution ao abrir e renova em
   // ritmo curto (sem subscribe nativo, é o que mantém online/visto-por-último
@@ -1846,6 +1998,37 @@ const WhatsAppModule: React.FC = () => {
     setEditing(m); setReplyTo(null); setDraft(m.content || '');
   };
 
+  // Handlers das bolhas com identidade ESTÁVEL: um ref guarda sempre a última
+  // implementação (que fecha sobre estado atual), e o objeto exposto à árvore
+  // nunca muda — assim o React.memo das bolhas só re-renderiza quando a própria
+  // mensagem muda, não a cada render do módulo.
+  const bubbleImplRef = useRef<{
+    reply: (m: WhatsAppMessage) => void; edit: (m: WhatsAppMessage) => void;
+    retry: (m: WhatsAppMessage) => void; discard: (m: WhatsAppMessage) => void;
+    resend: (m: WhatsAppMessage) => void; cancel: (m: WhatsAppMessage) => void;
+    createDeadline: (m: WhatsAppMessage) => void; createTask: (m: WhatsAppMessage) => void;
+  }>(null!);
+  bubbleImplRef.current = {
+    reply: (m) => { setReplyTo(m); setEditing(null); },
+    edit: beginEdit,
+    retry: retryPending,
+    discard: discardPending,
+    resend: (m) => { void resendExisting(m); },
+    cancel: (m) => { if (m._tempId) cancelUpload(m._tempId); },
+    createDeadline: (m) => setDeadlineSource(m),
+    createTask: (m) => setTaskSource(m),
+  };
+  const bubbleHandlers = useMemo(() => ({
+    onReply: (m: WhatsAppMessage) => bubbleImplRef.current.reply(m),
+    onEdit: (m: WhatsAppMessage) => bubbleImplRef.current.edit(m),
+    onRetry: (m: WhatsAppMessage) => bubbleImplRef.current.retry(m),
+    onDiscard: (m: WhatsAppMessage) => bubbleImplRef.current.discard(m),
+    onResend: (m: WhatsAppMessage) => bubbleImplRef.current.resend(m),
+    onCancel: (m: WhatsAppMessage) => bubbleImplRef.current.cancel(m),
+    onCreateDeadline: (m: WhatsAppMessage) => bubbleImplRef.current.createDeadline(m),
+    onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
+  }), []);
+
   return (
     <div className="flex h-full min-h-0 bg-[#faf9f7]">
       {/* ── Lista de conversas ── */}
@@ -1929,100 +2112,21 @@ const WhatsAppModule: React.FC = () => {
               Nenhuma conversa{search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.
             </div>
           ) : filtered.map(c => {
-            const active = c.id === selectedId;
-            const ch = c.instance_id ? channelById.get(c.instance_id) : null;
-            const dept = c.department_id ? deptById.get(c.department_id) : null;
             const st = effectiveConversationStatus(c);
-            const sla = slaSignal(c);
-            const slaInt = slaInternalSignal(c);
-            // Borda esquerda colorida por severidade de SLA (radar operacional — Fase B).
-            const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
-              : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
-              : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
-              : slaInt?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
-              : '';
             return (
-              <button key={c.id} onClick={() => setSelectedId(c.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
-                <div className="relative flex-shrink-0">
-                  <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={40} />
-                  {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13.5px] font-semibold text-slate-800 truncate flex items-center gap-1">
-                      {c.is_blocked && <Ban size={12} className="text-red-500 flex-shrink-0" />}
-                      <span className="truncate">{privateMode ? maskName(c.contact_name) : (c.contact_name || prettyPhone(c.contact_phone))}</span>
-                    </span>
-                    <span className="flex items-center gap-1 flex-shrink-0">
-                      {/* SLA como badge textual (Fase B): visível sem hover, substitui o dot invisível */}
-                      {sla
-                        ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
-                            <Clock size={9} />{sla.label}
-                          </span>
-                        : <span className="text-[10.5px] text-slate-400">{formatTime(c.last_message_at)}</span>}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <span className="text-[12px] text-slate-500 truncate">
-                      {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
-                    </span>
-                    {!c.is_blocked && c.unread_count > 0 && (
-                      <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${st.cls}`}>
-                      {st.key === 'blocked' && <Ban size={9} />}{st.label}
-                    </span>
-                    {(() => { const ds = effectiveDocStatus(c.client_id); return ds && (
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
-                      </span>
-                    ); })()}
-                    {dept && (
-                      <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-semibold" style={{ background: (dept.color || '#16a34a') + '22', color: dept.color || '#16a34a' }}>
-                        {dept.name}
-                      </span>
-                    )}
-                    {/* Alerta de fila interna atrasada (Fase B) */}
-                    {slaInt && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-                        style={{ background: slaInt.color + '22', color: slaInt.color }}>
-                        <Clock size={9} /> {slaInt.label}
-                      </span>
-                    )}
-                    {!c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-500">
-                        <UserPlus size={9} /> Na fila
-                      </span>
-                    )}
-                    {(() => { const ta = transferAlert(c); return ta ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-                        style={{ background: ta.color + '22', color: ta.color }}>
-                        <ArrowRightLeft size={9} /> {ta.label}
-                      </span>
-                    ) : null; })()}
-                    {/* Fase N: abandono (>4h sem resposta com responsável atribuído) */}
-                    {(() => { const ab = abandonedSignal(c); return ab ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-                        style={{ background: '#7c3aed22', color: '#7c3aed' }}>
-                        <Clock size={9} /> {ab.label}
-                      </span>
-                    ) : null; })()}
-                    {/* Fase M: etiquetas da conversa */}
-                    {(c.labels ?? []).slice(0, 2).map(lbl => {
-                      const meta = WA_LABELS.find(x => x.key === lbl);
-                      return meta ? (
-                        <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"
-                          style={{ background: meta.bg, color: meta.color }}>
-                          <Tag size={8} />{lbl}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              </button>
+              <ConversationListItem
+                key={c.id}
+                c={c}
+                active={c.id === selectedId}
+                channel={c.instance_id ? (channelById.get(c.instance_id) ?? null) : null}
+                dept={c.department_id ? (deptById.get(c.department_id) ?? null) : null}
+                privateMode={privateMode}
+                statusKey={st.key}
+                statusLabel={st.label}
+                statusCls={st.cls}
+                docStatus={effectiveDocStatus(c.client_id)}
+                onSelect={setSelectedId}
+              />
             );
           })}
         </div>
@@ -2056,15 +2160,7 @@ const WhatsAppModule: React.FC = () => {
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-bold text-slate-800 truncate">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || prettyPhone(selected.contact_phone))}</p>
                 <div className="flex items-center gap-2 text-[11.5px] text-slate-400">
-                  {(() => {
-                    const pr = presenceInfo(selected);
-                    if (!pr) return <span>{privateMode ? maskPhoneFull() : prettyPhone(selected.contact_phone)}</span>;
-                    return pr.live
-                      ? <span className="inline-flex items-center gap-1 font-semibold text-green-600">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> {pr.text}
-                        </span>
-                      : <span className="text-slate-500">{pr.text}</span>;
-                  })()}
+                  <PresenceText conv={selected} privateMode={privateMode} />
                   {selected.assigned_user_id && <span>· {staffByUser.get(selected.assigned_user_id) || 'Atribuído'}</span>}
                   {selected.department_id && deptById.get(selected.department_id) && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: (deptById.get(selected.department_id)!.color || '#16a34a') + '22', color: deptById.get(selected.department_id)!.color || '#16a34a' }}>
@@ -2234,26 +2330,8 @@ const WhatsAppModule: React.FC = () => {
                       </button>
                     </div>
                   )}
-                  {/* Agrupa imagens consecutivas do mesmo remetente em álbuns (estilo WhatsApp) */}
-                  {(() => {
-                    const groupable = (x: WhatsAppMessage) => x.type === 'image' && !x.reply_to_id
-                      && x._local !== 'failed' && x.status !== 'failed' && x._local !== 'uploading' && x._local !== 'sending';
-                    const units: ({ kind: 'album'; items: WhatsAppMessage[] } | { kind: 'single'; m: WhatsAppMessage })[] = [];
-                    for (let i = 0; i < allMessages.length; i++) {
-                      const m = allMessages[i];
-                      if (groupable(m)) {
-                        const run = [m]; let j = i + 1;
-                        while (j < allMessages.length) {
-                          const n = allMessages[j];
-                          if (!groupable(n) || n.direction !== m.direction || (n.sender_user_id || null) !== (m.sender_user_id || null)) break;
-                          if (Math.abs(new Date(n.wa_timestamp).getTime() - new Date(allMessages[j - 1].wa_timestamp).getTime()) > 60000) break;
-                          run.push(n); j++;
-                        }
-                        if (run.length >= 2) { units.push({ kind: 'album', items: run }); i = j - 1; continue; }
-                      }
-                      units.push({ kind: 'single', m });
-                    }
-                    return units.map(u => {
+                  {/* Álbuns/bolhas a partir do agrupamento memoizado (messageUnits) */}
+                  {messageUnits.map(u => {
                       const head = u.kind === 'album' ? u.items[0] : u.m;
                       const day = new Date(head.wa_timestamp).toDateString();
                       const showDivider = day !== prevDay;
@@ -2271,22 +2349,15 @@ const WhatsAppModule: React.FC = () => {
                               senderName={senderName}
                               senderRole={u.m.direction === 'out' && u.m.sender_user_id ? (staffById.get(u.m.sender_user_id)?.role || null) : null}
                               privateMode={privateMode}
-                              onReply={() => { setReplyTo(u.m); setEditing(null); }}
-                              onEdit={() => beginEdit(u.m)}
+                              canCreateFollowups={!!selected?.client_id}
                               onOpenImage={setLightbox}
-                              onRetry={() => retryPending(u.m)}
-                              onDiscard={() => discardPending(u.m)}
-                              onResend={() => resendExisting(u.m)}
                               uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
-                              onCancel={u.m._local === 'uploading' && u.m._tempId ? () => cancelUpload(u.m._tempId!) : undefined}
-                              onCreateDeadline={selected?.client_id && !u.m._tempId ? () => setDeadlineSource(u.m) : undefined}
-                              onCreateTask={selected?.client_id && !u.m._tempId ? () => setTaskSource(u.m) : undefined}
+                              {...bubbleHandlers}
                             />
                           )}
                         </React.Fragment>
                       );
-                    });
-                  })()}
+                  })}
                   <ThreadScheduledGhosts conversationId={selected.id} privateMode={privateMode} />
                 </>);
               })()}
@@ -2804,23 +2875,27 @@ function maskName(name: string | null): string {
 /** Fase L: telefone totalmente oculto no modo privado. */
 function maskPhoneFull(): string { return '•••• ••••'; }
 
+// Handlers recebem a própria mensagem (em vez de fechar sobre ela no call-site),
+// para que o pai passe identidades estáveis e o React.memo abaixo seja efetivo:
+// só re-renderiza a bolha cuja mensagem mudou, não a thread inteira.
 const MessageBubble: React.FC<{
   m: WhatsAppMessage;
   repliedTo: WhatsAppMessage | null;
   senderName: string | null;
   senderRole?: string | null;
   privateMode?: boolean;
-  onReply: () => void;
-  onEdit: () => void;
+  canCreateFollowups?: boolean;
+  onReply: (m: WhatsAppMessage) => void;
+  onEdit: (m: WhatsAppMessage) => void;
   onOpenImage: (url: string) => void;
-  onRetry?: () => void;
-  onDiscard?: () => void;
-  onResend?: () => void;
+  onRetry: (m: WhatsAppMessage) => void;
+  onDiscard: (m: WhatsAppMessage) => void;
+  onResend: (m: WhatsAppMessage) => void;
   uploadProgress?: number;
-  onCancel?: () => void;
-  onCreateDeadline?: () => void;
-  onCreateTask?: () => void;
-}> = ({ m, repliedTo, senderName, senderRole, privateMode, onReply, onEdit, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
+  onCancel: (m: WhatsAppMessage) => void;
+  onCreateDeadline: (m: WhatsAppMessage) => void;
+  onCreateTask: (m: WhatsAppMessage) => void;
+}> = React.memo(({ m, repliedTo, senderName, senderRole, privateMode, canCreateFollowups, onReply, onEdit, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -2833,14 +2908,14 @@ const MessageBubble: React.FC<{
       {out && (
         <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
           {m.type === 'text' && m.evolution_message_id && (
-            <button title="Editar" onClick={onEdit} className="text-slate-400 hover:text-amber-600"><Pencil size={13} /></button>
+            <button title="Editar" onClick={() => onEdit(m)} className="text-slate-400 hover:text-amber-600"><Pencil size={13} /></button>
           )}
-          {canResend && onResend && (
-            <button title="Reenviar arquivo" onClick={onResend} className="text-slate-400 hover:text-amber-600"><RotateCcw size={13} /></button>
+          {canResend && (
+            <button title="Reenviar arquivo" onClick={() => onResend(m)} className="text-slate-400 hover:text-amber-600"><RotateCcw size={13} /></button>
           )}
-          {onCreateDeadline && <button title="Criar prazo" onClick={onCreateDeadline} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
-          {onCreateTask && <button title="Criar tarefa" onClick={onCreateTask} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
-          <button title="Responder" onClick={onReply} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
+          {canCreateFollowups && !m._tempId && <button title="Criar prazo" onClick={() => onCreateDeadline(m)} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
+          {canCreateFollowups && !m._tempId && <button title="Criar tarefa" onClick={() => onCreateTask(m)} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
+          <button title="Responder" onClick={() => onReply(m)} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
         </div>
       )}
 
@@ -2898,8 +2973,8 @@ const MessageBubble: React.FC<{
                 style={{ width: `${uploadProgress}%` }} />
             </div>
             <span className="text-[10px] text-amber-100 tabular-nums">{uploadProgress}%</span>
-            {onCancel && (
-              <button onClick={onCancel} title="Cancelar envio"
+            {m._tempId && (
+              <button onClick={() => onCancel(m)} title="Cancelar envio"
                 className="text-amber-100 hover:text-white transition leading-none">
                 <X size={12} />
               </button>
@@ -2908,25 +2983,26 @@ const MessageBubble: React.FC<{
         )}
 
         {/* Falha no envio: tentar de novo ou descartar da fila */}
-        {failed && m._tempId && (onRetry || onDiscard) && (
+        {failed && m._tempId && (
           <span className="flex items-center gap-2 justify-end mt-1 text-[11px] font-semibold">
             <span className="text-red-100">Não enviado</span>
-            {onRetry && <button onClick={onRetry} className="underline hover:no-underline text-white/90">Tentar de novo</button>}
-            {onDiscard && <button onClick={onDiscard} className="text-white/70 hover:text-white">Descartar</button>}
+            <button onClick={() => onRetry(m)} className="underline hover:no-underline text-white/90">Tentar de novo</button>
+            <button onClick={() => onDiscard(m)} className="text-white/70 hover:text-white">Descartar</button>
           </span>
         )}
       </div>
 
       {!out && (
         <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
-          <button title="Responder" onClick={onReply} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
-          {onCreateDeadline && <button title="Criar prazo" onClick={onCreateDeadline} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
-          {onCreateTask && <button title="Criar tarefa" onClick={onCreateTask} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
+          <button title="Responder" onClick={() => onReply(m)} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
+          {canCreateFollowups && !m._tempId && <button title="Criar prazo" onClick={() => onCreateDeadline(m)} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
+          {canCreateFollowups && !m._tempId && <button title="Criar tarefa" onClick={() => onCreateTask(m)} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
         </div>
       )}
     </div>
   );
-};
+});
+MessageBubble.displayName = 'MessageBubble';
 
 // ── Conteúdo de mídia por tipo ──
 const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (url: string) => void }> = ({ m, out, onOpenImage }) => {
@@ -2985,7 +3061,7 @@ const MediaPlaceholder: React.FC<{ label: string }> = ({ label }) => (
 // ── Álbum de imagens (estilo WhatsApp) — agrupa imagens enviadas juntas ──
 // Mostra até 4 miniaturas num grid; "+N" no excedente. Legenda da 1ª imagem e
 // hora/status da última, como no WhatsApp. Cada célula abre o lightbox.
-const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName: string | null; onOpenImage: (url: string) => void }> = ({ items, out, senderName, onOpenImage }) => {
+const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName: string | null; onOpenImage: (url: string) => void }> = React.memo(({ items, out, senderName, onOpenImage }) => {
   const shown = items.slice(0, 4);
   const extra = items.length - shown.length;
   const last = items[items.length - 1];
@@ -3018,7 +3094,8 @@ const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName:
       </div>
     </div>
   );
-};
+});
+ImageAlbum.displayName = 'ImageAlbum';
 
 // ── Modal de transferência ──
 const TransferModal: React.FC<{

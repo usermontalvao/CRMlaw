@@ -1245,6 +1245,11 @@ const MainApp: React.FC = () => {
 
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  // Keep-alive do WhatsApp: uma vez aberto, o módulo fica montado e só é ocultado
+  // via CSS ao trocar de aba — evita o "recarregamento" (refetch de conversas,
+  // reassinatura de URLs, perda de scroll/rascunho) a cada volta para a inbox.
+  const [whatsappEverOpened, setWhatsappEverOpened] = useState(false);
+  useEffect(() => { if (activeModule === 'whatsapp') setWhatsappEverOpened(true); }, [activeModule]);
   const [docRequestsOpen, setDocRequestsOpen] = useState(false);
   const [docRequestsBadge, setDocRequestsBadge] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2560,7 +2565,13 @@ useEffect(() => {
               />
             )}
             {activeModule === 'chat' && <ChatModule />}
-            {activeModule === 'whatsapp' && <WhatsAppModule />}
+            {/* WhatsApp: montado uma vez e mantido vivo (display:none quando inativo)
+                para preservar estado da inbox e o realtime entre trocas de aba. */}
+            {whatsappEverOpened && (
+              <div style={{ display: activeModule === 'whatsapp' ? 'contents' : 'none' }}>
+                <WhatsAppModule />
+              </div>
+            )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && (
               <FinancialModule

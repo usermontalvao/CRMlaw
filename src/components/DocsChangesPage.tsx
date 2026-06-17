@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.230': { name: 'Cafe Limpeza Assistida', emoji: 'clean' },
   '1.10.229': { name: 'Café Workflow Estruturado', emoji: '🧭' },
   '1.10.227': { name: 'Café WhatsApp Orquestrado', emoji: '🟢' },
   '1.10.226': { name: 'Café Assinatura Resiliente', emoji: '🛡️' },
@@ -884,6 +885,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.230',
+    date: '16/06/2026',
+    summary: 'Ferramentas internas e ajustes de navegacao: o CRM recebeu utilitario para limpeza assistida no Supabase, alem de refinamentos em App, Configuracoes e fluxos de WhatsApp.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'Script de limpeza para PDFs assinados no Storage', description: 'Foi adicionado um script operacional para localizar e remover arquivos do bucket de assinados com uso de service role, incluindo modo dry-run e confirmacao explicita para exclusao real.' },
+      ]},
+      { moduleId: 'configuracoes', changes: [
+        { type: 'improvement' as const, title: 'Refinamentos no hub de configuracoes', description: 'A area de configuracoes recebeu ajustes estruturais no fluxo de navegacao e organizacao interna, acompanhando as mudancas pendentes no worktree.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Ajustes de comportamento e compartilhamento no WhatsApp', description: 'Os servicos e componentes do modulo de WhatsApp foram atualizados para consolidar melhorias pendentes de atendimento, rastreamento e utilitarios compartilhados.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.229',
     date: '16/06/2026',

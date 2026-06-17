@@ -252,24 +252,54 @@ export async function invokeFn<T = any>(name: string, body: Record<string, any>)
 }
 
 /** Resolve URLs assinadas (em lote) para as fotos de perfil dos contatos. */
+// ── Cache de URLs assinadas ──────────────────────────────────
+// O Storage devolve um token NOVO a cada createSignedUrls, mesmo para o mesmo
+// path — então reassinar em todo reload trocava o `src` de avatares/mídia e
+// fazia o navegador re-baixar tudo (flicker). Aqui guardamos a URL por path e
+// só reassinamos perto de expirar; assim a mesma imagem mantém a mesma URL
+// entre reloads e o React não vê mudança.
+const SIGNED_URL_CACHE = new Map<string, { url: string; expiresAt: number }>();
+// Reassina com folga antes do TTL real (1h) — evita servir URL prestes a expirar.
+const SIGNED_URL_REFRESH_MS = (SIGNED_URL_TTL - 5 * 60) * 1000; // ~55min
+
+/**
+ * Resolve URLs assinadas em lote reaproveitando o cache: só assina os paths que
+ * ainda não temos (ou que estão perto de expirar). Devolve um mapa path→url.
+ */
+async function resolveSignedUrls(paths: string[]): Promise<Map<string, string>> {
+  const now = Date.now();
+  const result = new Map<string, string>();
+  const stale: string[] = [];
+  for (const p of paths) {
+    const hit = SIGNED_URL_CACHE.get(p);
+    if (hit && hit.expiresAt > now) result.set(p, hit.url);
+    else if (!stale.includes(p)) stale.push(p);
+  }
+  if (stale.length > 0) {
+    const { data } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrls(stale, SIGNED_URL_TTL);
+    for (const d of data || []) {
+      if (!d.path || !d.signedUrl) continue;
+      SIGNED_URL_CACHE.set(d.path, { url: d.signedUrl, expiresAt: now + SIGNED_URL_REFRESH_MS });
+      result.set(d.path, d.signedUrl);
+    }
+  }
+  return result;
+}
+
 export async function attachAvatarUrls(convs: WhatsAppConversation[]): Promise<void> {
   const paths = convs.map(c => c.contact_avatar_path).filter((p): p is string => !!p);
   if (paths.length === 0) return;
-  const { data } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
-  if (!data) return;
-  const byPath = new Map(data.map(d => [d.path, d.signedUrl]));
+  const byPath = await resolveSignedUrls(paths);
   for (const c of convs) {
     if (c.contact_avatar_path) c.contact_avatar_url = byPath.get(c.contact_avatar_path) || null;
   }
 }
 
-/** Resolve URLs assinadas (em lote) para as mensagens com mídia no storage. */
+/** Resolve URLs assinadas (em lote, com cache) para mensagens com mídia no storage. */
 export async function attachSignedUrls(msgs: WhatsAppMessage[]): Promise<void> {
   const paths = msgs.map(m => m.storage_path).filter((p): p is string => !!p);
   if (paths.length === 0) return;
-  const { data } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
-  if (!data) return;
-  const byPath = new Map(data.map(d => [d.path, d.signedUrl]));
+  const byPath = await resolveSignedUrls(paths);
   for (const m of msgs) {
     if (m.storage_path) m.media_url = byPath.get(m.storage_path) || null;
   }
