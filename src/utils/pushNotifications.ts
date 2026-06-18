@@ -69,7 +69,11 @@ class PushNotificationService {
     }
 
     try {
-      this.registration = await navigator.serviceWorker.register('/sw.js');
+      this.registration = await registerVersionedServiceWorker();
+      if (!this.registration) {
+        console.warn('Service Worker indisponível para registro');
+        return false;
+      }
       console.log('Service Worker registrado com sucesso');
       return true;
     } catch (error) {

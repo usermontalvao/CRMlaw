@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.240': { name: 'Cafe SW Resiliente', emoji: '📡' },
   '1.10.239': { name: 'Cafe Chunk Seguro', emoji: '🛠️' },
   '1.10.238': { name: 'Cafe Chunk Cirurgico', emoji: '🪓' },
   '1.10.237': { name: 'Cafe Heap Forcado', emoji: '🚀' },
@@ -894,6 +895,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.240',
+    date: '17/06/2026',
+    summary: 'PWA: o Service Worker deixou de falhar no pre-cache por arquivo ausente e o app passou a registrar uma única versão consistente do SW.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Pré-cache resiliente por arquivo', description: 'O `sw.js` trocou o `cache.addAll()` por um pré-cache item a item com `Promise.allSettled`, registrando falhas sem abortar a instalação.' },
+        { type: 'fix' as const, title: 'Favicon do pré-cache alinhado ao projeto', description: 'O Service Worker deixou de tentar cachear `/favicon.ico` e passou a usar `/favicon.svg` e `/apple-touch-icon.png`, que realmente existem em `public/`.' },
+        { type: 'fix' as const, title: 'Registro duplicado do Service Worker removido', description: 'O fluxo de push notifications passou a reutilizar `registerVersionedServiceWorker()`, evitando registrar `/sw.js` separado da versão com query string.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.239',
     date: '17/06/2026',

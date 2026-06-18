@@ -4,21 +4,45 @@
 // O _headers do Netlify já instrui o browser a nunca cachear index.html,
 // garantindo que após novo deploy os chunks corretos sejam carregados.
 const CACHE_NAME = 'crm-cache-v8'; // Incrementar aqui a cada mudança na estratégia de cache
+const PRECACHE_URLS = [
+  '/manifest.webmanifest',
+  '/favicon.svg',
+  '/apple-touch-icon.png',
+];
 
 // Install event — não pré-cacheia index.html para evitar stale chunks
 self.addEventListener('install', (event) => {
   console.log('Service Worker instalado - v8');
 
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      // Pré-cache somente de recursos estáticos que NÃO mudam entre deploys
-      return cache.addAll([
-        '/manifest.webmanifest',
-        '/favicon.ico'
-      ]).catch((error) => {
-        console.log('Falha no pré-cache:', error);
-        // Não falhar a instalação se o pré-cache falhar
-      });
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Pré-cache resiliente: um asset com falha não aborta a instalação do SW.
+      const results = await Promise.allSettled(
+        PRECACHE_URLS.map(async (url) => {
+          const response = await fetch(url, { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error(`${url} respondeu ${response.status}`);
+          }
+          await cache.put(url, response.clone());
+        })
+      );
+
+      const failed = results
+        .map((result, index) => ({ result, url: PRECACHE_URLS[index] }))
+        .filter(({ result }) => result.status === 'rejected');
+
+      if (failed.length > 0) {
+        console.log(
+          'Falha no pré-cache:',
+          failed.map(({ url, result }) => ({
+            url,
+            reason: result.status === 'rejected' ? String(result.reason) : '',
+          }))
+        );
+      }
+    }).catch((error) => {
+      console.log('Falha no pré-cache:', error);
+      // Não falhar a instalação se o pré-cache falhar
     })
   );
 
