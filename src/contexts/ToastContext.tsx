@@ -25,7 +25,19 @@ interface ToastContextType {
   dismiss: (id: string) => void;
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+// HMR-stable: durante o desenvolvimento, editar este arquivo (ou algo na sua
+// cadeia de imports) faz o Vite re-avaliar o módulo. Como o arquivo exporta
+// tanto um componente (ToastProvider) quanto um hook (useToastContext), ele não
+// é uma fronteira válida de Fast Refresh, e cada re-avaliação criaria um NOVO
+// objeto de contexto. Isso faz um Provider já montado segurar o contexto antigo
+// enquanto consumidores re-renderizados leem o novo → useContext retorna
+// undefined e o hook lança "must be used within ToastProvider" mesmo estando
+// dentro da árvore. Persistir o objeto em globalThis garante uma única instância
+// estável entre re-avaliações. Inócuo em produção.
+const __toastCtxKey = '__crm_ToastContext__';
+const ToastContext: React.Context<ToastContextType | undefined> =
+  (globalThis as any)[__toastCtxKey] ??
+  ((globalThis as any)[__toastCtxKey] = createContext<ToastContextType | undefined>(undefined));
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const toast = useToast();

@@ -1476,15 +1476,33 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     [conversations],
   );
 
-  // Contadores das abas (Fase A): exibem volume real de conversas em cada escopo.
+  // Contadores das abas (Fase A): refletem exatamente o que a lista mostraria em
+  // cada escopo, aplicando os MESMOS filtros de fila (status/canal/depto/etiqueta/
+  // busca) e variando só a dimensão da aba. Antes só excluíam rascunhos, então uma
+  // conversa encerrada e atribuída ainda contava em "Minhas" mesmo sumindo da lista
+  // sob o filtro "Abertas" (badge "Minhas (1)" com lista vazia).
   const tabCounts = useMemo(() => {
-    const visible = conversations.filter(c => c.last_message_at || c.id === selectedId);
+    const q = search.trim().toLowerCase();
+    const base = conversations.filter(c => {
+      if (!c.last_message_at && c.id !== selectedId) return false;
+      if (statusFilter === 'open' && c.status === 'closed') return false;
+      if (statusFilter === 'closed' && c.status !== 'closed') return false;
+      if (statusFilter === 'waiting_you' && convStatus(c).key !== 'waiting_you') return false;
+      if (statusFilter === 'waiting_internal' && convStatus(c).key !== 'waiting_internal') return false;
+      if (statusFilter === 'reopened' && (c.status === 'closed' || !c.reopened_at)) return false;
+      if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
+      if (deptFilter === 'none' && c.department_id) return false;
+      if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
+      if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
+      if (q && !((c.contact_name || '').toLowerCase().includes(q) || c.contact_phone.includes(q))) return false;
+      return true;
+    });
     return {
-      all: visible.length,
-      unread: visible.filter(c => !c.is_blocked && c.unread_count > 0).length,
-      mine: visible.filter(c => c.assigned_user_id === user?.id).length,
+      all: base.length,
+      unread: base.filter(c => !c.is_blocked && c.unread_count > 0).length,
+      mine: base.filter(c => c.assigned_user_id === user?.id).length,
     };
-  }, [conversations, selectedId, user?.id]);
+  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
@@ -1626,9 +1644,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     )));
   }, []);
 
+  // Trava SÍNCRONA contra reenvio. O estado `sending` atualiza de forma assíncrona,
+  // então dois disparos quase simultâneos (dois Enter, key-repeat, ou Enter + clique)
+  // passavam ambos pela checagem antes do setSending(true) e rodavam handleSend duas
+  // vezes — enviando a saudação automática E a mensagem em duplicidade. O ref barra na hora.
+  const sendingRef = useRef(false);
+
   const handleSend = async () => {
     const rawText = draft.trim();
-    if (!rawText || !selected || sending) return;
+    if (!rawText || !selected || sending || sendingRef.current) return;
+    sendingRef.current = true;
 
     if (editing) {
       const target = editing;
@@ -1640,15 +1665,39 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         void refreshMessages(selected.id);
       } catch (err: any) {
         toast.error('Falha ao editar', err.message);
-      } finally { setSending(false); }
+      } finally { setSending(false); sendingRef.current = false; }
       return;
     }
 
-    // Saudação inicial automática (Fase 1): no primeiro atendimento humano
-    // (nenhuma mensagem enviada ainda) e se o agente tiver a saudação ligada.
+    // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
+    // automaticamente para você — antes mesmo da 1ª mensagem sair. Conversa já minha
+    // ou de outro atendente não é tocada (takeover explícito continua no botão Assumir).
+    let justAssumed = false;
+    if (!selected.assigned_user_id && !selected.is_blocked && user?.id) {
+      try {
+        await whatsappService.assumeConversation(selected.id);
+        // Fase J: aborta sessão de IA quando o humano assume.
+        if (aiSession?.status === 'active') await whatsappService.abortAiSession(selected.id).catch(() => {});
+        setConversations(prev => prev.map(c => c.id === selected.id
+          ? { ...c, assigned_user_id: user.id, awaiting_accept: false, transfer_pending_since: null } : c));
+        justAssumed = true;
+      } catch (e: any) { toast.error('Falha ao assumir', e.message); }
+    }
+
+    // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente
+    // está atendendo, então o cliente não deve mais receber o auto-aviso "fora do
+    // horário". Reativado automaticamente quando o atendimento é encerrado.
+    if (selected.absence_suppressed === false) {
+      whatsappService.setAbsenceSuppressed(selected.id, true).catch(() => {});
+      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, absence_suppressed: true } : c));
+    }
+
+    // Saudação inicial automática (Fase 1): apresenta o responsável ao cliente ANTES
+    // da 1ª mensagem — no primeiro atendimento humano (sem nenhum envio ainda) OU ao
+    // assumir agora uma conversa que estava na fila (ex.: reaberta pelo cliente).
     const hasOutbound = messages.some(m => m.direction === 'out') || pending.some(p => p.direction === 'out');
     const me = user ? staffById.get(user.id) : null;
-    if (!hasOutbound && agentPrefs.auto_greeting && me) {
+    if ((justAssumed || !hasOutbound) && agentPrefs.auto_greeting && me) {
       try {
         const greeting = buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
         await whatsappService.sendText({ conversationId: selected.id, text: greeting });
@@ -1687,7 +1736,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     } catch (err: any) {
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
       toast.error('Mensagem não enviada', err?.message || 'Falha ao enviar pelo WhatsApp.');
-    } finally { setSending(false); }
+    } finally { setSending(false); sendingRef.current = false; }
   };
 
   // ── Fase K: helpers de texto para chamadas de IA ────────────────────────────

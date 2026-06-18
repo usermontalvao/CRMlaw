@@ -212,14 +212,39 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // reabre a conversa). Mensagens próprias (fromMe) seguem normalmente.
   if (!fromMe && conv.is_blocked) return;
 
-  // P1.2 — Reabre automaticamente conversas encerradas quando o cliente retorna.
-  // O cliente mandou mensagem nova numa conversa closed → reopen (sem intervenção manual).
+  // P1.2 — Reabertura INTELIGENTE de conversas encerradas.
+  // Reabrir em TODA mensagem criava loop: encerro → cliente responde "obrigado"/"tá
+  // bom" (cortesia de despedida) → reabre → encerro de novo. Agora classificamos a
+  // intenção: só reabre se for uma NOVA demanda; cortesia mantém encerrada (sem voltar
+  // à fila). Ao reabrir, LIBERA o atendente anterior (volta à triagem) e mantém o setor.
+  let keptClosed = false;
   if (!fromMe && conv.status === 'closed') {
-    await admin.from('whatsapp_conversations').update({
-      status: 'open',
-      reopened_at: new Date().toISOString(),
-    }).eq('id', conv.id);
-    conv = { ...conv, status: 'open' };
+    const decision = await classifyReopen(admin, conv.id, content, type);
+    if (decision === 'reopen') {
+      await reopenToQueue(admin, conv.id);
+      conv = { ...conv, status: 'open' };
+    } else if (decision === 'ask') {
+      // Em dúvida (nem cortesia clara, nem demanda clara): em vez de adivinhar,
+      // PERGUNTA ao cliente e mantém encerrada. Se já perguntamos há pouco e ele
+      // continua ambíguo, escala para humano (reabre na fila).
+      const { data: cc } = await admin.from('whatsapp_conversations')
+        .select('reopen_prompt_sent_at').eq('id', conv.id).maybeSingle();
+      const askedAt = cc?.reopen_prompt_sent_at ? new Date(cc.reopen_prompt_sent_at).getTime() : 0;
+      const recentlyAsked = askedAt > 0 && (Date.now() - askedAt) < 6 * 3_600_000;
+      if (recentlyAsked) {
+        await reopenToQueue(admin, conv.id);
+        conv = { ...conv, status: 'open' };
+      } else {
+        await waSendText(admin, instanceName, remoteJid,
+          'Olá! Recebi sua mensagem. 🙂 Posso te ajudar com mais alguma coisa? '
+          + 'Se precisar, me conta rapidinho o que você precisa que eu reabro seu atendimento.');
+        await admin.from('whatsapp_conversations')
+          .update({ reopen_prompt_sent_at: new Date().toISOString() }).eq('id', conv.id);
+        keptClosed = true;
+      }
+    } else {
+      keptClosed = true; // cortesia clara → mantém encerrada
+    }
   }
 
   // Foto de perfil: só busca quando ainda não temos (evita chamadas excessivas).
@@ -294,14 +319,16 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   }
 
   // ── Mensagem automática de ausência (Fase N; inbound apenas; cooldown 2h) ──
-  if (!fromMe) {
+  // keptClosed: mensagem de cortesia numa conversa encerrada que mantivemos fechada —
+  // não dispara auto-aviso de horário nem IA (evita responder "obrigado" com robô).
+  if (!fromMe && !keptClosed) {
     const job = maybeAutoSendAbsence(admin, instanceId, instanceName, conv.id, remoteJid);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
     else await job.catch(() => {});
   }
 
   // ── Atendimento assistido por IA (Fase J; inbound; só sem agente humano) ──
-  if (!fromMe && !conv.is_blocked) {
+  if (!fromMe && !conv.is_blocked && !keptClosed) {
     const msgText = content || '';
     const job = maybeRunAiFlow(admin, instanceId, conv.id, msgText);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
@@ -349,6 +376,134 @@ function getLocalTimeInTz(timezone: string): { dow: number; curMins: number } {
     const now = new Date();
     return { dow: now.getUTCDay(), curMins: now.getUTCHours() * 60 + now.getUTCMinutes() };
   }
+}
+
+type ReopenDecision = 'reopen' | 'keep' | 'ask';
+
+/** Reabre a conversa devolvendo-a à fila (sem dono) e limpa o marcador de pergunta. */
+async function reopenToQueue(admin: any, convId: string) {
+  await admin.from('whatsapp_conversations').update({
+    status: 'open',
+    reopened_at: new Date().toISOString(),
+    assigned_user_id: null,
+    awaiting_accept: false,
+    reopen_prompt_sent_at: null,
+  }).eq('id', convId);
+}
+
+/** Envia um texto pelo canal (usa a config do servidor Evolution em system_settings). */
+async function waSendText(admin: any, instanceName: string, remoteJid: string, text: string) {
+  try {
+    const { data: cfgRow } = await admin.from('system_settings')
+      .select('value').eq('key', 'whatsapp_evolution_config').maybeSingle();
+    const server = (cfgRow?.value || {}) as { base_url?: string; api_key?: string };
+    if (!server.base_url || !server.api_key) return;
+    const base = server.base_url.replace(/\/+$/, '');
+    await fetch(`${base}/message/sendText/${encodeURIComponent(instanceName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: server.api_key },
+      body: JSON.stringify({ number: remoteJid, text }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) { console.error('waSendText error', err); }
+}
+
+/**
+ * Classifica uma mensagem recebida numa conversa ENCERRADA em 3 vias:
+ *   'keep'   = só cortesia/despedida → mantém encerrada.
+ *   'reopen' = nova demanda clara    → reabre na fila.
+ *   'ask'    = ambíguo               → pergunta ao cliente (na dúvida, pergunta).
+ * Heurística barata resolve o óbvio; a IA (com histórico) decide o resto.
+ */
+async function classifyReopen(admin: any, convId: string, text: string | null, type: string): Promise<ReopenDecision> {
+  const raw = (text || '').trim();
+  // Mídia sem legenda (foto/áudio/documento) tende a ser nova demanda → reabre.
+  if (!raw) return type !== 'text' ? 'reopen' : 'keep';
+
+  const norm = raw.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove acentos
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Palavras de cortesia/agradecimento/confirmação (mensagem curta só com elas = fim).
+  const COURTESY = new Set([
+    'obrigado', 'obrigada', 'obg', 'obgd', 'vlw', 'valeu', 'ok', 'okay', 'blz',
+    'beleza', 'isso', 'entendi', 'entendido', 'certo', 'combinado', 'perfeito',
+    'otimo', 'otima', 'show', 'joia', 'grato', 'grata', 'tchau', 'agradecido',
+    'agradecida', 'disponha', 'sim', 'uhum', 'aham', 'top', 'maravilha', 'gratidao',
+  ]);
+  // Frases curtas de despedida/confirmação (match exato do texto normalizado).
+  const PHRASES = new Set([
+    'ta bom', 'ta otimo', 'ta certo', 'tudo bem', 'tudo certo', 'tudo otimo',
+    'de nada', 'muito obrigado', 'muito obrigada', 'isso mesmo', 'era so isso',
+    'so isso', 'nada nao', 'por nada', 'ate mais', 'ate logo', 'ate breve',
+    'muito obrigado mesmo', 'obrigado mesmo', 'ok obrigado', 'ta bom obrigado',
+  ]);
+
+  if (PHRASES.has(norm)) return false;
+  const words = norm.split(' ').filter(Boolean);
+  if (words.length > 0 && words.length <= 4 && words.every((w) => COURTESY.has(w))) return false;
+
+  // Pergunta explícita → quase sempre nova demanda.
+  if (raw.includes('?')) return true;
+
+  // Ambíguo → IA classifica COM contexto (resolve fragmentação: "obrigado" + "meu"
+  // + "amigo" em mensagens separadas é uma despedida, não 3 novas demandas).
+  return await classifyReopenWithAI(admin, convId, raw);
+}
+
+/**
+ * Classificação por IA (Groq → OpenAI), olhando o histórico recente da conversa.
+ * NOVA = reabrir; CORTESIA = manter encerrada. Default seguro (falha de IA) = reabrir.
+ */
+async function classifyReopenWithAI(admin: any, convId: string, text: string): Promise<boolean> {
+  const groqKey = Deno.env.get('GROQ_API_KEY') || Deno.env.get('VITE_GROQ_API_KEY');
+  const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('VITE_OPENAI_API_KEY');
+  const chain: { url: string; key: string; model: string }[] = [];
+  if (groqKey) chain.push({ url: 'https://api.groq.com/openai/v1/chat/completions', key: groqKey, model: 'llama-3.1-8b-instant' });
+  if (openaiKey) chain.push({ url: 'https://api.openai.com/v1/chat/completions', key: openaiKey, model: 'gpt-4o-mini' });
+  if (chain.length === 0) return true; // sem IA → default seguro
+
+  // Histórico recente (a mensagem atual ainda não foi inserida; entra à parte).
+  let context = '';
+  try {
+    const { data: recent } = await admin.from('whatsapp_messages')
+      .select('direction, content, type, created_at')
+      .eq('conversation_id', convId)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    context = (recent || []).reverse()
+      .map((r: any) => `${r.direction === 'out' ? 'Atendente' : 'Cliente'}: ${(r.content || '[' + r.type + ']').slice(0, 160)}`)
+      .join('\n');
+  } catch { /* sem contexto, segue só com a mensagem */ }
+
+  const sys = 'Um atendimento de WhatsApp foi ENCERRADO e o cliente enviou uma nova mensagem. '
+    + 'Considerando o HISTÓRICO recente, decida se a ÚLTIMA mensagem do cliente inicia uma NOVA demanda '
+    + '(dúvida, pedido, problema ou assunto que precise de atendimento) ou é apenas CORTESIA '
+    + '(agradecimento, confirmação, despedida ou fragmento dela, mesmo que em várias mensagens curtas, ex.: "obrigado" / "meu" / "amigo"). '
+    + 'Responda SOMENTE uma palavra: NOVA ou CORTESIA.';
+  const userMsg = `Histórico recente:\n${context || '(sem histórico)'}\n\nÚLTIMA mensagem do cliente: "${text.slice(0, 500)}"`;
+
+  for (const link of chain) {
+    try {
+      const res = await fetch(link.url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${link.key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: link.model,
+          temperature: 0,
+          max_tokens: 3,
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }],
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!res.ok) continue;
+      const out = await res.json();
+      const ans = String(out?.choices?.[0]?.message?.content || '').toUpperCase();
+      if (ans.includes('CORTESIA')) return false;
+      if (ans.includes('NOVA')) return true;
+    } catch { /* tenta o próximo provedor */ }
+  }
+  return true; // todos falharam → default seguro (reabre)
 }
 
 /**

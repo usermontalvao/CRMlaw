@@ -1,369 +1,359 @@
-# Modulo WhatsApp - Plano Operacional
+# Modulo WhatsApp - Plano Operacional no CRM
 
-Este documento substitui o conteudo anterior.
+Este arquivo passa a refletir a decisao atual do projeto:
 
-O objetivo agora nao e descrever visao ampla. O objetivo e guiar execucao com etapas objetivas, criterios de concluido e foco em operacao real.
+- o atendimento continua no `WhatsAppModule` do CRM
+- agentes, workflows, follow-up e handoff passam a viver no proprio CRM
+- nao vamos depender de projeto externo por MCP para a operacao principal
 
-O Claude deve usar este arquivo como backlog executavel.
+O objetivo deste documento e servir como backlog executavel e criterio de verdade
+para a evolucao do modulo.
 
-## Varredura real do modulo
+## Decisao registrada
 
-Esta secao existe para evitar backlog falso.
+Direcao escolhida:
 
-Antes de abrir nova etapa, o Claude deve validar se a funcionalidade ja existe no codigo e classificar em um destes estados:
+- [x] integrar atendimento, workflow e automacao diretamente no CRM
+- [x] manter o `WhatsAppModule` como cockpit principal da operacao
+- [x] reutilizar a base de dados, tipos e servicos ja criados no repositorio
+- [x] evitar uma segunda aplicacao para governar agentes e follow-up
+- [x] manter integracao com Evolution API como gateway de mensageria
+- [x] manter leads, clientes, processos, documentos e assinatura como contexto nativo do fluxo
 
-- `EXISTE`: fluxo implementado e visivel no modulo
-- `PARCIAL`: existe base real, mas falta automacao, fechamento de fluxo ou integracao completa
-- `NAO ENCONTRADO`: nao apareceu implementacao real na varredura atual
+Direcao descartada:
 
-### Resultado da varredura atual
+- [x] nao seguir com projeto externo como dependencia principal de atendimento
+- [x] nao depender de MCP para a logica central do modulo
 
-#### 1. Macros/templates por assunto
+## Varredura real do projeto
 
-Status: `PARCIAL`
+Antes de planejar novas etapas, foi feita uma varredura no codigo e na base de
+documentacao do repositorio.
 
-Evidencias encontradas:
+### Arquivos e modulos encontrados
 
-- existe cadastro de modelos de mensagem com `name`, `body` e `category`
-- existe seletor de templates dentro do modulo
-- existe busca por nome e categoria
-- existe renderizacao com variaveis como `{{cliente.nome}}`, `{{agente.nome}}` e `{{saudacao}}`
-- existe configuracao administrativa de templates/macros
-- existem playbooks de IA com categoria
+- `src/components/WhatsAppModule.tsx`
+- `src/components/WaWorkspace.tsx`
+- `src/services/whatsapp/*`
+- `src/types/whatsapp.types.ts`
+- `supabase/migrations/20260616150000_whatsapp_agents_workflow.sql`
+- `docs/WHATSAPP_MODULE_MVP.md`
+- `docs/WHATSAPP_AGENTS_WORKFLOW.md`
+- `whatsapp.md`
 
-Limite atual:
+### Estado atual confirmado no codigo
 
-- nao ficou comprovado acoplamento automatico entre assunto classificado da conversa e sugestao/filtragem de macro
-- categoria existe, mas "por assunto" ainda parece classificacao manual/organizacional, nao roteamento inteligente
-
-#### 2. Classificacao automatica de assunto, setor e prioridade
-
-Status: `PARCIAL`
-
-Evidencias encontradas:
-
-- existe classificacao de assunto por IA via `aiService.classifySubject(...)`
-- o resultado e salvo em `contact_reason`
-- o assunto aparece na conversa como `Assunto (IA)`
-- existe estrutura de departamentos, transferencia por setor e filtros por setor
-- existe prioridade em processos, prazos e tarefas
-
-Limite atual:
-
-- a classificacao de assunto encontrada e disparo manual, nao automacao comprovada de entrada
-- nao apareceu classificacao automatica de setor
-- nao apareceu classificacao automatica de prioridade da conversa
-
-#### 3. Criacao rapida sem sair da conversa
+#### 1. Operacao manual do modulo
 
 Status: `EXISTE`
 
-Evidencias encontradas:
+Base confirmada:
 
-- criacao e vinculacao rapida de cliente no proprio modulo
-- abertura de cliente, processo, requerimento, prazo, agenda e financeiro por workspace/modal
-- acoes rapidas no painel lateral para prazo, agenda, documento e lancamento
-- criacao de processo e requerimento dentro da secao de casos
-- timeline de processo em modal
+- inbox de conversas
+- atribuicao e transferencia
+- fila por setor
+- bloqueio, encerramento e reabertura
+- notas internas
+- etiquetas
+- mensagens de texto e midia
+- mensagens agendadas
+- painel 360 com cliente, processos, agenda, documentos e assinatura
+- classificacao manual de assunto por IA
+- sessao de IA assistida
 
-Observacao:
-
-- para o escopo citado agora, esta frente ja existe no modulo e nao deve voltar como backlog generico
-
-#### 4. Follow-up automatico quando cliente some ou nao assina
+#### 2. Fundacao de workflow/agentes no CRM
 
 Status: `PARCIAL`
 
-Evidencias encontradas:
+Base confirmada:
 
-- existe tracking de kit/preenchimento e assinatura
-- existe leitura de `opened_at`, `last_seen_at`, `submitted_at`, `signed_at`, `refused_at`
-- existe painel que mostra estados como `Pagina aberta`, `Saiu sem assinar`, `Aguardando assinatura` e `Cliente na tela`
-- existe interrupcao manual do tracking
-- existe agendamento de mensagens no modulo
+- tipos TypeScript para agentes, workflows, etapas, regras e estado persistido
+- constantes de tabelas no servico WhatsApp
+- migration criando:
+  - `whatsapp_workflow_agents`
+  - `whatsapp_followup_policies`
+  - `whatsapp_followup_policy_steps`
+  - `whatsapp_workflows`
+  - `whatsapp_workflow_steps`
+  - `whatsapp_workflow_rules`
+  - `whatsapp_channel_workflows`
+  - `whatsapp_conversation_workflow_state`
+  - `whatsapp_workflow_transition_log`
+- seed inicial de politica padrao de follow-up
+- seed inicial de agente de atendimento padrao
 
 Limite atual:
 
-- nao apareceu regra automatica comprovada de follow-up enviando mensagem quando o cliente some
-- nao apareceu automacao comprovada de cobranca/reengajamento por nao assinatura
-- o modulo monitora bem, mas ainda nao fecha o ciclo automaticamente
+- nao foi encontrado executor real de workflow
+- nao foi encontrado scheduler operacional dessa nova camada
+- nao foi encontrada UI administrativa para editar agentes/workflows
+- nao foi encontrado binding real canal -> workflow em execucao
 
-## Regra de execucao
+#### 3. Follow-up automatico de assinatura/preenchimento
 
-Cada etapa deve ser marcada com `[x]` somente quando:
+Status: `EXISTE`
 
-- o codigo estiver implementado
-- a integracao principal estiver funcional
-- o fluxo estiver validado manualmente
-- riscos remanescentes estiverem anotados no proprio item, se houver
+Base confirmada:
 
-Nao marcar como concluido apenas porque a UI apareceu.
+- rastreamento de abertura, abandono e assinatura
+- servicos e automacoes de acompanhamento ja integrados ao CRM
+- pausa manual de acompanhamento
 
-## Prioridade atual
+Limite atual:
 
-1. confiabilidade e governanca
-2. sustentacao tecnica
-3. fechar lacunas do que hoje esta parcial
-4. integracao futura com projeto externo de automacao
+- isso existe para fluxos especificos de assinatura/preenchimento
+- ainda nao existe motor geral de follow-up por etapa de workflow
 
-## Regra de isolamento da automacao externa
+#### 4. Documentacao do repositorio
 
-A automacao por agentes/workflows deve ficar fora do modulo WhatsApp.
+Status: `PARCIAL`
 
-Regras:
+Situacao encontrada:
 
-- [x] manter o `WhatsAppModule` como operacao base do CRM
-- [ ] nao acoplar inbox, conversa, composer e painel 360 diretamente ao motor externo
-- [ ] concentrar integracao em camada separada ou MCP/API
-- [ ] permitir desligar o projeto externo sem reescrever o modulo base
+- existe documentacao do modulo operacional
+- existe documentacao de workflows/agentes assumindo projeto externo
+- o codigo mais recente ja aponta para internalizacao dessa camada no CRM
 
-#### Concluido quando
+Conclusao:
 
-- o WhatsApp continua operacional sem automacao externa
-- desligar o projeto externo nao derruba atendimento manual, templates, notas, transferencias e agendamentos
+- a documentacao estava desalinhada com a decisao atual
 
-## Fase atual do projeto externo de automacao
+## Regra de arquitetura
 
-- [x] fase de documentacao e arquitetura
-- [ ] fase de modelagem tecnica
-- [ ] fase de implementacao base
-- [ ] fase de builder visual
-- [ ] fase de piloto com Leads integrados
+O CRM passa a concentrar estas responsabilidades:
 
----
+- canal e inbox de atendimento
+- persistencia de conversa e mensagens
+- estado operacional da conversa
+- estado persistido do workflow
+- regras estruturadas de transicao
+- follow-up progressivo
+- handoff para humano, setor ou fila
+- integracao com leads, clientes, processos, documentos e assinatura
+- auditoria operacional e de workflow
 
-## Frente 1 - Confiabilidade e Governanca
+### Separacao interna de responsabilidades
 
-### Objetivo
+Mesmo dentro do CRM, nao misturar tudo em `WhatsAppModule.tsx`.
 
-Parar de esconder falha operacional com comportamento best-effort e transformar status, erro, retry e auditoria em partes visiveis do modulo.
+Camadas desejadas:
 
-### Etapa 1. Health check do canal e do numero
+1. `WhatsAppModule`
+   - cockpit operacional do atendente
+   - lista de conversas, timeline, composer, painel 360
 
-- [ ] Criar camada de health check por canal WhatsApp
-- [ ] Exibir status tecnico do canal: conectado, instavel, desconectado, erro de autenticacao, webhook sem resposta
-- [ ] Exibir ultima sincronizacao bem-sucedida
-- [ ] Exibir ultima falha detectada com data/hora e motivo
-- [ ] Exibir status do numero/instancia dentro do painel administrativo
-- [ ] Exibir banner operacional quando o canal da conversa selecionada estiver degradado
-- [ ] Criar acao manual de revalidar status do canal
+2. servicos de canal
+   - Evolution webhook
+   - envio/recebimento
+   - anexos
+   - presenca
 
-#### Concluido quando
+3. servicos de workflow
+   - carregar binding do canal
+   - iniciar workflow
+   - persistir etapa atual
+   - avaliar regras
+   - executar acoes
+   - agendar/cancelar follow-up
 
-- o operador consegue identificar rapidamente se o problema esta na conversa ou no canal
-- o status nao depende de abrir console ou banco
-- a tela mostra data/hora da ultima verificacao
+4. administracao de automacao
+   - CRUD de agentes
+   - CRUD de workflows
+   - CRUD de etapas e regras
+   - politicas de follow-up
+   - ligacao canal -> workflow
 
-### Etapa 2. Log de falhas de envio por conversa e por canal
+5. supervisao
+   - excecoes
+   - transicoes
+   - taxa por etapa
+   - filas travadas
 
-- [ ] Persistir log de falhas de envio de mensagem
-- [ ] Registrar falhas de texto, midia, edicao e agendamento
-- [ ] Salvar contexto minimo do erro: conversa, canal, tipo, payload resumido, horario, mensagem de erro
-- [ ] Exibir falhas recentes dentro da conversa
-- [ ] Exibir falhas agregadas por canal em painel administrativo
-- [ ] Permitir filtro por periodo, canal, conversa e tipo de falha
-- [ ] Destacar recorrencia de falhas iguais
+## Logica funcional que vamos implementar
 
-#### Concluido quando
+### Modelo mental correto
 
-- cada falha relevante vira evento consultavel
-- o time consegue responder "o que falhou, onde falhou e desde quando falha"
+Pensar assim:
 
-### Etapa 3. Retry manual de mensagens falhas
+- cada canal pode ter um workflow padrao
+- cada conversa pode carregar estado proprio de workflow
+- cada workflow tem etapas
+- cada etapa pode usar agente, regra e follow-up
+- a IA ajuda a interpretar
+- a regra estruturada decide a transicao
+- o humano assume quando houver handoff, excecao ou aprovacao necessaria
 
-- [ ] Permitir retry manual de mensagem com status `failed`
-- [ ] Permitir retry de texto sem recriar mensagem do zero
-- [ ] Permitir retry de midia reaproveitando metadados e storage path quando valido
-- [ ] Exibir resultado do retry: sucesso, nova falha ou erro de validacao
-- [ ] Impedir retry cego quando o canal estiver desconectado
-- [ ] Registrar auditoria do retry manual
+### Fluxo base da conversa
 
-#### Concluido quando
+1. mensagem entra pela Evolution
+2. webhook persiste conversa/mensagem no CRM
+3. sistema identifica canal e procura workflow padrao
+4. se houver workflow ativo para o canal:
+   - cria ou atualiza `whatsapp_conversation_workflow_state`
+   - define etapa atual
+   - roda classificacao/interpretacao quando necessario
+   - avalia regras da etapa
+   - executa acao resultante
+5. se nao houver workflow:
+   - conversa segue fluxo manual normal do modulo
+6. operador humano pode assumir, pausar, transferir ou encerrar a qualquer momento
 
-- o operador consegue recuperar envio falho sem workaround externo
-- o retry nao gera duplicidade silenciosa
+### Principios obrigatorios
 
-### Etapa 4. Auditoria operacional
+- a conversa manual nunca pode quebrar porque o workflow falhou
+- workflow deve ser opt-in por canal
+- etapa atual precisa ser persistida
+- follow-up precisa ser cancelavel por resposta, opt-out, encerramento ou handoff
+- acoes automaticas precisam gerar log auditavel
+- prompts nao podem ser a unica fonte da logica
 
-- [ ] Consolidar trilha de auditoria para assumir, transferir, bloquear, desbloquear, encerrar e reabrir
-- [ ] Registrar autor, data/hora, estado anterior e estado novo
-- [ ] Exibir auditoria na timeline operacional da conversa
-- [ ] Exibir visao administrativa filtravel por periodo e usuario
-- [ ] Garantir que eventos automaticos e humanos sejam distinguiveis
+## Frentes de implementacao
 
-#### Concluido quando
+### Frente 1 - Documentacao alinhada ao CRM
 
-- qualquer alteracao critica da conversa pode ser auditada sem consultar banco manualmente
-
-### Etapa 5. Runbook de desconexao e reconexao
-
-- [ ] Criar secao no painel com procedimento operacional para canal desconectado
-- [ ] Documentar sinais de falha: QR expirado, webhook parado, token invalido, instancia offline
-- [ ] Documentar acao esperada para cada tipo de falha
-- [ ] Adicionar comando ou botao operacional de reconexao quando a integracao suportar
-- [ ] Exibir ultimo momento em que o canal esteve saudavel
-- [ ] Exibir responsavel pela ultima acao operacional no canal
-
-#### Concluido quando
-
-- um operador consegue seguir procedimento sem depender de memoria ou suporte tecnico informal
-
----
-
-## Frente 2 - Sustentacao Tecnica
-
-### Objetivo
-
-Reduzir risco de regressao, acoplamento e lentidao de manutencao no modulo WhatsApp.
-
-### Diagnostico atual
-
-- `src/components/WhatsAppModule.tsx` concentra inbox, conversa, composer, painel lateral, timeline, governanca, agendamento, IA e modais
-- `src/components/WaWorkspace.tsx` concentra renderizacao e logica de multiplos fluxos operacionais
-- nao existe suite de testes focada no modulo
-- o build nao concluiu dentro da janela testada, indicando necessidade de medir gargalos e validar estabilidade com disciplina
-
-### Etapa 1. Fatiar `WhatsAppModule.tsx`
-
-- [ ] Extrair inbox/fila para componente proprio
-- [ ] Extrair cabecalho e acoes da conversa
-- [ ] Extrair painel 360
-- [ ] Extrair composer, midia e agendamento
-- [ ] Extrair notas e timeline
-- [ ] Extrair governanca e SLA
-- [ ] Extrair IA e playbooks
-- [ ] Reduzir o componente principal a coordenacao de estado e composicao
+- [x] reescrever `whatsapp.md` para a estrategia nativa
+- [x] reescrever `docs/WHATSAPP_AGENTS_WORKFLOW.md` para remover dependencia externa
+- [ ] revisar `README.md` para refletir o estado real do CRM e do modulo WhatsApp
+- [ ] revisar changelog/guia interno se necessario
 
 #### Concluido quando
 
-- o arquivo principal deixa de ser ponto unico de tudo
-- cada area relevante pode evoluir sem aumentar acoplamento global
+- nao houver mais documento orientando o time a construir a camada principal fora do CRM
 
-### Etapa 2. Fatiar `WaWorkspace.tsx`
+### Frente 2 - Fundacao de dominio
 
-- [ ] Separar renderers por dominio: cliente, casos, prazos, agenda, financeiro, documentos, assinatura
-- [ ] Extrair utilitarios e tipos para arquivos dedicados
-- [ ] Padronizar interface de abertura e retorno dos modais
-- [ ] Garantir que cada fluxo preserve contexto da conversa
-
-#### Concluido quando
-
-- o workspace deixa de ser concentrador monolitico
-- cada modal pode ser alterado sem risco transversal desnecessario
-
-### Etapa 3. Suite minima de testes do modulo
-
-- [ ] Definir stack de testes do frontend
-- [ ] Criar testes para listagem e selecao de conversa
-- [ ] Criar testes para assumir, transferir e devolver para fila
-- [ ] Criar testes para encerrar e reabrir conversa
-- [ ] Criar testes para composer e envio otimista
-- [ ] Criar testes para falha de envio e retry manual
-- [ ] Criar testes para abertura do workspace e preservacao de contexto
+- [x] tipos TypeScript de workflow/agentes existentes
+- [x] migration inicial das tabelas existente
+- [ ] criar servico `workflow` no frontend com leitura/escrita dessas tabelas
+- [ ] criar mapeadores e validadores de regra/acao/etapa
+- [ ] criar bootstrap para iniciar estado de workflow por conversa
+- [ ] criar binding real de canal -> workflow em runtime
 
 #### Concluido quando
 
-- os fluxos criticos do modulo possuem cobertura minima automatizada
-- regressao em fluxo operacional central passa a ser detectavel antes de producao
+- o CRM consegue carregar e persistir um workflow real por conversa, sem UI visual ainda
 
-### Etapa 4. Verificacao tecnica de build e performance
+### Frente 3 - Motor operacional
 
-- [ ] Medir tempo de build de forma repetivel
-- [ ] Identificar arquivos ou etapas que degradam compilacao
-- [ ] Corrigir gargalos obvios de tipagem, importacao ou acoplamento
-- [ ] Registrar baseline antes e depois das mudancas
+- [ ] criar executor de regras
+- [ ] criar maquina simples de estados da conversa no workflow
+- [ ] persistir transicoes em `whatsapp_workflow_transition_log`
+- [ ] implementar acoes:
+  - `go_to_step`
+  - `send_message`
+  - `schedule_followup`
+  - `cancel_followup`
+  - `set_subject`
+  - `set_department`
+  - `set_priority`
+  - `set_qualification`
+  - `handoff_human`
+  - `close_conversation`
+  - `raise_exception`
+- [ ] bloquear loops obvios e retries cegos
 
 #### Concluido quando
 
-- o time consegue comparar evolucao tecnica do modulo com um baseline claro
+- uma conversa entra, percorre etapas e deixa rastro auditavel sem depender de intervencao manual em cada transicao
 
----
+### Frente 4 - Follow-up nativo do workflow
 
-## Ordem recomendada de execucao
+- [ ] reaproveitar a experiencia ja existente de agendamento no modulo
+- [ ] implementar politica de follow-up por workflow/etapa
+- [ ] respeitar timezone e horario comercial do canal
+- [ ] cancelar follow-up por resposta, opt-out, encerramento e handoff
+- [ ] registrar tentativas e proximo disparo em `whatsapp_conversation_workflow_state`
+
+#### Concluido quando
+
+- o CRM tiver um motor geral de follow-up, nao apenas automacoes pontuais de assinatura
+
+### Frente 5 - Integracao nativa com CRM
+
+- [ ] integrar workflow com `LeadsModule`
+- [ ] vincular qualificacao/desqualificacao ao lead quando existir
+- [ ] permitir criar lead automaticamente conforme regra do canal
+- [ ] usar cliente, processo, requerimento, documentos e assinatura como contexto de etapa
+- [ ] permitir handoff para usuario ou setor do proprio CRM
+
+#### Concluido quando
+
+- a automacao deixa de ser um fluxo isolado e passa a usar o contexto juridico/comercial do CRM
+
+### Frente 6 - UI administrativa
+
+- [ ] criar area de configuracao para agentes
+- [ ] criar area de configuracao para workflows
+- [ ] criar editor de etapas e regras
+- [ ] criar configuracao visual de documentos obrigatorios
+- [ ] criar configuracao de politicas de follow-up
+- [ ] criar vinculo canal -> workflow
+
+#### Concluido quando
+
+- a equipe consegue configurar a automacao sem editar SQL ou JSON manualmente
+
+### Frente 7 - Supervisao e excecao
+
+- [ ] criar painel de estado do workflow por conversa
+- [ ] criar fila de excecao
+- [ ] exibir motivo da excecao
+- [ ] exibir ultima regra disparada
+- [ ] exibir etapa atual e proximos follow-ups
+- [ ] permitir pausa, retomada e handoff manual
+
+#### Concluido quando
+
+- a operacao consegue governar automacao em producao sem depender de consulta direta ao banco
+
+## Ordem recomendada
 
 ### Sprint 1
 
-- [ ] health check do canal e do numero
-- [ ] log de falhas de envio
-- [ ] auditoria operacional basica
+- [x] alinhar documentacao
+- [ ] criar servico de workflow
+- [ ] criar bootstrap de estado por conversa
+- [ ] carregar binding canal -> workflow
 
 ### Sprint 2
 
-- [ ] retry manual de mensagens falhas
-- [ ] runbook de desconexao e reconexao
-- [ ] extracao inicial do inbox/fila e cabecalho
+- [ ] implementar executor minimo de regras
+- [ ] implementar transicao de etapa
+- [ ] registrar logs de transicao
+- [ ] implementar `send_message` e `handoff_human`
 
 ### Sprint 3
 
-- [ ] extracao do painel 360, composer e timeline
-- [ ] fatiamento inicial do workspace
-- [ ] stack de testes definida
+- [ ] implementar follow-up nativo
+- [ ] cancelar follow-up por resposta
+- [ ] integrar com setor, prioridade e qualificacao
+- [ ] criar painel simples de estado da conversa
 
 ### Sprint 4
 
-- [ ] testes de fluxos criticos
-- [ ] baseline de build e ajustes de performance
-- [ ] fechamento de pendencias abertas das sprints anteriores
+- [ ] integrar com leads
+- [ ] criar CRUD administrativo de agentes/workflows
+- [ ] criar fila de excecao
+- [ ] fechar lacunas operacionais e testes
 
----
+## Regras para marcar como concluido
 
-## Frente 3 - Fechar lacunas do que ja existe parcialmente
+- [ ] so marcar `[x]` com implementacao real no codigo
+- [ ] so marcar `[x]` com fluxo manualmente validado
+- [ ] se houver apenas tabela/tipo sem runtime, manter como `PARCIAL`
+- [ ] se houver bloqueio, anotar no item correspondente
 
-### Etapa 1. Templates realmente orientados por assunto
+## Definicao de pronto
 
-- [ ] Filtrar ou sugerir templates com base no `contact_reason`
-- [ ] Permitir mapear categoria de template para assunto classificado
-- [ ] Exibir recomendacoes de macro no composer com base na conversa atual
+Esta frente estara madura quando:
 
-#### Concluido quando
+- o atendimento manual continuar estavel
+- cada canal puder apontar para um workflow interno do CRM
+- a conversa tiver etapa persistida
+- regras e follow-up rodarem no proprio CRM
+- handoff para humano/setor funcionar sem gambiarra
+- leads e contexto juridico forem reaproveitados
+- a operacao conseguir supervisionar excecoes e logs
 
-- o operador nao precisa buscar tudo manualmente quando o assunto da conversa ja foi identificado
-
-### Etapa 2. Classificacao automatica completa
-
-- [ ] Disparar classificacao de assunto sem acao manual quando houver contexto suficiente
-- [ ] Criar heuristica ou IA para sugerir setor automaticamente
-- [ ] Criar heuristica ou IA para sugerir prioridade operacional da conversa
-- [ ] Permitir aprovacao humana antes de gravar setor/prioridade quando necessario
-
-#### Concluido quando
-
-- a conversa entra melhor classificada sem depender sempre de triagem manual
-
-### Etapa 3. Follow-up automatico real
-
-- [ ] Criar regra automatica para cliente que abriu e saiu sem concluir
-- [ ] Criar regra automatica para cliente que recebeu assinatura e nao concluiu
-- [ ] Permitir janela de tempo configuravel antes do follow-up
-- [ ] Registrar quando o follow-up automatico foi disparado
-- [ ] Permitir pausar o follow-up por conversa ou por assinatura
-
-#### Concluido quando
-
-- o modulo nao apenas monitora abandono; ele reage operacionalmente com regra controlada
-
----
-
-## Regras para o Claude marcar como concluido
-
-- [ ] so marcar `[x]` apos implementacao real
-- [ ] so marcar `[x]` apos validacao manual do fluxo principal
-- [ ] descrever no commit ou changelog curto o que foi entregue
-- [ ] se houver bloqueio tecnico, manter `[ ]` e adicionar observacao logo abaixo do item
-- [ ] se entregar parcialmente, quebrar o item em subitens menores antes de marcar qualquer um
-
----
-
-## Definicao de pronto do modulo
-
-O modulo WhatsApp sera considerado mais operacional quando:
-
-- falhas de canal e envio estiverem visiveis
-- houver retry manual seguro
-- a trilha de auditoria estiver acessivel
-- existir procedimento claro para desconexao
-- o componente principal estiver fatiado
-- o workspace estiver modularizado
-- os fluxos criticos tiverem testes minimos
-
-Enquanto isso nao estiver entregue, o modulo ainda depende demais de conhecimento tacito e manutencao arriscada.
+Enquanto isso nao estiver entregue, a fundacao existe, mas a orquestracao ainda
+nao esta operacional.

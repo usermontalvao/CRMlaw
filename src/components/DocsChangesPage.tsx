@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.232': { name: 'Cafe CRM Conversa Nativa', emoji: '☕' },
   '1.10.231': { name: 'Cafe Silencio Inteligente', emoji: '🔕' },
   '1.10.230': { name: 'Cafe Limpeza Assistida', emoji: 'clean' },
   '1.10.229': { name: 'Café Workflow Estruturado', emoji: '🧭' },
@@ -886,6 +887,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.232',
+    date: '17/06/2026',
+    summary: 'WhatsApp e documentacao: o CRM consolidou ajustes pendentes do modulo e alinhou a estrategia de atendimento e workflow para execucao nativa dentro da propria plataforma.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Ajustes pendentes no modulo e no webhook Evolution', description: 'Foram agrupados refinamentos em configuracoes, atendimento, notificacoes e tratamento do webhook para acompanhar a evolucao mais recente do modulo.' },
+      ]},
+      { moduleId: 'docs', changes: [
+        { type: 'feature' as const, title: 'Documentacao reorientada para workflow nativo no CRM', description: 'Os documentos operacionais do WhatsApp passaram a registrar explicitamente a decisao de manter agentes, workflows e follow-up dentro do CRM, aproveitando a fundacao ja existente no repositorio.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.231',
     date: '17/06/2026',

@@ -177,6 +177,31 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     }
   };
 
+  // Após exibir o QR, a Evolution não avisa o front quando o aparelho é pareado.
+  // Enquanto o QR está aberto e ainda não conectou, consulta o status em intervalo;
+  // ao detectar "connected", avisa, recarrega e fecha o QR automaticamente.
+  useEffect(() => {
+    if (!qrFor || qrFor.status === 'connected') return;
+    const channelId = qrFor.id;
+    let cancelled = false;
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      if (attempts++ >= 60) { clearInterval(interval); return; } // ~3min de teto
+      try {
+        const res = await whatsappService.channelStatus(channelId);
+        if (cancelled || res.status !== 'connected') return;
+        clearInterval(interval);
+        setQrFor((cur) => (cur?.id === channelId ? { ...cur, status: 'connected', qr: undefined } : cur));
+        onFeedback('success', 'Canal conectado!');
+        await reload();
+        // mantém a confirmação visível por um instante antes de fechar o QR
+        setTimeout(() => setQrFor((cur) => (cur?.id === channelId ? null : cur)), 1800);
+      } catch { /* ignora; tenta no próximo tick */ }
+    }, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrFor?.id, qrFor?.status]);
+
   const removeChannel = async (ch: WhatsAppChannel) => {
     if (!confirm(`Excluir o canal "${ch.name || ch.instance_name}"? As conversas ficam, mas o canal sai.`)) return;
     try {
