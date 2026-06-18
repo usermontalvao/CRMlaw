@@ -1465,7 +1465,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
     @apply bg-zinc-950 text-slate-100;
   }
   
-  .dark .bg-[#f8f7f5] {
+  .dark .bg-\[\#f8f7f5\] {
     background-color: #121212 !important;
   }
   
@@ -1662,7 +1662,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   }
   
   /* Ícone container branco transparente */
-  .dark .bg-[#f8f7f5]\/50 {
+  .dark .bg-\[\#f8f7f5\]\/50 {
     background-color: rgba(39, 39, 42, 0.5) !important;
   }
   

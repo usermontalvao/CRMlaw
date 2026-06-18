@@ -4,6 +4,9 @@ services:
     env: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+    envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=4096
     headers:
       - path: /*
         name: Cache-Control

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.235': { name: 'Cafe Heap Estavel', emoji: '🧠' },
   '1.10.234': { name: 'Cafe Icone Tipado', emoji: '🧩' },
   '1.10.233': { name: 'Cafe Estado Blindado', emoji: '🛡️' },
   '1.10.232': { name: 'Cafe CRM Conversa Nativa', emoji: '☕' },
@@ -889,6 +890,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.235',
+    date: '17/06/2026',
+    summary: 'Deploy: o build do Render recebeu mais heap no Node para evitar estouro de memoria, e os seletores CSS invalidos que geravam warning no PostCSS foram corrigidos.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Render build com heap ampliado', description: 'O deploy passou a definir `NODE_OPTIONS=--max-old-space-size=4096` no `render.yaml`, reduzindo o risco de falha por JavaScript heap out of memory durante o `vite build`.' },
+        { type: 'fix' as const, title: 'Seletores dark mode escapados corretamente', description: 'Os overrides de `.bg-[#f8f7f5]` e `.bg-[#f8f7f5]/50` em `src/index.css` foram corrigidos para sintaxe CSS valida, removendo os warnings de selector do PostCSS.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.234',
     date: '17/06/2026',
