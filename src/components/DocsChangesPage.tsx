@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.236': { name: 'Cafe Browsers Atualizados', emoji: '🌐' },
   '1.10.235': { name: 'Cafe Heap Estavel', emoji: '🧠' },
   '1.10.234': { name: 'Cafe Icone Tipado', emoji: '🧩' },
   '1.10.233': { name: 'Cafe Estado Blindado', emoji: '🛡️' },
@@ -890,6 +891,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.236',
+    date: '17/06/2026',
+    summary: 'Build: o banco do Browserslist foi atualizado para remover o warning de compatibilidade desatualizada, mantendo o deploy limpo nos pontos controlados pelo projeto.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Browserslist DB atualizado', description: 'O `package-lock.json` foi atualizado via `npx update-browserslist-db@latest`, eliminando o aviso sobre `caniuse-lite` desatualizado no processo de build.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.235',
     date: '17/06/2026',
