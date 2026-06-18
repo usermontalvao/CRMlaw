@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.234': { name: 'Cafe Icone Tipado', emoji: '🧩' },
   '1.10.233': { name: 'Cafe Estado Blindado', emoji: '🛡️' },
   '1.10.232': { name: 'Cafe CRM Conversa Nativa', emoji: '☕' },
   '1.10.231': { name: 'Cafe Silencio Inteligente', emoji: '🔕' },
@@ -888,6 +889,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.234',
+    date: '17/06/2026',
+    summary: 'Build e deploy: o App voltou a tipar os icones Lucide de forma consistente, eliminando a divergencia de props que quebrava a compilacao em producao.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Tipagem de icones unificada no App', description: 'Os mapas e props de icones passaram a usar `LucideIcon`, permitindo `className`, `strokeWidth` e `style` sem conflito entre ambientes de build.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.233',
     date: '17/06/2026',

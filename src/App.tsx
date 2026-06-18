@@ -43,6 +43,7 @@ import {
   Clock,
   MessageSquare,
   FolderOpen,
+  type LucideIcon,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -195,7 +196,7 @@ const CloudModuleFallback = () => (
 );
 
 // ── AccessDeniedScreen ────────────────────────────────────────────────────────
-const MODULE_META: Record<string, { label: string; desc: string; Icon: React.ElementType }> = {
+const MODULE_META: Record<string, { label: string; desc: string; Icon: LucideIcon }> = {
   leads:         { label: 'Leads',                desc: 'captação e gestão de leads',            Icon: Target },
   clientes:      { label: 'Clientes',             desc: 'cadastro e histórico de clientes',       Icon: Users },
   documentos:    { label: 'Documentos',           desc: 'contratos e modelos',                    Icon: FileText },
@@ -787,7 +788,7 @@ const SidebarSkeletonBtn: React.FC<{ index?: number }> = ({ index = 0 }) => {
 const SidebarModuleBtn: React.FC<{
   moduleKey: string;
   label: string;
-  Icon: React.ComponentType<{ className?: string; strokeWidth?: number; style?: React.CSSProperties }>;
+  Icon: LucideIcon;
   isActive: boolean;
   onClick: () => void;
   expiresAt?: string | null;
@@ -2218,7 +2219,7 @@ useEffect(() => {
                   {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
                 {(() => {
-                  const MODULE_META: Record<string, { label: string; Icon: React.ComponentType<{ className?: string }> }> = {
+                  const MODULE_META: Record<string, { label: string; Icon: LucideIcon }> = {
                     cloud: { label: 'Cloud', Icon: Cloud },
                     dashboard: { label: 'Dashboard', Icon: Layers },
                     feed: { label: 'Feed', Icon: Newspaper },
