@@ -39,6 +39,7 @@ import { processService } from '../services/process.service';
 import { signatureService } from '../services/signature.service';
 import { settingsService } from '../services/settings.service';
 import { supabase } from '../config/supabase';
+import { buildPublicFillUrl, buildPublicPermalinkUrl, buildPublicSigningUrl } from '../utils/publicAppUrl';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -1440,7 +1441,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         throw new Error('Erro ao gerar link de assinatura');
       }
       
-      const link = `${window.location.origin}/#/assinar/${signerToken}`;
+      const link = buildPublicSigningUrl(signerToken);
       
       // Mostrar modal com o link
       setSignatureLink(link);
@@ -1529,7 +1530,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       // Link fixo (permalink) - reutilizável
       const fixedLink = permalinkSlug 
-        ? `${window.location.origin}/#/p/${permalinkSlug}`
+        ? buildPublicPermalinkUrl(permalinkSlug)
         : null;
 
       // Mostrar o link fixo no modal (se disponível)
@@ -1556,7 +1557,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         if (error) throw new Error(error.message);
         if (!data?.public_token) throw new Error('Erro ao gerar token do link');
 
-        const link = `${window.location.origin}/#/preencher/${data.public_token}`;
+        const link = buildPublicFillUrl(data.public_token);
         setTemplateFillLink(link);
         setTemplateFillLinkCopied(false);
         setShowTemplateFillLinkModal(true);
@@ -2611,7 +2612,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     >
       <ModalBody className="px-5 py-4">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-          Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
+          Envie este link para o cliente preencher os dados e seguir para a assinatura ao final do processo.
         </p>
 
         <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">
@@ -2950,7 +2951,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     >
       <ModalBody className="px-5 py-4">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-          Envie este link para o cliente assinar o documento
+          Envie este link para o cliente assinar o documento.
         </p>
 
         <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">

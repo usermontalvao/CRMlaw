@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.243': { name: 'Cafe Push Orquestrado', emoji: '📲' },
   '1.10.242': { name: 'Cafe Ausencia na Retomada', emoji: '🌙' },
   '1.10.241': { name: 'Cafe Reabertura Temporal', emoji: '⏱️' },
   '1.10.240': { name: 'Cafe SW Resiliente', emoji: '📡' },
@@ -897,6 +898,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.243',
+    date: '18/06/2026',
+    summary: 'WhatsApp, assinaturas e documentos: o CRM ganhou push interno para equipe, notificacoes mais completas no fluxo de assinatura e suporte operacional/documental para a nova orquestracao.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'feature' as const, title: 'Push interno para equipe no atendimento', description: 'O modulo ganhou utilitarios, edge function e migration para disparar alertas internos de staff a partir do fluxo do WhatsApp, ampliando a coordenacao operacional nas conversas.' },
+        { type: 'improvement' as const, title: 'Workspace e widget alinhados ao novo fluxo', description: 'Componentes do atendimento, notificacoes e service worker foram ajustados para refletir melhor os novos eventos e reduzir ruído na operacao.' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Assinaturas passaram a notificar melhor o time', description: 'Os servicos de assinatura e a pagina publica foram refinados para publicar eventos internos mais previsiveis ao longo do preenchimento e da conclusao do fluxo.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'improvement' as const, title: 'Fluxograma operacional anexado a documentacao', description: 'A documentacao do workflow do WhatsApp foi expandida e passou a incluir o PDF do fluxograma gerado para consulta rapida da equipe.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.242',
     date: '17/06/2026',

@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { templateFillService } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
+import { buildPublicSigningUrl } from '../utils/publicAppUrl';
 
 interface PublicTemplateFillPageProps {
   token: string;
@@ -735,11 +736,11 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
     return parts.join(', ');
   }, [addressPlaceholders, values]);
 
-  const signatureUrl = result ? `${window.location.origin}/#/assinar/${result.signerToken}` : '';
+  const signatureUrl = result ? buildPublicSigningUrl(result.signerToken) : '';
 
   useEffect(() => {
     if (!result?.signerToken) return;
-    window.location.href = `${window.location.origin}/#/assinar/${result.signerToken}`;
+    window.location.href = buildPublicSigningUrl(result.signerToken);
   }, [result]);
 
   const submitNow = async () => {

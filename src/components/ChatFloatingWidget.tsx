@@ -1780,7 +1780,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     [messages],
   );
 
-  const visible = !!user && currentModule !== 'chat';
+  // Oculto no módulo de chat interno e no WhatsApp (lá o widget cobriria o
+  // campo de digitação da conversa, sobrepondo o botão de enviar).
+  const visible = !!user && currentModule !== 'chat' && currentModule !== 'whatsapp';
   if (!visible) return null;
 
   const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;

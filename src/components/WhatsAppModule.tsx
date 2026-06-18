@@ -12,9 +12,10 @@ import {
   Sparkles, Tag, Tags, Bot,
   Shield, ShieldCheck, Eye, EyeOff,
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
-  Mail, MapPin, Play, Pause, Bell, BellOff,
+  Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
 } from 'lucide-react';
 import { isNotifySoundMuted, setNotifySoundMuted, playNotificationSound } from '../utils/notificationSound';
+import { isStaffPushSupported, isStaffPushEnabled, enableStaffPush, disableStaffPush } from '../utils/staffPush';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppTemplate, WhatsAppScheduledMessage, TimelineEvent, TimelineKind } from '../types/whatsapp.types';
@@ -40,7 +41,36 @@ import { ClientCloudDocsLink } from './CloudFolderModal';
 import { Modal, ModalBody } from './ui/Modal';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
+import { buildPublicFillUrl } from '../utils/publicAppUrl';
 import type { DocumentTemplate } from '../types/document.types';
+
+/**
+ * `true` quando a viewport é estreita demais para mostrar lista + thread lado a
+ * lado (abaixo do breakpoint `md` do Tailwind = 768px). Usado para alternar o
+ * módulo para um painel por vez em celulares.
+ */
+function useWaMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, [query]);
+  return matches;
+}
+/** Estreito demais para lista + thread lado a lado (abaixo do `md` = 768px). */
+function useWaIsMobile() { return useWaMediaQuery('(max-width: 767px)'); }
+/** Largo o bastante para encaixar o painel do contato fixo (a partir do `xl` = 1280px). */
+function useWaIsPanelDocked() { return useWaMediaQuery('(min-width: 1280px)'); }
 
 /** Retorna dia da semana e minutos desde meia-noite no timezone IANA informado. */
 function getCurrentTimeInTz(timezone: string): { dow: number; curMins: number } {
@@ -152,7 +182,7 @@ const ClientFillLinksPanel: React.FC<{
         {list.map((link) => {
           const req = (signatures ?? []).find(s => s.id === link.signature_request_id) ?? null;
           const signer = req?.signers?.find(sg => sg.status !== 'signed' && !sg.refused_at) ?? req?.signers?.[0] ?? null;
-          const fillUrl = `${window.location.origin}/#/preencher/${link.public_token}`;
+          const fillUrl = buildPublicFillUrl(link.public_token);
           const signUrl = signer?.public_token ? signatureService.generatePublicSigningUrl(signer.public_token) : null;
           const activeOnPage = !!link.last_seen_at && (now - new Date(link.last_seen_at).getTime() <= 30_000);
 
@@ -737,6 +767,47 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const retryRef = useRef<Map<string, { kind: 'text'; text: string; replyId?: string }
     | { kind: 'media'; file: File; mediaKind: 'image' | 'video' | 'audio' | 'document'; caption: string; replyId?: string }>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Responsividade: abaixo de `md` (768px) a lista e a thread não cabem lado a
+  // lado, então alternamos para um painel por vez (estilo WhatsApp mobile).
+  const isMobile = useWaIsMobile();
+  // Abaixo do `xl` o painel do contato não cabe fixo: vira gaveta sobreposta.
+  const panelDocked = useWaIsPanelDocked();
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // Menu "⋮" do cabeçalho da thread (agrupa as ações em telas estreitas).
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
+  const [pushState, setPushState] = useState<'unknown' | 'unsupported' | 'off' | 'on' | 'busy'>('unknown');
+  useEffect(() => {
+    if (!isStaffPushSupported()) { setPushState('unsupported'); return; }
+    isStaffPushEnabled().then(on => setPushState(on ? 'on' : 'off')).catch(() => setPushState('off'));
+  }, []);
+  const toggleStaffPush = useCallback(async () => {
+    const wasOn = await isStaffPushEnabled();
+    setPushState('busy');
+    if (wasOn) {
+      await disableStaffPush();
+      setPushState('off');
+      toast.info('Notificações push desativadas');
+      return;
+    }
+    const r = await enableStaffPush();
+    if (r === 'enabled') {
+      setPushState('on');
+      toast.success('Notificações ativadas — você será avisado mesmo com o navegador fechado');
+    } else {
+      setPushState('off');
+      if (r === 'denied') toast.error('Permissão de notificação negada no navegador');
+      else if (r === 'unsupported') toast.error('Este navegador não suporta notificações push');
+      else toast.error('Não foi possível ativar as notificações push');
+    }
+  }, [toast]);
+  // Filtros da inbox recolhidos por padrão (expansível); economiza altura no topo.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Fecha a gaveta ao trocar de conversa ou quando o painel volta a ser fixo.
+  useEffect(() => { setMobilePanelOpen(false); setHeaderMenuOpen(false); setAttachMenuOpen(false); }, [selectedId]);
+  useEffect(() => { if (panelDocked) setMobilePanelOpen(false); }, [panelDocked]);
   const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
@@ -988,8 +1059,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         }
         guard.lastSlug = item.slug;
         guard.lastAt = Date.now();
-        const url = `${window.location.origin}/#/preencher/${result.token}`;
-        setDraft(`Segue o link para preenchimento e assinatura dos seus documentos:\n${url}`);
+        const url = buildPublicFillUrl(result.token);
+        setDraft(`Segue o link para preencher e assinar seus documentos:\n\n${url}`);
         setSlashIndex(0);
       } catch (e: any) {
         toast.error('Falha ao gerar link do kit', e?.message || 'Não foi possível gerar o link de preenchimento.');
@@ -2225,7 +2296,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   return (
     <div className="flex h-full min-h-0 bg-[#faf9f7]">
       {/* ── Lista de conversas ── */}
-      <aside style={{ width: listWidth }} className="flex-shrink-0 flex flex-col border-r border-[#e7e5df] bg-white min-h-0">
+      <aside style={isMobile ? undefined : { width: listWidth }}
+        className={`flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
         <div className="px-4 pt-4 pb-3 border-b border-[#e7e5df]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -2250,6 +2322,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 className={`flex items-center justify-center w-7 h-7 rounded-full transition ${soundMuted ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
                 {soundMuted ? <BellOff size={15} /> : <Bell size={15} />}
               </button>
+              {pushState !== 'unsupported' && pushState !== 'unknown' && (
+                <button
+                  onClick={toggleStaffPush}
+                  disabled={pushState === 'busy'}
+                  title={pushState === 'on'
+                    ? 'Notificações no navegador ATIVADAS (avisa com a aba fechada) — clique para desativar'
+                    : 'Ativar notificações no navegador (avisa mesmo com a aba fechada)'}
+                  aria-pressed={pushState === 'on'}
+                  className={`flex items-center justify-center w-7 h-7 rounded-full transition disabled:opacity-50 ${pushState === 'on' ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
+                  {pushState === 'busy' ? <Loader2 size={14} className="animate-spin" /> : pushState === 'on' ? <BellRing size={15} /> : <BellRing size={15} />}
+                </button>
+              )}
               <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
                 className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
                 <BarChart2 size={15} />
@@ -2260,12 +2344,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </button>
             </div>
           </div>
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar conversa…"
-              className="w-full pl-9 pr-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar conversa…"
+                className="w-full pl-9 pr-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+            </div>
+            {(() => {
+              const active = (channelFilter !== 'all' ? 1 : 0) + (deptFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (labelFilter !== '' ? 1 : 0);
+              return (
+                <button onClick={() => setFiltersOpen(o => !o)} title={filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'} aria-expanded={filtersOpen}
+                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[12.5px] font-semibold transition ${filtersOpen || active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'}`}>
+                  <Filter size={15} />
+                  {active > 0 && <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold">{active}</span>}
+                  <ChevronDown size={14} className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+                </button>
+              );
+            })()}
           </div>
 
+          {filtersOpen && (
           <div className="grid grid-cols-2 gap-2 mt-2.5">
             <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)}
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
@@ -2293,6 +2391,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               {WA_LABELS.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
             </select>
           </div>
+          )}
 
           {/* Abas de situação (restauradas): Todas / Não lidas / Minhas */}
           <div className="flex items-center gap-1 mt-2.5">
@@ -2344,7 +2443,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         className="hidden md:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
 
       {/* ── Thread ── */}
-      <section className="relative flex-1 flex flex-col min-h-0 min-w-0"
+      <section className={`relative flex-1 flex-col min-h-0 min-w-0 ${isMobile && !selectedId ? 'hidden' : 'flex'}`}
         onDragEnter={onThreadDragEnter} onDragOver={onThreadDragOver}
         onDragLeave={onThreadDragLeave} onDrop={onThreadDrop}>
         {dragOver && selected && (
@@ -2361,12 +2460,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         ) : (
           <>
-            <header className="flex items-center gap-3 px-5 py-3 border-b border-[#e7e5df] bg-white">
+            <header className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-5 py-3 border-b border-[#e7e5df] bg-white">
+              {isMobile && (
+                <button onClick={() => setSelectedId(null)} title="Voltar à lista"
+                  className="flex-shrink-0 -ml-1 w-9 h-9 rounded-lg text-slate-600 hover:bg-[#f3f2ef] flex items-center justify-center transition">
+                  <ChevronLeft size={22} />
+                </button>
+              )}
               <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={36}
                 onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-bold text-slate-800 truncate">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || prettyPhone(selected.contact_phone))}</p>
-                <div className="flex items-center gap-2 text-[11.5px] text-slate-400">
+                <div className="flex items-center flex-nowrap gap-2 min-w-0 overflow-hidden whitespace-nowrap text-[11.5px] text-slate-400">
                   <PresenceText conv={selected} privateMode={privateMode} />
                   {selected.assigned_user_id && <span>· {staffByUser.get(selected.assigned_user_id) || 'Atribuído'}</span>}
                   {selected.department_id && deptById.get(selected.department_id) && (
@@ -2410,10 +2515,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
                   <button onClick={handleAccept} title="Assumir este atendimento"
-                    className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition">
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition">
                     <CheckCircle2 size={15} /> Aceitar
                   </button>
                 )}
+                {/* Ações inline — apenas em telas largas (≥640px); abaixo disso viram o menu "⋮" */}
+                <div className="hidden sm:flex items-center gap-1.5">
                 {/* Comandos de fila (atribuição direta, sem transferência) */}
                 {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
                   <button onClick={handleAssume} title={selected.assigned_user_id ? 'Assumir este atendimento' : 'Assumir da fila'}
@@ -2484,10 +2591,85 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <Trash2 size={16} />
                   </button>
                 )}
+                {!panelDocked && (
+                  <button onClick={() => setMobilePanelOpen(true)} title="Detalhes do contato"
+                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
+                    <Info size={16} />
+                  </button>
+                )}
                 <button onClick={() => setSelectedId(null)} title="Sair da conversa"
-                  className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+                  className={`flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-slate-200 text-slate-600 items-center justify-center transition ${isMobile ? 'hidden' : 'flex'}`}>
                   <X size={16} />
                 </button>
+                </div>{/* /ações inline */}
+
+                {/* Ação principal contextual no mobile (ao lado do "⋮"): apenas UMA —
+                    Aceitar/Assumir enquanto a conversa não é minha; Encerrar depois. */}
+                {!selected.is_blocked && (() => {
+                  const canAccept = selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id);
+                  const canAssume = !selected.awaiting_accept && selected.status !== 'closed' && selected.assigned_user_id !== user?.id;
+                  const isMineOpen = !selected.awaiting_accept && selected.status !== 'closed' && selected.assigned_user_id === user?.id;
+                  if (canAccept || canAssume) {
+                    return (
+                      <button onClick={canAccept ? handleAccept : handleAssume} title="Aceitar atendimento"
+                        className="sm:hidden flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center transition">
+                        <Check size={18} strokeWidth={2.75} />
+                      </button>
+                    );
+                  }
+                  if (isMineOpen) {
+                    return (
+                      <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
+                        className="sm:hidden flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition">
+                        <CheckCircle2 size={18} />
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Menu "⋮" — agrupa as ações em telas estreitas (<640px) */}
+                <div className="sm:hidden relative flex-shrink-0">
+                  <button onClick={() => setHeaderMenuOpen(o => !o)} title="Mais ações" aria-haspopup="menu" aria-expanded={headerMenuOpen}
+                    className="w-9 h-9 rounded-lg bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 flex items-center justify-center transition">
+                    <MoreVertical size={18} />
+                  </button>
+                  {headerMenuOpen && (() => {
+                    const muted = muteStore.isMuted(selected.id);
+                    const item = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13.5px] text-slate-700 hover:bg-amber-50 transition text-left';
+                    const run = (fn: () => void) => () => { setHeaderMenuOpen(false); fn(); };
+                    return (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setHeaderMenuOpen(false)} />
+                        <div role="menu" className="absolute right-0 top-11 z-50 w-56 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
+                          {!panelDocked && (
+                            <button className={item} onClick={run(() => setMobilePanelOpen(true))}><Info size={16} className="text-slate-400" /> Detalhes do contato</button>
+                          )}
+                          {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
+                            <button className={item} onClick={run(handleAssume)}><UserPlus size={16} className="text-emerald-500" /> {selected.assigned_user_id ? 'Assumir atendimento' : 'Assumir da fila'}</button>
+                          )}
+                          {!selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
+                            <button className={item} onClick={run(handleRelease)}><UserMinus size={16} className="text-amber-500" /> Devolver à fila</button>
+                          )}
+                          <button className={item} onClick={run(() => muted ? unmuteSelected() : muteSelected(null, 'sempre'))}>
+                            {muted ? <Bell size={16} className="text-amber-500" /> : <BellOff size={16} className="text-slate-400" />} {muted ? 'Reativar som' : 'Silenciar conversa'}
+                          </button>
+                          {perms.canTransfer && (
+                            <button className={item} onClick={run(() => setTransferOpen(true))}><ArrowRightLeft size={16} className="text-slate-400" /> Transferir conversa</button>
+                          )}
+                          {selected.status === 'closed' ? (
+                            <button className={item} onClick={run(handleReopen)}><RotateCcw size={16} className="text-emerald-500" /> Reabrir conversa</button>
+                          ) : (
+                            <button className={item} onClick={run(() => setCloseOpen(true))}><CheckCircle2 size={16} className="text-emerald-500" /> Encerrar atendimento</button>
+                          )}
+                          {perms.canBlock && messages.length > 0 && (
+                            <button className={`${item} text-red-600 hover:bg-red-50`} onClick={run(handleClearConversation)}><Trash2 size={16} /> Limpar conversa</button>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             </header>
 
@@ -2529,7 +2711,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             )}
 
             <div ref={threadRef} onScroll={onThreadScroll} className="flex-1 overflow-y-auto min-h-0" style={{ background: '#f3f2ef' }}>
-              <div ref={threadContentRef} className="px-5 py-4 space-y-1.5">
+              <div ref={threadContentRef} className="px-3 sm:px-5 py-4 space-y-1.5">
               {loadingMsgs ? (
                 <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
               ) : (() => {
@@ -2632,7 +2814,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               </div>
             ) : (
-            <div className="px-4 py-3 border-t border-[#e7e5df] bg-white">
+            <div className="relative px-2.5 sm:px-4 py-3 border-t border-[#e7e5df] bg-white">
               {recording ? (
                 <div className="flex items-center gap-2.5">
                   {/* Keyframes do equalizador (escopo local, estilo WhatsApp) */}
@@ -2662,29 +2844,42 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   </button>
                 </div>
               ) : (
+                <>
+                {!editing && (
+                  <>
+                    <input ref={imgInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => onPickFiles(e, 'media')} />
+                    <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
+                    {/* Backdrop p/ fechar o widget flutuante ao tocar fora */}
+                    {attachMenuOpen && <div className="fixed inset-0 z-20" onClick={() => setAttachMenuOpen(false)} />}
+                    {/* Widget flutuante de ações (anexos/IA), à direita — a barra de digitação fica só com texto + áudio */}
+                    <div className="absolute right-2.5 sm:right-4 bottom-full mb-2 z-30 flex flex-col items-end gap-2">
+                      {attachMenuOpen && (() => {
+                        const row = 'w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-[13.5px] font-medium text-slate-700 hover:bg-amber-50 transition disabled:opacity-50';
+                        const dot = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
+                        const run = (fn: () => void) => () => { setAttachMenuOpen(false); fn(); };
+                        return (
+                          <div className="w-60 rounded-2xl bg-white shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] ring-1 ring-black/5 p-1.5 origin-bottom-right animate-[waPop_120ms_ease-out]">
+                            <style>{`@keyframes waPop{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}`}</style>
+                            <button className={row} onClick={run(() => imgInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><ImageIcon size={17} /></span> Imagem ou vídeo</button>
+                            <button className={row} onClick={run(() => docInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><Paperclip size={17} /></span> Documento</button>
+                            <button className={row} onClick={run(() => setTemplateOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><MessageSquare size={17} /></span> Modelo de mensagem</button>
+                            {perms.canSchedule && (
+                              <button className={row} onClick={run(() => setScheduleOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><CalendarClock size={17} /></span> Agendar mensagem</button>
+                            )}
+                            {messages.length > 0 && (
+                              <button className={row} disabled={suggesting} onClick={run(handleSuggestReply)}><span className={`${dot} bg-violet-100 text-violet-600`}>{suggesting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={17} />}</span> Sugerir com IA</button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      <button onClick={() => setAttachMenuOpen(o => !o)} title="Anexos e ações" aria-haspopup="menu" aria-expanded={attachMenuOpen}
+                        className="w-10 h-10 rounded-full bg-amber-600 text-white shadow-lg shadow-amber-600/25 flex items-center justify-center hover:bg-amber-700 transition">
+                        <Plus size={20} className={`transition-transform duration-200 ${attachMenuOpen ? 'rotate-45' : ''}`} />
+                      </button>
+                    </div>
+                  </>
+                )}
                 <div className="flex items-end gap-2">
-                  {!editing && (
-                    <>
-                      <input ref={imgInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => onPickFiles(e, 'media')} />
-                      <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
-                      <button title="Imagem ou vídeo" onClick={() => imgInputRef.current?.click()}
-                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><ImageIcon size={18} /></button>
-                      <button title="Documento" onClick={() => docInputRef.current?.click()}
-                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><Paperclip size={18} /></button>
-                      <button title="Usar modelo de mensagem" onClick={() => setTemplateOpen(true)}
-                        className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><MessageSquare size={18} /></button>
-                      {perms.canSchedule && (
-                        <button title="Agendar mensagem" onClick={() => setScheduleOpen(true)}
-                          className="flex-shrink-0 w-9 h-9 rounded-full text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition"><CalendarClock size={18} /></button>
-                      )}
-                      {messages.length > 0 && (
-                        <button title="Sugerir resposta com IA" onClick={handleSuggestReply} disabled={suggesting}
-                          className="flex-shrink-0 w-9 h-9 rounded-full text-violet-500 hover:bg-violet-50 flex items-center justify-center transition disabled:opacity-40">
-                          {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={16} />}
-                        </button>
-                      )}
-                    </>
-                  )}
                   <div className="relative flex-1">
                     {/* Menu do atalho "/" — modelos de mensagem (estilo WhatsApp) */}
                     {slashActive && (
@@ -2718,8 +2913,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                         if (e.key === 'Escape') { setEditing(null); setReplyTo(null); }
                       }}
-                      rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…  (use / para modelos)'}
-                      className="w-full resize-none max-h-32 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                      rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…'}
+                      className="w-full resize-none max-h-32 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
                   </div>
                   {draft.trim() || editing ? (
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
@@ -2733,6 +2928,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     </button>
                   )}
                 </div>
+                </>
               )}
             </div>
             )}
@@ -2745,9 +2941,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <div onMouseDown={startPanelResize} title="Arraste para redimensionar"
           className="hidden xl:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
       )}
+      {/* Fundo escurecido da gaveta (apenas quando o painel não está fixo) */}
+      {selected && !panelDocked && mobilePanelOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]" onClick={() => setMobilePanelOpen(false)} />
+      )}
       {selected && (
-        <aside style={{ width: panelWidth }}
-          className="flex-shrink-0 border-l border-[#e7e5df] bg-white p-3.5 pb-24 hidden xl:flex flex-col gap-3 overflow-y-auto min-h-0">
+        <aside style={panelDocked ? { width: panelWidth } : undefined}
+          className={`flex-shrink-0 flex flex-col gap-3 overflow-y-auto min-h-0 border-l border-[#e7e5df] bg-white p-3.5 pb-24 ${
+            panelDocked
+              ? ''
+              : `fixed top-0 right-0 bottom-0 z-50 w-[88%] max-w-[360px] shadow-2xl transition-transform duration-200 ${mobilePanelOpen ? 'translate-x-0' : 'translate-x-full'}`
+          }`}>
+          {/* Botão de fechar (apenas no modo gaveta, fora do desktop) */}
+          {!panelDocked && (
+            <div className="flex justify-end -mb-1">
+              <button onClick={() => setMobilePanelOpen(false)} title="Fechar detalhes"
+                className="w-8 h-8 rounded-lg text-slate-500 hover:bg-[#f3f2ef] flex items-center justify-center transition">
+                <X size={18} />
+              </button>
+            </div>
+          )}
           {/* Header compacto: avatar + nome + telefone numa linha */}
           <div className="flex items-center gap-2.5 pb-3 border-b border-[#f1f0ec]">
             <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={40}

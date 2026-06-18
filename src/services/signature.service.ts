@@ -12,6 +12,7 @@ import type {
   SignatureStats,
 } from '../types/signature.types';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { buildPublicSigningUrl, buildPublicVerificationUrl } from '../utils/publicAppUrl';
 
 const STORAGE_BUCKET = 'document-templates';
 
@@ -568,15 +569,31 @@ class SignatureService {
     if (request.created_by) {
       const { data: userData } = await supabase
         .from('profiles')
-        .select('name, email')
+        .select('name, email, is_active')
         .eq('user_id', request.created_by)
         .single();
       if (userData) {
         creator = { name: userData.name || 'Usuário', email: userData.email || '' };
+        // Documentos de ORIGEM KIT (ou cujo emissor foi desativado) não devem
+        // atribuir a autoria a uma pessoa — aparecem como "Sistema".
+        if ((await this.isKitOrigin(request.id)) || userData.is_active === false) {
+          creator = { name: 'Sistema', email: '' };
+        }
       }
     }
 
     return { signer, request, creator };
+  }
+
+  /** Documento gerado por um KIT (preenchimento público) — há template_fill_links apontando p/ a request. */
+  private async isKitOrigin(requestId: string): Promise<boolean> {
+    if (!requestId) return false;
+    const { data } = await supabase
+      .from('template_fill_links')
+      .select('id')
+      .eq('signature_request_id', requestId)
+      .limit(1);
+    return !!(data && data.length > 0);
   }
 
   async getPublicSigningBundle(token: string): Promise<{
@@ -599,12 +616,18 @@ class SignatureService {
 
     if (!data) return null;
 
-    const creator = data.creator?.email
+    let creator = data.creator?.email
       ? {
           name: data.creator?.name || 'Usuário',
           email: data.creator?.email || '',
         }
       : undefined;
+
+    // Origem KIT → emissor aparece como "Sistema" (não atribui a uma pessoa).
+    const reqId = (data.request as SignatureRequest)?.id;
+    if (reqId && await this.isKitOrigin(reqId)) {
+      creator = { name: 'Sistema', email: '' };
+    }
 
     return {
       signer: data.signer as Signer,
@@ -1239,14 +1262,11 @@ class SignatureService {
   }
 
   generatePublicSigningUrl(token: string): string {
-    // URL base do app - usando hash routing
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/#/assinar/${token}`;
+    return buildPublicSigningUrl(token);
   }
 
   generateVerificationUrl(hash: string): string {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/#/verificar/${hash}`;
+    return buildPublicVerificationUrl(hash);
   }
 
   async verifySignatureByHash(hash: string): Promise<VerifyResult> {

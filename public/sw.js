@@ -126,17 +126,24 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Nova Notificação';
   const options = {
     body: data.body || '',
-    icon: data.icon || '/logo192.png',
-    badge: '/favicon.ico',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/favicon.ico',
     vibrate: [200, 100, 200],
+    tag: data.tag || (data.data && data.data.tag) || undefined,
     data: data.data || {},
     actions: data.actions || [],
     requireInteraction: data.requireInteraction || false,
   };
 
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
+  event.waitUntil((async () => {
+    // suppressIfFocused: o app já mostra aviso in-app (som + toast) quando está
+    // em foco — evita notificação duplicada. Vale só p/ payloads que pedem.
+    if (options.data && options.data.suppressIfFocused) {
+      const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (wins.some((c) => c.focused || c.visibilityState === 'visible')) return;
+    }
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 // Notification click event
