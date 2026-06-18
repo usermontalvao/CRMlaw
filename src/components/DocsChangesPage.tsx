@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.242': { name: 'Cafe Ausencia na Retomada', emoji: '🌙' },
   '1.10.241': { name: 'Cafe Reabertura Temporal', emoji: '⏱️' },
   '1.10.240': { name: 'Cafe SW Resiliente', emoji: '📡' },
   '1.10.239': { name: 'Cafe Chunk Seguro', emoji: '🛠️' },
@@ -896,6 +897,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.242',
+    date: '17/06/2026',
+    summary: 'WhatsApp: ajuste das mensagens automáticas e correção do aviso fora do expediente em retomadas após encerramento.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Saudação automática simplificada', description: 'A abertura automática do atendimento deixou de enviar apresentação longa com `meu nome é...` e passou a usar apenas uma saudação curta por horário, como `Bom dia!`, `Boa tarde!` ou `Boa noite!`.' },
+        { type: 'fix' as const, title: 'Encerramento voltou a habilitar aviso comercial em novo contato', description: 'Ao encerrar uma conversa, o sistema agora limpa `absence_sent_at`, permitindo que uma nova mensagem enviada fora do horário receba novamente o comunicado comercial.' },
+        { type: 'fix' as const, title: 'Mensagem fora do expediente não é mais pulada em conversa encerrada', description: 'O `evolution-webhook` passou a enviar a mensagem automática de ausência em qualquer inbound fora do horário, mesmo quando a conversa anterior permaneceu encerrada por cortesia ou ambiguidade.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.241',
     date: '17/06/2026',

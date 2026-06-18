@@ -480,17 +480,11 @@ const greetingByHour = () => {
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
 };
 /** Saudação inicial automática do 1º atendimento (Fase 1). */
-const buildGreeting = (s: Partial<StaffOption>, roleLabelOverride?: string | null) => {
-  const label = agentLabel(s);
-  let clause = '';
-  if (isLawyer(s)) clause = s.gender === 'male' ? ', sou advogado' : s.gender === 'female' ? ', sou advogada' : '';
-  else if (roleLabelOverride) clause = `, ${roleLabelOverride}`;
-  return `Olá, meu nome é ${label}${clause} e vou conduzir seu atendimento. ${greetingByHour()}.`;
-};
+const buildGreeting = (_s: Partial<StaffOption>, _roleLabelOverride?: string | null) => `${greetingByHour()}!`;
 /** Apresentação do novo responsável ao aceitar uma transferência (Fase 4). */
 const buildAcceptPresentation = (s: Partial<StaffOption>, shortNameOverride?: string | null) => {
-  const label = agentLabel(s, shortNameOverride);
-  return `Olá, me chamo ${label} e estarei te ajudando no seu atendimento.`;
+  const name = firstName(shortNameOverride || s.name);
+  return `Olá! Sou ${name} e vou seguir com o seu atendimento a partir de agora.`;
 };
 
 // ── Status operacional + SLA (Fase 4 + A) ──
@@ -6388,7 +6382,7 @@ const CloseConversationModal: React.FC<{
 }> = ({ conversation, onClose, onDone }) => {
   const toast = useToastContext();
   const [reason, setReason] = useState('');
-  const [farewell, setFarewell] = useState('Seu atendimento foi encerrado. Se surgir qualquer dúvida, pode nos chamar novamente por aqui.');
+  const [farewell, setFarewell] = useState('Encerramos este atendimento por agora. Se precisar retomar, é só nos chamar por aqui.');
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {

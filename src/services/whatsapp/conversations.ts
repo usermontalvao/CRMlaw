@@ -226,6 +226,8 @@ export const conversationsApi = {
       closure_reason: note,
       // Encerrar zera a pausa do aviso de horário: volta ao normal no próximo contato.
       absence_suppressed: false,
+      // Permite que uma nova retomada fora do horário dispare novamente o aviso comercial.
+      absence_sent_at: null,
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
   },

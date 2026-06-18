@@ -520,7 +520,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   </label>
                   {absence.enabled && (
                     <textarea value={absence.message} onChange={e => setAbsence(a => ({ ...a, message: e.target.value }))}
-                      rows={2} placeholder="Ex: Fora do horário de atendimento. Retornaremos em breve."
+                      rows={2} placeholder="Ex: Olá! No momento estamos fora do horário de atendimento. Nosso horário é de seg a sex, das 8h às 18h. Sua mensagem foi recebida e retornaremos assim que possível."
                       style={{ width: '100%', fontSize: '12px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }} />
                   )}
 

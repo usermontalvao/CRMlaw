@@ -319,9 +319,10 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   }
 
   // ── Mensagem automática de ausência (Fase N; inbound apenas; cooldown 2h) ──
-  // keptClosed: mensagem de cortesia numa conversa encerrada que mantivemos fechada —
-  // não dispara auto-aviso de horário nem IA (evita responder "obrigado" com robô).
-  if (!fromMe && !keptClosed) {
+  // Regra de negócio: se o cliente mandou mensagem fora do expediente, ele deve
+  // receber o comunicado comercial mesmo quando a conversa estava encerrada.
+  // O cooldown por conversa já evita spam/repetição excessiva.
+  if (!fromMe) {
     const job = maybeAutoSendAbsence(admin, instanceId, instanceName, conv.id, remoteJid);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
     else await job.catch(() => {});
