@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.241': { name: 'Cafe Reabertura Temporal', emoji: '⏱️' },
   '1.10.240': { name: 'Cafe SW Resiliente', emoji: '📡' },
   '1.10.239': { name: 'Cafe Chunk Seguro', emoji: '🛠️' },
   '1.10.238': { name: 'Cafe Chunk Cirurgico', emoji: '🪓' },
@@ -895,6 +896,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.241',
+    date: '17/06/2026',
+    summary: 'WhatsApp: a reabertura de conversas encerradas passou a considerar melhor o tempo do novo contato e a reconhecer mensagens claras de nova demanda sem depender só da IA.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Webhook passou a usar o horário da nova mensagem na reabertura', description: 'A classificação de reabertura agora recebe o `waTimestamp` da mensagem recebida e usa o intervalo desde `closed_at` e desde o último inbound pós-fechamento para tratar um novo "oi/olá" como retomada real de contato.' },
+        { type: 'fix' as const, title: 'Frases claras de nova demanda reabrem sem depender da IA', description: 'Mensagens como `eu tenho outra dúvida`, `tenho uma pergunta` e `preciso de ajuda` passaram a reabrir diretamente a conversa, evitando falsos negativos de classificação.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.240',
     date: '17/06/2026',

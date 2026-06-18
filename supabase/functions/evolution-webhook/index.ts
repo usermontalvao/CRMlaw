@@ -219,7 +219,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // à fila). Ao reabrir, LIBERA o atendente anterior (volta à triagem) e mantém o setor.
   let keptClosed = false;
   if (!fromMe && conv.status === 'closed') {
-    const decision = await classifyReopen(admin, conv.id, content, type);
+    const decision = await classifyReopen(admin, conv.id, content, type, waTimestamp);
     if (decision === 'reopen') {
       await reopenToQueue(admin, conv.id);
       conv = { ...conv, status: 'open' };
@@ -415,7 +415,7 @@ async function waSendText(admin: any, instanceName: string, remoteJid: string, t
  *   'ask'    = ambíguo               → pergunta ao cliente (na dúvida, pergunta).
  * Heurística barata resolve o óbvio; a IA (com histórico) decide o resto.
  */
-async function classifyReopen(admin: any, convId: string, text: string | null, type: string): Promise<ReopenDecision> {
+async function classifyReopen(admin: any, convId: string, text: string | null, type: string, messageTsIso?: string): Promise<ReopenDecision> {
   const raw = (text || '').trim();
   // Mídia sem legenda (foto/áudio/documento) tende a ser nova demanda → reabre.
   if (!raw) return type !== 'text' ? 'reopen' : 'keep';
@@ -438,17 +438,88 @@ async function classifyReopen(admin: any, convId: string, text: string | null, t
     'so isso', 'nada nao', 'por nada', 'ate mais', 'ate logo', 'ate breve',
     'muito obrigado mesmo', 'obrigado mesmo', 'ok obrigado', 'ta bom obrigado',
   ]);
+  const GREETINGS = new Set([
+    'oi', 'oii', 'oiii', 'oiiii', 'ola', 'olaa', 'olaaa', 'opa', 'eai',
+    'bom dia', 'boa tarde', 'boa noite',
+  ]);
 
   if (PHRASES.has(norm)) return 'keep';
   const words = norm.split(' ').filter(Boolean);
   if (words.length > 0 && words.length <= 4 && words.every((w) => COURTESY.has(w))) return 'keep';
 
+  // Nova demanda explícita — não vale a pena mandar para IA.
+  if (
+    /^eu tenho (outra )?duvida$/.test(norm) ||
+    /^tenho (outra )?duvida$/.test(norm) ||
+    /^estou com (uma )?duvida$/.test(norm) ||
+    /^preciso de ajuda$/.test(norm) ||
+    /^quero tirar (uma )?duvida$/.test(norm) ||
+    /^posso tirar (uma )?duvida$/.test(norm) ||
+    /^tenho uma pergunta$/.test(norm) ||
+    /^preciso falar com voces$/.test(norm)
+  ) return 'reopen';
+
   // Pergunta explícita → quase sempre nova demanda.
   if (raw.includes('?')) return 'reopen';
+
+  // Cumprimento enviado muito depois do encerramento (ou depois de silêncio real
+  // após o encerramento) tende a ser uma nova retomada de contato.
+  if (GREETINGS.has(norm)) {
+    const timingDecision = await classifyGreetingByTiming(admin, convId, messageTsIso);
+    if (timingDecision) return timingDecision;
+  }
 
   // Ambíguo → IA classifica COM contexto (resolve fragmentação: "obrigado" + "meu"
   // + "amigo" em mensagens separadas é uma despedida, não 3 novas demandas).
   return await classifyReopenWithAI(admin, convId, raw);
+}
+
+/**
+ * Reavalia cumprimentos simples ("oi", "olá", etc.) usando tempo:
+ * - se chegaram um bom tempo após o fechamento, reabrem;
+ * - se chegaram após um silêncio real depois de interações pós-fechamento, reabrem.
+ * Retorna null quando o tempo não é suficiente para decidir sozinho.
+ */
+async function classifyGreetingByTiming(
+  admin: any,
+  convId: string,
+  messageTsIso?: string,
+): Promise<ReopenDecision | null> {
+  const currentMs = messageTsIso ? new Date(messageTsIso).getTime() : Date.now();
+  if (!Number.isFinite(currentMs)) return null;
+
+  const { data: conv } = await admin.from('whatsapp_conversations')
+    .select('closed_at')
+    .eq('id', convId)
+    .maybeSingle();
+  const closedMs = conv?.closed_at ? new Date(conv.closed_at).getTime() : 0;
+  if (!closedMs) return null;
+
+  // Se o cliente volta a mandar um simples "oi" vários minutos depois do
+  // encerramento, isso é retomada de contato, não cortesia.
+  const minutesSinceClosed = (currentMs - closedMs) / 60_000;
+  if (minutesSinceClosed >= 10) return 'reopen';
+
+  const { data: inboundAfterClose } = await admin.from('whatsapp_messages')
+    .select('wa_timestamp')
+    .eq('conversation_id', convId)
+    .eq('direction', 'in')
+    .gt('wa_timestamp', conv.closed_at)
+    .order('wa_timestamp', { ascending: false })
+    .limit(1);
+
+  const previousInboundMs = inboundAfterClose?.[0]?.wa_timestamp
+    ? new Date(inboundAfterClose[0].wa_timestamp).getTime()
+    : 0;
+
+  // Se já houve mensagens pós-fechamento e agora houve nova retomada depois de
+  // alguns minutos de silêncio, reabre para humano/fila.
+  if (previousInboundMs && currentMs > previousInboundMs) {
+    const minutesSincePreviousInbound = (currentMs - previousInboundMs) / 60_000;
+    if (minutesSincePreviousInbound >= 10) return 'reopen';
+  }
+
+  return null;
 }
 
 /**
