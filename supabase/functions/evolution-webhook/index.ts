@@ -439,12 +439,12 @@ async function classifyReopen(admin: any, convId: string, text: string | null, t
     'muito obrigado mesmo', 'obrigado mesmo', 'ok obrigado', 'ta bom obrigado',
   ]);
 
-  if (PHRASES.has(norm)) return false;
+  if (PHRASES.has(norm)) return 'keep';
   const words = norm.split(' ').filter(Boolean);
-  if (words.length > 0 && words.length <= 4 && words.every((w) => COURTESY.has(w))) return false;
+  if (words.length > 0 && words.length <= 4 && words.every((w) => COURTESY.has(w))) return 'keep';
 
   // Pergunta explícita → quase sempre nova demanda.
-  if (raw.includes('?')) return true;
+  if (raw.includes('?')) return 'reopen';
 
   // Ambíguo → IA classifica COM contexto (resolve fragmentação: "obrigado" + "meu"
   // + "amigo" em mensagens separadas é uma despedida, não 3 novas demandas).
@@ -453,15 +453,16 @@ async function classifyReopen(admin: any, convId: string, text: string | null, t
 
 /**
  * Classificação por IA (Groq → OpenAI), olhando o histórico recente da conversa.
- * NOVA = reabrir; CORTESIA = manter encerrada. Default seguro (falha de IA) = reabrir.
+ * NOVA = reabrir; CORTESIA = manter encerrada. Quando a IA não consegue decidir
+ * com segurança, devolvemos `ask` para o fluxo confirmar com o cliente.
  */
-async function classifyReopenWithAI(admin: any, convId: string, text: string): Promise<boolean> {
+async function classifyReopenWithAI(admin: any, convId: string, text: string): Promise<ReopenDecision> {
   const groqKey = Deno.env.get('GROQ_API_KEY') || Deno.env.get('VITE_GROQ_API_KEY');
   const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('VITE_OPENAI_API_KEY');
   const chain: { url: string; key: string; model: string }[] = [];
   if (groqKey) chain.push({ url: 'https://api.groq.com/openai/v1/chat/completions', key: groqKey, model: 'llama-3.1-8b-instant' });
   if (openaiKey) chain.push({ url: 'https://api.openai.com/v1/chat/completions', key: openaiKey, model: 'gpt-4o-mini' });
-  if (chain.length === 0) return true; // sem IA → default seguro
+  if (chain.length === 0) return 'ask'; // sem IA → perguntar é mais seguro que adivinhar
 
   // Histórico recente (a mensagem atual ainda não foi inserida; entra à parte).
   let context = '';
@@ -499,11 +500,11 @@ async function classifyReopenWithAI(admin: any, convId: string, text: string): P
       if (!res.ok) continue;
       const out = await res.json();
       const ans = String(out?.choices?.[0]?.message?.content || '').toUpperCase();
-      if (ans.includes('CORTESIA')) return false;
-      if (ans.includes('NOVA')) return true;
+      if (ans.includes('CORTESIA')) return 'keep';
+      if (ans.includes('NOVA')) return 'reopen';
     } catch { /* tenta o próximo provedor */ }
   }
-  return true; // todos falharam → default seguro (reabre)
+  return 'ask'; // todos falharam → confirmar com o cliente
 }
 
 /**

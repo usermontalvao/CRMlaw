@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.233': { name: 'Cafe Estado Blindado', emoji: '🛡️' },
   '1.10.232': { name: 'Cafe CRM Conversa Nativa', emoji: '☕' },
   '1.10.231': { name: 'Cafe Silencio Inteligente', emoji: '🔕' },
   '1.10.230': { name: 'Cafe Limpeza Assistida', emoji: 'clean' },
@@ -887,6 +888,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.233',
+    date: '17/06/2026',
+    summary: 'WhatsApp: o CRM endureceu pontos criticos de estado no atendimento, reabertura e transferencia, com backup previo do estado atual antes das correcoes.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Reabertura inteligente voltou a decidir corretamente', description: 'O webhook deixou de misturar booleans e estados textuais na classificacao de reabertura, evitando manter conversas encerradas por erro logico e tratando casos ambiguos de forma mais segura.' },
+        { type: 'fix' as const, title: 'Envio nao prossegue quando o auto-assume falha', description: 'O compositor passou a abortar a resposta se a tentativa de assumir a conversa falhar, evitando mensagem enviada sem responsavel definido.' },
+        { type: 'fix' as const, title: 'Transferencia reverte se a auditoria nao for gravada', description: 'A conversa nao fica mais em aguardando aceite sem registro em `whatsapp_transfers`: se o log falhar, o estado da conversa e restaurado ao valor anterior.' },
+      ]},
+      { moduleId: 'docs', changes: [
+        { type: 'improvement' as const, title: 'Backup local antes das correcoes', description: 'Foi registrado um snapshot de seguranca com branch, tag e patch local antes das mudancas no fluxo do WhatsApp.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.232',
     date: '17/06/2026',

@@ -1681,7 +1681,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         setConversations(prev => prev.map(c => c.id === selected.id
           ? { ...c, assigned_user_id: user.id, awaiting_accept: false, transfer_pending_since: null } : c));
         justAssumed = true;
-      } catch (e: any) { toast.error('Falha ao assumir', e.message); }
+      } catch (e: any) {
+        toast.error('Falha ao assumir', e.message);
+        sendingRef.current = false;
+        return;
+      }
     }
 
     // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente

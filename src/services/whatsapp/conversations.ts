@@ -79,7 +79,7 @@ export const conversationsApi = {
     const { conversationId, toUserId, toDepartmentId, note } = params;
     const { data: conv } = await supabase
       .from(CONV_TABLE)
-      .select('assigned_user_id, department_id')
+      .select('assigned_user_id, department_id, awaiting_accept, transfer_pending_since')
       .eq('id', conversationId)
       .maybeSingle();
 
@@ -95,7 +95,7 @@ export const conversationsApi = {
     if (upErr) throw new Error(upErr.message);
 
     const { data: auth } = await supabase.auth.getUser();
-    await supabase.from(TRANSFER_TABLE).insert({
+    const { error: logErr } = await supabase.from(TRANSFER_TABLE).insert({
       conversation_id: conversationId,
       from_user_id: conv?.assigned_user_id ?? null,
       to_user_id: toUserId ?? null,
@@ -104,6 +104,16 @@ export const conversationsApi = {
       note: note || null,
       performed_by: auth?.user?.id ?? null,
     });
+    if (logErr) {
+      // Evita deixar a conversa em estado pendente sem trilha de auditoria.
+      await supabase.from(CONV_TABLE).update({
+        assigned_user_id: conv?.assigned_user_id ?? null,
+        department_id: conv?.department_id ?? null,
+        awaiting_accept: conv?.awaiting_accept ?? false,
+        transfer_pending_since: conv?.transfer_pending_since ?? null,
+      }).eq('id', conversationId);
+      throw new Error(logErr.message);
+    }
   },
 
   /**
