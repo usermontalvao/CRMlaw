@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.238': { name: 'Cafe Chunk Cirurgico', emoji: '🪓' },
   '1.10.237': { name: 'Cafe Heap Forcado', emoji: '🚀' },
   '1.10.236': { name: 'Cafe Browsers Atualizados', emoji: '🌐' },
   '1.10.235': { name: 'Cafe Heap Estavel', emoji: '🧠' },
@@ -892,6 +893,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.238',
+    date: '17/06/2026',
+    summary: 'Build: o empacotamento foi aliviado para ambientes com memoria apertada, com heap explicito nos binarios e divisao manual de dependencias pesadas em chunks dedicados.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Build usa Node com heap explicito nos binarios', description: 'O script `build` passou a executar `tsc` e `vite` via `node --max-old-space-size=6144`, evitando depender apenas de heranca de ambiente para liberar memoria.' },
+        { type: 'improvement' as const, title: 'Chunks pesados foram separados no Vite', description: 'Dependencias como Syncfusion, react-pdf, exportacao PDF, DOCX, OpenAI e XLSX agora sao distribuídas em chunks manuais para reduzir pressao na fase de `rendering chunks` do Rollup.' },
+        { type: 'improvement' as const, title: 'Build deixou de calcular gzip no processo', description: 'O `reportCompressedSize` foi desligado para economizar memoria e tempo no build de deploy.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.237',
     date: '17/06/2026',
