@@ -43,3 +43,7 @@ supabase/.temp/
 # Graphify (knowledge graph - regenerável via `graphify update .`)
 graphify-out/
 .graphify-codeonly/
+
+# Scratch/local (análise, backups manuais)
+tmp/
+backups/

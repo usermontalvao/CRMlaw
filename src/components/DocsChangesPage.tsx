@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.244': { name: 'Cafe Politica Blindada', emoji: '🔐' },
   '1.10.243': { name: 'Cafe Push Orquestrado', emoji: '📲' },
   '1.10.242': { name: 'Cafe Ausencia na Retomada', emoji: '🌙' },
   '1.10.241': { name: 'Cafe Reabertura Temporal', emoji: '⏱️' },
@@ -898,6 +899,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.244',
+    date: '18/06/2026',
+    summary: 'Assinaturas: as policies foram endurecidas para separar acesso anonimo e autenticado, com suporte operacional para remover a automacao descartada do WhatsApp.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'security' as const, title: 'Gestao administrativa de pedidos de assinatura no RLS', description: 'Foi adicionada uma funcao auxiliar e novas policies para permitir que administradores e socios gerenciem solicitacoes visiveis sem perder a rastreabilidade do criador original.' },
+        { type: 'security' as const, title: 'Policies publicas ficaram restritas ao role anon', description: 'O fluxo publico de assinatura deixou de usar `TO public`, evitando que usuarios autenticados herdassem acessos destinados apenas ao portal externo.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Script dedicado para remover a automacao descartada', description: 'A operacao ganhou um SQL destrutivo controlado para eliminar tabelas e funcoes do workflow antigo de WhatsApp sem tocar nas estruturas centrais do CRM.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'improvement' as const, title: 'Pastas locais temporarias ignoradas pelo Git', description: 'Os diretórios `tmp/` e `backups/` passaram a ser ignorados para evitar ruido operacional e artefatos locais em futuros commits.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.243',
     date: '18/06/2026',
