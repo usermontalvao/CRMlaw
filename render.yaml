@@ -2,11 +2,11 @@ services:
   - type: web
     name: crm-advogado
     env: static
-    buildCommand: npm install && npm run build
+    buildCommand: NODE_OPTIONS=--max-old-space-size=6144 npm install && NODE_OPTIONS=--max-old-space-size=6144 npm run build
     staticPublishPath: ./dist
     envVars:
       - key: NODE_OPTIONS
-        value: --max-old-space-size=4096
+        value: --max-old-space-size=6144
     headers:
       - path: /*
         name: Cache-Control

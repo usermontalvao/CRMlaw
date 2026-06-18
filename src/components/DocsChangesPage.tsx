@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.237': { name: 'Cafe Heap Forcado', emoji: '🚀' },
   '1.10.236': { name: 'Cafe Browsers Atualizados', emoji: '🌐' },
   '1.10.235': { name: 'Cafe Heap Estavel', emoji: '🧠' },
   '1.10.234': { name: 'Cafe Icone Tipado', emoji: '🧩' },
@@ -891,6 +892,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.237',
+    date: '17/06/2026',
+    summary: 'Deploy: o Render passou a receber heap ampliado de forma explicita no proprio comando de build, reduzindo risco de o ambiente ignorar a configuracao apenas por variavel global.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Heap do Node forçado no buildCommand', description: 'O `render.yaml` agora executa `npm install` e `npm run build` com `NODE_OPTIONS=--max-old-space-size=6144` no proprio comando, além de manter a env var declarada no serviço.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.236',
     date: '17/06/2026',
