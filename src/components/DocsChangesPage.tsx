@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.239': { name: 'Cafe Chunk Seguro', emoji: '🛠️' },
   '1.10.238': { name: 'Cafe Chunk Cirurgico', emoji: '🪓' },
   '1.10.237': { name: 'Cafe Heap Forcado', emoji: '🚀' },
   '1.10.236': { name: 'Cafe Browsers Atualizados', emoji: '🌐' },
@@ -893,6 +894,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.239',
+    date: '17/06/2026',
+    summary: 'Build/runtime: a divisao manual de chunks foi suavizada para evitar quebrar bibliotecas com dependencias internas mais acopladas, mantendo apenas cortes seguros para o deploy.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Chunking manual recuado para grupos seguros', description: 'A configuracao do Vite deixou de isolar `docx`, `react-pdf`, `pdf export` e um `vendor-misc` generico, preservando apenas separacoes previsiveis como `syncfusion`, `react`, `xlsx` e `openai`.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.238',
     date: '17/06/2026',

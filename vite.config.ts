@@ -27,14 +27,11 @@ export default defineConfig({
           if (!id.includes('node_modules')) return undefined;
 
           if (id.includes('@syncfusion')) return 'vendor-syncfusion';
-          if (id.includes('react-pdf') || id.includes('pdfjs-dist')) return 'vendor-react-pdf';
-          if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdf-export';
           if (id.includes('xlsx')) return 'vendor-xlsx';
           if (id.includes('openai')) return 'vendor-openai';
-          if (id.includes('docx-preview') || id.includes('docxtemplater') || id.includes('docx') || id.includes('pizzip')) return 'vendor-docx';
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'vendor-react';
-
-          return 'vendor-misc';
+          
+          return undefined;
         },
       },
     },
