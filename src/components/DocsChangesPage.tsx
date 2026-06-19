@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.247': { name: 'Cafe Portal Acesso Rapido', emoji: '🚪' },
   '1.10.245': { name: 'Cafe Advisor Orquestrado', emoji: '🧭' },
   '1.10.244': { name: 'Cafe Politica Blindada', emoji: '🔐' },
   '1.10.243': { name: 'Cafe Push Orquestrado', emoji: '📲' },
@@ -915,6 +916,33 @@ const releases: ReleaseNote[] = [
       { moduleId: 'sistema', changes: [
         { type: 'improvement' as const, title: 'Ajustes complementares em App, Dashboard e login', description: 'O lote consolidou ajustes de apoio na navegacao e em componentes compartilhados para acompanhar a nova experiencia do funil integrado.' },
       ]},
+    ],
+  },
+  {
+    version: '1.10.247',
+    date: '19/06/2026',
+    summary: 'Portal: a tela de login do cliente e da área restrita foi refinada com acesso rápido a contas lembradas, vitrine mais rica no painel de marca e launcher local ajustado para subir o Vite de forma direta.',
+    modules: [
+      {
+        moduleId: 'portal',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Acesso rápido com contas lembradas na Área Restrita',
+            description: 'A tela de login do staff passou a listar contas salvas no dispositivo com foto, e-mail e ação para entrar novamente ou esquecer o acesso, mantendo a senha fora do armazenamento local.',
+          },
+          {
+            type: 'improvement',
+            title: 'Painel de marca do login ficou mais vivo e informativo',
+            description: 'O PortalLogin recebeu chips de módulos, parallax suave, hierarquia visual refinada e melhor contexto do produto no painel editorial da tela de entrada.',
+          },
+          {
+            type: 'fix',
+            title: 'Launcher local usa o binário do Vite diretamente',
+            description: 'O arquivo .claude/launch.json deixou de depender de npm run dev e passou a chamar o Vite pelo binário local do projeto para reduzir atrito no ambiente de desenvolvimento.',
+          },
+        ],
+      },
     ],
   },
   {
