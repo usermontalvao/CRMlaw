@@ -2015,20 +2015,11 @@ useEffect(() => {
               expiresAt={getOverrideExpiry('whatsapp')} />
           )}
 
-          {/* ── ATENDIMENTO ── Leads ────────────────────────────── */}
-          {sidebarMode === 'normal' && !permissionsLoading &&
-            canAccessModule('leads') && isModuleEnabled('leads') && !hiddenMenuModules.has('leads') && (
-            <div className="flex items-center gap-2 pl-3 pr-0 pt-3.5 pb-1 select-none">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Atendimento</span>
-              <div className="h-px flex-1 bg-white/[0.06]" />
-            </div>
-          )}
-          {!permissionsLoading && canAccessModule('leads') && isModuleEnabled('leads') && (
-            <SidebarModuleBtn moduleKey="leads" label="Leads" Icon={Target}
-              isActive={activeModule === 'leads'}
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('leads'); }}
-              expiresAt={getOverrideExpiry('leads')} />
-          )}
+          {/* ── ATENDIMENTO ── Leads ──────────────────────────────
+              O funil de Leads deixou de ser um item de menu próprio: agora vive
+              embutido no módulo WhatsApp (gaveta no topo do atendimento). A rota
+              interna 'leads' permanece válida para deep-links/compatibilidade,
+              mas não é mais exposta no sidebar. */}
 
           {/* ── GESTÃO ── Clientes, Processos, Req., Petições, Fin. */}
           {sidebarMode === 'normal' && !permissionsLoading && (
@@ -2581,6 +2572,7 @@ useEffect(() => {
                 <WhatsAppModule
                   openConversationId={moduleParams['whatsapp'] ? JSON.parse(moduleParams['whatsapp']).conversationId : undefined}
                   onParamConsumed={() => clearModuleParams('whatsapp')}
+                  onConvertLead={handleConvertLead}
                 />
               </div>
             )}

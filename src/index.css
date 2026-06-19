@@ -799,14 +799,26 @@ body,
 }
 
 @keyframes slideUp {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(10px) scale(0.98);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* ── Gaveta de Leads embutida no WhatsApp ──
+   Estilo corporativo: abre/fecha instantâneo (sem animar altura, que causava
+   reflow do funil inteiro e travava). Apenas um fade de opacidade curtíssimo no
+   conteúdo — barato para o compositor, sem layout thrash. */
+@keyframes wa-leads-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.wa-leads-inner {
+  animation: wa-leads-fade 0.12s linear both;
 }
 
 /* Apple Sidebar */

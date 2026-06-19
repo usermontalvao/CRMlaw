@@ -165,7 +165,6 @@ export const CloseConversationModal: React.FC<{
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (!reason.trim()) return;
     setSaving(true);
     try {
       await whatsappService.closeConversation(conversation.id, reason, { farewell: farewell.trim() || undefined });
@@ -184,14 +183,14 @@ export const CloseConversationModal: React.FC<{
       footer={
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving || !reason.trim()} className={waBtnPrimary}>
+          <button onClick={submit} disabled={saving} className={waBtnPrimary}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Encerrar
           </button>
         </div>
       }
     >
       <WaDialogBody>
-        <label className={waLabel}>Motivo do encerramento <span className="text-red-500">*</span> <span className="font-normal text-slate-400">(interno)</span></label>
+        <label className={waLabel}>Motivo do encerramento <span className="font-normal text-slate-400">(interno, opcional)</span></label>
         <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Ex: dúvida resolvida"
           className={`${waInput} mb-3 resize-none`} />
 

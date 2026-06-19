@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, TrendingUp, Clock, FileCheck, Target, Edit2, Save } from 'lucide-react';
+import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, TrendingUp, Clock, FileCheck, Target, Edit2, Save, MessageCircle } from 'lucide-react';
 import { Modal, ModalBody, LeadsSkeleton } from './ui';
 import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
@@ -16,11 +16,30 @@ const STAGES: { key: LeadStage; label: string; accent: string; gradient: string;
 
 interface LeadsModuleProps {
   onConvertLead: (lead: Lead) => void;
+  /**
+   * Variante compacta usada quando o funil é embutido em outro módulo (ex.: a
+   * gaveta de Leads dentro do WhatsApp). Esconde os cards de destaque e adensa o
+   * espaçamento para caber numa faixa de altura reduzida, sem duplicar a lógica
+   * do quadro.
+   */
+  embedded?: boolean;
+  /**
+   * Quando fornecido (contexto WhatsApp), clicar no card do lead abre/reabre a
+   * conversa de WhatsApp dele em vez de só abrir o modal de detalhes. O modal
+   * continua acessível pelo botão de editar no card.
+   */
+  onOpenConversation?: (lead: Lead) => void;
+  /**
+   * Filtra os leads por canal de origem (= conta de WhatsApp conectada). Casa
+   * com `lead.source`. Vazio = todos. Novos leads criados com um canal ativo
+   * herdam-no como origem, construindo a atribuição por canal ao longo do tempo.
+   */
+  channelFilter?: string;
 }
 
 const DEFAULT_LEAD_SOURCES = ['Indicação', 'Site', 'Instagram', 'Google', 'WhatsApp', 'Outro'];
 
-const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
+const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = false, onOpenConversation, channelFilter = '' }) => {
   const [stages, setStages] = useState(STAGES);
   const [leadSources, setLeadSources] = useState<string[]>(DEFAULT_LEAD_SOURCES);
 
@@ -143,7 +162,8 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
   };
 
   const handleOpenNewLeadModal = () => {
-    setFormData({ name: '', email: '', phone: '', source: '', stage: stages[0]?.key ?? 'novo', notes: '' });
+    // Pré-seleciona o canal ativo como origem, para o lead já nascer atribuído.
+    setFormData({ name: '', email: '', phone: '', source: channelFilter || '', stage: stages[0]?.key ?? 'novo', notes: '' });
     setIsModalOpen(true);
   };
 
@@ -204,8 +224,11 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
     }
   };
 
+  const matchesChannel = (l: Lead) =>
+    !channelFilter || (l.source || '').toLowerCase().includes(channelFilter.toLowerCase());
+
   const getLeadsByStage = (stage: LeadStage) =>
-    leads.filter((l) => l.stage === stage).sort((a, b) => a.name.localeCompare(b.name));
+    leads.filter((l) => l.stage === stage && matchesChannel(l)).sort((a, b) => a.name.localeCompare(b.name));
 
   const totalLeads = leads.length;
   const qualifyingLeads = leads.filter((lead) => lead.stage === 'qualificando').length;
@@ -217,7 +240,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
   }
 
   return (
-    <div className="space-y-6 relative">
+    <div className={`relative ${embedded ? 'space-y-3' : 'space-y-6'}`}>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -225,7 +248,8 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
         </div>
       )}
 
-      {/* Highlights */}
+      {/* Highlights — ocultos no modo embutido para poupar altura vertical */}
+      {!embedded && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-600 via-blue-500 to-blue-400 text-white rounded-2xl p-6 shadow-xl border border-blue-400/20 hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-3">
@@ -271,6 +295,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
           <p className="text-xs text-white/70 mt-1">Base consolidada no CRM</p>
         </div>
       </div>
+      )}
 
       {/* Kanban Board */}
       <div className="flex flex-col md:flex-row gap-3 md:gap-4 md:overflow-x-auto pb-4">
@@ -280,34 +305,56 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
           return (
             <div key={stage.key} className="flex-shrink-0 w-full md:w-80">
               <div
-                className={`bg-[#f8f7f5] rounded-2xl border ${
-                  isActiveDrop ? 'border-amber-400 shadow-lg shadow-amber-200/40' : 'border-[#e7e5df] shadow-sm'
-                } overflow-hidden backdrop-blur-sm transition-all duration-150`}
+                className={`rounded-2xl border overflow-hidden transition-all duration-150 ${
+                  embedded ? 'bg-white' : 'bg-[#f8f7f5] backdrop-blur-sm'
+                } ${
+                  isActiveDrop ? 'border-amber-400 shadow-lg shadow-amber-200/40'
+                    : embedded ? 'border-[#ebe9e3]' : 'border-[#e7e5df] shadow-sm'
+                }`}
                 onDragOver={(event) => handleDragOver(event, stage.key)}
                 onDrop={(event) => handleDrop(event, stage.key)}
               >
-                <div className={`px-3 md:px-5 py-3 md:py-4 border-b border-white/10 bg-gradient-to-r ${stage.gradient}`}>
-                  <div className="flex items-center justify-between text-white mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-1.5 rounded-lg">
-                        {stage.icon}
-                      </div>
-                      <h4 className="font-semibold text-xs md:text-sm tracking-wide uppercase">{stage.label}</h4>
+                {embedded ? (
+                  /* Cabeçalho claro e enxuto: só um filete colorido da etapa,
+                     rótulo discreto e contagem neutra — leve para painel embutido. */
+                  <div className={`px-3 py-2.5 border-b border-[#f1efe9] bg-white flex items-center justify-between ${stage.accent}`}
+                    style={{ boxShadow: 'inset 3px 0 0 0 currentColor' }}>
+                    <div className="flex items-center gap-1.5">
+                      {stage.icon}
+                      <h4 className="font-semibold text-[11px] tracking-wide uppercase text-slate-600">{stage.label}</h4>
                     </div>
-                    <span className="text-xs font-bold px-2 md:px-2.5 py-0.5 md:py-1 bg-black/30 backdrop-blur-sm rounded-full">
+                    <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">
                       {stageLeads.length}
                     </span>
                   </div>
-                  <p className="text-[10px] md:text-[11px] text-white/80 leading-relaxed hidden md:block">{stage.description}</p>
-                </div>
+                ) : (
+                  <div className={`px-3 md:px-5 py-3 md:py-4 border-b border-white/10 bg-gradient-to-r ${stage.gradient}`}>
+                    <div className="flex items-center justify-between text-white mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-[#f8f7f5]/20 backdrop-blur-sm p-1.5 rounded-lg">
+                          {stage.icon}
+                        </div>
+                        <h4 className="font-semibold text-xs md:text-sm tracking-wide uppercase">{stage.label}</h4>
+                      </div>
+                      <span className="text-xs font-bold px-2 md:px-2.5 py-0.5 md:py-1 bg-black/30 backdrop-blur-sm rounded-full">
+                        {stageLeads.length}
+                      </span>
+                    </div>
+                    <p className="text-[10px] md:text-[11px] text-white/80 leading-relaxed hidden md:block">{stage.description}</p>
+                  </div>
+                )}
 
-                <div className="p-3 md:p-4 space-y-2 md:space-y-3 min-h-[150px] md:min-h-[200px] max-h-[400px] md:max-h-[600px] overflow-y-auto bg-gradient-to-b from-slate-50/80 to-white">
+                <div className={`overflow-y-auto ${embedded ? 'p-2.5 space-y-2 bg-white min-h-[120px] max-h-[300px]' : 'p-3 md:p-4 space-y-2 md:space-y-3 bg-gradient-to-b from-slate-50/80 to-white min-h-[150px] md:min-h-[200px] max-h-[400px] md:max-h-[600px]'}`}>
                   {stageLeads.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       {stage.key === 'novo' ? (
                         <button
                           onClick={handleOpenNewLeadModal}
-                          className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold p-3 rounded-full flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-500/40 hover:shadow-orange-500/60 hover:scale-105 mb-3"
+                          className={`flex items-center justify-center gap-2 transition-all mb-3 ${
+                            embedded
+                              ? 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 p-2.5 rounded-full'
+                              : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold p-3 rounded-full shadow-lg shadow-orange-500/40 hover:shadow-orange-500/60 hover:scale-105'
+                          }`}
                           title="Adicionar Novo Lead"
                         >
                           <Plus className="w-5 h-5" />
@@ -331,8 +378,13 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                         draggable
                         onDragStart={(event) => handleDragStart(event, lead)}
                         onDragEnd={handleDragEnd}
-                        onClick={() => handleOpenLead(lead)}
-                        className={`relative bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3 md:p-4 hover:shadow-xl hover:border-amber-300 transition-all duration-200 cursor-pointer group ${
+                        onClick={() => (embedded && onOpenConversation ? onOpenConversation(lead) : handleOpenLead(lead))}
+                        title={embedded && onOpenConversation ? 'Abrir conversa no WhatsApp' : undefined}
+                        className={`relative rounded-xl cursor-pointer group transition-all duration-200 ${
+                          embedded
+                            ? 'bg-white border border-[#ebe9e3] p-2.5 hover:border-amber-300 hover:shadow-sm'
+                            : 'bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3 md:p-4 hover:shadow-xl hover:border-amber-300'
+                        } ${
                           draggingLeadId === lead.id ? 'opacity-50 scale-95 shadow-2xl shadow-amber-300/50 border-amber-400' : ''
                         }`}
                       >
@@ -341,16 +393,30 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                             <span className="text-[9px] md:text-[10px] uppercase tracking-[0.15em] text-slate-400 font-semibold block mb-1">Lead</span>
                             <h5 className="font-bold text-xs md:text-sm text-slate-900 leading-tight truncate">{lead.name}</h5>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteLead(lead.id);
-                            }}
-                            className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1 md:p-1.5 rounded-lg transition-all flex-shrink-0"
-                            title="Excluir lead"
-                          >
-                            <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
-                          </button>
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            {embedded && onOpenConversation && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenLead(lead);
+                                }}
+                                className="text-slate-300 hover:text-amber-600 hover:bg-amber-50 p-1 md:p-1.5 rounded-lg transition-all"
+                                title="Editar lead"
+                              >
+                                <Edit2 className="w-3 h-3 md:w-4 md:h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteLead(lead.id);
+                              }}
+                              className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1 md:p-1.5 rounded-lg transition-all"
+                              title="Excluir lead"
+                            >
+                              <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
+                            </button>
+                          </div>
                         </div>
 
                         {lead.email && (
@@ -387,16 +453,33 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                           </div>
                         )}
 
-                        <div className="flex gap-2 pt-2 border-t border-slate-100">
+                        <div className={`flex gap-2 ${embedded ? 'pt-1.5 mt-0.5 border-t border-[#f1efe9]' : 'pt-2 border-t border-slate-100'}`}>
+                          {embedded && onOpenConversation && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenConversation(lead);
+                              }}
+                              className="flex-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-[11px] font-semibold px-2 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                              title="Abrir conversa no WhatsApp"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              Conversar
+                            </button>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               onConvertLead(lead);
                             }}
-                            className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 hover:shadow-md transition-all"
+                            className={`flex-1 flex items-center justify-center gap-1.5 transition-colors ${
+                              embedded
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-[11px] font-semibold px-2 py-1.5 rounded-lg'
+                                : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white text-xs font-semibold px-3 py-2 rounded-lg hover:shadow-md'
+                            }`}
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            Converter em Cliente
+                            {embedded ? 'Converter' : 'Converter em Cliente'}
                           </button>
                         </div>
                       </div>

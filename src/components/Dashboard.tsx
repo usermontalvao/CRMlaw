@@ -782,7 +782,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   if (loading || permissionsLoading) {
     return (
-      <div className="bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
+      <div className="@container bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
         <ShimmerSweep>
           {/* Header */}
           <div className="mb-5 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -799,9 +799,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
 
           {/* Main grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="grid grid-cols-1 @4xl:grid-cols-12 gap-4 items-start">
             {/* Agenda (7 cols) */}
-            <div className="lg:col-span-7 bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="@4xl:col-span-7 bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
                 <div className="space-y-2">
                   <div className="h-3 w-40 rounded-full bg-slate-200" />
@@ -836,7 +836,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             </div>
 
             {/* Right column (5 cols) */}
-            <div className="lg:col-span-5 space-y-4">
+            <div className="@4xl:col-span-5 space-y-4">
               {/* Financeiro card */}
               <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">
                 <div className="h-3 w-28 rounded-full bg-slate-200" />
@@ -900,11 +900,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   return (
     <>
-    <div className="bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
+    <div className="@container bg-[#f5f5f3] dark:bg-zinc-950 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-5 sm:py-6 min-h-screen overflow-x-hidden">
 
       {/* Header */}
       <div className="mb-5 sm:mb-6 space-y-2.5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
         <div className="flex items-center justify-between sm:gap-4">
           <div className="flex items-center gap-2">
             <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
@@ -926,7 +926,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           )}
         </div>
 
-        <div className="flex items-center justify-between sm:justify-start sm:gap-4">
+        <div className="flex items-center flex-wrap justify-between sm:justify-end gap-y-2 sm:gap-4 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3">
             {canView('clientes') && (
               <button onClick={() => handleNavigate('clientes')}
@@ -966,7 +966,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
 
-          <div className="hidden sm:flex items-center gap-2">
+          <div className="hidden sm:flex items-center flex-wrap justify-end gap-2">
             {urgentAlerts.length > 0 && (
               <div className="flex items-center gap-2">
                 {urgentAlerts.filter(a => canView(a.action)).map((alert, index) => (
@@ -1227,11 +1227,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       )}
 
       {/* ── MAIN GRID ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-w-0 lg:items-start">
+      <div className="grid grid-cols-1 @4xl:grid-cols-12 gap-4 min-w-0 @4xl:items-start">
 
         {/* ── AGENDA (7 cols or full) ── */}
         {showAgenda && (
-          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-lg border border-slate-200 flex flex-col ${rightColVisible ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
+          <div key="agenda" className={`min-w-0 overflow-hidden bg-white rounded-lg border border-slate-200 flex flex-col ${rightColVisible ? '@4xl:col-span-7' : '@4xl:col-span-12'}`}>
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between flex-shrink-0 gap-2">
               <div className="min-w-0 flex-1">
@@ -1370,7 +1370,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
         {/* ── RIGHT COLUMN (5 cols or full) ── */}
         {rightColVisible && (
-          <div className={`min-w-0 ${showAgenda ? 'lg:col-span-5' : 'lg:col-span-12'} flex flex-col gap-4`}>
+          <div className={`min-w-0 ${showAgenda ? '@4xl:col-span-5' : '@4xl:col-span-12'} flex flex-col gap-4`}>
             {/* Financeiro */}
             {showFinanceiro && (
               <div className="min-w-0 overflow-hidden bg-white rounded-lg border border-slate-200 flex flex-col">
@@ -1592,10 +1592,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
         {/* ── BOTTOM ROW (full 12 cols) ── */}
         {bottomWidgets > 0 && (
-          <div className={`lg:col-span-12 min-w-0 grid grid-cols-1 gap-4 ${
-            bottomWidgets >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' :
-            bottomWidgets === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' :
-            bottomWidgets === 2 ? 'sm:grid-cols-2' : ''
+          <div className={`@4xl:col-span-12 min-w-0 grid grid-cols-1 gap-4 ${
+            bottomWidgets >= 4 ? '@2xl:grid-cols-2 @5xl:grid-cols-4' :
+            bottomWidgets === 3 ? '@2xl:grid-cols-2 @4xl:grid-cols-3' :
+            bottomWidgets === 2 ? '@2xl:grid-cols-2' : ''
           }`}>
             {/* Tarefas */}
             {showTarefas && (

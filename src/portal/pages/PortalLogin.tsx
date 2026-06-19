@@ -123,6 +123,19 @@ export const PortalLogin: React.FC = () => {
 
   // ── Client portal state
   const [mode, setMode]             = useState<Mode>('client');
+  // Login do cliente pode estar desativado (Configurações → Portal). null = ainda carregando.
+  const [portalEnabled, setPortalEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    supabase.rpc('portal_login_enabled').then(({ data, error }) => {
+      if (!active) return;
+      const on = error ? true : data !== false;
+      setPortalEnabled(on);
+      if (!on) setMode('staff');   // sem portal de cliente → só Área Restrita
+    });
+    return () => { active = false; };
+  }, []);
   const [clientStep, setClientStep] = useState<ClientStep>('cpf');
   const [cpf, setCpf]               = useState('');
   const [phoneHint, setPhoneHint]   = useState<string | null>(null);
@@ -315,83 +328,70 @@ export const PortalLogin: React.FC = () => {
 
   // ────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen lg:h-screen flex flex-col lg:overflow-hidden bg-slate-50" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#FCFAF6', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="flex-col md:flex-row">
 
-      {/* ── NAVBAR ──────────────────────────────────────────────────────── */}
-      <header className="shrink-0 w-full bg-slate-50 border-b border-orange-200">
-        <div className="flex justify-between items-center w-full px-4 md:px-10 py-3 max-w-[1200px] mx-auto">
-          <div className="flex items-center gap-2">
-            <Logo />
+      {/* ── PAINEL DE MARCA (editorial, escuro) — oculto no mobile ── */}
+      <aside
+        className="hidden md:flex"
+        style={{
+          position: 'relative', overflow: 'hidden', flex: '0 0 44%', minWidth: 0,
+          flexDirection: 'column', justifyContent: 'space-between', padding: 'clamp(32px, 4.5vw, 60px)', color: '#fff',
+          backgroundColor: '#0C1320',
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),radial-gradient(640px 540px at 8% 92%, rgba(242,99,26,0.16), transparent 62%),radial-gradient(520px 460px at 96% 4%, rgba(74,108,170,0.16), transparent 60%)',
+          backgroundSize: '80px 80px, 80px 80px, 100% 100%, 100% 100%',
+        }}>
+        {/* watermark monogram */}
+        <div style={{ position: 'absolute', right: -60, bottom: -90, fontFamily: "'Newsreader', serif", fontSize: 460, lineHeight: 1, fontWeight: 400, color: 'rgba(255,255,255,0.018)', zIndex: 1, userSelect: 'none' }}>J</div>
+
+        {/* logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(150deg,#FF7A33,#EA5310)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 23, color: '#fff', boxShadow: '0 10px 24px -8px rgba(242,99,26,0.65)' }}>J</div>
+          <div style={{ lineHeight: 1.2 }}>
+            <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}><span style={{ color: '#fff' }}>jurius</span><span style={{ color: '#8893a8', fontWeight: 500 }}>.com.br</span></div>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', color: '#5e6a82', fontWeight: 600, marginTop: 1 }}>GESTÃO JURÍDICA</div>
           </div>
-          <button
-            onClick={() => document.getElementById('login-card')?.focus()}
-            className="bg-orange-700 text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity text-sm"
-          >
-            Acessar Portal
-          </button>
         </div>
-      </header>
 
-      {/* ── MAIN ──────────────────────────────────────────────────────────── */}
-      <main className="flex-1 flex overflow-hidden relative" style={{
-        backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(234,88,12,0.05) 1px, transparent 0)',
-        backgroundSize: '24px 24px',
-      }}>
+        {/* headline editorial */}
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: 520 }}>
+          <div style={{ width: 34, height: 2, background: '#F2631A', marginBottom: 'clamp(20px, 3vw, 34px)', opacity: 0.9 }} />
+          <h1 style={{ fontFamily: "'Newsreader', serif", fontWeight: 400, fontSize: 'clamp(28px, 3vw, 46px)', lineHeight: 1.1, letterSpacing: '-0.01em', color: '#F5F2EB' }}>
+            Gestão jurídica conduzida com <span style={{ fontStyle: 'italic', color: '#FF9259' }}>precisão</span>.
+          </h1>
+          <p style={{ fontSize: 'clamp(13px, 1.1vw, 16px)', lineHeight: 1.65, color: '#97a1b4', fontWeight: 400, marginTop: 'clamp(16px, 2vw, 26px)', maxWidth: 430 }}>
+            Processos, prazos e documentos do escritório reunidos em um só ambiente — com a segurança e o rigor que a advocacia exige.
+          </p>
+        </div>
 
-        {/* ── HERO ──────────────────────────────────────────────────────── */}
-        <section className="w-full max-w-[1200px] mx-auto px-4 md:px-10 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        {/* footer meta */}
+        <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ fontSize: 13, color: '#6e7a92', fontWeight: 500, letterSpacing: '0.01em' }}>jurius.com.br</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#8a94a8', fontWeight: 500 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: svc === 'online' ? '#3ec47a' : svc === 'offline' ? '#ef4444' : '#f5a623', boxShadow: svc === 'online' ? '0 0 0 3px rgba(62,196,122,0.18)' : 'none' }} />
+            {svc === 'online' ? 'Sistema operacional' : svc === 'offline' ? 'Sistema indisponível' : 'Verificando sistema'}
+          </span>
+        </div>
+      </aside>
 
-          {/* LEFT */}
-          <div className="lg:col-span-7 flex flex-col gap-5 order-2 lg:order-1">
+      {/* ── PAINEL DO FORMULÁRIO ── */}
+      <main className="min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(28px, 5vw, 56px) clamp(18px, 4vw, 48px)' }}>
+        {/* fundo pontilhado sutil (reaproveitado do login anterior) */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(234,88,12,0.05) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
 
-            {/* Título + descrição */}
-            <div>
-              <h1 className="text-[36px] md:text-[44px] leading-[1.1] tracking-tight font-extrabold text-slate-900">
-                Acompanhe seu processo em{' '}
-                <span className="text-orange-500">tempo real</span>
-              </h1>
-              <p className="mt-3 text-base text-slate-500 max-w-lg leading-relaxed">
-                A Jurius redefine a transparência jurídica. Acesso imediato a todas as atualizações do seu caso com clareza e segurança.
-              </p>
-            </div>
+        <div id="login-card" tabIndex={-1} className="relative z-10 w-full" style={{ maxWidth: 440 }}>
 
-            {/* 4 cards em 2×2 */}
-            <div className="grid grid-cols-2 gap-3">
-              <HeroFeatureCard icon={Gavel}         title="Processos e intimações" desc="Movimentações do Diário Oficial em tempo real." />
-              <HeroFeatureCard icon={Bell}          title="Alertas de prazos"      desc="Notificações sobre datas críticas do seu caso." />
-              <HeroFeatureCard icon={History}       title="Histórico completo"     desc="Toda a jornada do processo em um só lugar." />
-              <HeroFeatureCard icon={MessageSquare} title="Comunicação direta"     desc="Canal seguro e exclusivo com seu advogado." />
-            </div>
+          {/* logo no mobile (painel de marca fica oculto) */}
+          <div className="md:hidden mb-6 flex justify-center"><Logo /></div>
 
-            {/* Métricas ao vivo */}
-            <div className="flex gap-8 border-t border-orange-200/60 pt-4">
-              {([
-                { label: 'Clientes',    value: stats?.clientes,    prefix: '+' as string | undefined },
-                { label: 'Processos',   value: stats?.processos,   prefix: undefined },
-                { label: 'Assinaturas', value: stats?.assinaturas, prefix: '+' as string | undefined },
-                { label: 'Acordos',     value: stats?.acordos,     prefix: undefined },
-                { label: 'Prazos',      value: stats?.prazos,      prefix: undefined },
-              ]).map(({ label, value, prefix }) => (
-                <div key={label}>
-                  <p className="text-xl font-extrabold text-slate-900 tabular-nums">
-                    {value != null ? `${prefix ?? ''}${value.toLocaleString('pt-BR')}` : '—'}
-                  </p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="bg-[#f8f7f5] rounded-2xl overflow-hidden" style={{ boxShadow: '0 20px 40px -15px rgba(15,23,42,0.12)' }}>
 
-          {/* RIGHT — Login card */}
-          <div id="login-card" className="lg:col-span-5 self-center order-1 lg:order-2">
-            <div className="bg-[#f8f7f5] rounded-2xl border border-orange-200 overflow-hidden" style={{ boxShadow: '0 20px 40px -15px rgba(15,23,42,0.12)' }}>
-
-            {/* Tabs */}
-            <div className="flex border-b border-orange-200">
+            {/* Tabs — só aparecem quando o login do cliente está ativo (senão, só Área Restrita) */}
+            {portalEnabled !== false && (
+            <div className="flex border-b border-slate-200">
               <button type="button" onClick={() => switchMode('client')}
                 className={`flex-1 py-4 text-sm font-semibold tracking-wide transition-colors ${
                   mode === 'client'
-                    ? 'text-orange-700 border-b-2 border-orange-700 bg-[#f8f7f5]'
+                    ? 'text-slate-900 border-b-2 border-slate-700 bg-[#f8f7f5]'
                     : 'text-slate-500 bg-slate-100 hover:text-slate-700'
                 }`}>
                 Portal do Cliente
@@ -405,13 +405,14 @@ export const PortalLogin: React.FC = () => {
                 <Lock className="h-3.5 w-3.5" /> Área Restrita
               </button>
             </div>
+            )}
 
             {/* ═══ CLIENT PORTAL ═══ */}
             {mode === 'client' && (
               <div className="p-5 space-y-4">
                 <div className="flex gap-1.5">
-                  <div className="h-1 flex-1 rounded-full bg-orange-500" />
-                  <div className={`h-1 flex-1 rounded-full transition-colors ${clientStep === 'pin' ? 'bg-orange-500' : 'bg-orange-200'}`} />
+                  <div className="h-1 flex-1 rounded-full bg-slate-900" />
+                  <div className={`h-1 flex-1 rounded-full transition-colors ${clientStep === 'pin' ? 'bg-slate-900' : 'bg-slate-200'}`} />
                 </div>
 
                 {clientStep === 'cpf' && (
@@ -427,13 +428,13 @@ export const PortalLogin: React.FC = () => {
                         <input ref={cpfRef} type="text" value={formatCPF(cpf)}
                           onChange={(e) => { setCpf(e.target.value); setClientError(null); }}
                           placeholder="000.000.000-00" autoComplete="username" inputMode="numeric" disabled={clientLoading}
-                          className="w-full px-4 py-3 bg-slate-100 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-700 focus:border-orange-700 outline-none transition-all text-base font-semibold text-slate-900 placeholder:text-slate-400"
+                          className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all text-base font-semibold text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       {clientError && <ErrorMsg msg={clientError} />}
                       <button type="submit" disabled={clientLoading || !cpfOk}
-                        className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
-                        style={{ boxShadow: '0 4px 20px rgba(249,115,22,0.25)' }}>
+                        className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
+                        style={{ boxShadow: '0 10px 24px -12px rgba(15,26,46,0.85)' }}>
                         {clientLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Verificando...</> : <><span>Continuar</span><ArrowRight className="h-5 w-5" /></>}
                       </button>
                     </div>
@@ -457,10 +458,10 @@ export const PortalLogin: React.FC = () => {
                       <h2 className="text-lg font-bold text-slate-900 mt-1.5">Confirme seu acesso</h2>
                     </div>
                     {phoneHint && (
-                      <div className="flex items-center gap-3 rounded-lg bg-orange-50 px-3 py-2.5 border border-orange-200">
+                      <div className="flex items-center gap-3 rounded-lg bg-slate-100 px-3 py-2.5 border border-slate-200">
                         <span>📱</span>
                         <div>
-                          <p className="text-[11px] text-orange-700 font-semibold">Telefone cadastrado</p>
+                          <p className="text-[11px] text-slate-500 font-semibold">Telefone cadastrado</p>
                           <p className="text-sm font-bold text-slate-800 tracking-wider">{phoneHint}</p>
                         </div>
                       </div>
@@ -472,16 +473,16 @@ export const PortalLogin: React.FC = () => {
                           <input key={i} ref={pinRefs[i]} type="password" inputMode="numeric" maxLength={1} value={d}
                             onChange={(e) => handleDigit(i, e.target.value)} onKeyDown={(e) => handleKeyDown(i, e)} disabled={clientLoading}
                             className={`h-14 w-full rounded-xl border-2 text-center text-xl font-bold outline-none transition
-                              ${d ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-orange-200 bg-slate-100 text-slate-900'}
-                              focus:border-orange-500 focus:bg-white disabled:opacity-50`}
+                              ${d ? 'border-slate-900 bg-slate-100 text-slate-900' : 'border-slate-200 bg-slate-100 text-slate-900'}
+                              focus:border-slate-900 focus:bg-white disabled:opacity-50`}
                           />
                         ))}
                       </div>
                     </div>
                     {clientError && <ErrorMsg msg={clientError} />}
                     <button type="submit" disabled={clientLoading || !pinOk}
-                      className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
-                      style={{ boxShadow: '0 4px 20px rgba(249,115,22,0.25)' }}>
+                      className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold text-base hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
+                      style={{ boxShadow: '0 10px 24px -12px rgba(15,26,46,0.85)' }}>
                       {clientLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Entrando...</> : 'Entrar na minha área'}
                     </button>
                   </form>
@@ -527,7 +528,7 @@ export const PortalLogin: React.FC = () => {
                   <form onSubmit={handleIdentifierSubmit} className="space-y-6">
                     <div>
                       <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900">
-                        <Shield className="h-5 w-5 text-orange-500" />
+                        <Shield className="h-5 w-5 text-white" />
                       </div>
                       <h2 className="text-xl font-bold text-slate-900">Área Restrita</h2>
                       <p className="text-[13px] text-slate-500 mt-1">Acesso exclusivo para colaboradores do escritório</p>
@@ -549,7 +550,7 @@ export const PortalLogin: React.FC = () => {
                         }}
                         inputMode="text"
                         placeholder="000.000.000-00 ou email@..." autoComplete="username" disabled={identifierLoading}
-                        className="w-full px-4 py-3.5 bg-slate-100 border border-orange-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400"
+                        className="w-full px-4 py-3.5 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400"
                       />
                     </div>
                     {staffBanned && <BannedMsg />}
@@ -602,7 +603,7 @@ export const PortalLogin: React.FC = () => {
                         <input ref={pwRef} type={showPw ? 'text' : 'password'} value={staffPw}
                           onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
                           placeholder="••••••••" autoComplete="current-password" disabled={staffLoading}
-                          className="w-full px-4 py-3.5 bg-slate-100 border border-orange-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all pr-12 text-base font-medium text-slate-900"
+                          className="w-full px-4 py-3.5 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-700 focus:border-slate-700 outline-none transition-all pr-12 text-base font-medium text-slate-900"
                         />
                         <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
                           className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
@@ -627,54 +628,10 @@ export const PortalLogin: React.FC = () => {
             )}
           </div>
 
+          {/* rodapé do painel */}
+          <p style={{ textAlign: 'center', marginTop: 22, fontSize: 12, color: '#9aa0ab', fontWeight: 500 }}>© {new Date().getFullYear()} Jurius</p>
         </div>
-      </section>
-
-      {/* BG blur */}
-      <div className="pointer-events-none absolute top-0 right-0 -z-10 w-1/3 h-1/2 bg-gradient-to-bl from-orange-700/5 to-transparent blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
-      <div className="pointer-events-none absolute bottom-0 left-0 -z-10 w-1/4 h-1/3 bg-gradient-to-tr from-orange-700/5 to-transparent blur-3xl rounded-full -translate-x-1/2 translate-y-1/2" />
       </main>
-
-      {/* ── FOOTER ──────────────────────────────────────────────────────── */}
-      <footer className="shrink-0 w-full py-3 px-4 md:px-10 bg-slate-100 border-t border-orange-200/50">
-        <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-4">
-          <Logo compact />
-
-          {/* Status do servidor */}
-          <div className="hidden md:flex items-center gap-2.5 text-[11px]">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              svc === 'online'  ? 'bg-emerald-500 animate-pulse' :
-              svc === 'offline' ? 'bg-red-500' : 'bg-amber-500 animate-pulse'
-            }`} />
-            <span className={`font-semibold ${
-              svc === 'online' ? 'text-emerald-600' : svc === 'offline' ? 'text-red-600' : 'text-amber-600'
-            }`}>
-              {svc === 'online' ? 'Operacional' : svc === 'offline' ? 'Falha' : 'Verificando'}
-            </span>
-            <span className="text-slate-300">·</span>
-            {(['API', 'Database', 'Auth'] as const).map((s, i) => (
-              <span key={s} className="flex items-center gap-1 text-slate-400 text-[10px]">
-                {i > 0 && <span className="text-slate-300 mr-1">·</span>}
-                {s} <span className={svc === 'online' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                  {svc === 'online' ? '✓' : svc === 'offline' ? '✗' : '·'}
-                </span>
-              </span>
-            ))}
-            {latency != null && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span className={`font-mono font-bold text-[10px] ${
-                  latency < 150 ? 'text-emerald-600' : latency < 400 ? 'text-amber-600' : 'text-red-600'
-                }`}>{latency}ms</span>
-              </>
-            )}
-            <span className="text-slate-300">·</span>
-            <span className="font-mono text-slate-400 text-[10px]">sa-east-1 · São Paulo</span>
-          </div>
-
-          <p className="text-[11px] text-slate-400">© {new Date().getFullYear()} Jurius</p>
-        </div>
-      </footer>
     </div>
   );
 };

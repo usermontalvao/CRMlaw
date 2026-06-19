@@ -901,6 +901,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.246',
+    date: '19/06/2026',
+    summary: 'WhatsApp e Leads: o funil integrado passou a respeitar melhor canal de entrada, etapa inicial e andamento exclusivo por conversa, com ajustes de interface e configuracao no CRM.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'feature' as const, title: 'Funil integrado passou a considerar a configuracao por canal', description: 'A gaveta de Leads dentro do WhatsApp foi alinhada para refletir melhor o canal ativo do atendimento e exibir o quadro do funil no contexto correto da conversa.' },
+        { type: 'fix' as const, title: 'Etiquetas de andamento deixaram de acumular como estagios paralelos', description: 'O fluxo foi ajustado para tratar o andamento do funil como estado exclusivo, evitando que a mesma conversa mantenha simultaneamente multiplas etiquetas de etapa.' },
+      ]},
+      { moduleId: 'configuracoes', changes: [
+        { type: 'improvement' as const, title: 'Configuracao de Leads ganhou refinamentos para funil e canais', description: 'As telas administrativas foram refinadas para deixar mais clara a relacao entre etapas, etiquetas e comportamento do fluxo integrado no atendimento.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Ajustes complementares em App, Dashboard e login', description: 'O lote consolidou ajustes de apoio na navegacao e em componentes compartilhados para acompanhar a nova experiencia do funil integrado.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.245',
     date: '18/06/2026',
     summary: 'WhatsApp: o modulo foi reorganizado para concentrar modais e utilitarios compartilhados, com ajustes de atendimento do advisor, migration corretiva e novo artefato operacional do fluxo sem carteira assinada.',

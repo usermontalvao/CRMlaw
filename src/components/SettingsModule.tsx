@@ -49,6 +49,7 @@ import {
   Percent,
   CreditCard,
   ToggleLeft,
+  ToggleRight,
   CheckCircle2,
   XCircle,
   Clock,
@@ -182,6 +183,7 @@ type SettingsSection =
   | 'modules_signature'
   | 'modules_tasks'
   | 'modules_clients'
+  | 'modules_whatsapp'
   | 'portal_customization'
   | 'portal_notifications'
   | 'automations'
@@ -228,6 +230,7 @@ const SETTINGS_GROUPS: {
       { key: 'modules_tasks',         label: 'Tarefas',       icon: FolderOpen,     description: 'Prioridades de tarefas' },
       { key: 'modules_agenda',        label: 'Agenda',        icon: CalendarClock,  description: 'Tipos de compromisso e duração' },
       { key: 'modules_leads',         label: 'Leads',         icon: User,           description: 'Estágios e origens do funil' },
+      { key: 'modules_whatsapp',      label: 'WhatsApp',      icon: MessageSquare,  description: 'Central de configurações do atendimento' },
       { key: 'modules_financial',     label: 'Financeiro',    icon: PiggyBank,      description: 'Defaults e métodos de pagamento' },
       { key: 'modules_requirements',  label: 'Requerimentos', icon: FileText,       description: 'Status e tipos de benefício INSS' },
       { key: 'modules_signature',     label: 'Assinaturas',   icon: PenTool,        description: 'Papéis de signatário e autenticação' },
@@ -393,6 +396,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
   const [navSearch, setNavSearch] = useState('');
 
+  // Painéis recolhíveis da página unificada de WhatsApp (Módulos → WhatsApp)
+  const [waHubExpanded, setWaHubExpanded] = useState<Record<string, boolean>>({ connection: false, funnel: false });
+  const toggleWaHub = (k: string) => setWaHubExpanded(prev => ({ ...prev, [k]: !prev[k] }));
+
   // Sidebar grupos colapsáveis (estado salvo no localStorage)
   const [expandedGroups, setExpandedGroupsState] = useState<Record<SettingsGroupKey, boolean>>(() => {
     try {
@@ -537,8 +544,29 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     ...LEAD_MODULE_DEFAULTS,
     stages: LEAD_MODULE_DEFAULTS.stages.map(s => ({ ...s })),
     sources: [...LEAD_MODULE_DEFAULTS.sources],
+    channels: (LEAD_MODULE_DEFAULTS.channels ?? []).map(c => ({ ...c })),
   });
   const [newSource, setNewSource] = useState('');
+  // Canais (contas de WhatsApp conectadas) + sua config de entrada no funil.
+  type WaFunnelChannel = { id: string; label: string; funnel_enabled: boolean; funnel_initial_stage: string | null };
+  const [waFunnelChannels, setWaFunnelChannels] = useState<WaFunnelChannel[]>([]);
+  const loadWaFunnelChannels = useCallback(async () => {
+    const { data } = await supabase
+      .from('whatsapp_instances')
+      .select('id, name, instance_name, funnel_enabled, funnel_initial_stage')
+      .order('created_at', { ascending: true });
+    setWaFunnelChannels((data ?? []).map((c: any) => ({
+      id: c.id,
+      label: c.name || c.instance_name || 'Canal',
+      funnel_enabled: c.funnel_enabled !== false,
+      funnel_initial_stage: c.funnel_initial_stage ?? null,
+    })));
+  }, []);
+  useEffect(() => { if (activeSection === 'modules_leads' || activeSection === 'modules_whatsapp') loadWaFunnelChannels(); }, [activeSection, loadWaFunnelChannels]);
+  const updateWaFunnelChannel = useCallback(async (id: string, patch: Partial<Pick<WaFunnelChannel, 'funnel_enabled' | 'funnel_initial_stage'>>) => {
+    setWaFunnelChannels(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+    await supabase.from('whatsapp_instances').update(patch).eq('id', id);
+  }, []);
 
   // Módulos restantes
   const [signatureConfig, setSignatureConfig]  = useState<SignatureModuleConfig>({ ...SIGNATURE_MODULE_DEFAULTS, signer_roles: [...SIGNATURE_MODULE_DEFAULTS.signer_roles], auth_methods: [...SIGNATURE_MODULE_DEFAULTS.auth_methods] });
@@ -596,6 +624,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   // Users
   const [portalModules, setPortalModules] = useState<PortalModulesConfig>(PORTAL_MODULES_DEFAULT);
+  const [portalLoginEnabled, setPortalLoginEnabled] = useState(true);
   const [portalSaving, setPortalSaving] = useState(false);
 
   // Visibilidade dos módulos no menu lateral (independente da permissão de função)
@@ -796,7 +825,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -822,8 +851,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getSetting<boolean>('public_signature_auth_email'),
         settingsService.getSetting<boolean>('public_signature_auth_phone'),
         settingsService.getModulesConfig(),
+        settingsService.getSetting<boolean>('portal_login_enabled'),
       ]);
       setPortalModules(portalData);
+      setPortalLoginEnabled(portalLoginData ?? true);
       setFinancialConfig(finData);
       setEmailIntConfig(emailData);
       setNotifRules(rulesData);
@@ -2792,8 +2823,32 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
                 {activeSection === 'portal' && (
                   <div className="px-8 py-6 space-y-6">
+                    {/* Acesso ao Portal — chave-mestra do login do cliente */}
+                    <button
+                      type="button"
+                      onClick={() => setPortalLoginEnabled((v) => !v)}
+                      className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${
+                        portalLoginEnabled ? 'border-orange-200 bg-orange-50/50' : 'border-[#e7e5df] bg-[#f8f7f5]'
+                      }`}
+                    >
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${portalLoginEnabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <Globe className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">Acesso ao Portal do Cliente</p>
+                        <p className="text-xs text-slate-500">
+                          {portalLoginEnabled
+                            ? 'Clientes podem entrar no portal normalmente.'
+                            : 'Login desativado — nenhum cliente consegue entrar no portal.'}
+                        </p>
+                      </div>
+                      <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${portalLoginEnabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${portalLoginEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </div>
+                    </button>
+
                     {/* Módulos */}
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 transition-opacity ${portalLoginEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
                       {([
                         { key: 'processos',    label: 'Processos',    desc: 'Listagem e detalhes dos processos',      icon: Briefcase },
                         { key: 'documentos',   label: 'Documentos',   desc: 'Documentos enviados pelo escritório',    icon: FolderOpen },
@@ -2848,7 +2903,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 description: 'Confirme com seu PIN para salvar as configurações do portal.',
                                 resourceType: 'portal_modules',
                               },
-                              () => settingsService.savePortalModulesConfig(portalModules, currentProfile?.name),
+                              async () => {
+                                await settingsService.savePortalModulesConfig(portalModules, currentProfile?.name);
+                                await settingsService.updateSetting('portal_login_enabled', portalLoginEnabled, currentProfile?.name);
+                              },
                             );
                             if (!persisted) return;
                             setFeedback('success', 'Configurações do portal salvas!');
@@ -4056,8 +4114,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     </div>
                 )}
 
-                {/* ── Módulos → Leads ── */}
-                {activeSection === 'modules_leads' && (() => {
+                {/* ── Módulos → Leads / WhatsApp (gestão unificada) ── */}
+                {(activeSection === 'modules_leads' || activeSection === 'modules_whatsapp') && (() => {
                   const LEAD_COLOR_HEX: Record<string, string> = {
                     slate: '#64748b', blue: '#3b82f6', emerald: '#10b981',
                     amber: '#f59e0b', red: '#ef4444', violet: '#8b5cf6',
@@ -4069,12 +4127,18 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   const stageItems = normalizeItems(leadConfig.stages.map(s => ({
                     ...s,
                     color: LEAD_COLOR_HEX[s.color] ?? '#64748b',
-                  })));
-                  return (
-                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  }))).map(it => ({
+                    ...it,
+                    metadata: { ...it.metadata, labels: leadConfig.stages.find(s => s.key === it.id)?.labels ?? [] },
+                  }));
+                  const leadsCards = (
+                      <>
 
                         <div className="settings-card">
                           <p className="settings-card-title">Estágios do Funil</p>
+                          <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 10px' }}>
+                            Cada etapa vincula <strong>etiquetas</strong> que a representam. No WhatsApp, a etiqueta aplicada na conversa espelha o estágio do funil. Arraste para reordenar as etapas (= ordem do funil).
+                          </p>
                           <ConfigurableList
                             items={stageItems}
                             showColor={true}
@@ -4086,6 +4150,22 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               const { data } = await supabase.rpc('count_leads_by_stage', { p_stage: item.id });
                               return Number(data ?? 0);
                             }}
+                            extraFields={(draft, patch) => {
+                              const labels = Array.isArray(draft.metadata?.labels) ? (draft.metadata!.labels as string[]) : [];
+                              return (
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-600 mb-1">Etiquetas desta etapa</label>
+                                  <input
+                                    type="text"
+                                    defaultValue={labels.join(', ')}
+                                    onBlur={e => patch({ metadata: { ...draft.metadata, labels: e.target.value.split(',').map(s => s.trim()).filter(Boolean) } })}
+                                    placeholder="Ex: Proposta enviada, Aguardando retorno"
+                                    className="w-full px-3 py-2 text-sm border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 bg-[#f8f7f5]"
+                                  />
+                                  <p className="text-[11px] text-slate-400 mt-1">Separe por vírgula. Essas etiquetas aparecem no seletor da conversa, sob esta etapa.</p>
+                                </div>
+                              );
+                            }}
                             onChange={async items => {
                               const newStages = items.map(item => ({
                                 key:         item.id,
@@ -4094,6 +4174,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 color:       (HEX_TO_LEAD_COLOR[item.color ?? ''] ?? leadConfig.stages.find(s => s.key === item.id)?.color ?? 'slate') as any,
                                 active:      item.active,
                                 isDefault:   item.isDefault ?? false,
+                                labels:      Array.isArray(item.metadata?.labels) ? (item.metadata!.labels as string[]) : (leadConfig.stages.find(s => s.key === item.id)?.labels ?? []),
                               }));
                                 const newConfig = { ...leadConfig, stages: newStages };
                                 const persisted = await runWithSettingsPin(
@@ -4111,6 +4192,45 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 setFeedback('success', 'Salvo!');
                             }}
                           />
+                        </div>
+
+                        {/* Canais (contas conectadas) & etapa inicial no funil */}
+                        <div className="settings-card">
+                          <p className="settings-card-title">Canais & Etapa Inicial</p>
+                          <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 12px' }}>
+                            Por canal (conta de WhatsApp conectada): se participa do funil e em qual etapa uma <strong>nova conversa</strong> entra. Aplica-se <strong>só na criação</strong> da conversa — reabrir/novas mensagens não reiniciam o funil. Sem etapa definida, usa a <strong>padrão</strong>.
+                          </p>
+                          {waFunnelChannels.length === 0 ? (
+                            <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhuma conta de WhatsApp conectada.</p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {waFunnelChannels.map(ch => (
+                                <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: '#f8fafc', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '10px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateWaFunnelChannel(ch.id, { funnel_enabled: !ch.funnel_enabled })}
+                                    title={ch.funnel_enabled ? 'Desativar no funil' : 'Ativar no funil'}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                                    {ch.funnel_enabled
+                                      ? <ToggleRight size={22} style={{ color: '#f97316' }} />
+                                      : <ToggleLeft size={22} style={{ color: '#94a3b8' }} />}
+                                  </button>
+                                  <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: ch.funnel_enabled ? '#374151' : '#9ca3af' }}>{ch.label}</span>
+                                  <select
+                                    className="settings-input"
+                                    style={{ width: '200px', fontSize: '12.5px', opacity: ch.funnel_enabled ? 1 : 0.5 }}
+                                    disabled={!ch.funnel_enabled}
+                                    value={ch.funnel_initial_stage ?? ''}
+                                    onChange={e => updateWaFunnelChannel(ch.id, { funnel_initial_stage: e.target.value || null })}>
+                                    <option value="">Etapa padrão do funil</option>
+                                    {leadConfig.stages.filter(s => s.active !== false).map(s => (
+                                      <option key={s.key} value={s.key}>{s.label}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Origens */}
@@ -4150,6 +4270,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           </div>
                         </div>
 
+                        {/* Canais de entrada = contas de WhatsApp conectadas (geridas em
+                            Integrações). No funil, o canal é escolhido na gaveta de Leads
+                            dentro do WhatsApp e filtra os leads por origem. */}
+
                         <div className="settings-save-bar" style={{ marginTop: 0 }}>
                           <button className="settings-btn-primary" disabled={saving}
                             onClick={async () => {
@@ -4173,7 +4297,57 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
                           </button>
                         </div>
+                      </>
+                  );
+                  const isWa = activeSection === 'modules_whatsapp';
+                  if (!isWa) {
+                    return (
+                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {leadsCards}
                       </div>
+                    );
+                  }
+                  const waPanelHeader = (k: string, Icon: React.ComponentType<any>, title: string, subtitle: string) => (
+                    <button
+                      type="button"
+                      onClick={() => toggleWaHub(k)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '16px 18px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', borderRadius: '9px', background: '#fff7ed', color: '#f97316', flexShrink: 0 }}>
+                        <Icon size={17} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 700, color: '#374151' }}>{title}</span>
+                        <span style={{ display: 'block', fontSize: '11.5px', color: '#9ca3af' }}>{subtitle}</span>
+                      </span>
+                      <ChevronDown size={18} style={{ color: '#94a3b8', flexShrink: 0, transition: 'transform 0.15s', transform: waHubExpanded[k] ? 'rotate(180deg)' : 'none' }} />
+                    </button>
+                  );
+                  return (
+                    <div style={{ padding: '24px 40px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '0 2px 4px' }}>
+                        Tudo do atendimento por WhatsApp em um só lugar. Expanda cada seção para configurar.
+                      </p>
+
+                      {/* Painel 1 — Conexão, servidor, canais e departamentos (Evolution) */}
+                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        {waPanelHeader('connection', MessageCircle, 'Conexão & Servidor', 'Servidor Evolution, canais conectados e departamentos')}
+                        {waHubExpanded.connection && (
+                          <div style={{ borderTop: '1px solid #f1f0ec' }}>
+                            <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Painel 2 — Funil de atendimento (mesma config do módulo Leads) */}
+                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        {waPanelHeader('funnel', Target, 'Funil de atendimento (Leads)', 'Estágios, etiquetas, etapa inicial por canal e origens')}
+                        {waHubExpanded.funnel && (
+                          <div style={{ borderTop: '1px solid #f1f0ec', padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {leadsCards}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
                 })()}
 

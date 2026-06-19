@@ -544,23 +544,85 @@ export interface LeadStageConfig {
   color: LeadColor;
   active?: boolean;
   isDefault?: boolean;
+  /**
+   * Etiquetas vinculadas a esta etapa do funil. NÃO são tags decorativas: cada
+   * etiqueta representa que o lead/conversa está neste estágio. No WhatsApp, a
+   * etiqueta aplicada espelha o avanço do funil. Uma etapa pode ter ≥1 etiqueta.
+   */
+  labels?: string[];
+}
+
+/** Canal de entrada que alimenta o funil (WhatsApp, Instagram, site, etc.). */
+export interface LeadChannelConfig {
+  key: string;
+  label: string;
+  active?: boolean;
 }
 
 export interface LeadModuleConfig {
   stages: LeadStageConfig[];
   sources: string[];
+  /** Canais de origem que abastecem o funil; influenciam o fluxo WhatsApp+Leads. */
+  channels?: LeadChannelConfig[];
 }
+
+// Mapa cor-do-funil → hex (paleta da marca). Centralizado aqui para que tanto
+// Configurações quanto o módulo WhatsApp pintem as etiquetas com a mesma cor da
+// etapa correspondente.
+export const LEAD_COLOR_HEX: Record<LeadColor, string> = {
+  slate: '#64748b', blue: '#3b82f6', emerald: '#10b981', amber: '#f59e0b',
+  red: '#ef4444', violet: '#8b5cf6', orange: '#f97316', cyan: '#06b6d4',
+};
 
 export const LEAD_MODULE_DEFAULTS: LeadModuleConfig = {
   stages: [
-    { key: 'novo',                 label: 'Novo',                 description: 'Lead recém-cadastrado, aguarda primeiro contato.', color: 'slate' },
-    { key: 'qualificando',         label: 'Qualificando',         description: 'Contato em andamento para entender necessidades.', color: 'blue' },
-    { key: 'qualificado',          label: 'Qualificado',          description: 'Lead validado e pronto para conversão.',          color: 'emerald' },
-    { key: 'aguardando_documentos',label: 'Aguardando Documentos',description: 'Lead enviando documentos ou informações.',        color: 'amber' },
-    { key: 'nao_qualificado',      label: 'Não Qualificado',      description: 'Lead não avançará como cliente.',                 color: 'red' },
+    { key: 'novo',                 label: 'Novo',                 description: 'Lead recém-cadastrado, aguarda primeiro contato.', color: 'slate',   labels: ['Novo lead'] },
+    { key: 'qualificando',         label: 'Qualificando',         description: 'Contato em andamento para entender necessidades.', color: 'blue',    labels: ['Aguardando retorno'] },
+    { key: 'qualificado',          label: 'Qualificado',          description: 'Lead validado e pronto para conversão.',          color: 'emerald', labels: ['Proposta enviada'] },
+    { key: 'aguardando_documentos',label: 'Aguardando Documentos',description: 'Lead enviando documentos ou informações.',        color: 'amber',   labels: ['Documentação pendente'] },
+    { key: 'nao_qualificado',      label: 'Não Qualificado',      description: 'Lead não avançará como cliente.',                 color: 'red',     labels: ['Perdido'] },
   ],
   sources: ['Indicação', 'Site', 'Instagram', 'Google', 'WhatsApp', 'Outro'],
+  channels: [
+    { key: 'whatsapp',  label: 'WhatsApp',  active: true },
+    { key: 'instagram', label: 'Instagram', active: true },
+    { key: 'site',      label: 'Site',      active: true },
+    { key: 'indicacao', label: 'Indicação', active: true },
+    { key: 'telefone',  label: 'Telefone',  active: true },
+  ],
 };
+
+/** Etiqueta resolvida do funil: chave + etapa de origem + cor (hex/alpha). */
+export interface FunnelLabel {
+  key: string;
+  stageKey: string;
+  stageLabel: string;
+  color: string; // hex sólido (texto/borda)
+  bg: string;    // hex com alpha (fundo do chip)
+}
+
+/**
+ * Achata as etiquetas vinculadas às etapas ATIVAS do funil, na ordem das etapas,
+ * já com a cor da etapa. É a fonte única das etiquetas no fluxo WhatsApp+Leads.
+ */
+export function funnelLabelsFromConfig(cfg: LeadModuleConfig): FunnelLabel[] {
+  const out: FunnelLabel[] = [];
+  const seen = new Set<string>();
+  for (const stage of cfg.stages) {
+    if (stage.active === false) continue;
+    const hex = LEAD_COLOR_HEX[stage.color] ?? '#64748b';
+    // Fallback: se a etapa não tem etiquetas configuradas (config antiga), a
+    // própria etapa vira uma etiqueta — assim o seletor nunca fica vazio.
+    const labels = (stage.labels && stage.labels.length) ? stage.labels : [stage.label];
+    for (const raw of labels) {
+      const key = (raw ?? '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, stageKey: stage.key, stageLabel: stage.label, color: hex, bg: `${hex}22` });
+    }
+  }
+  return out;
+}
 
 // ── Configuração do módulo Agenda ─────────────────────────────────────────
 

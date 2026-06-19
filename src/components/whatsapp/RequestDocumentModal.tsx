@@ -7,7 +7,7 @@ import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } fr
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 
-const DOC_QUICK_ADD = ['RG', 'CPF', 'Comprovante de residência', 'Carteira de trabalho', 'Certidão de nascimento', 'Certidão de casamento', 'Comprovante de renda', 'Foto 3x4'];
+const DOC_QUICK_ADD = ['Documento de identificação', 'Comprovante de residência', 'Extrato do FGTS', 'Carteira de trabalho', 'Holerite'];
 
 type DocReqItem = { label: string; required: boolean };
 

@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.10.245",
+  "version": "1.10.246",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",

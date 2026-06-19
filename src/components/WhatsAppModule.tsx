@@ -12,6 +12,7 @@ import {
   Shield, ShieldCheck, Eye, EyeOff,
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
   Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
+  Target,
 } from 'lucide-react';
 import { isNotifySoundMuted, setNotifySoundMuted, playNotificationSound } from '../utils/notificationSound';
 import { isStaffPushSupported, isStaffPushEnabled, enableStaffPush, disableStaffPush } from '../utils/staffPush';
@@ -54,6 +55,8 @@ import { documentTemplateService } from '../services/documentTemplate.service';
 import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
 import { buildPublicFillUrl } from '../utils/publicAppUrl';
 import type { DocumentTemplate } from '../types/document.types';
+import type { Lead } from '../types/lead.types';
+import { settingsService, funnelLabelsFromConfig, type FunnelLabel } from '../services/settings.service';
 
 /**
  * `true` quando a viewport é estreita demais para mostrar lista + thread lado a
@@ -106,7 +109,11 @@ function getCurrentTimeInTz(timezone: string): { dow: number; curMins: number } 
 
 type FilterTab = 'all' | 'unread' | 'mine';
 
-// Fase M: etiquetas pré-definidas para escritório jurídico
+// Fase M: etiquetas pré-definidas para escritório jurídico.
+// LEGADO: a fonte única das etiquetas passou a ser o FUNIL configurado em
+// Configurações → Leads (cada etapa vincula etiquetas). Este array só serve de
+// paleta de fallback para conversas com etiquetas antigas que não existem mais
+// no funil — assim elas ainda renderizam (sem cor da etapa) e nada quebra.
 export const WA_LABELS: { key: string; color: string; bg: string }[] = [
   { key: 'Urgente',             color: '#dc2626', bg: '#fee2e2' },
   { key: 'Aguardando doc.',     color: '#d97706', bg: '#fef3c7' },
@@ -116,6 +123,36 @@ export const WA_LABELS: { key: string; color: string; bg: string }[] = [
   { key: 'Novo cliente',        color: '#059669', bg: '#d1fae5' },
   { key: 'Em negociação',       color: '#0891b2', bg: '#cffafe' },
 ];
+
+// Resolve a aparência de uma etiqueta a partir do funil (cor da etapa). Se a
+// etiqueta não pertencer ao funil ativo, cai no WA_LABELS legado e, por fim,
+// num cinza neutro. Garante que toda etiqueta aplicada sempre renderize.
+export function resolveLabelMeta(
+  key: string,
+  funnel: FunnelLabel[],
+): { key: string; color: string; bg: string; stageLabel: string } {
+  const f = funnel.find(l => l.key === key);
+  if (f) return { key, color: f.color, bg: f.bg, stageLabel: f.stageLabel };
+  const legacy = WA_LABELS.find(l => l.key === key);
+  if (legacy) return { key, color: legacy.color, bg: legacy.bg, stageLabel: '' };
+  return { key, color: '#64748b', bg: '#64748b22', stageLabel: '' };
+}
+
+// Dada a lista de etiquetas aplicadas numa conversa, devolve a ETAPA do funil
+// mais avançada representada por elas (espelho do avanço comercial/jurídico).
+export function inferFunnelStage(
+  labels: string[] | null | undefined,
+  funnel: FunnelLabel[],
+): { stageKey: string; stageLabel: string; color: string } | null {
+  if (!labels?.length || !funnel.length) return null;
+  // Ordem das etiquetas no funil reflete a ordem das etapas; pega a de maior índice.
+  let best = -1; let bestMeta: FunnelLabel | null = null;
+  for (const key of labels) {
+    const idx = funnel.findIndex(l => l.key === key);
+    if (idx > best) { best = idx; bestMeta = funnel[idx]; }
+  }
+  return bestMeta ? { stageKey: bestMeta.stageKey, stageLabel: bestMeta.stageLabel, color: bestMeta.color } : null;
+}
 
 // ── Confirmação leve (sem PIN) para ações reversíveis do módulo ──
 // O app reserva o fluxo com PIN (useDeleteConfirm) para exclusões críticas;
@@ -383,8 +420,9 @@ const ConversationListItem: React.FC<{
   docStatus: 'awaiting' | 'ready' | null;
   muted: boolean;
   draftPreview: string;
+  funnelLabels: FunnelLabel[];
   onSelect: (id: string) => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, onSelect }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, onSelect }) => {
   const sla = slaSignal(c);
   const slaInt = slaInternalSignal(c);
   const ta = transferAlert(c);
@@ -470,13 +508,13 @@ const ConversationListItem: React.FC<{
             </span>
           )}
           {(c.labels ?? []).slice(0, 2).map(lbl => {
-            const meta = WA_LABELS.find(x => x.key === lbl);
-            return meta ? (
+            const meta = resolveLabelMeta(lbl, funnelLabels);
+            return (
               <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"
                 style={{ background: meta.bg, color: meta.color }}>
                 <Tag size={8} />{lbl}
               </span>
-            ) : null;
+            );
           })}
         </div>
       </div>
@@ -504,13 +542,35 @@ interface WhatsAppModuleProps {
   openConversationId?: string;
   /** Avisa o App para limpar o param de navegação após consumi-lo. */
   onParamConsumed?: () => void;
+  /** Converte um lead em cliente (delega ao fluxo global do App). */
+  onConvertLead?: (lead: Lead) => void;
 }
 
-const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed }) => {
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead }) => {
   const { user } = useAuth();
   const toast = useToastContext();
   const { navigateTo } = useNavigation();
   const { confirm, pending: confirmPending, resolve: resolveConfirm } = useConfirm();
+  // Gaveta de Leads embutida: funil comercial/jurídico revelado a partir do topo
+  // do módulo, empurrando o atendimento para ~70% da altura quando aberta.
+  const [leadsPanelOpen, setLeadsPanelOpen] = useState(false);
+  // Mantém o funil montado após a 1ª abertura para que o slide de fechamento
+  // mostre o conteúdo (não esvazia no meio da animação).
+  const [leadsEverOpened, setLeadsEverOpened] = useState(false);
+  // Canal selecionado na gaveta (= conta de WhatsApp conectada). Vazio = todos.
+  const [leadChannelFilter, setLeadChannelFilter] = useState('');
+  // Etiquetas do funil (fonte única vinda de Configurações → Leads). Espelham o
+  // estágio do funil de cada conversa. Recarregadas ao abrir a gaveta de Leads
+  // (onde a config pode ter sido alterada) e no mount.
+  const [funnelLabels, setFunnelLabels] = useState<FunnelLabel[]>([]);
+  const reloadFunnelLabels = useCallback(() => {
+    settingsService.getLeadModuleConfig()
+      .then(cfg => setFunnelLabels(funnelLabelsFromConfig(cfg)))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { reloadFunnelLabels(); }, [reloadFunnelLabels]);
+  // Reflete no atendimento qualquer ajuste de funil feito na gaveta de Leads.
+  useEffect(() => { if (leadsPanelOpen) { setLeadsEverOpened(true); reloadFunnelLabels(); } }, [leadsPanelOpen, reloadFunnelLabels]);
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [pending, setPending] = useState<WhatsAppMessage[]>([]);
@@ -905,6 +965,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       .then(setOverview)
       .catch(() => setOverview({ processes: [], schedule: { deadlines: [], events: [] }, pendings: { requirements: [], documents: [] }, templateFillLinks: [], signatures: [], agreements: [] }));
   }, [selectedClientId]);
+
+  // Move uma conversa para uma ETAPA do funil (etapa única: remove etiquetas de
+  // funil anteriores, mantém tags livres). Usado por automações como "ao pedir
+  // documento → Aguardando Documentos". No-op se a etapa não existe no funil.
+  const moveConversationToStage = useCallback(async (conv: WhatsAppConversation, stageKey: string) => {
+    const target = funnelLabels.find(l => l.stageKey === stageKey);
+    if (!target) return;
+    const cur = conv.labels ?? [];
+    if (cur.includes(target.key)) return;
+    const funnelKeys = new Set(funnelLabels.map(l => l.key));
+    const next = [...cur.filter(l => !funnelKeys.has(l)), target.key];
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: next } : c));
+    try { await whatsappService.updateLabels(conv.id, next); } catch { /* best-effort */ }
+  }, [funnelLabels]);
   useEffect(() => {
     if (!selectedClientId) { setOverview(null); return; }
     let alive = true;
@@ -2130,7 +2204,68 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   }), []);
 
   return (
-    <div className="flex h-full min-h-0 bg-[#faf9f7]">
+    <div className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
+      {/* ── Painel de Leads embutido (funil comercial/jurídico) ──
+          A altura segue o CONTEÚDO (sem espaço em branco). A revelação anima por
+          max-height (clip, sem reflow do funil); o atendimento é empurrado para
+          baixo mas continua visível. */}
+      <div
+        className={`flex-shrink-0 overflow-hidden bg-[#f5f5f3] transition-[max-height] duration-300 ease-out ${
+          leadsPanelOpen ? 'max-h-[480px] border-b border-[#e7e5df]' : 'max-h-0'
+        }`}
+        aria-hidden={!leadsPanelOpen}
+      >
+        <div className="max-h-[480px] overflow-y-auto px-3 sm:px-5 py-4">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Target size={16} className="text-amber-600" />
+            <h2 className="text-[14px] font-bold text-slate-800">Funil de Leads</h2>
+            <span className="text-[11.5px] text-slate-400">Progressão por etapas do atendimento</span>
+            {/* Canal = conta de WhatsApp conectada (filtra por instância). */}
+            <label className="inline-flex items-center gap-1.5 ml-auto">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Canal</span>
+              <select value={leadChannelFilter} onChange={e => setLeadChannelFilter(e.target.value)}
+                className="text-[12px] pl-2 pr-6 py-1 rounded-lg bg-white border border-[#e7e5df] focus:border-amber-300 outline-none">
+                <option value="">Todos os canais</option>
+                {channels.map(c => (
+                  <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {/* Quadro do funil por CONVERSA: cada conversa aparece na coluna da sua
+              etapa atual. É o que faz a conversa "entrar no Novo" de verdade. */}
+          {leadsEverOpened && (
+            <ConversationFunnelBoard
+              conversations={conversations}
+              funnelLabels={funnelLabels}
+              channelId={leadChannelFilter}
+              onOpen={(id) => { setSelectedId(id); setLeadsPanelOpen(false); }}
+              onMoved={(id, labels) => setConversations(prev => prev.map(c => c.id === id ? { ...c, labels } : c))}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Lingueta ancorada no divisor — DESCE junto com o painel (fica logo após
+          ele no fluxo; container de altura 0 para não empurrar o atendimento). */}
+      <div className="relative z-30 h-0">
+        <button
+          type="button"
+          onClick={() => setLeadsPanelOpen(o => !o)}
+          aria-expanded={leadsPanelOpen}
+          title={leadsPanelOpen ? 'Recolher funil de Leads' : 'Abrir funil de Leads'}
+          className="group absolute left-1/2 -translate-x-1/2 top-0 inline-flex items-center gap-1.5 h-[22px] pl-2.5 pr-2 rounded-b-lg bg-white border border-t-0 border-[#e7e5df] shadow-sm hover:bg-amber-50 transition-colors"
+        >
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-amber-700 transition-colors">
+            <Target size={11} />
+            Leads
+          </span>
+          <ChevronDown size={13} className={`text-slate-400 group-hover:text-amber-700 transition-transform duration-300 ${leadsPanelOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* ── Conteúdo principal do módulo (atendimento) ── */}
+      <div className="flex flex-1 min-h-0">
       {/* ── Lista de conversas ── */}
       <aside style={isMobile ? undefined : { width: listWidth }}
         className={`flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
@@ -2265,7 +2400,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
               <option value="">Todas as etiquetas</option>
-              {WA_LABELS.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+              {funnelLabels.map(l => <option key={l.key} value={l.key}>{l.stageLabel} › {l.key}</option>)}
             </select>
           </div>
           )}
@@ -2312,6 +2447,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 docStatus={effectiveDocStatus(c.client_id)}
                 muted={muteStore.isMuted(c.id)}
                 draftPreview={draftPreview}
+                funnelLabels={funnelLabels}
                 onSelect={setSelectedId}
               />
             );
@@ -2869,6 +3005,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Etiquetas</p>
                 <ConversationLabelsPanel
                   conversation={selected}
+                  funnelLabels={funnelLabels}
                   onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
                 />
               </div>
@@ -3087,6 +3224,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         </aside>
       )}
+      {/* ── fim do conteúdo principal do atendimento ── */}
+      </div>
 
       {transferOpen && selected && (
         <TransferModal
@@ -3238,7 +3377,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           clientName={selected.contact_name}
           createdBy={user?.id ?? null}
           onClose={() => setDocRequestOpen(false)}
-          onCreated={reloadOverview}
+          onCreated={() => {
+            reloadOverview();
+            // Solicitou documento → posiciona a conversa em "Aguardando Documentos".
+            if (selected) void moveConversationToStage(selected, 'aguardando_documentos');
+          }}
         />
       )}
 
@@ -5052,17 +5195,32 @@ const AttachmentPreviewModal: React.FC<{
 };
 
 
-// ── Fase M: painel de etiquetas da conversa ──
+// ── Painel de etiquetas da conversa (espelho do funil) ──
+// As etiquetas vêm do FUNIL configurado (cada etapa vincula etiquetas). Aplicar
+// uma etiqueta = posicionar a conversa naquele estágio. O select agrupa por
+// etapa e um badge mostra a "Etapa atual" inferida das etiquetas aplicadas.
 const ConversationLabelsPanel: React.FC<{
   conversation: WhatsAppConversation;
+  funnelLabels: FunnelLabel[];
   onChanged: (conv: WhatsAppConversation) => void;
-}> = ({ conversation, onChanged }) => {
+}> = ({ conversation, funnelLabels, onChanged }) => {
   const toast = useToastContext();
   const [saving, setSaving] = useState(false);
   const current = conversation.labels ?? [];
+  const funnelKeys = new Set(funnelLabels.map(l => l.key));
 
   const toggle = async (key: string) => {
-    const next = current.includes(key) ? current.filter(l => l !== key) : [...current, key];
+    // Etiquetas de FUNIL são mutuamente exclusivas: só 1 etapa por vez. Ao
+    // adicionar uma de funil, removo qualquer outra de funil (mantendo as tags
+    // livres). Tags livres continuam acumuláveis normalmente.
+    let next: string[];
+    if (current.includes(key)) {
+      next = current.filter(l => l !== key);
+    } else if (funnelKeys.has(key)) {
+      next = [...current.filter(l => !funnelKeys.has(l)), key];
+    } else {
+      next = [...current, key];
+    }
     setSaving(true);
     try {
       await whatsappService.updateLabels(conversation.id, next);
@@ -5071,30 +5229,141 @@ const ConversationLabelsPanel: React.FC<{
     finally { setSaving(false); }
   };
 
-  const available = WA_LABELS.filter(l => !current.includes(l.key));
+  // Agrupa as etiquetas do funil por etapa, preservando a ordem do funil.
+  const groups: { stageKey: string; stageLabel: string; labels: FunnelLabel[] }[] = [];
+  for (const l of funnelLabels) {
+    if (current.includes(l.key)) continue; // já aplicadas saem do select
+    let g = groups.find(x => x.stageKey === l.stageKey);
+    if (!g) { g = { stageKey: l.stageKey, stageLabel: l.stageLabel, labels: [] }; groups.push(g); }
+    g.labels.push(l);
+  }
+
+  const stage = inferFunnelStage(current, funnelLabels);
 
   return (
     <div className="space-y-1.5">
-      {/* Select compacto para adicionar etiqueta (não poluir com chips soltos) */}
-      <select value="" onChange={e => toggle(e.target.value)} disabled={saving}
+      {/* Etapa atual do funil (derivada das etiquetas). */}
+      {stage && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold"
+          style={{ background: stage.color + '22', color: stage.color }}>
+          <Target size={10} /> {stage.stageLabel}
+        </span>
+      )}
+      {/* Select compacto agrupado por etapa do funil. */}
+      <select value="" onChange={e => { if (e.target.value) toggle(e.target.value); }} disabled={saving || funnelLabels.length === 0}
         className="w-full min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none disabled:opacity-60">
-        <option value="">{saving ? 'Salvando…' : '🏷 Etiquetas — adicionar…'}</option>
-        {available.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+        <option value="">{saving ? 'Salvando…' : funnelLabels.length === 0 ? 'Configure o funil em Leads' : '🏷 Etiquetas — adicionar…'}</option>
+        {groups.map(g => (
+          <optgroup key={g.stageKey} label={g.stageLabel}>
+            {g.labels.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+          </optgroup>
+        ))}
       </select>
       {current.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {current.map(key => {
-            const meta = WA_LABELS.find(x => x.key === key);
-            if (!meta) return null;
+            const meta = resolveLabelMeta(key, funnelLabels);
             return (
               <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold" style={{ background: meta.color, color: '#fff' }}>
-                <Tag size={9} />{meta.key}
+                <Tag size={9} />{key}
                 <button onClick={() => toggle(key)} disabled={saving} className="hover:opacity-70 ml-0.5"><X size={10} /></button>
               </span>
             );
           })}
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Quadro do funil por CONVERSA (integrado ao WhatsApp) ──
+// As colunas são as etapas do funil; cada conversa aparece na coluna da sua
+// ETAPA ATUAL (1 etiqueta de funil por vez). Arrastar troca a etapa, removendo a
+// anterior (não cumulativo). Clicar abre a conversa. É a fonte que faz a conversa
+// "aparecer na coluna correta" do funil.
+const ConversationFunnelBoard: React.FC<{
+  conversations: WhatsAppConversation[];
+  funnelLabels: FunnelLabel[];
+  channelId: string;
+  onOpen: (id: string) => void;
+  onMoved: (conversationId: string, labels: string[]) => void;
+}> = ({ conversations, funnelLabels, channelId, onOpen, onMoved }) => {
+  const toast = useToastContext();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overStage, setOverStage] = useState<string | null>(null);
+
+  const funnelKeys = useMemo(() => new Set(funnelLabels.map(l => l.key)), [funnelLabels]);
+  const stages = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; color: string; primary: string }>();
+    for (const l of funnelLabels) if (!m.has(l.stageKey)) m.set(l.stageKey, { key: l.stageKey, label: l.stageLabel, color: l.color, primary: l.key });
+    return [...m.values()];
+  }, [funnelLabels]);
+
+  const visible = useMemo(
+    () => (channelId ? conversations.filter(c => c.instance_id === channelId) : conversations),
+    [conversations, channelId],
+  );
+  const stageKeyOf = useCallback(
+    (c: WhatsAppConversation) => inferFunnelStage(c.labels, funnelLabels)?.stageKey ?? null,
+    [funnelLabels],
+  );
+
+  const move = async (c: WhatsAppConversation, stage: { key: string; primary: string }) => {
+    if (stageKeyOf(c) === stage.key) return;
+    // 1 etapa por vez: remove etiquetas de funil anteriores, mantém tags livres.
+    const free = (c.labels ?? []).filter(l => !funnelKeys.has(l));
+    const next = [...free, stage.primary];
+    onMoved(c.id, next);
+    try { await whatsappService.updateLabels(c.id, next); }
+    catch (e: any) { toast.error('Falha ao mover no funil', e.message); }
+  };
+
+  if (stages.length === 0) {
+    return <p className="text-[12.5px] text-slate-400 py-6 text-center">Configure as etapas do funil em Configurações → Leads.</p>;
+  }
+
+  return (
+    <div className="flex flex-col md:flex-row gap-2.5 md:gap-3 md:overflow-x-auto pb-1">
+      {stages.map(stage => {
+        const items = visible.filter(c => stageKeyOf(c) === stage.key)
+          .sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
+        const isOver = overStage === stage.key;
+        return (
+          <div key={stage.key} className="flex-shrink-0 w-full md:w-72">
+            <div className={`rounded-2xl border overflow-hidden bg-white transition-colors ${isOver ? 'border-amber-400' : 'border-[#ebe9e3]'}`}
+              onDragOver={e => { e.preventDefault(); setOverStage(stage.key); }}
+              onDragLeave={() => setOverStage(s => (s === stage.key ? null : s))}
+              onDrop={e => { e.preventDefault(); setOverStage(null); const id = e.dataTransfer.getData('text/plain'); const c = visible.find(x => x.id === id); if (c) move(c, stage); setDragId(null); }}>
+              <div className="px-3 py-2.5 border-b border-[#f1efe9] bg-white flex items-center justify-between"
+                style={{ color: stage.color, boxShadow: 'inset 3px 0 0 0 currentColor' }}>
+                <div className="flex items-center gap-1.5"><Target size={12} /><h4 className="font-semibold text-[11px] tracking-wide uppercase text-slate-600">{stage.label}</h4></div>
+                <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">{items.length}</span>
+              </div>
+              <div className="p-2.5 space-y-2 overflow-y-auto min-h-[230px] max-h-[340px] bg-white">
+                {items.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-[210px] text-center gap-1.5">
+                    <Target size={20} className="text-slate-200" />
+                    <p className="text-[11px] text-slate-300">Arraste conversas para cá</p>
+                  </div>
+                ) : items.map(c => (
+                  <div key={c.id} draggable
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', c.id); e.dataTransfer.effectAllowed = 'move'; setDragId(c.id); }}
+                    onDragEnd={() => { setDragId(null); setOverStage(null); }}
+                    onClick={() => onOpen(c.id)}
+                    title="Abrir conversa"
+                    className={`flex items-center gap-2 rounded-xl border border-[#ebe9e3] bg-white p-2 cursor-pointer hover:border-amber-300 hover:shadow-sm transition-all ${dragId === c.id ? 'opacity-50' : ''}`}>
+                    <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={30} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-slate-800 truncate">{c.contact_name || prettyPhone(c.contact_phone)}</p>
+                      <p className="text-[10.5px] text-slate-400 truncate">{c.last_message_preview || prettyPhone(c.contact_phone)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };
