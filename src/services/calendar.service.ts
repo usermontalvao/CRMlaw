@@ -113,6 +113,33 @@ class CalendarService {
     return data;
   }
 
+  /**
+   * Confirma manualmente uma audiência/perícia (designada em ata, sem publicação
+   * no DJEN). A regra de precedência vive no banco: um despacho DJEN posterior à
+   * confirmação prevalece e reverte para divergência. Retorna o evento atualizado.
+   */
+  async manualConfirmHearing(id: string, note?: string | null): Promise<CalendarEvent | null> {
+    const { error } = await supabase.rpc('fn_manual_confirm_hearing', {
+      p_event_id: id,
+      p_note: note ?? null,
+    });
+    if (error) {
+      console.error('Erro ao confirmar manualmente:', error);
+      throw new Error(error.message);
+    }
+    return this.getEventById(id);
+  }
+
+  /** Desfaz a confirmação manual; o status volta a ser ditado pelo DJEN. */
+  async manualUnconfirmHearing(id: string): Promise<CalendarEvent | null> {
+    const { error } = await supabase.rpc('fn_manual_unconfirm_hearing', { p_event_id: id });
+    if (error) {
+      console.error('Erro ao desfazer confirmação manual:', error);
+      throw new Error(error.message);
+    }
+    return this.getEventById(id);
+  }
+
   async deleteEvent(id: string): Promise<void> {
     const { error } = await supabase.from(this.tableName).delete().eq('id', id);
 

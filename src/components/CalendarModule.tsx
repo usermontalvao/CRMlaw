@@ -6,7 +6,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle, UserCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -686,6 +686,28 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     detectedMode: 'online' | 'presencial' | null;
   } | null>(null);
 
+  // Status DJEN das audiências VIRTUAIS (derivadas de processes.hearing_scheduled,
+  // que não existem em calendar_events). Read-only: apenas alimenta o selo de
+  // confirmação na UI — não cria nem altera nenhum compromisso. A regra de match
+  // vive no banco (fn_djen_hearing_statuses → fn_match_djen_for_process).
+  const [hearingDjenMap, setHearingDjenMap] = useState<Map<string, { status: string; intimationId: string | null }>>(new Map());
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_djen_hearing_statuses');
+        if (error || !data || !active) return;
+        const m = new Map<string, { status: string; intimationId: string | null }>();
+        for (const row of data as Array<{ process_id: string; djen_status: string; djen_intimation_id: string | null }>) {
+          m.set(row.process_id, { status: row.djen_status, intimationId: row.djen_intimation_id });
+        }
+        setHearingDjenMap(m);
+      } catch { /* silencioso: sem status, a audiência apenas mantém o ponto cinza */ }
+    })();
+    return () => { active = false; };
+  }, [processes]);
+
   useEffect(() => {
     const intimationId = selectedEvent?.extendedProps?.djenIntimationId;
     if (!intimationId) { setSelectedEventDjenData(null); return; }
@@ -702,8 +724,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
         const texto = data.texto ?? '';
 
-        // Extrair datas DD/MM/YYYY
-        const uniqueDates = [...new Set([...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)].map((m) => m[1]))];
+        // Extrair datas DD/MM/YYYY — apenas em CONTEXTO de agendamento, para não
+        // capturar datas avulsas do corpo (ex.: citação de jurisprudência
+        // "julgado em 23/05/2023"). Espelha fn_extract_hearing_dates no banco.
+        const schedDates = [
+          // (a) data logo após um rótulo "Data:"
+          ...[...texto.matchAll(/data[^0-9a-z]{0,25}(\d{2}\/\d{2}\/\d{4})/gi)].map((m) => m[1]),
+          // (b) data após "dia"
+          ...[...texto.matchAll(/\bdia\b[^0-9]{0,8}(\d{2}\/\d{2}\/\d{4})/gi)].map((m) => m[1]),
+          // (c) data imediatamente seguida de horário (às HH:MM / Hora:)
+          ...[...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})[^0-9]{0,20}(?:\d{1,2}[h:]\d{2}|hora)/gi)].map((m) => m[1]),
+        ];
+        const allDates = [...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)].map((m) => m[1]);
+        // Se nada em contexto de agendamento, cai para todas (formato atípico) — defensivo.
+        const uniqueDates = [...new Set(schedDates.length ? schedDates : allDates)];
 
         // Extrair horários: "14:00", "às 14h30", "14h30min", "14:00h"
         const timeRaw = [...texto.matchAll(/(\d{1,2})[h:](\d{2})(?:min)?(?:h)?/gi)].map((m) => {
@@ -1021,6 +1055,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
             clientId: process.client_id ?? undefined,
             entityId: process.id,
+            // Confirmação DJEN (read-only) vinda de fn_djen_hearing_statuses.
+            djenStatus: hearingDjenMap.get(process.id)?.status,
+            djenIntimationId: hearingDjenMap.get(process.id)?.intimationId ?? undefined,
           },
         });
       });
@@ -1056,7 +1093,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       });
 
     return calendarEvents;
-  }, [deadlines, processes, requirements, clientMap, calendarEventsData]);
+  }, [deadlines, processes, requirements, clientMap, calendarEventsData, hearingDjenMap]);
 
   // Eventos personalizados vindos da tabela calendar_events
   const customEvents = useMemo(() => {
@@ -1427,6 +1464,47 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     },
     [openEventForm],
   );
+
+  // ── Confirmação manual de audiência (designada em ata, sem DJEN) ──
+  const [manualBusy, setManualBusy] = useState(false);
+  const applyEventUpdateLocally = (updated: CalendarEvent) => {
+    setCalendarEventsData((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    setSelectedEvent((prev) =>
+      prev
+        ? {
+            ...prev,
+            extendedProps: {
+              ...prev.extendedProps,
+              djenStatus: updated.djen_status ?? undefined,
+              djenIntimationId: updated.djen_intimation_id ?? undefined,
+              data: updated,
+            },
+          }
+        : prev,
+    );
+  };
+  const handleManualConfirm = async (eventId: string) => {
+    setManualBusy(true);
+    try {
+      const updated = await calendarService.manualConfirmHearing(eventId, null);
+      if (updated) applyEventUpdateLocally(updated);
+    } catch (err) {
+      console.error('Falha ao confirmar manualmente:', err);
+    } finally {
+      setManualBusy(false);
+    }
+  };
+  const handleManualUnconfirm = async (eventId: string) => {
+    setManualBusy(true);
+    try {
+      const updated = await calendarService.manualUnconfirmHearing(eventId);
+      if (updated) applyEventUpdateLocally(updated);
+    } catch (err) {
+      console.error('Falha ao desfazer confirmação manual:', err);
+    } finally {
+      setManualBusy(false);
+    }
+  };
 
   const computeStartAt = (dateValue: string, timeValue: string) => {
     const normalizeTime = (value: string) => (value.length === 5 ? `${value}:00` : value);
@@ -2370,17 +2448,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const hasRealTime = Boolean(timeText && timeText.trim().length > 0);
 
     const dotColor =
-      djenStatus === 'confirmed'  ? '#16a34a' :
-      djenStatus === 'divergence' ? '#f59e0b' :
-                                    'rgba(255,255,255,0.45)';
+      djenStatus === 'confirmed'        ? '#16a34a' :
+      djenStatus === 'confirmed_manual' ? '#16a34a' :
+      djenStatus === 'divergence'       ? '#f59e0b' :
+                                          'rgba(255,255,255,0.45)';
     const dotShadow =
-      djenStatus === 'confirmed'  ? '0 0 5px #22c55e' :
-      djenStatus === 'divergence' ? '0 0 5px #f59e0b' :
-                                    'none';
+      djenStatus === 'confirmed'        ? '0 0 5px #22c55e' :
+      djenStatus === 'confirmed_manual' ? '0 0 5px #22c55e' :
+      djenStatus === 'divergence'       ? '0 0 5px #f59e0b' :
+                                          'none';
     const djenTitle =
-      djenStatus === 'confirmed'  ? 'Confirmado pelo DJEN' :
-      djenStatus === 'divergence' ? '⚠️ Divergência com DJEN' :
-                                    'Não confirmado no DJEN';
+      djenStatus === 'confirmed'        ? 'Confirmado pelo DJEN' :
+      djenStatus === 'confirmed_manual' ? 'Confirmado manualmente' :
+      djenStatus === 'divergence'       ? '⚠️ Divergência com DJEN' :
+                                          'Não confirmado no DJEN';
 
     return (
       <div className={`calendar-chip calendar-chip--${type}`}>
@@ -3233,27 +3314,36 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(eventDateObj)
               : null;
             const eventMode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
+            const eventData = selectedEvent.extendedProps.data as any;
+            const calendarEventId = selectedEvent.extendedProps.calendarEventId as string | undefined;
+            const manualConfirmedAt = eventData?.manual_confirmed_at as string | null | undefined;
+            const manualNote = eventData?.manual_note as string | null | undefined;
 
             const StatusIcon =
-              djenStatus === 'confirmed'  ? ShieldCheck :
-              djenStatus === 'divergence' ? AlertTriangle :
-                                            HelpCircle;
+              djenStatus === 'confirmed'        ? ShieldCheck :
+              djenStatus === 'confirmed_manual' ? UserCheck :
+              djenStatus === 'divergence'       ? AlertTriangle :
+                                                  HelpCircle;
             const iconColor =
-              djenStatus === 'confirmed'  ? 'text-green-600' :
-              djenStatus === 'divergence' ? 'text-amber-500' :
-                                            'text-slate-400';
+              djenStatus === 'confirmed'        ? 'text-green-600' :
+              djenStatus === 'confirmed_manual' ? 'text-green-600' :
+              djenStatus === 'divergence'       ? 'text-amber-500' :
+                                                  'text-slate-400';
             const badgeStyle =
-              djenStatus === 'confirmed'  ? 'bg-green-100 text-green-700 ring-green-200' :
-              djenStatus === 'divergence' ? 'bg-amber-100 text-amber-700 ring-amber-200' :
-                                            'bg-slate-100 text-slate-500 ring-slate-200';
+              djenStatus === 'confirmed'        ? 'bg-green-100 text-green-700 ring-green-200' :
+              djenStatus === 'confirmed_manual' ? 'bg-green-100 text-green-700 ring-green-200' :
+              djenStatus === 'divergence'       ? 'bg-amber-100 text-amber-700 ring-amber-200' :
+                                                  'bg-slate-100 text-slate-500 ring-slate-200';
             const statusLabel =
-              djenStatus === 'confirmed'  ? 'Confirmado' :
-              djenStatus === 'divergence' ? 'Divergência' :
-                                            'Não confirmado';
+              djenStatus === 'confirmed'        ? 'Confirmado' :
+              djenStatus === 'confirmed_manual' ? 'Confirmado (manual)' :
+              djenStatus === 'divergence'       ? 'Divergência' :
+                                                  'Não confirmado';
             const borderColor =
-              djenStatus === 'confirmed'  ? 'border-green-100' :
-              djenStatus === 'divergence' ? 'border-amber-100' :
-                                            'border-slate-100';
+              djenStatus === 'confirmed'        ? 'border-green-100' :
+              djenStatus === 'confirmed_manual' ? 'border-green-100' :
+              djenStatus === 'divergence'       ? 'border-amber-100' :
+                                                  'border-slate-100';
 
             return (
               <div className={`rounded-xl border bg-[#f8f7f5] px-3 py-2.5 space-y-2 ${borderColor}`}>
@@ -3403,6 +3493,55 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <p className="text-[10px] text-slate-400 italic text-center py-0.5">
                     Nenhuma intimação DJEN localizada para este evento.
                   </p>
+                )}
+
+                {/* ── Confirmação manual (audiência designada em ata) ── */}
+                {calendarEventId && (
+                  <div className="pt-1 border-t border-slate-100 space-y-1.5">
+                    {manualConfirmedAt && (
+                      <div className="flex items-start gap-1.5 text-[10px] text-slate-500">
+                        <UserCheck className="w-3 h-3 mt-0.5 shrink-0 text-green-600" />
+                        <span>
+                          Confirmado manualmente em{' '}
+                          <span className="font-semibold text-slate-700">
+                            {new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(manualConfirmedAt))}
+                          </span>
+                          {manualNote ? <> — <span className="italic">{manualNote}</span></> : null}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Despacho novo após a confirmação manual: alerta sem alterar nada */}
+                    {djenStatus === 'divergence' && manualConfirmedAt && (
+                      <p className="text-[10px] text-amber-700 bg-amber-50 rounded-md px-2 py-1">
+                        ⚠️ Nova publicação no DJEN após sua confirmação — a nova data prevalece. Confira e atualize o compromisso.
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-end gap-2">
+                      {(djenStatus === 'divergence' || djenStatus === 'unconfirmed') && (
+                        <button
+                          type="button"
+                          disabled={manualBusy}
+                          onClick={() => handleManualConfirm(calendarEventId)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-medium transition"
+                        >
+                          <UserCheck className="w-3 h-3" />
+                          Confirmar manualmente
+                        </button>
+                      )}
+                      {manualConfirmedAt && (
+                        <button
+                          type="button"
+                          disabled={manualBusy}
+                          onClick={() => handleManualUnconfirm(calendarEventId)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-600 text-xs font-medium transition"
+                        >
+                          Desfazer confirmação
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             );

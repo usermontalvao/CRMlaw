@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.249': { name: 'Cafe Agenda DJEN Vivo', emoji: '📅' },
   '1.10.248': { name: 'Cafe Sessao e Timeline Coerentes', emoji: '🧭' },
   '1.10.247': { name: 'Cafe Portal Acesso Rapido', emoji: '🚪' },
   '1.10.245': { name: 'Cafe Advisor Orquestrado', emoji: '🧭' },
@@ -902,6 +903,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.249',
+    date: '19/06/2026',
+    summary: 'Agenda: a confirmação DJEN dos compromissos passou a ficar viva no cadastro, ganhou refresh diário só para eventos futuros e passou a cobrir também as audiências virtuais derivadas dos processos.',
+    modules: [
+      { moduleId: 'agenda', changes: [
+        { type: 'fix' as const, title: 'Refresh DJEN diário restrito a compromissos futuros', description: 'A rotina fn_refresh_all_djen_statuses foi amarrada a um job diário e agora reprocessa apenas audiências e perícias a partir da data atual, ignorando eventos passados e encerrados.' },
+        { type: 'fix' as const, title: 'Criação e edição recalculam confirmação DJEN na hora', description: 'Um trigger em calendar_events passou a preencher os campos djen_* imediatamente ao salvar hearing/pericia com processo vinculado, sem esperar a próxima sincronização periódica.' },
+        { type: 'improvement' as const, title: 'Audiências virtuais de processos agora exibem selo DJEN', description: 'As audiências montadas a partir de processes.hearing_scheduled passaram a consumir uma RPC read-only em lote e finalmente exibem o status DJEN no calendário, mesmo sem existir como calendar_event real.' },
+        { type: 'feature' as const, title: 'Confirmação manual para audiência designada em ata', description: 'O detalhe do compromisso ganhou ações para confirmar manualmente hearing/pericia quando o ato não saiu no DJEN, com reversão posterior caso nova publicação oficial indique divergência.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Regra de match DJEN virou função central reutilizável', description: 'A lógica de correspondência entre processo, data e intimação foi extraída para fn_match_djen_for_process, reduzindo duplicação entre trigger, refresh diário e leitura read-only da Agenda.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.248',
     date: '19/06/2026',

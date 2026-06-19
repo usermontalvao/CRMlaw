@@ -9,7 +9,7 @@ export type CalendarEventType =
 
 export type CalendarEventStatus = 'pendente' | 'concluido' | 'cancelado';
 
-export type DjenStatus = 'confirmed' | 'divergence' | 'unconfirmed';
+export type DjenStatus = 'confirmed' | 'divergence' | 'unconfirmed' | 'confirmed_manual';
 
 export type CalendarEventMode = 'presencial' | 'online';
 
@@ -36,6 +36,10 @@ export interface CalendarEvent {
   djen_status?: DjenStatus | null;
   djen_intimation_id?: string | null;
   djen_checked_at?: string | null;
+  manual_confirmed_at?: string | null;
+  manual_confirmed_by?: string | null;
+  manual_confirmed_date?: string | null;
+  manual_note?: string | null;
 }
 
 export interface CreateCalendarEventDTO {
