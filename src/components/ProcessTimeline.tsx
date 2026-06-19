@@ -66,6 +66,29 @@ const STATUS_TO_STAGE_INDEX: Record<string, number> = {
   arquivado: 8,
 };
 
+const resolveDisplayStatus = (
+  canonicalStatus: ProcessStatus | null,
+  events: TimelineEvent[],
+): ProcessStatus | null => {
+  if (!canonicalStatus) return null;
+
+  const suggested = processTimelineService.detectSuggestedStatus(events);
+  if (!suggested) return canonicalStatus;
+
+  const canonicalStage = STATUS_TO_STAGE_INDEX[canonicalStatus] ?? 0;
+  const suggestedStage = STATUS_TO_STAGE_INDEX[suggested] ?? 0;
+
+  // Quando o banco ainda está sem movimentos DataJud persistidos, o status
+  // canônico pode ficar congelado em "distribuido" mesmo com uma timeline
+  // DJEN/agenda já mostrando fase superior. Nesse caso, para a UI da Linha do
+  // Tempo, priorizamos o estágio inferido localmente sem gravar no banco.
+  if (canonicalStage <= STATUS_TO_STAGE_INDEX.distribuido && suggestedStage > canonicalStage) {
+    return suggested;
+  }
+
+  return canonicalStatus;
+};
+
 // Lê o status canônico do banco (fonte única: DataJud via _infer_process_stage,
 // respeitando o override manual status_manual). Não grava nada.
 const fetchCanonicalStatus = async (processId: string): Promise<ProcessStatus | null> => {
@@ -449,9 +472,10 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       if (processId) {
         const canonical = await fetchCanonicalStatus(processId);
         if (canonical) {
-          setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
-          setStatusUpdated(canonical);
-          onStatusUpdated?.(canonical);
+          const displayStatus = resolveDisplayStatus(canonical, data) ?? canonical;
+          setCurrentStage(STATUS_TO_STAGE_INDEX[displayStatus] ?? 0);
+          setStatusUpdated(displayStatus);
+          onStatusUpdated?.(displayStatus);
         }
         // Comarca (não é status) — mantém o enriquecimento quando ausente.
         if (data.length > 0) {
@@ -470,9 +494,10 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         if (processId) {
           const canonical = await fetchCanonicalStatus(processId);
           if (canonical) {
-            setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
-            setStatusUpdated(canonical);
-            onStatusUpdated?.(canonical);
+            const displayStatus = resolveDisplayStatus(canonical, data) ?? canonical;
+            setCurrentStage(STATUS_TO_STAGE_INDEX[displayStatus] ?? 0);
+            setStatusUpdated(displayStatus);
+            onStatusUpdated?.(displayStatus);
           }
           if (data.length > 0) {
             const currentProcess = await processService.getProcessById(processId);
@@ -505,9 +530,10 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       if (processId) {
         const canonical = await fetchCanonicalStatus(processId);
         if (canonical) {
-          setCurrentStage(STATUS_TO_STAGE_INDEX[canonical] ?? 0);
-          setStatusUpdated(canonical);
-          onStatusUpdated?.(canonical);
+          const displayStatus = resolveDisplayStatus(canonical, data) ?? canonical;
+          setCurrentStage(STATUS_TO_STAGE_INDEX[displayStatus] ?? 0);
+          setStatusUpdated(displayStatus);
+          onStatusUpdated?.(displayStatus);
         }
       }
     } catch (err: any) {

@@ -832,35 +832,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       .slice(0, 6);
   }, [mentionQuery, members]);
 
+  // Filtros secundários (busca, tipo, prioridade, responsável) — exclui a aba de status.
+  // Centraliza a regra para que lista, cartões de estatística e alertas usem exatamente
+  // o mesmo critério e nunca exibam números divergentes.
+  const matchesSecondaryFilters = useCallback(
+    (deadline: Deadline) => {
+      if (filterSearch.trim() && !matchesNormalizedSearch(filterSearch, [deadline.title, deadline.description || ''])) {
+        return false;
+      }
+      if (filterType && deadline.type !== filterType) return false;
+      if (filterPriority && deadline.priority !== filterPriority) return false;
+      if (filterResponsible === UNASSIGNED_FILTER_VALUE) {
+        if (deadline.responsible_id) return false;
+      } else if (filterResponsible && deadline.responsible_id !== filterResponsible) {
+        return false;
+      }
+      return true;
+    },
+    [filterSearch, filterType, filterPriority, filterResponsible],
+  );
+
   const filteredDeadlines = useMemo(() => {
-    let filtered = deadlines;
+    let filtered = deadlines.filter(matchesSecondaryFilters);
 
     if (activeStatusTab !== 'todos') {
       filtered = filtered.filter((deadline) => deadline.status === activeStatusTab);
     } else {
       filtered = filtered.filter((deadline) => deadline.status !== 'cumprido');
-    }
-
-    if (filterSearch.trim()) {
-      const term = filterSearch;
-      filtered = filtered.filter(
-        (deadline) =>
-          matchesNormalizedSearch(term, [deadline.title, deadline.description || '']),
-      );
-    }
-
-    if (filterType) {
-      filtered = filtered.filter((deadline) => deadline.type === filterType);
-    }
-
-    if (filterPriority) {
-      filtered = filtered.filter((deadline) => deadline.priority === filterPriority);
-    }
-
-    if (filterResponsible === UNASSIGNED_FILTER_VALUE) {
-      filtered = filtered.filter((deadline) => !deadline.responsible_id);
-    } else if (filterResponsible) {
-      filtered = filtered.filter((deadline) => deadline.responsible_id === filterResponsible);
     }
 
     return filtered.slice().sort((a, b) => {
@@ -870,7 +868,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (a.status !== 'pendente' && b.status === 'pendente') return 1;
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     });
-  }, [deadlines, activeStatusTab, filterSearch, filterType, filterPriority, filterResponsible]);
+  }, [deadlines, activeStatusTab, matchesSecondaryFilters]);
 
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(filteredDeadlines.length / pageSize));
@@ -913,19 +911,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const overdueDeadlines = useMemo(() => {
     return deadlines
+      .filter(matchesSecondaryFilters)
       .filter((d) => d.status === 'pendente')
       .filter((d) => getDaysUntilDue(d.due_date) < 0)
       .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
-  }, [deadlines]);
+  }, [deadlines, matchesSecondaryFilters]);
 
   const criticalDeadlines = useMemo(() => {
     return deadlines
+      .filter(matchesSecondaryFilters)
       .filter((d) => d.status === 'pendente')
       .filter((d) => getDaysUntilDue(d.due_date) === 1)
       .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
-  }, [deadlines]);
+  }, [deadlines, matchesSecondaryFilters]);
 
-  const unassignedPending = useMemo(() => deadlines.filter((d) => d.status === 'pendente' && !d.responsible_id), [deadlines]);
+  const unassignedPending = useMemo(() => deadlines.filter(matchesSecondaryFilters).filter((d) => d.status === 'pendente' && !d.responsible_id), [deadlines, matchesSecondaryFilters]);
 
   const smartAlerts = useMemo<SmartAlert[]>(() => {
     const alerts: SmartAlert[] = [];
@@ -990,6 +990,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const monthlyDeadlines = useMemo(() => {
     return deadlines.filter((deadline) => {
+      if (!matchesSecondaryFilters(deadline)) return false;
       if (isPastMonth) {
         if (deadline.status !== 'cumprido' || !deadline.completed_at) return false;
         const completed = new Date(deadline.completed_at);
@@ -1007,7 +1008,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (!due) return false;
       return due.getMonth() === internalCalendarMonth && due.getFullYear() === internalCalendarYear;
     });
-  }, [deadlines, internalCalendarMonth, internalCalendarYear, isPastMonth]);
+  }, [deadlines, internalCalendarMonth, internalCalendarYear, isPastMonth, matchesSecondaryFilters]);
 
   const monthlyPending = useMemo(
     () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
@@ -1017,10 +1018,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const monthlyCompleted = useMemo(() => {
     return deadlines.filter((deadline) => {
       if (deadline.status !== 'cumprido' || !deadline.completed_at) return false;
+      if (!matchesSecondaryFilters(deadline)) return false;
       const completed = new Date(deadline.completed_at);
       return completed.getMonth() === internalCalendarMonth && completed.getFullYear() === internalCalendarYear;
     });
-  }, [deadlines, internalCalendarMonth, internalCalendarYear]);
+  }, [deadlines, internalCalendarMonth, internalCalendarYear, matchesSecondaryFilters]);
 
   const monthlyDueToday = useMemo(() => {
     const today = new Date();
@@ -1347,10 +1349,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     };
   }, []);
 
-  // Filtro padrão: usuário logado vê apenas seus prazos, admin vê tudo
+  // Filtro padrão: todo usuário (inclusive admin) vê apenas seus próprios prazos.
+  // Para ver os prazos de toda a equipe, basta selecionar "Todos" no filtro de responsável.
   useEffect(() => {
     if (permissionsLoading || !currentUser) return;
-    if (!isAdmin && currentUser.id) {
+    if (currentUser.id) {
       setFilterResponsible(currentUser.id);
     }
   }, [permissionsLoading, isAdmin, currentUser]);
@@ -3336,8 +3339,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </select>
             <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)}
               className="h-8 px-2 pr-7 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] text-slate-700 focus:outline-none cursor-pointer">
-              <option value="">Responsável</option>
-              <option value={UNASSIGNED_FILTER_VALUE}>Sem responsável</option>
+              <option value="">Todos</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {(filterType || filterPriority || filterResponsible) && (

@@ -82,6 +82,19 @@ const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'arquivado', label: 'Arquivado', badge: 'bg-slate-100 text-slate-600' },
 ];
 
+const ACTIVE_PROCESS_STATUSES: ProcessStatus[] = [
+  'citacao',
+  'conciliacao',
+  'contestacao',
+  'instrucao',
+  'andamento',
+  'sentenca',
+  'recurso',
+  'cumprimento',
+];
+
+type ProcessStatusFilter = ProcessStatus | 'todos' | 'em_andamento_macro';
+
 const PRACTICE_AREAS: { key: ProcessPracticeArea; label: string; description: string }[] = [
   { key: 'trabalhista', label: 'Trabalhista', description: 'Demandas trabalhistas e relações de emprego' },
   { key: 'familia', label: 'Família', description: 'Divórcios, guarda, pensão e outros temas familiares' },
@@ -357,7 +370,7 @@ interface ProcessesModuleProps {
     court?: string;
     distributed_at?: string;
   };
-  initialStatusFilter?: ProcessStatus | 'todos';
+  initialStatusFilter?: ProcessStatusFilter;
   initialSearchQuery?: string;
   onParamConsumed?: () => void;
 }
@@ -441,7 +454,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [searchingDjen, setSearchingDjen] = useState(false);
   const [djenData, setDjenData] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'todos'>('todos');
+  const [statusFilter, setStatusFilter] = useState<ProcessStatusFilter>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'details'>('list');
   const [selectedProcessForView, setSelectedProcessForView] = useState<Process | null>(null);
   // #5 — Comarca editável inline
@@ -594,7 +607,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     const baseList =
       statusFilter === 'todos'
         ? processes
-        : processes.filter((process) => process.status === statusFilter);
+        : statusFilter === 'em_andamento_macro'
+          ? processes.filter((process) => ACTIVE_PROCESS_STATUSES.includes(process.status))
+          : processes.filter((process) => process.status === statusFilter);
 
     if (!term) return baseList;
 
@@ -2706,12 +2721,13 @@ Regras:
   }, [processes]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { todos: processes.length };
+    const counts: Record<string, number> = { todos: processes.length, em_andamento_macro: 0 };
     statusOptions.forEach((s) => {
       counts[s.key] = 0;
     });
     processes.forEach((p) => {
       if (counts[p.status] !== undefined) counts[p.status]++;
+      if (ACTIVE_PROCESS_STATUSES.includes(p.status)) counts.em_andamento_macro++;
     });
     return counts;
   }, [processes]);
@@ -3738,7 +3754,7 @@ Regras:
           {[
             { key: 'todos' as const, label: 'Total', value: statusCounts.todos, icon: Building2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
             { key: 'aguardando_confeccao' as const, label: 'Aguardando', value: statusCounts.aguardando_confeccao || 0, icon: FileText, accent: 'text-orange-600', ring: 'ring-orange-300', bg: 'bg-orange-50/50' },
-            { key: 'andamento' as const, label: 'Em Andamento', value: statusCounts.andamento || 0, icon: Clock, accent: 'text-emerald-600', ring: 'ring-emerald-300', bg: 'bg-emerald-50/50' },
+            { key: 'em_andamento_macro' as const, label: 'Em Andamento', value: statusCounts.em_andamento_macro || 0, icon: Clock, accent: 'text-emerald-600', ring: 'ring-emerald-300', bg: 'bg-emerald-50/50' },
             { key: 'distribuido' as const, label: 'Distribuídos', value: statusCounts.distribuido || 0, icon: FileText, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
             { key: 'arquivado' as const, label: 'Arquivados', value: statusCounts.arquivado || 0, icon: CheckCircle2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
           ].map((card) => {
@@ -4054,10 +4070,11 @@ Regras:
           <div className="flex items-center gap-2">
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
+              onChange={(event) => setStatusFilter(event.target.value as ProcessStatusFilter)}
               className="px-3 py-2 bg-white dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700 rounded-xl text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 transition-shadow"
             >
               <option value="todos">Todos os status</option>
+              <option value="em_andamento_macro">Em andamento (geral)</option>
               {statusOptions.map((status) => (
                 <option key={status.key} value={status.key}>
                   {status.label}

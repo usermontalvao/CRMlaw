@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../config/supabase';
+import { SESSION_POLICY } from '../config/sessionPolicy';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -170,81 +171,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id]);
 
-  // Verificação de inatividade e logout automático
+  // Inatividade + time-box absoluto → logout automático REAL.
+  //
+  // O token em si é mantido fresco pelo `autoRefreshToken` do supabase-js
+  // enquanto a aba está aberta; aqui cuidamos da POLÍTICA de encerramento:
+  //  · idle      — tempo sem interação (reseta com atividade)
+  //  · absoluto  — tempo desde o login (time-box; não reseta)
+  // O que estourar primeiro encerra a sessão de fato (signOut + redirect).
   useEffect(() => {
     if (!session) return;
 
-    const checkInactivity = () => {
-      const inactiveTime = Date.now() - lastActivity;
-      const maxInactiveTime = 6 * 60 * 60 * 1000; // 6 horas de inatividade
-      const warningTime = maxInactiveTime - 5 * 60 * 1000; // Aviso 5 minutos antes
+    const { idleMs, absoluteMs } = SESSION_POLICY.staff;
+    const { warningMs, tickMs } = SESSION_POLICY;
 
-      if (inactiveTime > maxInactiveTime) {
-        console.warn('⏰ Logout automático por inatividade (6h)');
-        // Força reload para limpar estado e evitar perda de dados
-        try { sessionStorage.setItem('auth_notice', 'session_expired'); } catch {}
-        window.location.href = window.location.origin + '/';
-        return;
-      }
-      
-      // Mostrar aviso quando próximo do logout
-      if (inactiveTime > warningTime && !sessionWarning) {
-        console.warn('⚠️ Sessão expirará em 5 minutos por inatividade');
-        setSessionWarning(true);
-      } else if (inactiveTime <= warningTime && sessionWarning) {
-        setSessionWarning(false);
-      }
+    // Encerra a sessão de verdade: invalida o refresh token (evita re-login no F5),
+    // limpa o início da sessão e volta para a tela de login com um aviso.
+    const forceLogout = async (reason: 'idle' | 'timebox' | 'revoked') => {
+      console.warn('🔒 Encerrando sessão —', reason);
+      try { sessionStorage.setItem('auth_notice', 'session_expired'); } catch {}
+      try { await supabase.auth.signOut(); } catch { /* segue para o redirect mesmo assim */ }
+      persistSessionStart(null);
+      window.location.href = window.location.origin + '/';
     };
 
-    const heartbeatInterval = setInterval(async () => {
-      try {
-        // Primeiro verificar inatividade
-        checkInactivity();
-        
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Erro ao verificar sessão:', error);
-          return;
-        }
+    const tick = async () => {
+      const now = Date.now();
 
-        if (!data.session) {
-          console.warn('Sessão expirada, forçando reload...');
-          // Força reload para limpar estado e evitar perda de dados
-          try { sessionStorage.setItem('auth_notice', 'session_expired'); } catch {}
-          window.location.href = window.location.origin + '/';
-          return;
-        }
-
-        // Renovar apenas se token expira em menos de 15 minutos E houve atividade recente
-        const expiresAt = data.session.expires_at;
-        if (expiresAt) {
-          const expiresInMs = (expiresAt * 1000) - Date.now();
-          const fifteenMinutes = 15 * 60 * 1000;
-          const recentActivity = (Date.now() - lastActivity) < 10 * 60 * 1000; // Ativo nos últimos 10min
-
-          if (expiresInMs < fifteenMinutes && recentActivity) {
-            console.log('🔄 Renovando sessão (expira em', Math.round(expiresInMs / 60000), 'min)');
-            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-            
-            if (refreshError) {
-              console.error('Erro ao renovar sessão:', refreshError);
-            } else if (refreshData.session) {
-              console.log('✅ Sessão renovada');
-              setSession(refreshData.session);
-              setUser(refreshData.user);
-            }
-          } else if (!recentActivity) {
-            console.log('⚠️ Usuário inativo há mais de 10min, não renovando sessão');
-          }
-        }
-      } catch (error) {
-        console.error('Erro no heartbeat:', error);
+      // 1) Time-box absoluto — vence mesmo com o usuário ativo.
+      if (sessionStart && now - sessionStart > absoluteMs) {
+        console.warn('⏰ Logout automático: tempo máximo de sessão atingido (time-box)');
+        await forceLogout('timebox');
+        return;
       }
-    }, 5 * 60 * 1000); // A cada 5 minutos
 
-    return () => clearInterval(heartbeatInterval);
-  }, [session, lastActivity]);
+      // 2) Inatividade.
+      const idleFor = now - lastActivity;
+      if (idleFor > idleMs) {
+        console.warn('⏰ Logout automático por inatividade');
+        await forceLogout('idle');
+        return;
+      }
+      // Aviso de expiração iminente (idempotente — setState com mesmo valor é no-op).
+      setSessionWarning(idleFor > idleMs - warningMs);
+
+      // 3) Sessão revogada no servidor (troca de senha, signOut em outro dispositivo).
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) {
+          console.warn('Sessão inexistente/revogada — encerrando');
+          await forceLogout('revoked');
+        }
+      } catch { /* erro de rede: não desloga por isso */ }
+    };
+
+    void tick(); // checa já na montagem (pega time-box vencido sem esperar o 1º tick)
+    const interval = setInterval(tick, tickMs);
+    return () => clearInterval(interval);
+  }, [session, lastActivity, sessionStart]);
 
   // Detectar atividade do usuário com throttling
   useEffect(() => {

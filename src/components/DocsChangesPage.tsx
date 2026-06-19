@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.248': { name: 'Cafe Sessao e Timeline Coerentes', emoji: '🧭' },
   '1.10.247': { name: 'Cafe Portal Acesso Rapido', emoji: '🚪' },
   '1.10.245': { name: 'Cafe Advisor Orquestrado', emoji: '🧭' },
   '1.10.244': { name: 'Cafe Politica Blindada', emoji: '🔐' },
@@ -901,6 +902,26 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.248',
+    date: '19/06/2026',
+    summary: 'Sessão, Processos e Prazos: a política de expiração ficou unificada entre CRM e portal, a linha do tempo deixou de travar visualmente em distribuição quando a fase já avançou nos eventos carregados, e os indicadores passaram a refletir melhor os filtros ativos.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Política única de sessão para staff e portal', description: 'Foi criada uma fonte única para idle timeout e time-box absoluto, aplicada no CRM e no portal do cliente com aviso de sessão encerrada ao retornar para o login.' },
+      ]},
+      { moduleId: 'processos', changes: [
+        { type: 'fix' as const, title: 'Timeline não fica mais presa em Distribuição sem DataJud local', description: 'A UI da Linha do Tempo passou a usar um fallback visual pelos eventos carregados quando o status canônico ainda está congelado em distribuído por ausência de movimentos DataJud persistidos.' },
+        { type: 'fix' as const, title: 'Card de Em andamento passou a agregar fases ativas reais', description: 'O resumo superior agora soma citação, conciliação, contestação, instrução, sentença, recurso e cumprimento no bloco macro de andamento, em vez de contar apenas o status literal "andamento".' },
+      ]},
+      { moduleId: 'prazos', changes: [
+        { type: 'fix' as const, title: 'Indicadores e alertas respeitam os mesmos filtros secundários', description: 'Busca, tipo, prioridade e responsável foram centralizados para que listas, alertas e totais do módulo de prazos usem exatamente a mesma regra de filtragem.' },
+      ]},
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Login informa quando a sessão foi encerrada por segurança', description: 'A tela de entrada do portal agora exibe um aviso claro quando o acesso é encerrado por inatividade ou tempo máximo de sessão.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.246',
     date: '19/06/2026',

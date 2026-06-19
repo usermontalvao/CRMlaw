@@ -217,6 +217,21 @@ interface LiveStats {
 export const PortalLogin: React.FC = () => {
   const { loginByCPF, session: clientSession } = useClientAuth();
 
+  // ── Aviso de sessão encerrada (inatividade/time-box) — staff e cliente ───
+  // Ambos os fluxos redirecionam para cá após o logout automático, deixando um
+  // marcador em sessionStorage. Lemos uma vez, exibimos o banner e limpamos.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  useEffect(() => {
+    try {
+      const ended = sessionStorage.getItem('auth_notice') || sessionStorage.getItem('portal_notice');
+      if (ended) {
+        sessionStorage.removeItem('auth_notice');
+        sessionStorage.removeItem('portal_notice');
+        setSessionEnded(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // ── Auto-redirect: sessão já ativa ───────────────────────────────────────
   useEffect(() => {
     // Cliente do portal já logado → vai direto ao dashboard
@@ -673,6 +688,17 @@ export const PortalLogin: React.FC = () => {
 
           {/* logo no mobile (painel de marca fica oculto) */}
           <div className="md:hidden mb-7 flex justify-center"><Logo /></div>
+
+          {/* aviso de sessão encerrada por segurança (inatividade / tempo máximo) */}
+          {sessionEnded && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-[12.5px] leading-snug text-amber-800">
+                Sua sessão foi encerrada por segurança (inatividade ou tempo máximo de acesso).
+                Entre novamente para continuar.
+              </p>
+            </div>
+          )}
 
           {/* Sem moldura: o formulário vive direto sobre o painel claro (estilo editorial/premium) */}
           <div className="relative">
