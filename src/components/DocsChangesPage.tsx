@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.245': { name: 'Cafe Advisor Orquestrado', emoji: '🧭' },
   '1.10.244': { name: 'Cafe Politica Blindada', emoji: '🔐' },
   '1.10.243': { name: 'Cafe Push Orquestrado', emoji: '📲' },
   '1.10.242': { name: 'Cafe Ausencia na Retomada', emoji: '🌙' },
@@ -899,6 +900,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.245',
+    date: '18/06/2026',
+    summary: 'WhatsApp: o modulo foi reorganizado para concentrar modais e utilitarios compartilhados, com ajustes de atendimento do advisor, migration corretiva e novo artefato operacional do fluxo sem carteira assinada.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Modulo de WhatsApp foi quebrado em blocos reutilizaveis', description: 'Os modais, formatadores e componentes auxiliares sairam do arquivo principal para uma pasta dedicada, reduzindo acoplamento e preparando melhor a evolucao do atendimento.' },
+        { type: 'feature' as const, title: 'Fluxo do advisor ganhou ajustes de conversa e documento', description: 'As conversas do WhatsApp passaram a contar com novos pontos de apoio para selecao de cliente, criacao a partir da mensagem e solicitacao de documentos dentro do proprio workspace.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Migration corretiva para advisor e conversas', description: 'Foi adicionada uma migration dedicada para alinhar regras e estruturas de suporte ao fluxo atualizado do WhatsApp sem depender de intervencoes manuais no banco.' },
+      ]},
+      { moduleId: 'docs', changes: [
+        { type: 'improvement' as const, title: 'Artefato operacional do Typebot versionado no repositorio', description: 'O JSON da campanha sem carteira assinada passou a ficar salvo no projeto para rastrear e reaplicar a configuracao operacional com mais previsibilidade.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.244',
     date: '18/06/2026',

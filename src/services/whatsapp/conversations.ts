@@ -59,6 +59,43 @@ export const conversationsApi = {
     if (error) throw new Error(error.message);
   },
 
+  // ── Rascunhos de mensagem, por usuário+conversa (persistidos) ─
+  /** Carrega todos os rascunhos do usuário atual (mapa conversa→texto). */
+  async listDrafts(): Promise<Record<string, string>> {
+    const { data, error } = await supabase
+      .from('whatsapp_drafts')
+      .select('conversation_id, content');
+    if (error) throw new Error(error.message);
+    const map: Record<string, string> = {};
+    for (const r of (data ?? []) as { conversation_id: string; content: string }[]) {
+      if (r.content) map[r.conversation_id] = r.content;
+    }
+    return map;
+  },
+
+  /** Salva (ou apaga, se vazio) o rascunho da conversa para o usuário atual. */
+  async saveDraft(conversationId: string, content: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Não autenticado');
+    const text = content.trim();
+    if (!text) {
+      const { error } = await supabase
+        .from('whatsapp_drafts')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id);
+      if (error) throw new Error(error.message);
+      return;
+    }
+    const { error } = await supabase
+      .from('whatsapp_drafts')
+      .upsert(
+        { conversation_id: conversationId, user_id: user.id, content: text, updated_at: new Date().toISOString() },
+        { onConflict: 'conversation_id,user_id' },
+      );
+    if (error) throw new Error(error.message);
+  },
+
   /**
    * Pede à Evolution para entregar a presença do contato (online/visto por
    * último). Best-effort: silencioso em caso de falha, nunca atrapalha o chat.

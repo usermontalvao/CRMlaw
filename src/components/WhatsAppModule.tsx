@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
 import {
   Search, Send, Loader2, MessageCircle, Phone, User as UserIcon,
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
@@ -18,14 +17,26 @@ import { isNotifySoundMuted, setNotifySoundMuted, playNotificationSound } from '
 import { isStaffPushSupported, isStaffPushEnabled, enableStaffPush, disableStaffPush } from '../utils/staffPush';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
-import type { WhatsAppTemplate, WhatsAppScheduledMessage, TimelineEvent, TimelineKind } from '../types/whatsapp.types';
+import type { WhatsAppTemplate, WhatsAppScheduledMessage } from '../types/whatsapp.types';
+import {
+  formatTime, initials, prettyPhone, formatBytes, dayLabel, lastSeenLabel, presenceInfo,
+  typeLabel, conversationPreviewLabel, firstName, agentLabel, greetingByHour, buildGreeting,
+  buildAcceptPresentation, convStatus, slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
+  maskSensitive, maskName, maskPhoneFull, fmtAudioTime, prettyDoc, dueInfo, fmtDateTime,
+  fmtNoteDate,
+} from './whatsapp/format';
+import {
+  WaDialog, WaDialogBody, waInput, waLabel, waBtnPrimary, waBtnGhost, waBtnDanger,
+} from './whatsapp/ui';
+import { TransferModal, BlockContactModal, CloseConversationModal } from './whatsapp/conversationModals';
+import { TemplatePickerModal, ScheduleMessageModal } from './whatsapp/messageModals';
+import { ConversationSummaryModal, ConversationTimelineModal } from './whatsapp/infoModals';
+import { RequestDocumentModal } from './whatsapp/RequestDocumentModal';
+import { ClientPickerModal, NewConversationModal } from './whatsapp/clientPickerModals';
+import { CreateDeadlineFromMessageModal, CreateTaskFromMessageModal } from './whatsapp/createFromMessageModals';
 import { processService, type ProcessMovement } from '../services/process.service';
-import { deadlineService } from '../services/deadline.service';
-import { taskService } from '../services/task.service';
 import type { CalendarEvent, CalendarEventType } from '../types/calendar.types';
 import type { Requirement, RequirementStatus } from '../types/requirement.types';
-import type { DeadlineType, DeadlinePriority } from '../types/deadline.types';
-import type { TaskPriority } from '../types/task.types';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
   WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection,
@@ -126,21 +137,6 @@ function useConfirm(): { confirm: ConfirmFn; pending: (ConfirmOpts & { resolve: 
 // Alturas-base (scaleY) das barras do equalizador de gravação — perfil de onda
 // estático que a animação waEq faz "respirar"; dá o visual de áudio do WhatsApp.
 const WA_REC_BARS = [0.35, 0.6, 0.9, 0.5, 0.75, 1, 0.45, 0.7, 0.55, 0.85, 0.4, 0.65, 0.95, 0.5, 0.8, 0.6, 0.45, 0.9, 0.55, 0.7, 0.5, 0.85, 0.4, 0.6];
-
-const WA_TEAL = '#008069';        // faixa de cabeçalho (WhatsApp)
-const WA_GREEN = '#00a884';       // verde de ação (botões primários)
-const WA_GREEN_DARK = '#017561';  // hover do verde
-
-// Classes reutilizáveis para o corpo dos modais (mantêm a estética coesa).
-const waInput = 'w-full px-3 py-2 text-[13px] rounded-lg bg-[#f0f2f5] border border-transparent focus:bg-white focus:border-[#00a884] outline-none transition';
-const waLabel = 'block text-[12px] font-semibold text-slate-500 mb-1';
-const waBtnPrimary = 'inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-[#00a884] text-white text-[13px] font-semibold hover:bg-[#017561] disabled:opacity-50 transition';
-const waBtnGhost = 'px-3 py-2 text-[13px] font-semibold text-slate-500 hover:text-slate-700 transition';
-const waBtnDanger = 'inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 text-white text-[13px] font-semibold hover:bg-red-700 disabled:opacity-50 transition';
-
-const WA_DIALOG_WIDTH: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
-  sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl',
-};
 
 const ClientFillLinksPanel: React.FC<{
   links: import('../services/whatsapp/shared').ClientTemplateFillLink[] | null;
@@ -292,64 +288,6 @@ const ClientFillLinksPanel: React.FC<{
   );
 };
 
-const WaDialog: React.FC<{
-  title: string;
-  subtitle?: React.ReactNode;
-  icon?: React.ReactNode;
-  onClose: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
-  zIndex?: number;
-  headerActions?: React.ReactNode;
-  /** Header escuro (para previews de mídia). Padrão: teal do WhatsApp. */
-  headerClassName?: string;
-}> = ({ title, subtitle, icon, onClose, children, footer, size = 'md', zIndex = 50, headerActions, headerClassName }) => {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [onClose]);
-
-  return createPortal(
-    <div className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-[2px] p-0 sm:p-4" style={{ zIndex }} onClick={onClose}>
-      <motion.div
-        role="dialog" aria-modal="true" aria-label={title}
-        onClick={e => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.98, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.16, ease: 'easeOut' }}
-        className={`w-full ${WA_DIALOG_WIDTH[size]} max-h-[94dvh] flex flex-col overflow-hidden bg-white shadow-2xl ring-1 ring-black/10 rounded-t-2xl sm:rounded-2xl`}
-      >
-        <div className={`shrink-0 flex items-center gap-3 px-4 py-3 text-white ${headerClassName ?? ''}`} style={headerClassName ? undefined : { backgroundColor: WA_TEAL }}>
-          {icon && <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">{icon}</div>}
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[15px] font-semibold leading-tight">{title}</h3>
-            {subtitle && (typeof subtitle === 'string'
-              ? <p className="truncate text-[12px] text-white/80">{subtitle}</p>
-              : <div className="text-[12px] text-white/80">{subtitle}</div>)}
-          </div>
-          {headerActions}
-          <button type="button" onClick={onClose} aria-label="Fechar" className="shrink-0 rounded-full p-1.5 text-white/80 hover:bg-white/15 hover:text-white transition">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</div>
-
-        {footer && <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">{footer}</div>}
-      </motion.div>
-    </div>,
-    document.body,
-  );
-};
-
-const WaDialogBody: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = '', children, ...props }) => (
-  <div className={['p-4 sm:p-5', className].filter(Boolean).join(' ')} {...props}>{children}</div>
-);
-
 const ConfirmDialog: React.FC<{ opts: ConfirmOpts; onResolve: (v: boolean) => void }> = ({ opts, onResolve }) => {
   const danger = opts.tone === 'danger';
   return (
@@ -374,76 +312,6 @@ const ConfirmDialog: React.FC<{ opts: ConfirmOpts; onResolve: (v: boolean) => vo
   );
 };
 
-const formatTime = (iso: string | null) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  return sameDay
-    ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
-
-const initials = (name: string | null, phone: string) => {
-  const base = (name || phone || '?').trim();
-  const parts = base.split(/\s+/);
-  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || base.slice(0, 2).toUpperCase();
-};
-
-const prettyPhone = (phone: string) => {
-  const d = (phone || '').replace(/\D/g, '');
-  const m = d.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
-  if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
-  return phone.startsWith('+') ? phone : `+${d}`;
-};
-
-const formatBytes = (n: number | null) => {
-  if (!n) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-};
-
-const dayLabel = (iso: string) => {
-  const d = new Date(iso);
-  const today = new Date();
-  const yest = new Date(); yest.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return 'Hoje';
-  if (d.toDateString() === yest.toDateString()) return 'Ontem';
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-};
-
-/** "visto por último" com data e hora reais, no estilo do WhatsApp. */
-const lastSeenLabel = (iso: string) => {
-  const d = new Date(iso);
-  const hhmm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const today = new Date();
-  const yest = new Date(); yest.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return `visto por último hoje às ${hhmm}`;
-  if (d.toDateString() === yest.toDateString()) return `visto por último ontem às ${hhmm}`;
-  return `visto por último em ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })} às ${hhmm}`;
-};
-
-/**
- * Presença a exibir no cabeçalho. Oportunista e com janela de validade: sinais
- * ao vivo (online/digitando/gravando) só valem se recentes, senão caem para
- * "visto por último" quando houver. Retorna null quando não há nada confiável.
- */
-const presenceInfo = (c: { presence: WhatsAppPresence; presence_updated_at: string | null; last_seen_at: string | null }):
-  { text: string; live: boolean } | null => {
-  const age = c.presence_updated_at ? Date.now() - new Date(c.presence_updated_at).getTime() : Infinity;
-  const fresh = (ms: number) => age <= ms;
-  if (c.presence === 'composing' && fresh(25_000)) return { text: 'digitando…', live: true };
-  if (c.presence === 'recording' && fresh(25_000)) return { text: 'gravando áudio…', live: true };
-  if (c.presence === 'available' && fresh(75_000)) return { text: 'online', live: true };
-  // Offline ou sinal antigo → "visto por último". Quando o WhatsApp não envia o
-  // lastSeen explícito (caso comum), usamos o instante do último sinal de
-  // presença como melhor estimativa honesta de quando o contato esteve ativo.
-  const seenIso = c.last_seen_at || c.presence_updated_at;
-  if (seenIso) return { text: lastSeenLabel(seenIso), live: false };
-  return null;
-};
-
 /**
  * Linha de presença do cabeçalho (online/digitando/visto por último). Possui o
  * próprio tick de 15s para reavaliar o tempo relativo — assim o relógio vive
@@ -460,11 +328,18 @@ const PresenceText: React.FC<{
   }, []);
   const pr = presenceInfo(conv);
   if (!pr) return <span>{privateMode ? maskPhoneFull() : prettyPhone(conv.contact_phone)}</span>;
-  return pr.live
-    ? <span className="inline-flex items-center gap-1 font-semibold text-green-600">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> {pr.text}
-      </span>
-    : <span className="text-slate-500">{pr.text}</span>;
+  if (!pr.live) return <span className="text-slate-500">{pr.text}</span>;
+  // "digitando…/gravando…" ganha os três pontinhos animados; "online" mantém o
+  // ponto verde fixo.
+  const isTyping = pr.text !== 'online';
+  return (
+    <span className="inline-flex items-center gap-1.5 font-semibold text-green-600">
+      {isTyping
+        ? <span className="wa-typing" aria-hidden="true"><span /><span /><span /></span>
+        : <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+      {pr.text}
+    </span>
+  );
 });
 PresenceText.displayName = 'PresenceText';
 
@@ -473,138 +348,6 @@ const DateDivider: React.FC<{ label: string }> = ({ label }) => (
     <span className="px-3 py-1 rounded-full bg-white/90 text-slate-500 text-[11px] font-semibold shadow-sm">{label}</span>
   </div>
 );
-
-const typeLabel = (t: string) =>
-  t === 'image' ? '📷 Imagem' : t === 'audio' ? '🎤 Áudio' : t === 'video' ? '🎬 Vídeo'
-    : t === 'document' ? '📎 Documento' : '📎 Anexo';
-
-const conversationPreviewLabel = (type: WhatsAppMessage['type'], text?: string | null, fileName?: string | null) => {
-  const trimmed = text?.trim();
-  if (trimmed) return trimmed;
-  if (type === 'image') return 'Imagem';
-  if (type === 'audio') return 'Audio';
-  if (type === 'video') return 'Video';
-  if (type === 'document') return fileName || 'Documento';
-  return 'Mensagem';
-};
-
-// ── Identidade do agente (Fase 1) ──
-// Tratamento Dr./Dra. só para advogados (cargo "advogado" ou OAB preenchida),
-// conforme o gênero do perfil. Demais cargos usam só o primeiro nome.
-const normalizeRoleStr = (r?: string | null) =>
-  (r || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const firstName = (name?: string | null) => (name || '').trim().split(/\s+/)[0] || '';
-const isLawyer = (s?: Partial<StaffOption> | null) =>
-  !!s && (normalizeRoleStr(s.role) === 'advogado' || !!(s.oab && s.oab.trim()));
-const treatmentOf = (s?: Partial<StaffOption> | null) =>
-  isLawyer(s) ? (s!.gender === 'male' ? 'Dr.' : s!.gender === 'female' ? 'Dra.' : '') : '';
-/** Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla". */
-const agentLabel = (s?: Partial<StaffOption> | null, shortNameOverride?: string | null) => {
-  if (!s) return null;
-  const fn = firstName(shortNameOverride || s.name);
-  const t = treatmentOf(s);
-  return t ? `${t} ${fn}` : fn;
-};
-const greetingByHour = () => {
-  const h = new Date().getHours();
-  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
-};
-/** Saudação inicial automática do 1º atendimento (Fase 1). */
-const buildGreeting = (_s: Partial<StaffOption>, _roleLabelOverride?: string | null) => `${greetingByHour()}!`;
-/** Apresentação do novo responsável ao aceitar uma transferência (Fase 4). */
-const buildAcceptPresentation = (s: Partial<StaffOption>, shortNameOverride?: string | null) => {
-  const name = firstName(shortNameOverride || s.name);
-  return `Olá! Sou ${name} e vou seguir com o seu atendimento a partir de agora.`;
-};
-
-// ── Status operacional + SLA (Fase 4 + A) ──
-// Status derivado do estado real da conversa (sem campo de texto livre):
-// bloqueado / encerrada / aguardando você / aguardando setor / aguardando cliente / aberta.
-type ConvStatusKey = 'blocked' | 'closed' | 'waiting_you' | 'waiting_internal' | 'waiting_client' | 'open';
-const convStatus = (c: {
-  is_blocked: boolean;
-  status: string;
-  last_message_direction: WhatsAppDirection | null;
-  assigned_user_id?: string | null;
-  department_id?: string | null;
-  awaiting_accept?: boolean;
-}): { key: ConvStatusKey; label: string; cls: string } => {
-  if (c.is_blocked) return { key: 'blocked', label: 'Bloqueado', cls: 'bg-red-100 text-red-600' };
-  if (c.status === 'closed') return { key: 'closed', label: 'Encerrada', cls: 'bg-slate-200 text-slate-600' };
-  if (c.last_message_direction === 'in') return { key: 'waiting_you', label: 'Aguardando você', cls: 'bg-amber-100 text-amber-700' };
-  // Na fila de um setor mas sem responsável atribuído (e sem aceite pendente de transferência pessoal)
-  if (!c.assigned_user_id && c.department_id && !c.awaiting_accept) return { key: 'waiting_internal', label: 'Aguardando setor', cls: 'bg-sky-100 text-sky-700' };
-  if (c.last_message_direction === 'out') return { key: 'waiting_client', label: 'Aguardando cliente', cls: 'bg-slate-100 text-slate-500' };
-  return { key: 'open', label: 'Aberta', cls: 'bg-emerald-100 text-emerald-700' };
-};
-
-/** Minutos parados aguardando nossa resposta (cliente foi o último a falar). */
-const waitingMinutes = (c: WhatsAppConversation): number | null => {
-  if (c.is_blocked || c.status === 'closed') return null;
-  if (c.last_message_direction !== 'in') return null;
-  const since = c.last_customer_message_at || c.last_message_at;
-  if (!since) return null;
-  return (Date.now() - new Date(since).getTime()) / 60000;
-};
-
-/** Sinal de SLA: atenção (>15min) ou estourado (>60min). null = sem alerta. */
-const slaSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
-  const m = waitingMinutes(c);
-  if (m == null || m < 15) return null;
-  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 60
-    ? { color: '#dc2626', label: `parada há ${human}` }
-    : { color: '#d97706', label: `parada há ${human}` };
-};
-
-/**
- * Sinal de SLA interno (Fase B): conversa em fila de setor sem responsável há muito tempo.
- * Usa last_message_at como proxy do momento em que entrou na fila.
- * null = sem alerta (conversa não está em fila ou tempo aceitável).
- */
-const slaInternalSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
-  if (convStatus(c).key !== 'waiting_internal') return null;
-  const since = c.last_message_at;
-  if (!since) return null;
-  const m = (Date.now() - new Date(since).getTime()) / 60000;
-  if (m < 30) return null;
-  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 120
-    ? { color: '#dc2626', label: `na fila há ${human}` }
-    : { color: '#d97706', label: `na fila há ${human}` };
-};
-
-/**
- * Fase N: conversa com responsável atribuído que não respondeu em >4h após última
- * mensagem do cliente. Mais grave que slaSignal (15min) — sinaliza abandono real.
- */
-const abandonedSignal = (c: WhatsAppConversation): { label: string } | null => {
-  if (!c.assigned_user_id || c.is_blocked || c.status === 'closed') return null;
-  if (c.last_message_direction !== 'in') return null;
-  const since = c.last_customer_message_at || c.last_message_at;
-  if (!since) return null;
-  const h = (Date.now() - new Date(since).getTime()) / 3600000;
-  if (h < 4) return null;
-  const label = h < 24 ? `${Math.floor(h)}h sem resposta` : `${Math.floor(h / 24)}d sem resposta`;
-  return { label };
-};
-
-/**
- * Alerta de transferência sem aceite/continuidade (Fase 4). Enquanto a conversa
- * está "aguardando aceite", sinaliza o tempo parado: neutro no início, atenção
- * (>15min) e estourado (>60min) — para a operação ver o gargalo antes de virar
- * problema. null = não há transferência pendente.
- */
-const transferAlert = (c: WhatsAppConversation): { color: string; label: string } | null => {
-  if (!c.awaiting_accept || c.is_blocked || c.status === 'closed') return null;
-  const since = c.transfer_pending_since;
-  const m = since ? (Date.now() - new Date(since).getTime()) / 60000 : 0;
-  if (m < 15) return { color: '#0ea5e9', label: 'aguardando aceite' };
-  const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 60
-    ? { color: '#dc2626', label: `sem aceite há ${human}` }
-    : { color: '#d97706', label: `sem aceite há ${human}` };
-};
 
 // Avatar real do contato com fallback para iniciais (foto ausente ou URL expirada).
 const Avatar: React.FC<{ url: string | null; name: string | null; phone: string; size: number; onClick?: () => void }> = ({ url, name, phone, size, onClick }) => {
@@ -639,8 +382,9 @@ const ConversationListItem: React.FC<{
   statusCls: string;
   docStatus: 'awaiting' | 'ready' | null;
   muted: boolean;
+  draftPreview: string;
   onSelect: (id: string) => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, onSelect }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, onSelect }) => {
   const sla = slaSignal(c);
   const slaInt = slaInternalSignal(c);
   const ta = transferAlert(c);
@@ -652,7 +396,7 @@ const ConversationListItem: React.FC<{
     : '';
   return (
     <button onClick={() => onSelect(c.id)}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
+      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
       <div className="relative flex-shrink-0">
         <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={40} />
         {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
@@ -673,11 +417,19 @@ const ConversationListItem: React.FC<{
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <span className="text-[12px] text-slate-500 truncate">
-            {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
-          </span>
+          {draftPreview ? (
+            <span className="flex items-center gap-1 min-w-0 text-[12px] truncate">
+              <Pencil size={11} className="flex-shrink-0 text-amber-600" />
+              <span className="flex-shrink-0 font-semibold text-amber-600">Rascunho:</span>
+              <span className="truncate text-slate-500">{privateMode ? '••••••••' : draftPreview}</span>
+            </span>
+          ) : (
+            <span className="text-[12px] text-slate-500 truncate">
+              {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
+            </span>
+          )}
           {!c.is_blocked && c.unread_count > 0 && (
-            <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
+            <span className="wa-badge-pop wa-badge-glow flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
           )}
         </div>
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -777,6 +529,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  // Menu do sino: unifica som das notificações + push do navegador num só ícone.
+  const [notifyMenuOpen, setNotifyMenuOpen] = useState(false);
+  const notifyBtnRef = useRef<HTMLButtonElement>(null);
   // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
   const [pushState, setPushState] = useState<'unknown' | 'unsupported' | 'off' | 'on' | 'busy'>('unknown');
   useEffect(() => {
@@ -986,6 +741,72 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const threadContentRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-crescimento do campo de mensagem: cresce com o texto até um teto e
+  // então rola. Roda a cada mudança do rascunho, então também encolhe de volta
+  // quando o draft é limpo (envio/edição/escape).
+  const COMPOSER_MAX_H = 192; // px (≈ max-h-48); acima disso, rola
+  useEffect(() => {
+    const el = draftRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, COMPOSER_MAX_H) + 'px';
+  }, [draft]);
+
+  // Rascunho POR CONVERSA: o texto digitado pertence à conversa, não ao módulo.
+  // Sem isto, ao trocar de conversa o rascunho permanece e pode ser enviado para
+  // a pessoa errada. Ao alternar, guardamos o rascunho da conversa que sai e
+  // restauramos o da que entra (ou vazio), zerando edição/resposta em andamento.
+  const draftsRef = useRef<Record<string, string>>({});
+  const prevSelIdRef = useRef<string | null>(null);
+  const draftValRef = useRef('');
+  draftValRef.current = draft; // sempre o valor atual, sem depender de closure
+  // Espelho reativo dos rascunhos para exibir "Rascunho:" na lista. Só muda na
+  // troca de conversa (não a cada tecla), então as linhas não-ativas não
+  // re-renderizam à toa; a linha ativa usa o `draft` ao vivo.
+  const [draftMap, setDraftMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const prev = prevSelIdRef.current;
+    if (prev === selectedId) return;
+    if (prev !== null) {
+      const v = draftValRef.current;
+      draftsRef.current[prev] = v;
+      setDraftMap(m => (m[prev] === v ? m : { ...m, [prev]: v }));
+      void whatsappService.saveDraft(prev, v).catch(() => {}); // persiste o que saiu
+    }
+    setDraft(selectedId ? (draftsRef.current[selectedId] ?? '') : '');
+    setEditing(null);
+    setReplyTo(null);
+    prevSelIdRef.current = selectedId;
+  }, [selectedId]);
+
+  // Carrega os rascunhos persistidos (Supabase) uma vez. Se já houver conversa
+  // aberta com editor vazio, hidrata-a (caso os dados cheguem após a seleção).
+  useEffect(() => {
+    let cancelled = false;
+    whatsappService.listDrafts().then(map => {
+      if (cancelled) return;
+      draftsRef.current = { ...map, ...draftsRef.current };
+      setDraftMap(prev => ({ ...map, ...prev }));
+      const sel = prevSelIdRef.current;
+      if (sel && map[sel] && !draftValRef.current) setDraft(map[sel]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persiste o rascunho da conversa ABERTA com debounce (cobre recarregar a
+  // página sem trocar de conversa, e o esvaziamento após enviar → apaga a linha).
+  useEffect(() => {
+    if (!selectedId) return;
+    const id = selectedId;
+    const t = window.setTimeout(() => {
+      draftsRef.current[id] = draft;
+      setDraftMap(m => (m[id] === draft ? m : { ...m, [id]: draft }));
+      void whatsappService.saveDraft(id, draft).catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [draft, selectedId]);
   const mediaRecRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const recTimerRef = useRef<number | null>(null);
@@ -1256,8 +1077,23 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   // Atualização silenciosa da thread (sem spinner) para eventos em tempo real:
   // mantém a conversa fluida, sem piscar nem perder a posição de rolagem.
+  // Faz MERGE: recarrega só a página mais recente e a costura por cima do que já
+  // está em memória, preservando o histórico antigo que o usuário paginou (rolou
+  // para cima). Sem isso, cada mensagem recebida descartava as mensagens antigas
+  // já carregadas e embaralhava o scroll de quem está lendo o histórico.
   const refreshMessages = useCallback(async (convId: string) => {
-    try { setMessages(await whatsappService.listMessages(convId, { limit: MSG_PAGE })); } catch {/* */}
+    try {
+      const latest = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      setMessages(prev => {
+        if (prev.length === 0 || latest.length === 0) return latest;
+        // `latest` é o bloco contíguo mais novo (asc). Tudo estritamente anterior
+        // ao seu início vem do que já estava paginado; a janela recente é
+        // substituída por `latest` (reflete edições/exclusões/novos status).
+        const cutoff = latest[0].wa_timestamp;
+        const older = prev.filter(m => m.wa_timestamp < cutoff);
+        return [...older, ...latest];
+      });
+    } catch {/* */}
   }, []);
 
   useEffect(() => {
@@ -2309,37 +2145,78 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
                 {anyConnected ? 'Online' : 'Offline'}
               </span>
-              <button
-                onClick={() => {
+              {(() => {
+                // Sino unificado: agrupa "som das notificações" e "push do navegador"
+                // num único ícone com menu. O ícone reflete o estado geral — toca
+                // (BellRing) com push ligado, sino simples só com som, e BellOff
+                // quando tudo está desligado.
+                const pushSupported = pushState !== 'unsupported' && pushState !== 'unknown';
+                const pushOn = pushState === 'on';
+                const soundOn = !soundMuted;
+                const active = soundOn || pushOn;
+                const Icon = pushOn ? BellRing : soundOn ? Bell : BellOff;
+                const toggleSound = () => {
                   const next = !soundMuted;
                   setSoundMuted(next);
                   setNotifySoundMuted(next);
                   if (!next) { playNotificationSound(); toast.success('Som das notificações ativado'); }
                   else toast.info('Som das notificações silenciado');
-                }}
-                title={soundMuted ? 'Som das notificações desligado — clique para ligar' : 'Som das notificações ligado — clique para silenciar'}
-                aria-pressed={!soundMuted}
-                className={`flex items-center justify-center w-7 h-7 rounded-full transition ${soundMuted ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
-                {soundMuted ? <BellOff size={15} /> : <Bell size={15} />}
-              </button>
-              {pushState !== 'unsupported' && pushState !== 'unknown' && (
-                <button
-                  onClick={toggleStaffPush}
-                  disabled={pushState === 'busy'}
-                  title={pushState === 'on'
-                    ? 'Notificações no navegador ATIVADAS (avisa com a aba fechada) — clique para desativar'
-                    : 'Ativar notificações no navegador (avisa mesmo com a aba fechada)'}
-                  aria-pressed={pushState === 'on'}
-                  className={`flex items-center justify-center w-7 h-7 rounded-full transition disabled:opacity-50 ${pushState === 'on' ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
-                  {pushState === 'busy' ? <Loader2 size={14} className="animate-spin" /> : pushState === 'on' ? <BellRing size={15} /> : <BellRing size={15} />}
-                </button>
-              )}
+                };
+                const row = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-amber-50 transition text-left';
+                const pill = (on: boolean) => `ml-auto text-[10.5px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`;
+                // Coords do dropdown ancoradas ao botão (canto superior-direito
+                // alinhado). Renderizado em portal/fixed para não ser recortado por
+                // ancestrais com overflow (o painel da lista é estreito).
+                const r = notifyBtnRef.current?.getBoundingClientRect();
+                const menuTop = r ? r.bottom + 6 : 0;
+                const menuRight = r ? Math.max(8, window.innerWidth - r.right) : 8;
+                return (
+                  <>
+                    <button
+                      ref={notifyBtnRef}
+                      onClick={() => setNotifyMenuOpen(o => !o)}
+                      title="Notificações"
+                      aria-haspopup="menu" aria-expanded={notifyMenuOpen}
+                      className={`flex items-center justify-center w-7 h-7 rounded-full transition ${active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
+                      <Icon size={15} />
+                    </button>
+                    {notifyMenuOpen && createPortal(
+                      <>
+                        <div className="fixed inset-0 z-[70]" onClick={() => setNotifyMenuOpen(false)} />
+                        <div role="menu" style={{ position: 'fixed', top: menuTop, right: menuRight }}
+                          className="z-[71] w-[min(17rem,calc(100vw-1rem))] rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
+                          <p className="px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Notificações</p>
+                          <button className={row} onClick={toggleSound}>
+                            {soundOn ? <Bell size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
+                            <span className="min-w-0">
+                              <span className="block leading-tight">Som das notificações</span>
+                              <span className="block text-[11px] text-slate-400">Toca ao chegar mensagem nas suas conversas</span>
+                            </span>
+                            <span className={pill(soundOn)}>{soundOn ? 'ON' : 'OFF'}</span>
+                          </button>
+                          {pushSupported && (
+                            <button className={row} onClick={toggleStaffPush} disabled={pushState === 'busy'}>
+                              {pushState === 'busy' ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0" /> : pushOn ? <BellRing size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
+                              <span className="min-w-0">
+                                <span className="block leading-tight">Notificações no navegador</span>
+                                <span className="block text-[11px] text-slate-400">Avisa mesmo com a aba fechada</span>
+                              </span>
+                              <span className={pill(pushOn)}>{pushOn ? 'ON' : 'OFF'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </>,
+                      document.body,
+                    )}
+                  </>
+                );
+              })()}
               <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
                 className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
                 <BarChart2 size={15} />
               </button>
               <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition">
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
                 <Plus size={16} />
               </button>
             </div>
@@ -2418,6 +2295,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             </div>
           ) : filtered.map(c => {
             const st = effectiveConversationStatus(c);
+            // "Rascunho:" só nas conversas NÃO abertas (ao trocar/fechar). Na
+            // conversa ativa não aparece — você já está vendo o composer.
+            const draftPreview = c.id === selectedId ? '' : (draftMap[c.id] ?? '').trim();
             return (
               <ConversationListItem
                 key={c.id}
@@ -2431,6 +2311,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 statusCls={st.cls}
                 docStatus={effectiveDocStatus(c.client_id)}
                 muted={muteStore.isMuted(c.id)}
+                draftPreview={draftPreview}
                 onSelect={setSelectedId}
               />
             );
@@ -2447,7 +2328,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         onDragEnter={onThreadDragEnter} onDragOver={onThreadDragOver}
         onDragLeave={onThreadDragLeave} onDrop={onThreadDrop}>
         {dragOver && selected && (
-          <div className="absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 pointer-events-none">
+          <div className="wa-drop-pulse absolute inset-0 z-30 m-3 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 pointer-events-none">
             <Paperclip size={32} className="text-amber-600" />
             <p className="text-[15px] font-bold text-amber-800">Solte para enviar</p>
             <p className="text-[12.5px] text-amber-700/80">Imagens, vídeos, áudios, PDFs e documentos · até 100 MB</p>
@@ -2455,7 +2336,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         )}
         {!selected ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
-            <MessageCircle size={40} className="opacity-30" />
+            <MessageCircle size={40} className="opacity-30 wa-empty-float" />
             <p className="text-[14px]">Selecione uma conversa para começar.</p>
           </div>
         ) : (
@@ -2902,7 +2783,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         </div>
                       </div>
                     )}
-                    <textarea value={draft} onChange={e => setDraft(e.target.value)}
+                    <textarea ref={draftRef} value={draft} onChange={e => setDraft(e.target.value)}
                       onKeyDown={e => {
                         if (slashActive) {
                           if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, slashResults.length - 1)); return; }
@@ -2914,16 +2795,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         if (e.key === 'Escape') { setEditing(null); setReplyTo(null); }
                       }}
                       rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…'}
-                      className="w-full resize-none max-h-32 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                      className="w-full resize-none max-h-48 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
                   </div>
                   {draft.trim() || editing ? (
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
-                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 disabled:opacity-40 transition">
+                      className={`flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : 'wa-send-ready'}`}>
                       {sending ? <Loader2 size={16} className="animate-spin" /> : editing ? <Check size={18} /> : <Send size={16} />}
                     </button>
                   ) : (
                     <button title="Gravar áudio" onClick={startRecording}
-                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 transition">
+                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 hover:scale-105 transition active:scale-90">
                       <Mic size={18} />
                     </button>
                   )}
@@ -3383,21 +3264,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 };
 
 // ── Bolha de mensagem ──
-/** Fase L: oculta CPF (###.###.###-##) e telefones (10-13 dígitos) no texto. */
-function maskSensitive(text: string): string {
-  return text
-    .replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '***.***.***-**')
-    .replace(/\b(\+?55\s?)?(\(?\d{2}\)?\s?)(\d{4,5}[-\s]?\d{4})\b/g, '(**) *****-****');
-}
-/** Fase L: no modo privado, reduz o nome do contato a iniciais (preserva orientação visual sem expor o nome). */
-function maskName(name: string | null): string {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'Contato';
-  return parts.map(p => `${p[0].toUpperCase()}•••`).join(' ');
-}
-/** Fase L: telefone totalmente oculto no modo privado. */
-function maskPhoneFull(): string { return '•••• ••••'; }
-
 // Handlers recebem a própria mensagem (em vez de fechar sobre ela no call-site),
 // para que o pai passe identidades estáveis e o React.memo abaixo seja efetivo:
 // só re-renderiza a bolha cuja mensagem mudou, não a thread inteira.
@@ -3432,7 +3298,7 @@ const MessageBubble: React.FC<{
     <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
       {/* Ações (hover) */}
       {out && (
-        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
+        <div className="wa-msg-actions flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
           {m.type === 'text' && m.evolution_message_id && (
             <button title="Editar" onClick={() => onEdit(m)} className="text-slate-400 hover:text-amber-600"><Pencil size={13} /></button>
           )}
@@ -3445,7 +3311,7 @@ const MessageBubble: React.FC<{
         </div>
       )}
 
-      <div className={`relative text-[13.5px] leading-snug text-slate-800 rounded-2xl ${m.type === 'audio' ? '' : 'shadow-sm'} ${out ? 'rounded-br-sm' : 'rounded-bl-sm'} ${mediaOnly ? 'max-w-[280px] p-0 overflow-hidden bg-black/5' : `max-w-[70%] px-3 py-2 ${out ? 'bg-[#d9fdd3]' : 'bg-white'}`}`}>
+      <div className={`wa-bubble wa-bubble-in ${out ? 'origin-bottom-right' : 'origin-bottom-left'} relative text-[13.5px] leading-snug text-slate-800 rounded-2xl ${m.type === 'audio' ? '' : 'shadow-sm'} ${out ? 'rounded-br-sm' : 'rounded-bl-sm'} ${mediaOnly ? 'max-w-[280px] p-0 overflow-hidden bg-black/5' : `max-w-[70%] px-3 py-2 ${out ? 'bg-[#d9fdd3]' : 'bg-white'}`}`}>
         {senderName && (
           <span className="flex items-center gap-1 text-[11px] font-bold mb-0.5 text-emerald-700">
             {senderName}
@@ -3521,7 +3387,7 @@ const MessageBubble: React.FC<{
       </div>
 
       {!out && (
-        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
+        <div className="wa-msg-actions flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition self-center">
           <button title="Responder" onClick={() => onReply(m)} className="text-slate-400 hover:text-amber-600"><CornerUpLeft size={13} /></button>
           {canCreateFollowups && !m._tempId && <button title="Criar prazo" onClick={() => onCreateDeadline(m)} className="text-slate-400 hover:text-amber-600"><Calendar size={13} /></button>}
           {canCreateFollowups && !m._tempId && <button title="Criar tarefa" onClick={() => onCreateTask(m)} className="text-slate-400 hover:text-amber-600"><ListTodo size={13} /></button>}
@@ -3533,11 +3399,6 @@ const MessageBubble: React.FC<{
 MessageBubble.displayName = 'MessageBubble';
 
 // ── Player de áudio estilo WhatsApp (play/pause + onda clicável + tempo/velocidade) ──
-const fmtAudioTime = (s: number) => {
-  if (!Number.isFinite(s) || s < 0) s = 0;
-  const m = Math.floor(s / 60); const sec = Math.floor(s % 60);
-  return `${m}:${String(sec).padStart(2, '0')}`;
-};
 const WA_AUDIO_BARS = Array.from({ length: 30 }, (_, i) => 25 + ((i * 41 + i * i * 7) % 75));
 const WaAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -3653,7 +3514,7 @@ const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName:
     ? <CheckCheck size={12} className="text-sky-300" />
     : last.status === 'delivered' ? <CheckCheck size={12} className="opacity-50" /> : <Check size={12} className="opacity-50" />);
   return (
-    <div className={`group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
+    <div className={`wa-msg-in group flex items-end gap-1.5 ${out ? 'justify-end' : 'justify-start'}`}>
       <div className="max-w-[280px]">
         <div className={`relative grid gap-1 w-64 ${shown.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} rounded-2xl overflow-hidden shadow-sm`}>
           {shown.map((m, i) => {
@@ -3684,108 +3545,7 @@ const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName:
 });
 ImageAlbum.displayName = 'ImageAlbum';
 
-// ── Modal de transferência ──
-const TransferModal: React.FC<{
-  conversation: WhatsAppConversation;
-  departments: WhatsAppDepartment[];
-  staff: StaffOption[];
-  onClose: () => void;
-  onDone: () => void;
-}> = ({ conversation, departments, staff, onClose, onDone }) => {
-  const toast = useToastContext();
-  const [dept, setDept] = useState<string>(conversation.department_id || '');
-  const [person, setPerson] = useState<string>(conversation.assigned_user_id || '');
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const hasDestination = !!dept || !!person;
-  const canSubmit = hasDestination;
-
-  // Monta a mensagem automática ao cliente conforme o destino (Fase 2):
-  // por pessoa usa o tratamento (Dr./Dra.); por setor usa o nome do setor.
-  const buildTransferMessage = (): string | null => {
-    if (person) {
-      const target = staff.find(s => s.user_id === person);
-      const label = agentLabel(target) || target?.name;
-      if (label) return `Aguarde um instante, estamos encaminhando seu atendimento para ${label}.`;
-    }
-    if (dept) {
-      const d = departments.find(x => x.id === dept);
-      if (d) return `Aguarde um instante, estamos encaminhando seu atendimento para o setor ${d.name}.`;
-    }
-    return null;
-  };
-
-  const submit = async () => {
-    if (!canSubmit) return;
-    setSaving(true);
-    try {
-      await whatsappService.transferConversation({
-        conversationId: conversation.id,
-        toDepartmentId: dept || null,
-        toUserId: person || null,
-        note: note.trim() || undefined,
-      });
-      // Transferência nunca muda: avisa o cliente automaticamente (best-effort).
-      const msg = buildTransferMessage();
-      if (msg && !conversation.is_blocked) {
-        try { await whatsappService.sendText({ conversationId: conversation.id, text: msg }); }
-        catch { /* aviso é best-effort; a transferência já foi registrada */ }
-      }
-      onDone();
-    } catch (err: any) {
-      toast.error('Falha ao transferir', err.message);
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Transferir conversa"
-      icon={<ArrowRightLeft size={18} />}
-      onClose={onClose}
-      size="sm"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving || !canSubmit}
-            title={!hasDestination ? 'Escolha um setor ou responsável' : undefined}
-            className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />} Transferir
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody>
-        <label className={waLabel}>Departamento</label>
-        <select value={dept} onChange={e => setDept(e.target.value)} className={`${waInput} mb-3`}>
-          <option value="">Nenhum</option>
-          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-
-        <label className={waLabel}>Responsável</label>
-        <select value={person} onChange={e => setPerson(e.target.value)} className={`${waInput} mb-3`}>
-          <option value="">Ninguém</option>
-          {staff.map(s => <option key={s.user_id} value={s.user_id}>{s.name}</option>)}
-        </select>
-
-        <label className={waLabel}>Motivo da transferência <span className="font-normal text-slate-400">(opcional, interno)</span></label>
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Ex: cliente quer falar com o financeiro"
-          className={`${waInput} mb-1 resize-none`} />
-        <p className="text-[11px] text-slate-400">O motivo fica só no histórico interno. O cliente recebe um aviso automático de encaminhamento.</p>
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
 // ── Vínculo conversa ↔ cliente ──
-const prettyDoc = (doc: string | null) => {
-  if (!doc) return '';
-  const d = doc.replace(/\D/g, '');
-  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
-  return doc;
-};
-
 // ── Seção recolhível (acordeão) para economizar espaço no painel ──
 const CollapsibleSection: React.FC<{
   icon: React.ReactNode;
@@ -4012,15 +3772,15 @@ const ClientLinkPanel: React.FC<{
         </div>
         {/* Fase E: banner de oferta de atualização de telefone */}
         {phonePrompt && (
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
-            <p className="text-[12px] font-semibold text-sky-800 mb-0.5">Adicionar número ao cadastro?</p>
-            <p className="text-[11.5px] text-sky-600 mb-2">{prettyPhone(conversation.contact_phone)} não estava em {phonePrompt.name}.</p>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[12px] font-semibold text-amber-800 mb-0.5">Adicionar número ao cadastro?</p>
+            <p className="text-[11.5px] text-amber-700 mb-2">{prettyPhone(conversation.contact_phone)} não estava em {phonePrompt.name}.</p>
             <div className="flex items-center gap-2">
               <button onClick={handleAddPhone} disabled={addingPhone}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 text-white text-[11.5px] font-semibold hover:bg-sky-700 disabled:opacity-50">
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11.5px] font-semibold hover:bg-amber-700 disabled:opacity-50">
                 {addingPhone ? <Loader2 size={11} className="animate-spin" /> : <Phone size={11} />} Adicionar
               </button>
-              <button onClick={() => setPhonePrompt(null)} className="text-[11.5px] font-semibold text-sky-600 hover:text-sky-800">Ignorar</button>
+              <button onClick={() => setPhonePrompt(null)} className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Ignorar</button>
             </div>
           </div>
         )}
@@ -4407,17 +4167,6 @@ const EVENT_TYPE_LABEL: Record<CalendarEventType, string> = {
 };
 
 /** Classifica um vencimento (data ISO/yyyy-mm-dd) em alerta visual. */
-function dueInfo(iso: string): { label: string; tone: 'red' | 'amber' | 'slate' } {
-  const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
-  const day = new Date(d); day.setHours(0, 0, 0, 0);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
-  if (diff < 0) return { label: `vencido há ${-diff}d`, tone: 'red' };
-  if (diff === 0) return { label: 'vence hoje', tone: 'amber' };
-  if (diff === 1) return { label: 'amanhã', tone: 'amber' };
-  if (diff <= 7) return { label: `em ${diff} dias`, tone: 'slate' };
-  return { label: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), tone: 'slate' };
-}
 const TONE: Record<'red' | 'amber' | 'slate', string> = {
   red: 'text-red-600 bg-red-50 border-red-200',
   amber: 'text-amber-700 bg-amber-50 border-amber-200',
@@ -4765,7 +4514,6 @@ const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children
   </span>
 );
 
-const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const DOC_REQ_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando', partial: 'Parcial', complete: 'Concluído', cancelled: 'Cancelado' };
 
 const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; clientId?: string | null; onOpenWorkspace?: WaOpenWorkspaceFn; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, clientId, onOpenWorkspace, onDismissDocReady, onDismissTemplateFill }) => {
@@ -5036,9 +4784,6 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
 };
 
 // ── Notas internas da conversa (Fase 7) — só a equipe vê ──
-const fmtNoteDate = (iso: string) =>
-  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-
 const InternalNotesPanel: React.FC<{
   conversationId: string;
   staffByUser: Map<string, string>;
@@ -5167,23 +4912,6 @@ const InternalNotesSection: React.FC<{
     </>
   );
 };
-
-// ── Timeline unificada da conversa (Fase 7) ──
-const TL_META: Record<TimelineKind, { label: string; icon: React.ReactNode; color: string }> = {
-  transfer: { label: 'Transferências', icon: <ArrowRightLeft size={13} />, color: '#d97706' },
-  note: { label: 'Notas', icon: <StickyNote size={13} />, color: '#0ea5e9' },
-  closed: { label: 'Ciclo', icon: <CheckCircle2 size={13} />, color: '#64748b' },
-  reopened: { label: 'Ciclo', icon: <RotateCcw size={13} />, color: '#16a34a' },
-  blocked: { label: 'Ciclo', icon: <Ban size={13} />, color: '#dc2626' },
-  process: { label: 'Processo', icon: <Scale size={13} />, color: '#7c3aed' },
-};
-const TL_FILTERS: { key: 'all' | TimelineKind; label: string }[] = [
-  { key: 'all', label: 'Tudo' },
-  { key: 'transfer', label: 'Transferências' },
-  { key: 'note', label: 'Notas' },
-  { key: 'closed', label: 'Ciclo' },
-  { key: 'process', label: 'Processo' },
-];
 
 // ── Preview de anexos com legenda antes do envio ──
 // Design WhatsApp Web: fundo escuro com preview grande, tira de miniaturas,
@@ -5323,202 +5051,6 @@ const AttachmentPreviewModal: React.FC<{
   );
 };
 
-// ── Fase H: criar prazo a partir de mensagem ──
-function msgTitle(m: WhatsAppMessage): string {
-  if (m.content) return m.content.slice(0, 80).trim();
-  if (m.file_name) return m.file_name;
-  return typeLabel(m.type);
-}
-function msgDescription(m: WhatsAppMessage): string {
-  return `Originado da conversa WhatsApp em ${new Date(m.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.\n${m.content || ''}`.trim();
-}
-
-const CreateDeadlineFromMessageModal: React.FC<{
-  message: WhatsAppMessage;
-  clientId: string;
-  processes: Process[];
-  onClose: () => void;
-}> = ({ message, clientId, processes, onClose }) => {
-  const toast = useToastContext();
-  const [title, setTitle] = useState(msgTitle(message));
-  const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<DeadlinePriority>('media');
-  const [type, setType] = useState<DeadlineType>('geral');
-  const [processId, setProcessId] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const minDate = new Date().toISOString().slice(0, 10);
-
-  const handleSave = async () => {
-    if (!title.trim() || !dueDate) return;
-    setSaving(true);
-    try {
-      await deadlineService.createDeadline({
-        title: title.trim(),
-        description: msgDescription(message),
-        due_date: dueDate,
-        priority,
-        type,
-        client_id: clientId,
-        process_id: processId || null,
-      });
-      toast.success('Prazo criado.');
-      onClose();
-    } catch (e: any) { toast.error('Erro ao criar prazo', e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Criar prazo"
-      icon={<Calendar size={18} />}
-      onClose={onClose}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving || !title.trim() || !dueDate} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />} Criar prazo
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody className="space-y-3">
-        {/* Origem da mensagem */}
-        <div className="px-3 py-2.5 rounded-xl bg-[#f0f2f5] border-l-2 border-[#00a884]">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#017561] mb-0.5">Mensagem de origem</p>
-          <p className="text-[12px] text-slate-600 line-clamp-2">{message.content || typeLabel(message.type)}</p>
-          <p className="text-[10.5px] text-slate-400 mt-0.5">{new Date(message.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
-        </div>
-
-        <div>
-          <label className={waLabel}>Título *</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={waLabel}>Vencimento *</label>
-            <input type="date" value={dueDate} min={minDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
-          </div>
-          <div>
-            <label className={waLabel}>Prioridade</label>
-            <select value={priority} onChange={e => setPriority(e.target.value as DeadlinePriority)} className={waInput}>
-              <option value="baixa">Baixa</option>
-              <option value="media">Média</option>
-              <option value="alta">Alta</option>
-              <option value="urgente">Urgente</option>
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={waLabel}>Tipo</label>
-            <select value={type} onChange={e => setType(e.target.value as DeadlineType)} className={waInput}>
-              <option value="geral">Geral</option>
-              <option value="processo">Processo</option>
-              <option value="requerimento">Requerimento</option>
-            </select>
-          </div>
-          {processes.length > 0 && (
-            <div>
-              <label className={waLabel}>Processo</label>
-              <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
-                <option value="">Nenhum</option>
-                {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Fase H: criar tarefa a partir de mensagem ──
-const CreateTaskFromMessageModal: React.FC<{
-  message: WhatsAppMessage;
-  clientId: string;
-  processes: Process[];
-  onClose: () => void;
-}> = ({ message, clientId, processes, onClose }) => {
-  const toast = useToastContext();
-  const [title, setTitle] = useState(msgTitle(message));
-  const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [processId, setProcessId] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const minDate = new Date().toISOString().slice(0, 10);
-
-  const handleSave = async () => {
-    if (!title.trim()) return;
-    setSaving(true);
-    try {
-      await taskService.createTask({
-        title: title.trim(),
-        description: msgDescription(message),
-        due_date: dueDate || undefined,
-        priority,
-        client_id: clientId,
-        process_id: processId || undefined,
-      });
-      toast.success('Tarefa criada.');
-      onClose();
-    } catch (e: any) { toast.error('Erro ao criar tarefa', e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Criar tarefa"
-      icon={<ListTodo size={18} />}
-      onClose={onClose}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving || !title.trim()} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <ListTodo size={14} />} Criar tarefa
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody className="space-y-3">
-        <div className="px-3 py-2.5 rounded-xl bg-[#f0f2f5] border-l-2 border-[#00a884]">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#017561] mb-0.5">Mensagem de origem</p>
-          <p className="text-[12px] text-slate-600 line-clamp-2">{message.content || typeLabel(message.type)}</p>
-          <p className="text-[10.5px] text-slate-400 mt-0.5">{new Date(message.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
-        </div>
-
-        <div>
-          <label className={waLabel}>Título *</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={waLabel}>Prazo</label>
-            <input type="date" value={dueDate} min={minDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
-          </div>
-          <div>
-            <label className={waLabel}>Prioridade</label>
-            <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={waInput}>
-              <option value="low">Baixa</option>
-              <option value="medium">Média</option>
-              <option value="high">Alta</option>
-            </select>
-          </div>
-        </div>
-        {processes.length > 0 && (
-          <div>
-            <label className={waLabel}>Processo</label>
-            <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
-              <option value="">Nenhum</option>
-              {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
-            </select>
-          </div>
-        )}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
 
 // ── Fase M: painel de etiquetas da conversa ──
 const ConversationLabelsPanel: React.FC<{
@@ -5564,490 +5096,6 @@ const ConversationLabelsPanel: React.FC<{
         </div>
       )}
     </div>
-  );
-};
-
-// ── Fase M: modal de resumo automático por IA ──
-const ConversationSummaryModal: React.FC<{
-  conversation: WhatsAppConversation;
-  staffByUser: Map<string, string>;
-  onClose: () => void;
-}> = ({ conversation, staffByUser, onClose }) => {
-  const toast = useToastContext();
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    // Carrega as últimas 60 mensagens e solicita resumo ao serviço de IA.
-    whatsappService.listMessages(conversation.id)
-      .then(async msgs => {
-        if (!alive) return;
-        const lines = msgs.slice(-60).map(m => {
-          const who = m.direction === 'out'
-            ? (m.sender_user_id ? (staffByUser.get(m.sender_user_id) || 'Agente') : 'Agente')
-            : (conversation.contact_name || conversation.contact_phone);
-          const body = m.content || (m.file_name ? `[Arquivo: ${m.file_name}]` : `[${m.type}]`);
-          const ts = new Date(m.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-          return `[${ts}] ${who}: ${body}`;
-        }).join('\n');
-
-        const conversationText = `Conversa WhatsApp — ${conversation.contact_name || conversation.contact_phone}\n\n${lines}\n\nDestaque: assunto principal, o que foi solicitado ou combinado, pendências e próximos passos.`;
-        const result = await aiService.generateSummary(conversationText, 150);
-        if (alive) setSummary(result);
-      })
-      .catch(() => { if (alive) setSummary(null); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [conversation.id, conversation.contact_name, conversation.contact_phone, staffByUser]);
-
-  const saveAsNote = async () => {
-    if (!summary) return;
-    setSaving(true);
-    try {
-      await whatsappService.addNote(conversation.id, `\u{1F916} Resumo automático:\n${summary}`);
-      toast.success('Resumo salvo como nota interna.');
-      onClose();
-    } catch (e: any) { toast.error('Falha ao salvar nota', e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Resumo automático por IA"
-      icon={<Sparkles size={18} />}
-      onClose={onClose}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Fechar</button>
-          {summary && (
-            <button onClick={saveAsNote} disabled={saving} className={waBtnPrimary}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <StickyNote size={14} />} Salvar como nota
-            </button>
-          )}
-        </div>
-      }
-    >
-      <WaDialogBody className="min-h-[120px]">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-8 gap-3 text-slate-400">
-            <Loader2 size={24} className="animate-spin text-[#00a884]" />
-            <span className="text-[13px]">Gerando resumo da conversa…</span>
-          </div>
-        ) : summary ? (
-          <p className="text-[13.5px] text-slate-700 leading-relaxed whitespace-pre-wrap">{summary}</p>
-        ) : (
-          <p className="text-[13px] text-slate-400 italic text-center py-6">Não foi possível gerar o resumo. Verifique se a IA está configurada.</p>
-        )}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Fase I: modal de solicitação de documento (modo lista) ──
-const DOC_QUICK_ADD = ['RG', 'CPF', 'Comprovante de residência', 'Carteira de trabalho', 'Certidão de nascimento', 'Certidão de casamento', 'Comprovante de renda', 'Foto 3x4'];
-
-type DocReqItem = { label: string; required: boolean };
-
-const RequestDocumentModal: React.FC<{
-  conversationId: string;
-  clientId: string;
-  clientName: string | null;
-  createdBy: string | null;
-  onClose: () => void;
-  onCreated?: () => void;
-}> = ({ conversationId, clientId, clientName, createdBy, onClose, onCreated }) => {
-  const toast = useToastContext();
-  const [items, setItems] = useState<DocReqItem[]>([{ label: '', required: true }]);
-  const [dueDate, setDueDate] = useState('');
-  const [sendMsg, setSendMsg] = useState(true);
-  const [clientMsg, setClientMsg] = useState('');
-  const [msgDirty, setMsgDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const buildMsg = (its: DocReqItem[], name: string | null) => {
-    const firstName = (name || '').split(' ')[0] || '';
-    const valid = its.filter(i => i.label.trim());
-    const list = valid.map(i => `• ${i.label.trim()}${i.required ? '' : ' (opcional)'}`).join('\n');
-    const head = `Olá${firstName ? `, ${firstName}` : ''}! Para darmos continuidade ao seu atendimento, precisamos que nos envie:`;
-    return valid.length ? `${head}\n\n${list}` : `${head}\n\n`;
-  };
-
-  // Mantém a mensagem em sincronia com a lista de documentos, até o usuário editá-la.
-  useEffect(() => {
-    if (!msgDirty) setClientMsg(buildMsg(items, clientName));
-  }, [items, clientName, msgDirty]);
-
-  const setItem = (idx: number, patch: Partial<DocReqItem>) =>
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
-  const addItem = (label = '') => setItems(prev => [...prev, { label, required: true }]);
-  const removeItem = (idx: number) => setItems(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
-
-  const validItems = items.filter(i => i.label.trim());
-
-  const handleSave = async () => {
-    if (validItems.length === 0) return;
-    setSaving(true);
-    try {
-      const cleaned = validItems.map(i => ({ label: i.label.trim(), required: i.required }));
-      const title = cleaned.length === 1 ? cleaned[0].label : 'Solicitação de documentos';
-      // Registro rastreável: cria document_request + itens (status 'pending'),
-      // que passa a aparecer em "Documentos pendentes" e no portal do cliente.
-      await whatsappService.createDocumentRequest({
-        clientId, title, dueDate: dueDate || null, createdBy, items: cleaned,
-      });
-      // Trilha interna na conversa (efeito colateral, não o registro principal).
-      const noteList = cleaned.map(i => `${i.label}${i.required ? '' : ' (opcional)'}`).join(', ');
-      await whatsappService.addNote(
-        conversationId,
-        `\u{1F4C4} Documentos solicitados: ${noteList}${dueDate ? ` (prazo ${new Date(dueDate + 'T00:00:00').toLocaleDateString('pt-BR')})` : ''}`,
-      ).catch(() => {});
-      if (sendMsg && clientMsg.trim()) {
-        await whatsappService.sendText({ conversationId, text: clientMsg.trim() });
-      }
-      toast.success('Solicitação de documento registrada' + (sendMsg ? ' e mensagem enviada.' : '.'));
-      onCreated?.();
-      onClose();
-    } catch (e: any) { toast.error('Erro ao registrar solicitação', e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Solicitar documento"
-      icon={<FilePlus size={18} />}
-      onClose={onClose}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving || validItems.length === 0} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <FilePlus size={14} />}
-            {sendMsg ? 'Solicitar e enviar' : 'Registrar solicitação'}
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody className="space-y-4">
-        <div>
-          <label className={waLabel}>Documentos necessários *</label>
-          <div className="space-y-1.5">
-            {items.map((it, idx) => (
-              <div key={idx} className="flex items-center gap-1.5">
-                <input autoFocus={idx === 0} value={it.label} onChange={e => setItem(idx, { label: e.target.value })}
-                  placeholder="Ex: RG, comprovante de residência…"
-                  className={`${waInput} flex-1 min-w-0`} />
-                <button type="button" onClick={() => setItem(idx, { required: !it.required })}
-                  title={it.required ? 'Obrigatório — clique para tornar opcional' : 'Opcional — clique para tornar obrigatório'}
-                  className={`flex-shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-semibold border transition ${it.required ? 'border-[#00a884]/30 bg-[#00a884]/10 text-[#017561]' : 'border-[#e7e5df] bg-white text-slate-400'}`}>
-                  {it.required ? 'Obrigatório' : 'Opcional'}
-                </button>
-                <button type="button" onClick={() => removeItem(idx)} disabled={items.length === 1}
-                  className="flex-shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 disabled:opacity-30 disabled:hover:bg-transparent transition">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => addItem()}
-            className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[#017561] hover:text-[#008069]">
-            <Plus size={13} /> Adicionar documento
-          </button>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {DOC_QUICK_ADD.filter(q => !items.some(i => i.label.trim().toLowerCase() === q.toLowerCase())).map(q => (
-              <button key={q} type="button"
-                onClick={() => setItems(prev => { const blank = prev.findIndex(i => !i.label.trim()); if (blank >= 0) return prev.map((i, ix) => ix === blank ? { ...i, label: q } : i); return [...prev, { label: q, required: true }]; })}
-                className="inline-flex items-center gap-1 rounded-full border border-[#e7e5df] bg-[#f9f8f6] px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-[#00a884] hover:bg-[#00a884]/10 hover:text-[#017561] transition">
-                <Plus size={11} /> {q}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className={waLabel}>Prazo para envio (opcional)</label>
-          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={waInput} />
-        </div>
-
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <input type="checkbox" checked={sendMsg} onChange={e => setSendMsg(e.target.checked)}
-            className="w-4 h-4 rounded accent-[#00a884]" />
-          <span className="text-[12.5px] font-medium text-slate-700">Enviar mensagem ao cliente</span>
-        </label>
-
-        {sendMsg && (
-          <div>
-            <label className={waLabel}>Mensagem ao cliente</label>
-            <textarea value={clientMsg} onChange={e => { setClientMsg(e.target.value); setMsgDirty(true); }} rows={6}
-              className={`${waInput} resize-none`} />
-            <p className="mt-1 text-[11px] text-slate-400">{msgDirty ? 'Mensagem editada manualmente.' : 'Atualiza automaticamente com a lista acima.'} Enviada pelo WhatsApp para o contato.</p>
-          </div>
-        )}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-const ConversationTimelineModal: React.FC<{
-  conversation: WhatsAppConversation;
-  staffByUser: Map<string, string>;
-  onClose: () => void;
-}> = ({ conversation, staffByUser, onClose }) => {
-  const [events, setEvents] = useState<TimelineEvent[] | null>(null);
-  const [agents, setAgents] = useState<string[]>([]);
-  const [filter, setFilter] = useState<'all' | TimelineKind>('all');
-
-  useEffect(() => {
-    let alive = true;
-    whatsappService.getConversationTimeline(conversation)
-      .then(e => { if (alive) setEvents(e); })
-      .catch(() => { if (alive) setEvents([]); });
-    whatsappService.getConversationAgents(conversation)
-      .then(a => { if (alive) setAgents(a); })
-      .catch(() => { if (alive) setAgents([]); });
-    return () => { alive = false; };
-  }, [conversation]);
-
-  // O filtro "closed" agrupa todos os eventos de ciclo de vida.
-  const matchFilter = (k: TimelineKind) => filter === 'all' || k === filter
-    || (filter === 'closed' && (k === 'closed' || k === 'reopened' || k === 'blocked'));
-  const shown = (events || []).filter(e => matchFilter(e.kind));
-
-  return (
-    <WaDialog title="Histórico da conversa" icon={<History size={18} />} onClose={onClose} size="lg">
-      {agents.length > 0 && (
-        <div className="flex items-center gap-1.5 px-4 sm:px-5 py-2.5 border-b border-[#f1f0ec] flex-wrap">
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400"><UserCheck size={13} /> Atendentes:</span>
-          {agents.map((id, i) => (
-            <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#f0f2f5] text-slate-600">
-              {staffByUser.get(id) || 'Usuário'}
-              {i === agents.length - 1 && conversation.assigned_user_id === id && conversation.status !== 'closed' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Responsável atual" />
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-1.5 px-4 sm:px-5 py-3 border-b border-[#f1f0ec] flex-wrap">
-        <Filter size={13} className="text-slate-400" />
-        {TL_FILTERS.map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)}
-            className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold transition ${filter === f.key ? 'bg-[#00a884] text-white' : 'text-slate-500 hover:bg-[#f0f2f5]'}`}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-      <div className="px-4 sm:px-5 py-4">
-        {events === null ? (
-          <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-        ) : shown.length === 0 ? (
-          <p className="text-center text-[13px] text-slate-400 py-8">Nenhum evento para este filtro.</p>
-        ) : (
-          <div className="space-y-3">
-            {shown.map(e => {
-              const meta = TL_META[e.kind];
-              return (
-                <div key={e.id} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: meta.color + '22', color: meta.color }}>{meta.icon}</span>
-                    <span className="flex-1 w-px bg-[#e7e5df] mt-1" />
-                  </div>
-                  <div className="pb-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-700">{e.title}</p>
-                    {e.detail && <p className="text-[12px] text-slate-500 whitespace-pre-wrap break-words">{e.detail}</p>}
-                    <p className="text-[10.5px] text-slate-400 mt-0.5">
-                      {e.actorId && staffByUser.get(e.actorId) ? `${staffByUser.get(e.actorId)} · ` : ''}
-                      {new Date(e.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </WaDialog>
-  );
-};
-
-// ── Seletor de templates/macros (Fase 8) ──
-const TemplatePickerModal: React.FC<{
-  context: { clientName?: string | null; clientPhone?: string | null; agentName?: string | null; greeting?: string | null };
-  onClose: () => void;
-  onPick: (text: string) => void;
-}> = ({ context, onClose, onPick }) => {
-  const toast = useToastContext();
-  const [templates, setTemplates] = useState<WhatsAppTemplate[] | null>(null);
-  const [q, setQ] = useState('');
-  const [creating, setCreating] = useState(false);     // mostra o formulário de novo modelo
-  const [newName, setNewName] = useState('');
-  const [newBody, setNewBody] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    whatsappService.listTemplates({ activeOnly: true })
-      .then(setTemplates).catch(() => setTemplates([]));
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const filtered = (templates || []).filter(t =>
-    !q.trim() || t.name.toLowerCase().includes(q.toLowerCase()) || (t.category || '').toLowerCase().includes(q.toLowerCase()));
-
-  const createNew = async () => {
-    if (!newName.trim() || !newBody.trim()) return;
-    setSaving(true);
-    try {
-      await whatsappService.createTemplate({ name: newName.trim(), body: newBody.trim() });
-      toast.success('Modelo criado.');
-      setNewName(''); setNewBody(''); setCreating(false);
-      load();
-    } catch (e: any) { toast.error('Falha ao criar modelo', e.message); }
-    finally { setSaving(false); }
-  };
-
-  const remove = async (t: WhatsAppTemplate) => {
-    setDeletingId(t.id);
-    try {
-      await whatsappService.deleteTemplate(t.id);
-      setTemplates(prev => (prev || []).filter(x => x.id !== t.id));
-    } catch (e: any) { toast.error('Falha ao excluir modelo', e.message); }
-    finally { setDeletingId(null); }
-  };
-
-  return (
-    <WaDialog title="Modelos de mensagem" icon={<MessageSquare size={18} />} onClose={onClose}
-      headerActions={
-        <button onClick={() => setCreating(c => !c)} title="Novo modelo"
-          className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[12px] font-semibold text-white transition">
-          <Plus size={13} /> Novo
-        </button>
-      }>
-      {/* Formulário de novo modelo */}
-      {creating && (
-        <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec] bg-[#f7f9fa] space-y-2">
-          <div>
-            <label className={waLabel}>Atalho / título <span className="font-normal text-slate-400">(ex: boas-vindas → digite /boas)</span></label>
-            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="boas-vindas" className={waInput} />
-          </div>
-          <div>
-            <label className={waLabel}>Texto da mensagem</label>
-            <textarea value={newBody} onChange={e => setNewBody(e.target.value)} rows={3}
-              placeholder="Olá! Seja bem-vindo(a) ao nosso escritório…" className={`${waInput} resize-none`} />
-            <p className="mt-1 text-[10.5px] text-slate-400">Variáveis: {'{{cliente.nome}}'}, {'{{saudacao}}'}, {'{{agente.nome}}'}.</p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => { setCreating(false); setNewName(''); setNewBody(''); }} className={waBtnGhost}>Cancelar</button>
-            <button onClick={createNew} disabled={saving || !newName.trim() || !newBody.trim()} className={waBtnPrimary}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Salvar modelo
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec]">
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modelo…" className={waInput} />
-      </div>
-      <div className="px-4 sm:px-5 py-3 space-y-2">
-        {templates === null ? (
-          <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-        ) : filtered.length === 0 ? (
-          <p className="text-center text-[13px] text-slate-400 py-6">Nenhum modelo. Clique em <strong>Novo</strong> para cadastrar.</p>
-        ) : filtered.map(t => {
-          const preview = renderTemplate(t.body, context);
-          return (
-            <div key={t.id}
-              className="group/tpl relative rounded-xl border border-[#e7e5df] hover:border-[#00a884] hover:bg-[#00a884]/5 transition">
-              <button onClick={() => onPick(preview)} className="w-full text-left p-3 pr-9">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-700">
-                    <span className="text-[#00a884]">/</span>{t.name}
-                  </span>
-                  {t.category && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">{t.category}</span>}
-                </div>
-                <p className="text-[12px] text-slate-500 line-clamp-3 whitespace-pre-wrap break-words">{preview}</p>
-              </button>
-              <button onClick={() => remove(t)} disabled={deletingId === t.id} title="Excluir modelo"
-                className="absolute top-2 right-2 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 opacity-0 group-hover/tpl:opacity-100 transition disabled:opacity-50">
-                {deletingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </WaDialog>
-  );
-};
-
-// ── Agendar mensagem (Fase 8.1) ──
-const ScheduleMessageModal: React.FC<{
-  conversation: WhatsAppConversation;
-  initialText: string;
-  onClose: () => void;
-  onDone: () => void;
-}> = ({ conversation, initialText, onClose, onDone }) => {
-  const toast = useToastContext();
-  const [text, setText] = useState(initialText);
-  const [when, setWhen] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  // datetime-local mínimo: agora + 90s (buffer de envio). Recomputa a cada 30s para
-  // que o input não aceite datas que já ficaram no passado enquanto o modal estava aberto.
-  const computeMin = () => {
-    const d = new Date(Date.now() + 90000 - new Date().getTimezoneOffset() * 60000);
-    return d.toISOString().slice(0, 16);
-  };
-  const [minLocal, setMinLocal] = useState(computeMin);
-  useEffect(() => {
-    const t = setInterval(() => setMinLocal(computeMin()), 30000);
-    return () => clearInterval(t);
-  }, []);
-
-  const submit = async () => {
-    if (!text.trim() || !when) return;
-    // Valida localmente com 30s de tolerância para absorver latência de rede.
-    if (new Date(when).getTime() < Date.now() + 30000) {
-      toast.error('Horário inválido', 'Escolha uma data e hora com pelo menos 1 minuto no futuro.');
-      return;
-    }
-    setSaving(true);
-    try {
-      await whatsappService.scheduleMessage({
-        conversationId: conversation.id,
-        channelId: conversation.instance_id,
-        scheduledAt: new Date(when).toISOString(),
-        text,
-      });
-      onDone();
-    } catch (e: any) { toast.error('Falha ao agendar', e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Agendar mensagem"
-      icon={<CalendarClock size={18} />}
-      onClose={onClose}
-      size="sm"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving || !text.trim() || !when} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={14} />} Agendar
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody>
-        <label className={waLabel}>Mensagem</label>
-        <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Texto a enviar…"
-          className={`${waInput} mb-3 resize-none`} />
-        <label className={waLabel}>Data e hora</label>
-        <input type="datetime-local" value={when} min={minLocal} onChange={e => setWhen(e.target.value)}
-          className={waInput} />
-      </WaDialogBody>
-    </WaDialog>
   );
 };
 
@@ -6146,7 +5194,7 @@ const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boo
 
 // ── Painel de mensagens agendadas no aside (Fase 8.1) ──
 const SCHED_STATUS: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'Agendada', cls: 'bg-sky-100 text-sky-700' },
+  pending: { label: 'Agendada', cls: 'bg-amber-100 text-amber-700' },
   sent: { label: 'Enviada', cls: 'bg-emerald-100 text-emerald-700' },
   canceled: { label: 'Cancelada', cls: 'bg-slate-100 text-slate-500' },
   failed: { label: 'Falha', cls: 'bg-red-100 text-red-600' },
@@ -6282,358 +5330,6 @@ const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSchedule: bo
         })}
       </div>
     </div>
-  );
-};
-
-const ClientPickerModal: React.FC<{
-  phone: string;
-  onClose: () => void;
-  onPick: (c: WhatsAppClientLite) => void;
-}> = ({ phone, onClose, onPick }) => {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<WhatsAppClientLite[]>([]);
-  const [loading, setLoading] = useState(false);
-  // Fase F: alerta de duplicado — cliente com o mesmo telefone na base
-  const [phoneOwners, setPhoneOwners] = useState<WhatsAppClientLite[]>([]);
-  const [confirm, setConfirm] = useState<WhatsAppClientLite | null>(null);
-
-  // Carrega candidatos por telefone uma única vez (anti-duplicado).
-  useEffect(() => {
-    whatsappService.matchClientsByPhone(phone).then(setPhoneOwners).catch(() => {});
-  }, [phone]);
-
-  // Abre já sugerindo por telefone; depois busca pelo que for digitado (debounce).
-  useEffect(() => {
-    let alive = true;
-    const q = query.trim();
-    setLoading(true);
-    const run = q.length >= 2
-      ? whatsappService.searchClients(q)
-      : whatsappService.matchClientsByPhone(phone);
-    const t = setTimeout(() => {
-      run.then(list => { if (alive) setResults(list); })
-        .catch(() => { if (alive) setResults([]); })
-        .finally(() => { if (alive) setLoading(false); });
-    }, q ? 280 : 0);
-    return () => { alive = false; clearTimeout(t); };
-  }, [query, phone]);
-
-  const normPhone = normalizePhone(phone);
-  const phoneMatchIds = new Set(phoneOwners.map(o => o.id));
-
-  // Verifica se o cliente escolhido tem telefone diferente e o telefone pertence a outro cliente.
-  const handlePick = (c: WhatsAppClientLite) => {
-    const clientPhones = [c.mobile, c.phone].map(p => p ? normalizePhone(p) : null).filter(Boolean);
-    const phoneIsAlreadyOwned = phoneOwners.length > 0 && !phoneMatchIds.has(c.id);
-    if (phoneIsAlreadyOwned && !clientPhones.includes(normPhone)) {
-      setConfirm(c); // pede confirmação antes de vincular
-    } else {
-      onPick(c);
-    }
-  };
-
-  return (
-    <WaDialog title="Vincular cliente" icon={<Link2 size={18} />} onClose={onClose} size="sm">
-      <WaDialogBody>
-        {/* Alerta de duplicado (Fase F) */}
-        {confirm ? (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-            <p className="text-[13px] font-bold text-amber-800 mb-1 flex items-center gap-1.5">
-              <AlertCircle size={15} /> Telefone pertence a outro cliente
-            </p>
-            <p className="text-[12px] text-amber-700 mb-3">
-              O número <strong>{prettyPhone(phone)}</strong> já está cadastrado em{' '}
-              <strong>{phoneOwners.map(o => o.full_name).join(', ')}</strong>.
-              Deseja mesmo vincular a conversa a <strong>{confirm.full_name}</strong>?
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => { onPick(confirm); setConfirm(null); }}
-                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700">
-                Vincular mesmo assim
-              </button>
-              <button onClick={() => setConfirm(null)}
-                className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 text-[12px] font-semibold text-amber-700 hover:bg-amber-50">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : (<>
-          <div className="relative mb-3">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome, CPF/CNPJ ou telefone…"
-              className={`${waInput} pl-9`} />
-          </div>
-          <div className="max-h-[320px] overflow-y-auto -mx-1">
-            {loading ? (
-              <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-            ) : results.length === 0 ? (
-              <p className="text-center py-8 text-[13px] text-slate-400">{query.trim().length >= 2 ? 'Nenhum cliente encontrado.' : 'Digite para buscar um cliente.'}</p>
-            ) : results.map(c => {
-              const isPhoneMatch = phoneMatchIds.has(c.id);
-              return (
-                <button key={c.id} onClick={() => handlePick(c)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition">
-                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center text-[12px] font-bold flex-shrink-0">
-                    {initials(c.full_name, '')}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</p>
-                    <p className="text-[11.5px] text-slate-400 truncate">
-                      {[prettyDoc(c.cpf_cnpj), c.mobile || c.phone].filter(Boolean).join(' · ') || '—'}
-                    </p>
-                  </div>
-                  {/* Fase F: indica qual candidato tem o telefone desta conversa cadastrado */}
-                  {isPhoneMatch && (
-                    <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-emerald-100 text-emerald-700">
-                      <Phone size={9} /> telefone cadastrado
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </>)}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Modal: Nova conversa (Fase 0) ──
-// Campo único: busca cliente por nome/CPF/telefone e, se nada casar, permite
-// usar o telefone digitado. Reabre conversa existente do mesmo número/canal.
-const NewConversationModal: React.FC<{
-  channels: WhatsAppChannel[];
-  onClose: () => void;
-  onOpened: (conversationId: string) => void;
-}> = ({ channels, onClose, onOpened }) => {
-  const toast = useToastContext();
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<WhatsAppClientLite[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [channelId, setChannelId] = useState(channels[0]?.id || '');
-  const [picked, setPicked] = useState<WhatsAppClientLite | null>(null); // cliente c/ +1 telefone
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    const q = query.trim();
-    if (q.length < 2) { setResults([]); setLoading(false); return; }
-    setLoading(true);
-    const t = setTimeout(() => {
-      whatsappService.searchClients(q)
-        .then(list => { if (alive) setResults(list); })
-        .catch(() => { if (alive) setResults([]); })
-        .finally(() => { if (alive) setLoading(false); });
-    }, 280);
-    return () => { alive = false; clearTimeout(t); };
-  }, [query]);
-
-  const digits = query.replace(/\D/g, '');
-  const typedPhone = digits.length >= 10 ? normalizePhone(query) : '';
-
-  const open = async (phone: string, client: WhatsAppClientLite | null) => {
-    if (!channelId) { toast.warning('Selecione um canal conectado'); return; }
-    setBusy(true);
-    try {
-      const { conversation_id } = await whatsappService.openConversation({
-        phone, channelId, clientId: client?.id ?? null, contactName: client?.full_name ?? null,
-      });
-      onOpened(conversation_id);
-    } catch (e: any) {
-      toast.error('Falha ao abrir conversa', e.message);
-    } finally { setBusy(false); }
-  };
-
-  // Telefones únicos do cliente (móvel primeiro), já normalizados.
-  const phonesOf = (c: WhatsAppClientLite): string[] => {
-    const raw = [c.mobile, c.phone].filter((p): p is string => !!p);
-    const norm = raw.map(normalizePhone).filter(Boolean);
-    return Array.from(new Set(norm));
-  };
-
-  const onPickClient = (c: WhatsAppClientLite) => {
-    const phones = phonesOf(c);
-    if (phones.length === 0) { toast.warning('Cliente sem telefone cadastrado', 'Digite um número para conversar.'); return; }
-    if (phones.length === 1) { void open(phones[0], c); return; }
-    setPicked(c); // escolher qual número
-  };
-
-  return (
-    <WaDialog title="Nova conversa" icon={<Plus size={18} />} onClose={onClose} size="sm">
-      <WaDialogBody>
-        {channels.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[#e0ded8] p-5 text-center text-[12.5px] text-slate-500">
-            Nenhum canal conectado. Conecte um número do WhatsApp para iniciar conversas.
-          </div>
-        ) : picked ? (
-          // Passo de escolha de número (cliente com vários telefones).
-          <div>
-            <button onClick={() => setPicked(null)} className="text-[12px] font-semibold text-[#017561] hover:underline mb-2">← Voltar</button>
-            <p className="text-[13px] text-slate-600 mb-2">Qual número de <strong>{picked.full_name}</strong> usar?</p>
-            <div className="space-y-1.5">
-              {phonesOf(picked).map(ph => (
-                <button key={ph} onClick={() => open(ph, picked)} disabled={busy}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left border border-[#e7e5df] hover:bg-[#00a884]/10 hover:border-[#00a884] transition disabled:opacity-50">
-                  <Phone size={14} className="text-slate-400" />
-                  <span className="text-[13px] font-semibold text-slate-700">{prettyPhone(ph)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            {channels.length > 1 && (
-              <>
-                <label className={waLabel}>Canal</label>
-                <select value={channelId} onChange={e => setChannelId(e.target.value)} className={`${waInput} mb-3`}>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
-                </select>
-              </>
-            )}
-
-            <div className="relative mb-3">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome, CPF/CNPJ ou telefone…"
-                className={`${waInput} pl-9`} />
-            </div>
-
-            <div className="max-h-[320px] overflow-y-auto -mx-1">
-              {/* Telefone digitado sem cliente: oferta direta. */}
-              {typedPhone && (
-                <button onClick={() => open(typedPhone, null)} disabled={busy}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50 border border-dashed border-[#00a884] mb-1">
-                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center flex-shrink-0"><Phone size={16} /></span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-800">Conversar com este telefone</p>
-                    <p className="text-[11.5px] text-slate-400">{prettyPhone(typedPhone)}</p>
-                  </div>
-                </button>
-              )}
-
-              {loading ? (
-                <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-              ) : results.length === 0 ? (
-                !typedPhone && <p className="text-center py-8 text-[13px] text-slate-400">{query.trim().length >= 2 ? 'Nenhum cliente encontrado.' : 'Busque um cliente ou digite um telefone.'}</p>
-              ) : results.map(c => (
-                <button key={c.id} onClick={() => onPickClient(c)} disabled={busy}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50">
-                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center text-[12px] font-bold flex-shrink-0">
-                    {initials(c.full_name, '')}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</p>
-                    <p className="text-[11.5px] text-slate-400 truncate">
-                      {[prettyDoc(c.cpf_cnpj), c.mobile || c.phone].filter(Boolean).join(' · ') || 'sem telefone'}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Modal: Bloquear contato (Fase 0.2) — motivo obrigatório ──
-const BlockContactModal: React.FC<{
-  conversation: WhatsAppConversation;
-  onClose: () => void;
-  onDone: (reason: string) => void;
-}> = ({ conversation, onClose, onDone }) => {
-  const toast = useToastContext();
-  const [reason, setReason] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    if (!reason.trim()) return;
-    setSaving(true);
-    try {
-      const { wa_blocked, wa_error } = await whatsappService.blockContact(conversation.id, reason);
-      if (!wa_blocked) toast.warning('Bloqueado só internamente', `O WhatsApp não confirmou o bloqueio, mas as novas mensagens já não entram na fila.${wa_error ? ` Detalhe: ${wa_error}` : ''}`);
-      onDone(reason.trim());
-    } catch (e: any) {
-      toast.error('Falha ao bloquear', e.message);
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Bloquear contato"
-      subtitle={conversation.contact_name || prettyPhone(conversation.contact_phone)}
-      icon={<Ban size={18} />}
-      onClose={onClose}
-      size="sm"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving || !reason.trim()} className={waBtnDanger}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Bloquear
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody>
-        <p className="text-[12.5px] text-slate-500 mb-3">
-          O contato sai da fila normal de atendimento. A ação fica registrada.
-        </p>
-        <label className={waLabel}>Motivo do bloqueio <span className="text-red-500">*</span></label>
-        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Ex: spam, número trote, contato indevido"
-          className={`${waInput} resize-none`} />
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Modal: Encerrar atendimento (Fase 3) ──
-const CloseConversationModal: React.FC<{
-  conversation: WhatsAppConversation;
-  agent?: StaffOption | null;
-  onClose: () => void;
-  onDone: () => void;
-}> = ({ conversation, onClose, onDone }) => {
-  const toast = useToastContext();
-  const [reason, setReason] = useState('');
-  const [farewell, setFarewell] = useState('Encerramos este atendimento por agora. Se precisar retomar, é só nos chamar por aqui.');
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    if (!reason.trim()) return;
-    setSaving(true);
-    try {
-      await whatsappService.closeConversation(conversation.id, reason, { farewell: farewell.trim() || undefined });
-      onDone();
-    } catch (e: any) {
-      toast.error('Falha ao encerrar', e.message);
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <WaDialog
-      title="Encerrar atendimento"
-      subtitle="Sai da fila ativa; reabre se o cliente voltar a falar."
-      icon={<CheckCircle2 size={18} />}
-      onClose={onClose}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving || !reason.trim()} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Encerrar
-          </button>
-        </div>
-      }
-    >
-      <WaDialogBody>
-        <label className={waLabel}>Motivo do encerramento <span className="text-red-500">*</span> <span className="font-normal text-slate-400">(interno)</span></label>
-        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Ex: dúvida resolvida"
-          className={`${waInput} mb-3 resize-none`} />
-
-        <label className={waLabel}>Mensagem ao cliente <span className="font-normal text-slate-400">(deixe vazio para não enviar)</span></label>
-        <textarea value={farewell} onChange={e => setFarewell(e.target.value)} rows={2}
-          className={`${waInput} resize-none`} />
-      </WaDialogBody>
-    </WaDialog>
   );
 };
 
@@ -6801,7 +5497,7 @@ const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       subtitle={`Atualizado às ${lastRefresh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
       icon={<BarChart2 size={18} />}
       onClose={onClose}
-      size="xl"
+      size="lg"
       zIndex={60}
       headerActions={
         <button onClick={load} disabled={loading} title="Atualizar"
@@ -6848,8 +5544,8 @@ const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <StatCard icon={<Clock3 size={13} />} label="TMR médio (7d)" value={
                     stats.avg_first_response_min != null
                       ? stats.avg_first_response_min < 60
-                        ? `${stats.avg_first_response_min}min`
-                        : `${Math.floor(stats.avg_first_response_min / 60)}h${String(stats.avg_first_response_min % 60).padStart(2, '0')}`
+                        ? `${Math.round(stats.avg_first_response_min)}min`
+                        : `${Math.floor(stats.avg_first_response_min / 60)}h${String(Math.floor(stats.avg_first_response_min % 60)).padStart(2, '0')}`
                       : '—'
                   } sub="Tempo médio de 1ª resposta" />
                 </div>

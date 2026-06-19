@@ -3352,3 +3352,103 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   word-wrap: normal !important;
   word-break: normal !important;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Micro-interações do módulo WhatsApp (discretas, no padrão âmbar/minimalista).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* "digitando…/gravando…": três pontinhos que pulsam, estilo WhatsApp. */
+.wa-typing { display: inline-flex; align-items: center; gap: 3px; }
+.wa-typing > span {
+  width: 5px; height: 5px; border-radius: 9999px;
+  background: currentColor; opacity: 0.5;
+  animation: wa-typing-bounce 1.2s infinite ease-in-out;
+}
+.wa-typing > span:nth-child(2) { animation-delay: 0.15s; }
+.wa-typing > span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes wa-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+/* Entrada do balão de mensagem nova (sutil: fade + leve subida). Como os balões
+   são keyed por id e o refresh em tempo real faz merge, só mensagens realmente
+   novas re-montam e animam — as antigas não piscam. */
+.wa-msg-in { animation: wa-msg-in 0.18s ease-out both; }
+@keyframes wa-msg-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Surgimento do contador de não-lidas (pequeno "pop"). */
+.wa-badge-pop { animation: wa-badge-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes wa-badge-pop {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+
+/* Halo âmbar discreto e contínuo no contador de não-lidas (chama a atenção sem
+   poluir). Roda em box-shadow, então convive com o "pop" de entrada. */
+.wa-badge-glow { animation: wa-badge-glow 2.1s ease-out infinite; }
+@keyframes wa-badge-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.45); }
+  70%  { box-shadow: 0 0 0 6px rgba(217, 119, 6, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
+}
+
+/* Realce da conversa ativa: barra âmbar à esquerda que "cresce" ao selecionar. */
+.wa-conv { position: relative; }
+.wa-conv::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(to bottom, #f59e0b, #d97706);
+  border-radius: 0 2px 2px 0;
+  transform: scaleY(0); transform-origin: center;
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.wa-conv-active::before { transform: scaleY(1); }
+
+/* Entrada do balão com leve "brotar" a partir do canto de origem (recebida à
+   esquerda, enviada à direita). Só roda em transform/opacity, sem deslocamento
+   horizontal — não cria barra de rolagem. Como os balões são keyed por id, só
+   mensagens novas re-montam e animam. */
+.wa-bubble-in { animation: wa-bubble-in 0.2s ease-out both; }
+@keyframes wa-bubble-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* Elevação suave do balão ao passar o mouse (só box-shadow, p/ não conflitar
+   com o fill-mode da animação de entrada). */
+.wa-bubble { transition: box-shadow 0.18s ease; }
+.group:hover .wa-bubble { box-shadow: 0 5px 16px -6px rgba(0, 0, 0, 0.22); }
+
+/* Botões de ação (responder/editar/prazo…) crescem um toque no hover. */
+.wa-msg-actions button { transition: transform 0.15s ease, color 0.15s ease; }
+.wa-msg-actions button:hover { transform: scale(1.25); }
+
+/* Botão de enviar "pronto": pulso âmbar discreto convidando ao envio. */
+.wa-send-ready { animation: wa-send-ready 2.4s ease-in-out infinite; }
+@keyframes wa-send-ready {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
+  50%      { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.16); }
+}
+
+/* Ícone do estado vazio flutua de leve. */
+.wa-empty-float { animation: wa-empty-float 3.6s ease-in-out infinite; }
+@keyframes wa-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* Overlay de arrastar-e-soltar: respira suavemente. */
+.wa-drop-pulse { animation: wa-drop-pulse 1.3s ease-in-out infinite; }
+@keyframes wa-drop-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1;    }
+  50%      { transform: scale(1.012); opacity: 0.92; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-typing > span, .wa-msg-in, .wa-bubble-in, .wa-badge-pop, .wa-badge-glow,
+  .wa-send-ready, .wa-empty-float, .wa-drop-pulse { animation: none !important; }
+  .wa-conv::before { transition: none !important; }
+  .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }
+}

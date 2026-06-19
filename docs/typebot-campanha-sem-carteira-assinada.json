@@ -1,0 +1,1355 @@
+{
+  "version": "6",
+  "id": "cmb1semcarteira0002hybrid0001",
+  "name": "Campanha Sem Carteira Assinada - Hibrido Evolution",
+  "events": [
+    {
+      "id": "ev_start_sem_carteira",
+      "type": "start",
+      "outgoingEdgeId": "edge_start_to_router_intro",
+      "graphCoordinates": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "grp_router_intro",
+      "title": "Roteamento inicial",
+      "graphCoordinates": {
+        "x": 260,
+        "y": 0
+      },
+      "blocks": [
+        {
+          "id": "blk_router_intro_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Oi. Eu posso fazer a triagem de caso sobre trabalho sem carteira assinada."
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Se voce quiser outro assunto, eu tambem posso registrar para atendimento inteligente ou humano."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_router_intro_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Escreva em uma frase o que voce precisa."
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Exemplos: trabalhei sem carteira, tenho outra duvida, quero falar com humano."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_entrada_inicial",
+          "type": "text input",
+          "options": {
+            "variableId": "var_entrada_inicial",
+            "isLong": true,
+            "labels": {
+              "placeholder": "Digite sua mensagem",
+              "button": "Enviar"
+            }
+          },
+          "outgoingEdgeId": "edge_router_intro_to_router_logic"
+        }
+      ]
+    },
+    {
+      "id": "grp_router_logic",
+      "title": "Decide caminho",
+      "graphCoordinates": {
+        "x": 660,
+        "y": 0
+      },
+      "blocks": [
+        {
+          "id": "blk_cond_router",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "cond_router_campanha",
+              "outgoingEdgeId": "edge_router_to_triagem_intro",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_router_sem_carteira",
+                    "variableId": "var_entrada_inicial",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/(sem carteira|nao assinada|não assinada|nao registr|não registr|registro|trabalhei sem carteira|carteira assinada|vinculo|vínculo|emprego sem registro)/i"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cond_router_humano",
+              "outgoingEdgeId": "edge_router_to_humano",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_router_humano",
+                    "variableId": "var_entrada_inicial",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/(humano|atendente|pessoa|advogado|falar com alguem|falar com alguém|atendimento)/i"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "blk_text_router_fallback",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Entendi. Vou tratar isso como outro assunto."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_router_fallback_go",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Se for um tema fora da campanha, sua mensagem pode seguir para IA ou para atendimento humano."
+                  }
+                ]
+              }
+            ]
+          },
+          "outgoingEdgeId": "edge_router_to_outro_assunto"
+        }
+      ]
+    },
+    {
+      "id": "grp_triagem_intro",
+      "title": "Entrada triagem",
+      "graphCoordinates": {
+        "x": 1060,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_triagem_intro_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Perfeito. Vou seguir com a triagem objetiva do caso."
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "A qualquer momento: responda 9 para outro assunto ou 0 para humano."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_ask_nome",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Qual e o seu nome completo?"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_nome",
+          "type": "text input",
+          "options": {
+            "variableId": "var_nome",
+            "labels": {
+              "placeholder": "Digite seu nome completo",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_whatsapp",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Qual e o seu WhatsApp com DDD?"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_whatsapp",
+          "type": "text input",
+          "options": {
+            "variableId": "var_whatsapp",
+            "labels": {
+              "placeholder": "Ex.: 65999998888",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_checkpoint_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Para continuar a triagem responda 1."
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Se quiser outro assunto responda 9. Se quiser humano responda 0."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_checkpoint_1",
+          "type": "text input",
+          "options": {
+            "variableId": "var_checkpoint_1",
+            "labels": {
+              "placeholder": "Digite 1, 9 ou 0",
+              "button": "Enviar"
+            }
+          },
+          "outgoingEdgeId": "edge_triagem_intro_to_checkpoint_1"
+        }
+      ]
+    },
+    {
+      "id": "grp_checkpoint_1",
+      "title": "Checkpoint 1",
+      "graphCoordinates": {
+        "x": 1480,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_cond_checkpoint_1",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "cond_checkpoint_1_continue",
+              "outgoingEdgeId": "edge_checkpoint_1_to_contexto",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_1_continue",
+                    "variableId": "var_checkpoint_1",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(1|sim|s|continuar|seguir|ok|claro|pode continuar|quero continuar)\\s*$/i"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cond_checkpoint_1_humano",
+              "outgoingEdgeId": "edge_checkpoint_1_to_humano",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_1_humano",
+                    "variableId": "var_checkpoint_1",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(0|humano|atendente|quero falar com humano|quero atendimento)\\s*$/i"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "blk_checkpoint_1_default",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Nao consegui identificar sua opcao com seguranca."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_checkpoint_1_default_go",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Sua mensagem foi enviada para triagem alternativa."
+                  }
+                ]
+              }
+            ]
+          },
+          "outgoingEdgeId": "edge_checkpoint_1_to_outro_assunto"
+        }
+      ]
+    },
+    {
+      "id": "grp_contexto",
+      "title": "Contexto do caso",
+      "graphCoordinates": {
+        "x": 1900,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_ask_cidade",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Em qual cidade voce trabalhou?"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_cidade",
+          "type": "text input",
+          "options": {
+            "variableId": "var_cidade",
+            "labels": {
+              "placeholder": "Digite a cidade",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_empresa",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Qual era o nome da empresa ou do empregador?"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_empresa",
+          "type": "text input",
+          "options": {
+            "variableId": "var_empresa",
+            "labels": {
+              "placeholder": "Digite o nome da empresa",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_tempo",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Por quanto tempo voce trabalhou sem registro? Ex.: 8 meses, 2 anos."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_tempo",
+          "type": "text input",
+          "options": {
+            "variableId": "var_tempo_sem_registro",
+            "labels": {
+              "placeholder": "Digite o periodo",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_sem_carteira",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Durante esse periodo voce trabalhou sem carteira assinada?"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Responda 1 para SIM, 2 para NAO, 9 para outro assunto, 0 para humano."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_sem_carteira",
+          "type": "text input",
+          "options": {
+            "variableId": "var_sem_carteira_confirmacao",
+            "labels": {
+              "placeholder": "Digite 1, 2, 9 ou 0",
+              "button": "Enviar"
+            }
+          },
+          "outgoingEdgeId": "edge_contexto_to_checkpoint_2"
+        }
+      ]
+    },
+    {
+      "id": "grp_checkpoint_2",
+      "title": "Checkpoint 2",
+      "graphCoordinates": {
+        "x": 2320,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_cond_checkpoint_2",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "cond_checkpoint_2_humano",
+              "outgoingEdgeId": "edge_checkpoint_2_to_humano",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_2_humano",
+                    "variableId": "var_sem_carteira_confirmacao",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(0|humano|atendente|quero falar com humano|quero atendimento)\\s*$/i"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cond_checkpoint_2_outro",
+              "outgoingEdgeId": "edge_checkpoint_2_to_outro_assunto",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_2_outro",
+                    "variableId": "var_sem_carteira_confirmacao",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(9|outro|duvida|dúvida|tenho outra duvida|tenho outra dúvida|outro assunto)\\s*$/i"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cond_checkpoint_2_nao",
+              "outgoingEdgeId": "edge_checkpoint_2_to_fora_escopo",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_2_nao",
+                    "variableId": "var_sem_carteira_confirmacao",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(2|nao|não|n|nao trabalhei|não trabalhei)\\s*$/i"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cond_checkpoint_2_sim",
+              "outgoingEdgeId": "edge_checkpoint_2_to_qualificacao",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  {
+                    "id": "cmp_checkpoint_2_sim",
+                    "variableId": "var_sem_carteira_confirmacao",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(1|sim|s|claro|com certeza|isso|isso mesmo)\\s*$/i"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "blk_checkpoint_2_default",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Nao consegui classificar sua ultima resposta com seguranca."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_checkpoint_2_default_go",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Sua mensagem foi enviada para triagem alternativa."
+                  }
+                ]
+              }
+            ]
+          },
+          "outgoingEdgeId": "edge_checkpoint_2_to_outro_assunto"
+        }
+      ]
+    },
+    {
+      "id": "grp_qualificacao",
+      "title": "Qualificacao",
+      "graphCoordinates": {
+        "x": 2740,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_ask_horario",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Voce tinha horario fixo de entrada e saida?"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Responda 1 para SIM ou 2 para NAO."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_horario",
+          "type": "text input",
+          "options": {
+            "variableId": "var_horario_fixo",
+            "labels": {
+              "placeholder": "Digite 1 ou 2",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_ordens",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Voce recebia ordens diretas de chefe, gerente ou proprietario?"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Responda 1 para SIM ou 2 para NAO."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_ordens",
+          "type": "text input",
+          "options": {
+            "variableId": "var_recebia_ordens",
+            "labels": {
+              "placeholder": "Digite 1 ou 2",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_provas",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Voce tem alguma prova, como conversas, PIX, cracha, uniforme, fotos ou testemunhas?"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Responda 1 para SIM ou 2 para NAO."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_provas",
+          "type": "text input",
+          "options": {
+            "variableId": "var_tem_provas",
+            "labels": {
+              "placeholder": "Digite 1 ou 2",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_ask_resumo",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Resumo rapido: o que aconteceu e o que voce quer resolver?"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_resumo",
+          "type": "text input",
+          "options": {
+            "variableId": "var_resumo",
+            "isLong": true,
+            "labels": {
+              "placeholder": "Descreva em poucas linhas",
+              "button": "Enviar"
+            }
+          },
+          "outgoingEdgeId": "edge_qualificacao_to_analise"
+        }
+      ]
+    },
+    {
+      "id": "grp_analise",
+      "title": "Analise final",
+      "graphCoordinates": {
+        "x": 3160,
+        "y": -180
+      },
+      "blocks": [
+        {
+          "id": "blk_cond_analise",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "cond_analise_quente",
+              "outgoingEdgeId": "edge_analise_to_quente",
+              "content": {
+                "logicalOperator": "AND",
+                "comparisons": [
+                  {
+                    "id": "cmp_analise_horario",
+                    "variableId": "var_horario_fixo",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(1|sim|s|claro|com certeza|isso|isso mesmo)\\s*$/i"
+                  },
+                  {
+                    "id": "cmp_analise_ordens",
+                    "variableId": "var_recebia_ordens",
+                    "comparisonOperator": "Matches regex",
+                    "value": "/^\\s*(1|sim|s|claro|com certeza|isso|isso mesmo)\\s*$/i"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "blk_analise_default_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Seu caso foi registrado e vai para revisao manual."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_analise_default_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Se quiser atendimento humano prioritario, sua equipe pode assumir daqui."
+                  }
+                ]
+              }
+            ]
+          },
+          "outgoingEdgeId": "edge_analise_to_revisao"
+        }
+      ]
+    },
+    {
+      "id": "grp_quente",
+      "title": "Lead quente",
+      "graphCoordinates": {
+        "x": 3580,
+        "y": -320
+      },
+      "blocks": [
+        {
+          "id": "blk_quente_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Triagem concluida. Seu caso tem sinais importantes de vinculo de emprego sem registro."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_quente_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Nome: {{nome}}"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "WhatsApp: {{whatsapp}}"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Empresa: {{empresa}}"
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Tempo sem registro: {{tempo_sem_registro}}"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_quente_3",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Encaminhamento sugerido: prioridade alta."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp_revisao",
+      "title": "Revisao manual",
+      "graphCoordinates": {
+        "x": 3580,
+        "y": -60
+      },
+      "blocks": [
+        {
+          "id": "blk_revisao_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Obrigado. Seu caso foi enviado para revisao manual."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_revisao_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Resumo: {{resumo}}"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp_outro_assunto",
+      "title": "Outro assunto",
+      "graphCoordinates": {
+        "x": 1060,
+        "y": 240
+      },
+      "blocks": [
+        {
+          "id": "blk_set_ia_flag",
+          "type": "Set variable",
+          "options": {
+            "variableId": "var_ia_fallback",
+            "expressionToEvaluate": "sim"
+          }
+        },
+        {
+          "id": "blk_outro_assunto_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Certo. Me explique seu outro assunto com mais detalhes."
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Descreva sua duvida que sua equipe pode responder por IA ou encaminhar para humano."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_input_outro_assunto",
+          "type": "text input",
+          "options": {
+            "variableId": "var_assunto_livre",
+            "isLong": true,
+            "labels": {
+              "placeholder": "Digite sua duvida ou assunto",
+              "button": "Enviar"
+            }
+          }
+        },
+        {
+          "id": "blk_outro_assunto_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Mensagem registrada: {{assunto_livre}}"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_outro_assunto_3",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Encaminhamento sugerido: IA responde ou transfere para humano conforme sua regra externa."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp_humano",
+      "title": "Humano",
+      "graphCoordinates": {
+        "x": 1060,
+        "y": 500
+      },
+      "blocks": [
+        {
+          "id": "blk_set_humano_flag",
+          "type": "Set variable",
+          "options": {
+            "variableId": "var_pedir_humano",
+            "expressionToEvaluate": "sim"
+          }
+        },
+        {
+          "id": "blk_humano_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Certo. Vou registrar que voce quer atendimento humano."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp_fora_escopo",
+      "title": "Fora do escopo",
+      "graphCoordinates": {
+        "x": 2740,
+        "y": 120
+      },
+      "blocks": [
+        {
+          "id": "blk_fora_escopo_1",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Pelo que voce informou, este fluxo nao parece ser de trabalho sem carteira assinada."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "blk_fora_escopo_2",
+          "type": "text",
+          "content": {
+            "richText": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Se quiser, sua equipe pode tratar isso como outro assunto ou atendimento humano."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_start_to_router_intro",
+      "from": {
+        "eventId": "ev_start_sem_carteira"
+      },
+      "to": {
+        "groupId": "grp_router_intro"
+      }
+    },
+    {
+      "id": "edge_router_intro_to_router_logic",
+      "from": {
+        "blockId": "blk_input_entrada_inicial"
+      },
+      "to": {
+        "groupId": "grp_router_logic"
+      }
+    },
+    {
+      "id": "edge_router_to_triagem_intro",
+      "from": {
+        "blockId": "blk_cond_router",
+        "itemId": "cond_router_campanha"
+      },
+      "to": {
+        "groupId": "grp_triagem_intro"
+      }
+    },
+    {
+      "id": "edge_router_to_humano",
+      "from": {
+        "blockId": "blk_cond_router",
+        "itemId": "cond_router_humano"
+      },
+      "to": {
+        "groupId": "grp_humano"
+      }
+    },
+    {
+      "id": "edge_router_to_outro_assunto",
+      "from": {
+        "blockId": "blk_router_fallback_go"
+      },
+      "to": {
+        "groupId": "grp_outro_assunto"
+      }
+    },
+    {
+      "id": "edge_triagem_intro_to_checkpoint_1",
+      "from": {
+        "blockId": "blk_input_checkpoint_1"
+      },
+      "to": {
+        "groupId": "grp_checkpoint_1"
+      }
+    },
+    {
+      "id": "edge_checkpoint_1_to_contexto",
+      "from": {
+        "blockId": "blk_cond_checkpoint_1",
+        "itemId": "cond_checkpoint_1_continue"
+      },
+      "to": {
+        "groupId": "grp_contexto"
+      }
+    },
+    {
+      "id": "edge_checkpoint_1_to_humano",
+      "from": {
+        "blockId": "blk_cond_checkpoint_1",
+        "itemId": "cond_checkpoint_1_humano"
+      },
+      "to": {
+        "groupId": "grp_humano"
+      }
+    },
+    {
+      "id": "edge_checkpoint_1_to_outro_assunto",
+      "from": {
+        "blockId": "blk_checkpoint_1_default_go"
+      },
+      "to": {
+        "groupId": "grp_outro_assunto"
+      }
+    },
+    {
+      "id": "edge_contexto_to_checkpoint_2",
+      "from": {
+        "blockId": "blk_input_sem_carteira"
+      },
+      "to": {
+        "groupId": "grp_checkpoint_2"
+      }
+    },
+    {
+      "id": "edge_checkpoint_2_to_humano",
+      "from": {
+        "blockId": "blk_cond_checkpoint_2",
+        "itemId": "cond_checkpoint_2_humano"
+      },
+      "to": {
+        "groupId": "grp_humano"
+      }
+    },
+    {
+      "id": "edge_checkpoint_2_to_outro_assunto",
+      "from": {
+        "blockId": "blk_cond_checkpoint_2",
+        "itemId": "cond_checkpoint_2_outro"
+      },
+      "to": {
+        "groupId": "grp_outro_assunto"
+      }
+    },
+    {
+      "id": "edge_checkpoint_2_to_fora_escopo",
+      "from": {
+        "blockId": "blk_cond_checkpoint_2",
+        "itemId": "cond_checkpoint_2_nao"
+      },
+      "to": {
+        "groupId": "grp_fora_escopo"
+      }
+    },
+    {
+      "id": "edge_checkpoint_2_to_qualificacao",
+      "from": {
+        "blockId": "blk_cond_checkpoint_2",
+        "itemId": "cond_checkpoint_2_sim"
+      },
+      "to": {
+        "groupId": "grp_qualificacao"
+      }
+    },
+    {
+      "id": "edge_qualificacao_to_analise",
+      "from": {
+        "blockId": "blk_input_resumo"
+      },
+      "to": {
+        "groupId": "grp_analise"
+      }
+    },
+    {
+      "id": "edge_analise_to_quente",
+      "from": {
+        "blockId": "blk_cond_analise",
+        "itemId": "cond_analise_quente"
+      },
+      "to": {
+        "groupId": "grp_quente"
+      }
+    },
+    {
+      "id": "edge_analise_to_revisao",
+      "from": {
+        "blockId": "blk_analise_default_2"
+      },
+      "to": {
+        "groupId": "grp_revisao"
+      }
+    }
+  ],
+  "variables": [
+    {
+      "id": "var_entrada_inicial",
+      "name": "entrada_inicial",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_nome",
+      "name": "nome",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_whatsapp",
+      "name": "whatsapp",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_checkpoint_1",
+      "name": "checkpoint_1",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_cidade",
+      "name": "cidade",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_empresa",
+      "name": "empresa",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_tempo_sem_registro",
+      "name": "tempo_sem_registro",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_sem_carteira_confirmacao",
+      "name": "sem_carteira_confirmacao",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_horario_fixo",
+      "name": "horario_fixo",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_recebia_ordens",
+      "name": "recebia_ordens",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_tem_provas",
+      "name": "tem_provas",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_resumo",
+      "name": "resumo",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_assunto_livre",
+      "name": "assunto_livre",
+      "isSessionVariable": false
+    },
+    {
+      "id": "var_ia_fallback",
+      "name": "ia_fallback",
+      "isSessionVariable": true
+    },
+    {
+      "id": "var_pedir_humano",
+      "name": "pedir_humano",
+      "isSessionVariable": true
+    }
+  ],
+  "theme": {},
+  "selectedThemeTemplateId": null,
+  "settings": {
+    "general": {
+      "isBrandingEnabled": true
+    }
+  }
+}
