@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.250': { name: 'Cafe Despedida Cinematica', emoji: '🎬' },
   '1.10.249': { name: 'Cafe Agenda DJEN Vivo', emoji: '📅' },
   '1.10.248': { name: 'Cafe Sessao e Timeline Coerentes', emoji: '🧭' },
   '1.10.247': { name: 'Cafe Portal Acesso Rapido', emoji: '🚪' },
@@ -903,6 +904,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.250',
+    date: '19/06/2026',
+    summary: 'Portal e Sistema: o logout ganhou despedida cinematográfica com nome do usuário, o fluxo de sessão passou a suportar saída sem redirect imediato e a Área Restrita recebeu um acabamento mobile mais editorial.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'Logout ganhou overlay cinematográfico dedicado', description: 'A saída agora exibe uma despedida premium em tela cheia, com nome preservado do usuário, ambientação própria e redirecionamento só depois da animação terminar.' },
+        { type: 'improvement' as const, title: 'AuthContext passou a aceitar signOut sem redirect imediato', description: 'O fluxo de autenticação agora permite encerrar a sessão com redirect:false, destravando experiências de saída animada sem perder a limpeza correta de sessão.' },
+      ]},
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Cartão mobile da Área Restrita ficou mais coerente com a marca', description: 'O formulário do staff no mobile ganhou card real, barra de acento, logo melhor posicionada, escudo mais leve e CTA em gradiente âmbar para reduzir o aspecto genérico da tela.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.249',
     date: '19/06/2026',

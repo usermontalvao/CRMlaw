@@ -684,10 +684,30 @@ export const PortalLogin: React.FC = () => {
       {/* ── PAINEL DO FORMULÁRIO ── */}
       <main className="min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(28px, 4vw, 56px) clamp(18px, 3vw, 44px)' }}>
 
-        <div id="login-card" tabIndex={-1} className="login-anim relative z-10 w-full" style={{ maxWidth: 408, animationDelay: '0.34s' }}>
+        {/* backdrop decorativo — SÓ mobile (no desktop o painel de marca já cumpre esse papel).
+            Eco da identidade: brilho âmbar no topo + grade tênue, para o formulário não
+            flutuar num branco estéril. */}
+        <div aria-hidden="true" className="md:hidden" style={{
+          position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+          backgroundImage:
+            'radial-gradient(300px 300px at 6% -2%, rgba(255,102,0,0.06), transparent 70%),' +
+            'radial-gradient(320px 320px at 102% 104%, rgba(80,95,118,0.07), transparent 70%),' +
+            'linear-gradient(rgba(148,163,184,0.13) 1px, transparent 1px),' +
+            'linear-gradient(90deg, rgba(148,163,184,0.13) 1px, transparent 1px)',
+          backgroundSize: '100% 100%, 100% 100%, 40px 40px, 40px 40px',
+        }} />
 
-          {/* logo no mobile (painel de marca fica oculto) */}
-          <div className="md:hidden mb-7 flex justify-center"><Logo /></div>
+        <div id="login-card" tabIndex={-1}
+          className="login-anim relative z-10 w-full bg-white md:bg-transparent border border-slate-200 md:border-0 rounded-xl md:rounded-none overflow-hidden md:overflow-visible p-7 sm:p-8 md:p-0 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.10)] md:shadow-none"
+          style={{ maxWidth: 408, animationDelay: '0.34s' }}>
+
+          {/* acento de marca no topo do cartão — só mobile */}
+          <div aria-hidden="true" className="md:hidden absolute inset-x-0 top-0 h-1"
+            style={{ background: 'linear-gradient(90deg,#F2631A,#FF9259)' }} />
+
+          {/* logo no mobile (painel de marca fica oculto) — alinhado à esquerda,
+              em coluna editorial coerente com o restante do formulário */}
+          <div className="md:hidden mb-6 flex border-b border-slate-100 pb-5"><Logo /></div>
 
           {/* aviso de sessão encerrada por segurança (inatividade / tempo máximo) */}
           {sessionEnded && (
@@ -842,8 +862,8 @@ export const PortalLogin: React.FC = () => {
                 {!identifierLoading && staffStep === 'identifier' && (
                   <form onSubmit={handleIdentifierSubmit} className="space-y-6">
                     <div>
-                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 ring-1 ring-white/10 shadow-lg shadow-slate-900/25">
-                        <Shield className="h-[22px] w-[22px] text-orange-500" strokeWidth={1.75} />
+                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/70 shadow-inner">
+                        <Shield className="h-[22px] w-[22px] text-slate-500" strokeWidth={1.75} />
                       </div>
                       <h2 className="text-[22px] font-bold text-slate-900 tracking-tight leading-none">Área Restrita</h2>
                       <p className="text-[13px] text-slate-500 mt-2">Acesso exclusivo para colaboradores do escritório</p>
@@ -871,8 +891,8 @@ export const PortalLogin: React.FC = () => {
                     {staffBanned && <BannedMsg />}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={identifierLoading || !identifier.trim()}
-                      className="w-full bg-slate-900 text-white py-3.5 rounded-lg font-bold text-base hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
-                      style={{ boxShadow: '0 10px 22px -12px rgba(15,23,42,0.55)' }}>
+                      className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50"
+                      style={{ background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
                       {identifierLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Buscando...</> : <><span>Continuar</span><ArrowRight className="h-5 w-5" /></>}
                     </button>
                   </form>
@@ -944,8 +964,8 @@ export const PortalLogin: React.FC = () => {
                     </div>
                     <div className="space-y-2.5">
                       <button type="button" onClick={confirmSaveQuick}
-                        className="w-full bg-slate-900 text-white py-3.5 rounded-lg font-bold text-base hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                        style={{ boxShadow: '0 10px 22px -12px rgba(15,23,42,0.55)' }}>
+                        className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2"
+                        style={{ background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
                         <CheckCircle className="h-5 w-5" /> Salvar e continuar
                       </button>
                       <button type="button" onClick={declineSaveQuick}
@@ -1009,8 +1029,8 @@ export const PortalLogin: React.FC = () => {
                     {staffBanned && <BannedMsg />}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={staffLoading || !staffPw}
-                      style={{ animation: 'staffProfileIn 0.4s ease 0.4s both', boxShadow: '0 10px 22px -12px rgba(15,23,42,0.55)' }}
-                      className="w-full bg-slate-900 text-white py-3.5 rounded-lg font-bold text-base hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40">
+                      style={{ animation: 'staffProfileIn 0.4s ease 0.4s both', background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}
+                      className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50">
                       {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Autenticando...</> : <><Shield className="h-5 w-5" /> Acessar Sistema</>}
                     </button>
                   </form>

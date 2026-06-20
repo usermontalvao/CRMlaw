@@ -8,7 +8,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (opts?: { redirect?: boolean }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   sessionWarning: boolean;
   extendSession: () => void;
@@ -275,14 +275,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     persistSessionStart(Date.now());
   };
 
-  const signOut = async () => {
+  const signOut = async (opts?: { redirect?: boolean }) => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
 
     setSession(null);
     setUser(null);
     persistSessionStart(null);
-    window.location.href = '/';
+    // Por padrão redireciona na hora; o fluxo de logout da App pede redirect:false
+    // para a animação de saída poder rodar antes de navegar.
+    if (opts?.redirect !== false) window.location.href = '/';
   };
 
   const resetPassword = async (email: string) => {

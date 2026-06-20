@@ -51,6 +51,7 @@ import { NotificationBell } from './components/NotificationBell';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import SessionWarning from './components/SessionWarning';
 import BlockedAccountOverlay from './components/BlockedAccountOverlay';
+import LogoutOverlay from './components/LogoutOverlay';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 
@@ -1151,6 +1152,9 @@ const MainApp: React.FC = () => {
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  // Nome capturado no início do logout — o handler SIGNED_OUT reseta o profile
+  // para "Usuário", então congelamos o nome real para a despedida.
+  const [logoutName, setLogoutName] = useState('');
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const logoutCleanupDoneRef = useRef(false);
 
@@ -1748,16 +1752,20 @@ useEffect(() => {
 
   // Logout com animação (sem atraso artificial longo)
   const handleLogout = async () => {
+    setLogoutName(profile.name && profile.name !== 'Usuário' ? profile.name : '');
     setLoggingOut(true);
 
     try {
-      // Realiza o logout imediatamente
-      await signOut();
+      // Encerra a sessão SEM redirecionar agora — senão a página navega embora
+      // e a animação de saída nem chega a aparecer.
+      await signOut({ redirect: false });
+    } catch {
+      /* mesmo com erro, mostramos a animação e redirecionamos ao final */
     } finally {
-      // Duração base da animação de saída (~2s)
+      // Deixa a animação cinematográfica (~3,6s) rodar e só então navega.
       setTimeout(() => {
-        setLoggingOut(false);
-      }, 2000);
+        window.location.href = '/';
+      }, 3600);
     }
   };
 
@@ -1838,8 +1846,8 @@ useEffect(() => {
     <CacheProvider>
       {isAccountBlocked && <BlockedAccountOverlay onLogout={signOut} />}
       <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-black transition-colors duration-300">
-        {/* Overlay de Login/Logout - Epic Animation */}
-        {(loggingIn || loggingOut) && (
+        {/* Overlay de LOGIN — Epic Animation (o logout tem o seu próprio, abaixo) */}
+        {loggingIn && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black">
             {/* Animated gradient background */}
             <div className="absolute inset-0">
@@ -1903,11 +1911,11 @@ useEffect(() => {
               {/* Status */}
               <div className="text-center">
                 <p className="text-lg sm:text-xl font-semibold text-white mb-2">
-                  {loggingIn ? 'Preparando seu ambiente' : 'Encerrando sessão'}
+                  Preparando seu ambiente
                 </p>
                 <p className="text-sm text-white/50 flex items-center gap-2 justify-center">
                   <span className="inline-block w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
-                  {loggingIn ? 'Carregando dados do escritório...' : 'Salvando suas alterações...'}
+                  Carregando dados do escritório...
                 </p>
               </div>
             </div>
@@ -1916,6 +1924,9 @@ useEffect(() => {
             <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 to-transparent" />
           </div>
         )}
+
+        {/* Overlay de LOGOUT — despedida cinematográfica dedicada */}
+        {loggingOut && <LogoutOverlay userName={logoutName} />}
 
         {/* Aviso de sessão */}
         <SessionWarning />
