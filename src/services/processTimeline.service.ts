@@ -41,12 +41,10 @@ interface StoredTimelineCache {
 }
 
 class ProcessTimelineService {
-  private groqApiKey: string | null = null;
   private cache: Map<string, TimelineCache> = new Map();
   private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas - evita recarregamento frequente
 
   constructor() {
-    this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
     this.loadCacheFromStorage();
   }
 
@@ -336,10 +334,6 @@ class ProcessTimelineService {
    * Analisa um evento da timeline usando IA (Groq)
    */
   async analyzeTimelineEvent(event: TimelineEvent): Promise<TimelineEvent['aiAnalysis']> {
-    if (!this.groqApiKey) {
-      return undefined;
-    }
-
     try {
       const prompt = `Analise esta publicação do Diário de Justiça e extraia informações importantes.
 
@@ -365,30 +359,27 @@ Regras:
 - Se for apenas movimentação de rotina, urgência = "baixa"
 - Seja conciso no resumo`;
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.groqApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+      // IA via Edge Function `openai-proxy` (chaves no servidor; nada no bundle).
+      const { data, error } = await supabase.functions.invoke('openai-proxy', {
+        body: {
+          model: 'gpt-4o-mini',
+          max_tokens: 500,
           messages: [
             { role: 'system', content: 'Você é um assistente jurídico especializado em análise de publicações do Diário de Justiça. Responda sempre em JSON válido.' },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.2,
-          max_tokens: 500,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        throw new Error(`Groq API error: ${response.status}`);
+      if (error) {
+        throw new Error(`openai-proxy error: ${error.message}`);
+      }
+      if ((data as any)?.error) {
+        throw new Error(`openai-proxy error: ${(data as any).error}`);
       }
 
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      
+      const content = (data as any)?.choices?.[0]?.message?.content || '';
+
       // Extrair JSON da resposta
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -462,11 +453,6 @@ Regras:
       events.forEach(e => { e.aiAnalysis = undefined; });
     }
 
-    // Sem API key, retornar eventos sem análise
-    if (!this.groqApiKey) {
-      return events;
-    }
-
     // Analisar apenas eventos que precisam (máximo 10)
     const toAnalyze = forceRefresh 
       ? events.slice(0, 10) 
@@ -505,7 +491,7 @@ Regras:
     events: TimelineEvent[],
     onProgress?: (current: number, total: number) => void
   ): Promise<TimelineEvent[]> {
-    if (!this.groqApiKey || events.length === 0) {
+    if (events.length === 0) {
       return events;
     }
 

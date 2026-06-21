@@ -23,7 +23,7 @@ function json(payload: unknown, status = 200): Response {
 const SMTP_HOST     = Deno.env.get('SMTP_HOST')     ?? 'smtp.hostinger.com';
 const SMTP_PORT     = Number(Deno.env.get('SMTP_PORT'))   || 465;
 const SMTP_USER     = Deno.env.get('SMTP_USER')     ?? 'assinatura@advcuiaba.com';
-const SMTP_PASS     = Deno.env.get('SMTP_PASS')     ?? 'f3a8b2c9d1e0f4a5B6c7d6e7F8a9b0c1d2e3f4a5b6c7d8e9E@';
+const SMTP_PASS     = Deno.env.get('SMTP_PASS')     ?? '';   // sem credencial hardcoded
 const SMTP_FROM     = Deno.env.get('SMTP_FROM')     ?? 'assinatura@advcuiaba.com';
 const SMTP_FROM_NAME = Deno.env.get('SMTP_FROM_NAME') ?? 'Jurius';
 

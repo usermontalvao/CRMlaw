@@ -512,7 +512,7 @@ const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[]; signer
                   style={{
                     color:       done   ? '#cbd5e1' : active ? '#0f172a' : '#cbd5e1',
                     fontWeight:  active ? 600 : 400,
-                    textDecoration: done ? 'line-through' : 'none',
+                    textDecorationLine: done ? 'line-through' : 'none',
                     textDecorationColor: '#e2e8f0',
                   }}
                 >
@@ -1654,6 +1654,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   ): Promise<string | null> => {
     let signedPdfPath: string;
     let signedPdfSha256: string | null = null;
+    let signedIntegritySha256: string | null = null;
 
     const attachmentPdfItems = attachments
       .map((a, i) => ({ a, i }))
@@ -1669,7 +1670,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
 
     if (originalPdfUrlToUse && !isDocxFile) {
-      const { filePath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
+      const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignedPdfToStorage({
         request: currentRequest,
         signer: currentSigner,
         originalPdfUrl: originalPdfUrlToUse,
@@ -1678,6 +1679,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       });
       signedPdfPath = filePath;
       signedPdfSha256 = sha256;
+      signedIntegritySha256 = integritySha256;
     } else if (isDocxFile) {
       const cleanupHosts: HTMLElement[] = [];
       try {
@@ -1707,7 +1709,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           }
         }
 
-        const { filePath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
+        const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
           request: currentRequest,
           signer: currentSigner,
           creator,
@@ -1718,28 +1720,30 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         });
         signedPdfPath = filePath;
         signedPdfSha256 = sha256;
+        signedIntegritySha256 = integritySha256;
       } finally {
         for (const el of cleanupHosts) {
           try { el.remove(); } catch { /* noop */ }
         }
       }
     } else {
-      const { filePath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+      const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignatureReportToStorage({
         request: currentRequest,
         signer: currentSigner,
         creator,
       });
       signedPdfPath = filePath;
       signedPdfSha256 = sha256;
+      signedIntegritySha256 = integritySha256;
     }
 
-    await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256);
+    await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256, signedIntegritySha256);
 
     const signedUrl = await signatureService.getPublicFileUrl(token,signedPdfPath);
     if (signedUrl) {
       setSignedDocumentUrl(signedUrl);
       setSigner((prev) => (prev && prev.id === currentSigner.id
-        ? { ...prev, signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 ?? null }
+        ? { ...prev, signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 ?? null, integrity_sha256: signedIntegritySha256 ?? null }
         : prev));
     }
     return signedUrl;
@@ -2276,6 +2280,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         try {
           let signedPdfPath: string;
           let signedPdfSha256: string | null = null;
+          let signedIntegritySha256: string | null = null;
           
           // Coletar URLs dos anexos PDF para compilar
           const attachmentPdfItems = attachments
@@ -2300,7 +2305,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           
           if (originalPdfUrlToUse && !isDocxFile) {
             // Documento original é PDF - gerar PDF completo (documento + anexos + relatório)
-            const { filePath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
+            const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignedPdfToStorage({
               request,
               signer: result,
               originalPdfUrl: originalPdfUrlToUse,
@@ -2309,6 +2314,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             });
             signedPdfPath = filePath;
             signedPdfSha256 = sha256;
+            signedIntegritySha256 = integritySha256;
           } else if (isDocxFile) {
             // Documento original é DOCX - renderizar offscreen e converter para PDF
             console.log('[ASSINATURA] Convertendo DOCX para PDF (offscreen)...');
@@ -2421,7 +2427,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               console.log('[ASSINATURA] Campos de assinatura:', signatureFields.length);
               console.log('[ASSINATURA] Campos detalhes:', signatureFields.map(f => ({ doc: f.document_id, page: f.page_number, type: f.field_type })));
 
-              const { filePath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
+              const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
                 request,
                 signer: result,
                 creator,
@@ -2432,6 +2438,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               });
               signedPdfPath = filePath;
               signedPdfSha256 = sha256;
+              signedIntegritySha256 = integritySha256;
             } finally {
               for (const el of cleanupHosts) {
                 try { el.remove(); } catch { /* noop */ }
@@ -2439,19 +2446,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             }
           } else {
             // Fallback - gerar apenas relatório de assinatura
-            const { filePath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+            const { filePath, sha256, integritySha256 } = await pdfSignatureService.saveSignatureReportToStorage({
               request,
               signer: result,
               creator,
             });
             signedPdfPath = filePath;
             signedPdfSha256 = sha256;
+            signedIntegritySha256 = integritySha256;
           }
-          
+
           // Atualizar o signer com o path do PDF assinado
-          await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256);
+          await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256, signedIntegritySha256);
           result.signed_document_path = signedPdfPath;
           (result as any).signed_pdf_sha256 = signedPdfSha256;
+          (result as any).integrity_sha256 = signedIntegritySha256;
           console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
 
           try {

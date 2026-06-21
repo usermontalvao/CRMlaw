@@ -1,17 +1,12 @@
-import OpenAI from 'openai';
-import type { IntimationAnalysis, AIServiceConfig, DeadlineExtraction } from '../types/ai.types';
+import type { IntimationAnalysis, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
 import { settingsService, type AiTaskConfig } from './settings.service';
 
 class AIService {
-  private openai: OpenAI | null = null;
-  private enabled: boolean = false;
-  private useEdgeFunction: boolean = true; // Usar Edge Function para evitar CORS
-  private useGroq: boolean = false; // Usar OpenAI como provider principal
-  private groqApiKey: string | null = null;
-  private openaiApiKey: string | null = null;
-  private lastGroqError: number = 0; // Timestamp do último erro 429
-  private groqCooldownMs: number = 60000; // 1 minuto de cooldown após 429
+  // Toda a IA de texto passa pela Edge Function `openai-proxy`, que mantém a
+  // cadeia de provedores (DeepSeek -> Groq -> OpenAI) e as chaves NO SERVIDOR.
+  // Nenhuma chave de IA vive no frontend / bundle.
+  private enabled: boolean = true;
 
   // Settings carregadas do banco (lazy)
   private promptOverrides: Map<string, string> = new Map();
@@ -40,42 +35,12 @@ class AIService {
   }
 
   private initialize() {
-    // Carrega ambas as chaves
-    this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
-    this.openaiApiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    
-    // Inicializa OpenAI se disponível (para fallback)
-    if (this.openaiApiKey) {
-      this.openai = new OpenAI({
-        apiKey: this.openaiApiKey,
-        dangerouslyAllowBrowser: true,
-      });
-      console.log('✅ OpenAI configurado como fallback');
-    }
-    
-    // OpenAI é o provider principal
-    if (this.openaiApiKey && this.openai) {
-      this.useGroq = false;
-      this.enabled = true;
-      console.log('✅ OpenAI AI Service inicializado (provider principal)');
-      return;
-    }
-    
-    // Se não tem OpenAI mas tem Groq, usa Groq como fallback
-    if (this.groqApiKey) {
-      this.useGroq = true;
-      this.enabled = true;
-      console.log('✅ Groq AI Service inicializado (provider fallback)');
-      return;
-    }
-    
-    console.warn('⚠️ IA desabilitada: configure VITE_GROQ_API_KEY ou VITE_OPENAI_API_KEY para ativar o serviço.');
-    this.enabled = false;
-    this.openai = null;
+    // Sem chaves no frontend: a IA roda via Edge Function `openai-proxy`.
+    this.enabled = true;
   }
 
   isEnabled(): boolean {
-    return this.enabled && (this.groqApiKey !== null || this.openai !== null);
+    return this.enabled;
   }
 
   /** Força recarga das settings do banco (útil após salvar Configurações). */
@@ -92,26 +57,13 @@ class AIService {
 
   private async loadFromSettings(): Promise<void> {
     try {
-      const [providerCfg, taskCfgs, promptOverrides, holidays] = await Promise.all([
-        settingsService.getAiProviderConfig(),
+      // provider/fallback é decidido no servidor (openai-proxy). Aqui só
+      // carregamos os ajustes por tarefa (modelo, max_tokens) e prompts.
+      const [taskCfgs, promptOverrides, holidays] = await Promise.all([
         settingsService.getAiTaskConfigs(),
         settingsService.getAiPromptOverrides(),
         settingsService.getHolidays(),
       ]);
-
-      // Aplica provider config (respeita o que está configurado em Configurações)
-      if (providerCfg.enabled[providerCfg.primary]) {
-        if (providerCfg.primary === 'groq' && this.groqApiKey) {
-          this.useGroq = true;
-          this.useEdgeFunction = false;
-        } else if (providerCfg.primary === 'openai' && this.openaiApiKey) {
-          this.useGroq = false;
-          this.useEdgeFunction = true;
-        }
-      }
-      if (providerCfg.cooldown_ms > 0) {
-        this.groqCooldownMs = providerCfg.cooldown_ms;
-      }
 
       this.taskConfigs = new Map(taskCfgs.map(t => [t.task_key, t]));
       this.promptOverrides = new Map(promptOverrides.map(o => [o.key, o.system_prompt]));
@@ -143,21 +95,7 @@ class AIService {
       { role: 'user', content: userPrompt },
     ];
 
-    // Usar OpenAI primeiro
-    if (this.openai && this.openaiApiKey) {
-      if (this.useEdgeFunction) {
-        return this.callOpenAIViaEdgeFunction(messages, taskOpts?.model ?? 'gpt-4o-mini');
-      } else {
-        return this.callOpenAIDirectly(messages, resolvedTokens, taskOpts);
-      }
-    }
-
-    // Fallback para Groq
-    if (this.useGroq && this.groqApiKey) {
-      return this.callGroqAPI(messages, resolvedTokens, taskOpts);
-    }
-
-    throw new Error('Nenhum provedor de IA disponível');
+    return this.callOpenAIViaEdgeFunction(messages, taskOpts?.model ?? 'gpt-4o-mini', resolvedTokens);
   }
 
   async editLegalTextWithContext(params: {
@@ -237,101 +175,20 @@ Regras obrigatórias:
   }
 
   /**
-   * Verifica se deve usar fallback OpenAI (Groq em cooldown)
+   * Chama a IA através da Edge Function `openai-proxy`. O servidor mantém a
+   * cadeia de provedores (DeepSeek -> Groq -> OpenAI) e as chaves; o frontend
+   * nunca vê nenhuma chave de IA.
    */
-  private shouldUseFallback(): boolean {
-    if (!this.openai || !this.openaiApiKey) return false;
-    if (this.lastGroqError === 0) return false;
-    return Date.now() - this.lastGroqError < this.groqCooldownMs;
-  }
-
-  /**
-   * Marca Groq como em cooldown (após erro 429)
-   */
-  private setGroqCooldown() {
-    this.lastGroqError = Date.now();
-    console.warn('⚠️ Groq rate limited, usando OpenAI como fallback por 1 minuto');
-  }
-
-  /**
-   * Chama a API do Groq com fallback para OpenAI
-   */
-  private async callGroqAPI(messages: any[], maxTokens: number = 1000, opts?: { model?: string; temperature?: number }): Promise<string> {
-    // Se Groq está em cooldown e temos OpenAI, usa fallback
-    if (this.shouldUseFallback()) {
-      console.log('🔄 Usando OpenAI (fallback) - Groq em cooldown');
-      return this.callOpenAIDirectly(messages, maxTokens);
-    }
-
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.groqApiKey}`,
-        },
-        body: JSON.stringify({
-          model: opts?.model ?? 'llama-3.3-70b-versatile',
-          messages,
-          temperature: opts?.temperature ?? 0.3,
-          max_tokens: maxTokens,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        
-        // Se for rate limit (429), tenta fallback OpenAI
-        if (response.status === 429 && this.openai) {
-          this.setGroqCooldown();
-          console.log('🔄 Groq retornou 429, tentando OpenAI...');
-          return this.callOpenAIDirectly(messages, maxTokens);
-        }
-        
-        throw new Error(`Groq API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
-    } catch (error: any) {
-      // Se falhou e temos OpenAI disponível, tenta fallback
-      if (this.openai && error.message?.includes('429')) {
-        this.setGroqCooldown();
-        console.log('🔄 Erro no Groq, tentando OpenAI...');
-        return this.callOpenAIDirectly(messages, maxTokens);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Chama a OpenAI API diretamente (fallback)
-   */
-  private async callOpenAIDirectly(messages: any[], maxTokens: number = 1000, opts?: { model?: string; temperature?: number }): Promise<string> {
-    if (!this.openai) {
-      throw new Error('OpenAI não configurado para fallback');
-    }
-
-    const response = await this.openai.chat.completions.create({
-      model: opts?.model ?? 'gpt-4o-mini',
-      messages,
-      temperature: opts?.temperature ?? 0.3,
-      max_tokens: maxTokens,
-    });
-
-    return response.choices[0]?.message?.content || '';
-  }
-
-  /**
-   * Chama a OpenAI API através da Edge Function do Supabase (evita CORS)
-   */
-  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini'): Promise<string> {
+  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini', maxTokens?: number): Promise<string> {
     const { data, error } = await supabase.functions.invoke('openai-proxy', {
-      body: { messages, model },
+      body: { messages, model, max_tokens: maxTokens },
     });
 
     if (error) {
       throw new Error(`Edge Function error: ${error.message}`);
+    }
+    if ((data as any)?.error) {
+      throw new Error(`IA (openai-proxy) error: ${(data as any).error}`);
     }
 
     return data?.choices?.[0]?.message?.content || '';
@@ -348,7 +205,7 @@ Regras obrigatórias:
     tipoComunicacao?: string
   ): Promise<IntimationAnalysis> {
     if (!this.isEnabled()) {
-      throw new Error('Serviço de IA não está habilitado. Configure VITE_OPENAI_API_KEY.');
+      throw new Error('Serviço de IA não está habilitado.');
     }
     await this.ensureSettingsLoaded();
     const taskOpts = this.getTaskOpts('analyze_intimation');
@@ -471,37 +328,11 @@ Tipo de Comunicação: ${tipoComunicacao || 'Não especificado'}
 Texto da Intimação:
 ${texto}`;
 
-      let content: string | null = null;
+      let content: string | null = await this.callOpenAIViaEdgeFunction([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ], taskOpts.model ?? 'gpt-4o', taskOpts.maxTokens);
 
-      // Usar OpenAI primeiro
-      if (this.openai && this.openaiApiKey) {
-        if (this.useEdgeFunction) {
-          // Usa Edge Function para evitar CORS
-          content = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ], taskOpts.model ?? 'gpt-4o');
-        } else {
-          // Usa OpenAI diretamente
-          const response = await this.openai!.chat.completions.create({
-            model: taskOpts.model ?? 'gpt-4o',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: taskOpts.temperature,
-            max_tokens: taskOpts.maxTokens,
-            response_format: { type: 'json_object' },
-          });
-          content = response.choices[0].message.content;
-        }
-      } else if (this.useGroq && this.groqApiKey) {
-        // Usa Groq API como fallback
-        content = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], taskOpts.maxTokens, taskOpts);
-      }
       if (!content) {
         throw new Error('Resposta vazia da API');
       }
@@ -552,34 +383,11 @@ Analise o texto e identifique se há algum prazo. Responda APENAS com JSON:
 Se não houver prazo, retorne null para days e dueDate.`;
 
       const systemPrompt = this.getPrompt('extract_deadline', defaultSystemPrompt);
-      let content: string | null = null;
 
-      // Usar OpenAI primeiro
-      if (this.openai && this.openaiApiKey) {
-        if (this.useEdgeFunction) {
-          content = await this.callOpenAIViaEdgeFunction([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: texto },
-          ], taskOpts.model ?? 'gpt-4o-mini');
-        } else {
-          const response = await this.openai!.chat.completions.create({
-            model: taskOpts.model ?? 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: texto },
-            ],
-            temperature: taskOpts.temperature,
-            max_tokens: taskOpts.maxTokens,
-            response_format: { type: 'json_object' },
-          });
-          content = response.choices[0].message.content;
-        }
-      } else if (this.useGroq && this.groqApiKey) {
-        content = await this.callGroqAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: texto },
-        ], taskOpts.maxTokens, taskOpts);
-      }
+      let content: string | null = await this.callOpenAIViaEdgeFunction([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: texto },
+      ], taskOpts.model ?? 'gpt-4o-mini', taskOpts.maxTokens);
 
       if (!content) return null;
       

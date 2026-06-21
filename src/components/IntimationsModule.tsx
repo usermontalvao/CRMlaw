@@ -842,7 +842,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Analisar uma única intimação com IA (disparado manualmente)
   const handleAnalyzeSingle = useCallback(async (intimation: DjenComunicacaoLocal) => {
     if (!aiService.isEnabled()) {
-      toast.error('IA não configurada', 'Configure VITE_OPENAI_API_KEY para usar esta função.');
+      toast.error('IA não configurada', 'O serviço de IA está indisponível no momento.');
       return;
     }
     if (analyzingIds.has(intimation.id)) return;

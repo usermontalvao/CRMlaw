@@ -1,3 +1,4 @@
+import './utils/consoleGuard'; // 1º: silencia console em prod (só erro) + aviso anti-self-XSS
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { registerVersionedServiceWorker } from './utils/serviceWorker';

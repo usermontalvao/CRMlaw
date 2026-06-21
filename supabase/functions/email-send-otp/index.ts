@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,16 +74,11 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, error: 'Supabase env não configurado' })
     }
 
-    const smtpHost = 'smtp.hostinger.com'
-    const smtpPort = 465
-    const smtpUser = 'assinatura@advcuiaba.com'
-    const smtpPass = 'f3a8b2c9d1e0f4a5B6c7d6e7F8a9b0c1d2e3f4a5b6c7d8e9E@'
-    const smtpFrom = 'assinatura@advcuiaba.com'
-    const smtpFromName = 'Jurius - Assinatura Eletrônica'
-
-    if (!smtpHost || !smtpPort || !smtpUser || !smtpPass || !smtpFrom) {
-      return jsonResponse({ success: false, error: 'SMTP Hostinger não configurado' })
-    }
+    // E-mail via Resend (chave em secret RESEND_API_KEY). Remetente no domínio
+    // verificado jurius.com.br; nenhuma credencial fica no código.
+    const fromEmail = 'noreply@jurius.com.br'
+    const fromName = 'Jurius - Assinatura Eletrônica'
+    const replyTo = 'assinatura@advcuiaba.com'
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
@@ -272,51 +266,42 @@ Deno.serve(async (req: Request) => {
 
     const content = `Jurius - Assinatura Eletrônica\n\nSeu código de verificação é: ${code}\n\nValidade: 5 minutos.\nSe você não solicitou este código, ignore este e-mail.`
 
-    const client = new SMTPClient({
-      connection: {
-        hostname: smtpHost,
-        port: smtpPort,
-        tls: true,
-        auth: {
-          username: smtpUser,
-          password: smtpPass,
-        },
-      },
-    })
-
-    // Remetente configurável via Configurações > Integração de E-mail
+    // Remetente: usa o e-mail de Configurações só se for do domínio verificado
     const { data: emailCfgRow } = await supabase.from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle()
     const cfgFromName: string = emailCfgRow?.value?.from_name ?? ''
     const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? ''
-    const fromSender = (cfgFromName && cfgFromEmail)
+    const fromSender = (cfgFromName && cfgFromEmail && cfgFromEmail.endsWith('@jurius.com.br'))
       ? `${cfgFromName} <${cfgFromEmail}>`
-      : `${smtpFromName} <${smtpFrom}>`
+      : `${fromName} <${fromEmail}>`
 
-    try {
-      await client.send({
-        from: fromSender,
-        to: email,
-        subject: subjectLine,
-        content,
-        html: emailHtml,
-        replyTo: smtpFrom,
-        headers: {
-          'X-Mailer': 'Jurius Signature System',
-          'X-Priority': '1',
-          'Importance': 'high',
-        },
-      })
-      console.log('DEBUG EMAIL SEND SUCCESS: email enviado para', email)
-    } catch (err) {
-      console.error('DEBUG EMAIL SEND ERROR:', err)
-      throw err
-    } finally {
-      try {
-        await client.close()
-      } catch {
-        // ignore
-      }
+    // Chave do Resend: secret ou fallback em system_settings (igual weekly-digest)
+    let resendKey = Deno.env.get('RESEND_API_KEY') ?? ''
+    if (!resendKey) {
+      const { data: s } = await supabase.from('system_settings').select('value').eq('key', 'notification_config').single()
+      resendKey = s?.value?.weekly_digest_resend_key ?? ''
     }
+    if (!resendKey) {
+      return jsonResponse({ success: false, error: 'Resend API key não configurada' })
+    }
+
+    const sendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: fromSender,
+        to: [email],
+        reply_to: replyTo,
+        subject: subjectLine,
+        html: emailHtml,
+        text: content,
+      }),
+    })
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => '')
+      console.error('Resend OTP error:', sendRes.status, errText)
+      return jsonResponse({ success: false, error: `Resend ${sendRes.status}` })
+    }
+    console.log('OTP enviado via Resend para', email)
 
     const otpHash = await sha256Hex(`${code}|${signer.id}|${email}`)
 

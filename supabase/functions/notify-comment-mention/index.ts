@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,12 +8,12 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 };
 
-const SMTP_HOST = 'smtp.hostinger.com';
-const SMTP_PORT = 465;
-const SMTP_USER = 'assinatura@advcuiaba.com';
-const SMTP_PASS = 'f3a8b2c9d1e0f4a5B6c7d6e7F8a9b0c1d2e3f4a5b6c7d8e9E@';
-const SMTP_FROM = 'assinatura@advcuiaba.com';
-const SMTP_FROM_NAME = 'Jurius';
+// E-mail via Resend (chave em secret RESEND_API_KEY). Remetente no domínio
+// verificado jurius.com.br; nenhuma credencial fica no código.
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
+const FROM_EMAIL = 'noreply@jurius.com.br';
+const FROM_NAME  = 'Jurius';
+const REPLY_TO   = 'assinatura@advcuiaba.com';
 
 const brandOrange = '#f97316';
 const brandOrangeDark = '#ea580c';
@@ -218,23 +217,34 @@ async function sendMentionEmail(
     .from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle();
   const cfgFromName: string = emailCfgRow?.value?.from_name ?? '';
   const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? '';
-  const fromSender = (cfgFromName && cfgFromEmail)
+  const fromSender = (cfgFromName && cfgFromEmail && cfgFromEmail.endsWith('@jurius.com.br'))
     ? `${cfgFromName} <${cfgFromEmail}>`
-    : `${SMTP_FROM_NAME} <${SMTP_FROM}>`;
+    : `${FROM_NAME} <${FROM_EMAIL}>`;
 
-  const smtpClient = new SMTPClient({
-    connection: { hostname: SMTP_HOST, port: SMTP_PORT, tls: true, auth: { username: SMTP_USER, password: SMTP_PASS } },
+  // Chave do Resend: secret ou fallback em system_settings (igual weekly-digest)
+  let resendKey = RESEND_API_KEY;
+  if (!resendKey) {
+    const { data: s } = await supabase.from('system_settings').select('value').eq('key', 'notification_config').single();
+    resendKey = s?.value?.weekly_digest_resend_key ?? '';
+  }
+  if (!resendKey) return { success: false, error: 'Resend API key não configurada' };
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: fromSender,
+      to: [recipientEmail],
+      reply_to: REPLY_TO,
+      subject: subjectLine,
+      html: emailHtml,
+      text: `${authorName || 'Alguem'} mencionou voce em um comentario no prazo "${deadline.title}": ${commentText}`,
+    }),
   });
-
-  await smtpClient.send({
-    from: fromSender,
-    to: recipientEmail,
-    subject: subjectLine,
-    html: emailHtml,
-    content: `${authorName || 'Alguem'} mencionou voce em um comentario no prazo "${deadline.title}": ${commentText}`,
-  });
-
-  await smtpClient.close();
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    return { success: false, error: `Resend ${res.status}: ${errText.slice(0, 200)}` };
+  }
   return { success: true, message: `Enviado para ${recipientEmail}` };
 }
 

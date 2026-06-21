@@ -4458,7 +4458,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   return (
                       <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <p style={{ fontSize: '12.5px', color: '#747878' }}>
-                          Configure quais provedores de IA estão ativos e a ordem de fallback. As chaves de API devem ser configuradas como variáveis de ambiente (<code>VITE_OPENAI_API_KEY</code>, <code>VITE_GROQ_API_KEY</code>).
+                          A IA roda pela Edge Function <code>openai-proxy</code> (cadeia DeepSeek → Groq → OpenAI) com as chaves guardadas como <em>secrets</em> no servidor (<code>DEEPSEEK_API_KEY</code>, <code>GROQ_API_KEY</code>, <code>OPENAI_API_KEY</code>). Nenhuma chave de IA fica no frontend.
                         </p>
 
                         {/* Provedores */}

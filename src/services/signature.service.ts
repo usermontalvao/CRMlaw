@@ -715,11 +715,12 @@ class SignatureService {
    * Anexa o PDF assinado/sha256 ao signatário pelo PÚBLICO via RPC restrita por
    * public_token (substitui o update anon direto). Só grava após assinado.
    */
-  async attachSignedPdfPublic(token: string, signedDocumentPath: string, sha256?: string | null): Promise<void> {
+  async attachSignedPdfPublic(token: string, signedDocumentPath: string, sha256?: string | null, integritySha256?: string | null): Promise<void> {
     const { error } = await supabase.rpc('public_attach_signed_pdf', {
       p_token: token,
       p_path: signedDocumentPath,
       p_sha256: sha256 ?? null,
+      p_integrity_sha256: integritySha256 ?? null,
     });
     if (error) console.warn('Não foi possível anexar PDF assinado (acesso público):', error);
   }
@@ -759,11 +760,14 @@ class SignatureService {
     if (error) throw new Error(error.message);
   }
 
-  async updateSignerSignedDocumentMeta(signerId: string, params: { signed_document_path: string; signed_pdf_sha256?: string | null }): Promise<void> {
-    const { signed_document_path, signed_pdf_sha256 } = params;
+  async updateSignerSignedDocumentMeta(signerId: string, params: { signed_document_path: string; signed_pdf_sha256?: string | null; integrity_sha256?: string | null }): Promise<void> {
+    const { signed_document_path, signed_pdf_sha256, integrity_sha256 } = params;
+    const update: Record<string, unknown> = { signed_document_path, signed_pdf_sha256: signed_pdf_sha256 ?? null };
+    // Só grava o hash de integridade quando informado (preserva valor em fluxos que não o calculam)
+    if (integrity_sha256 !== undefined) update.integrity_sha256 = integrity_sha256;
     const { error } = await supabase
       .from(this.signersTable)
-      .update({ signed_document_path, signed_pdf_sha256: signed_pdf_sha256 ?? null })
+      .update(update)
       .eq('id', signerId);
 
     if (error) throw new Error(error.message);

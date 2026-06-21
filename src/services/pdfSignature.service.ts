@@ -1,4 +1,4 @@
-﻿import { PDFDocument, PDFPage, rgb, StandardFonts, LineCapStyle } from 'pdf-lib';
+﻿import { PDFDocument, PDFPage, rgb, StandardFonts, LineCapStyle, PDFString } from 'pdf-lib';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
@@ -365,7 +365,7 @@ class PdfSignatureService {
     const mode: 'card' | 'strip' = variant ?? 'strip';
 
     if (mode === 'strip') {
-      const h = 54;
+      const h = 62;
       const x = 0;
       const y = 0;
       const w = pageWidth;
@@ -374,8 +374,11 @@ class PdfSignatureService {
       const stripBorder  = rgb(0.88, 0.91, 0.94);
       const stripDark    = rgb(0.09, 0.12, 0.18);
       const stripSoft    = rgb(0.45, 0.50, 0.58);
-      const stripMuted   = rgb(0.62, 0.67, 0.74);
-      const stripOrange  = rgb(0.91, 0.32, 0.04);
+      const stripMuted   = rgb(0.55, 0.60, 0.68);   // rótulos
+      const stripValue   = rgb(0.20, 0.255, 0.333); // #334155 — código
+      const stripValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
+      const stripUnderline = rgb(0.80, 0.83, 0.88);
+      const stripOrange  = rgb(0.91, 0.32, 0.04);    // acento institucional apenas
 
       // Local helpers (drawFooterStamp não tem acesso aos helpers de addReportPages)
       const rr = (xx: number, topY: number, ww: number, hh: number, r: number, fill?: any, stroke?: any, sw = 0.7) => {
@@ -386,45 +389,90 @@ class PdfSignatureService {
         );
       };
 
+      // Trunca texto para caber numa largura, com reticências (quebra controlada)
+      const fitText = (text: string, font: typeof helvetica, size: number, maxW: number): string => {
+        if (font.widthOfTextAtSize(text, size) <= maxW) return text;
+        let t = text;
+        while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > maxW) t = t.slice(0, -1);
+        return `${t}…`;
+      };
+
       // Background + top accents
       page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: opaqueStrip ? 1 : 0.94 });
       page.drawLine({ start: { x, y: y + h }, end: { x: x + w, y: y + h }, thickness: 0.6, color: stripBorder });
       page.drawRectangle({ x, y: y + h - 2.5, width: w, height: 2.5, color: stripOrange });
 
       // ── QR (right) com moldura arredondada ──
-      const qrSize = h - 14;
-      const qrX = x + w - qrSize - 12;
-      const qrY = y + 6;
+      const qrSize = h - 18;
+      const qrX = x + w - qrSize - 16;
+      const qrY = y + (h - qrSize) / 2;
       if (qrImage) {
-        rr(qrX - 4, qrY + qrSize + 4, qrSize + 8, qrSize + 8, 4, stripWhite, stripBorder, 0.6);
+        rr(qrX - 5, qrY + qrSize + 5, qrSize + 10, qrSize + 10, 4, stripWhite, stripBorder, 0.6);
         page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
       }
 
-      // Divisória vertical antes do QR
-      const dividerX = qrX - 14;
-      page.drawLine({ start: { x: dividerX, y: y + 9 }, end: { x: dividerX, y: y + h - 9 }, thickness: 0.5, color: stripBorder });
+      // ── Bloco "Validação instantânea" (à esquerda do QR) ──
+      const qrFrameLeft = qrX - 5;
+      const valLine1 = 'VALIDAÇÃO INSTANTÂNEA';
+      const valLine2 = 'Aponte a câmera para validar';
+      const valW1 = helveticaBold.widthOfTextAtSize(valLine1, 6);
+      const valW2 = helvetica.widthOfTextAtSize(valLine2, 5.5);
+      const valBlockW = Math.max(valW1, valW2);
+      const valRight = qrFrameLeft - 18;
+      const valLeft = valRight - valBlockW;
+      const valCx = valLeft + valBlockW / 2;
+      page.drawText(valLine1, { x: valCx - valW1 / 2, y: y + h / 2 + 2, size: 6, font: helveticaBold, color: stripOrange });
+      page.drawText(valLine2, { x: valCx - valW2 / 2, y: y + h / 2 - 7, size: 5.5, font: helvetica, color: stripSoft });
 
-      const tx = x + 14;
+      // Divisória vertical antes do bloco de validação
+      const dividerX = valLeft - 18;
+      page.drawLine({ start: { x: dividerX, y: y + 11 }, end: { x: dividerX, y: y + h - 11 }, thickness: 0.5, color: stripBorder });
+
+      const tx = x + 16;
+      const vx = tx + 50;                 // coluna de valores — respiro do rótulo
+      const valMaxW = dividerX - 12 - vx; // largura disponível p/ link e hash
 
       // Linha 1 — marca
-      page.drawText('JURIUS', { x: tx, y: y + h - 15, size: 8, font: helveticaBold, color: stripDark });
+      page.drawText('JURIUS', { x: tx, y: y + h - 16, size: 8, font: helveticaBold, color: stripDark });
       const jw = helveticaBold.widthOfTextAtSize('JURIUS', 8);
-      page.drawCircle({ x: tx + jw + 5, y: y + h - 12, size: 1.3, color: stripOrange });
-      page.drawText('ASSINATURA ELETRÔNICA', { x: tx + jw + 11, y: y + h - 14.5, size: 6, font: helveticaBold, color: stripSoft });
+      page.drawCircle({ x: tx + jw + 5, y: y + h - 13, size: 1.3, color: stripOrange });
+      page.drawText('ASSINATURA ELETRÔNICA', { x: tx + jw + 11, y: y + h - 15.5, size: 6, font: helveticaBold, color: stripSoft });
 
       // Separador
-      page.drawLine({ start: { x: tx, y: y + h - 22 }, end: { x: dividerX - 10, y: y + h - 22 }, thickness: 0.4, color: stripBorder });
+      page.drawLine({ start: { x: tx, y: y + h - 24 }, end: { x: dividerX - 12, y: y + h - 24 }, thickness: 0.4, color: stripBorder });
 
       // Linha 2 — código
+      const codeY = y + 27;
       if (signer.verification_hash) {
-        page.drawText('CÓDIGO', { x: tx, y: y + h - 33, size: 5.5, font: helveticaBold, color: stripMuted });
-        page.drawText(code, { x: tx + 36, y: y + h - 33.5, size: 7, font: helveticaBold, color: stripDark });
+        page.drawText('CÓDIGO', { x: tx, y: codeY, size: 5.5, font: helveticaBold, color: stripMuted });
+        page.drawText(code, { x: vx, y: codeY, size: 7, font: helveticaBold, color: stripValue });
       }
 
-      // Linha 3 — SHA-256 completo
-      page.drawText('SHA-256', { x: tx, y: y + 9, size: 5.5, font: helveticaBold, color: stripMuted });
-      const shaDisplay = integrityFull.length > 70 ? `${integrityFull.slice(0, 67)}...` : integrityFull;
-      page.drawText(shaDisplay, { x: tx + 36, y: y + 9, size: 5, font: helvetica, color: stripSoft });
+      // Linha 3 — link de verificação (URL com o código) — cor neutra
+      const linkY = y + 16;
+      if (verificationUrl) {
+        const urlDisplay = fitText(verificationUrl.replace(/^https?:\/\//, ''), helvetica, 5.5, valMaxW);
+        page.drawText('VERIFICAR', { x: tx, y: linkY, size: 5.5, font: helveticaBold, color: stripMuted });
+        page.drawText(urlDisplay, { x: vx, y: linkY, size: 5.5, font: helvetica, color: stripValueAlt });
+        // Sublinhado neutro + link clicável sobre a URL
+        const urlW = helvetica.widthOfTextAtSize(urlDisplay, 5.5);
+        page.drawLine({ start: { x: vx, y: linkY - 2 }, end: { x: vx + urlW, y: linkY - 2 }, thickness: 0.3, color: stripUnderline });
+        try {
+          const linkAnnot = (page.doc.context as any).obj({
+            Type: 'Annot', Subtype: 'Link',
+            Rect: [vx, linkY - 2, vx + urlW, linkY + 6],
+            Border: [0, 0, 0],
+            A: { Type: 'Action', S: 'URI', URI: PDFString.of(verificationUrl) },
+          });
+          page.node.addAnnot((page.doc.context as any).register(linkAnnot));
+        } catch { /* anotação de link é best-effort */ }
+      }
+
+      // Linha 4 — SHA-256 completo — cor neutra
+      const shaY = y + 5;
+      page.drawText('SHA-256', { x: tx, y: shaY, size: 5.5, font: helveticaBold, color: stripMuted });
+      const shaDisplay = fitText(integrityFull, helvetica, 5, valMaxW);
+      page.drawText(shaDisplay, { x: vx, y: shaY, size: 5, font: helvetica, color: stripValueAlt });
 
       return;
     }
@@ -441,7 +489,9 @@ class PdfSignatureService {
     const cardDark   = rgb(0.09, 0.12, 0.18);   // #171e2e
     const cardSoft   = rgb(0.45, 0.50, 0.58);   // mid gray
     const cardMuted  = rgb(0.62, 0.67, 0.74);   // light gray
-    const cardOrange = rgb(0.91, 0.32, 0.04);   // #e85208
+    const cardValue  = rgb(0.20, 0.255, 0.333); // #334155 — código
+    const cardValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
+    const cardOrange = rgb(0.91, 0.32, 0.04);   // #e85208 — acento institucional apenas
 
     // White background
     page.drawRectangle({ x: boxX, y: boxY, width: boxW, height: boxH, color: cardWhite });
@@ -494,16 +544,16 @@ class PdfSignatureService {
       x: tx, y: boxY + boxH - 39, size: 6, font: helvetica, color: cardMuted,
     });
     page.drawText(code, {
-      x: tx + 42, y: boxY + boxH - 39, size: 7, font: helveticaBold, color: cardDark,
+      x: tx + 50, y: boxY + boxH - 39, size: 7, font: helveticaBold, color: cardValue,
     });
 
-    // SHA-256 row
+    // SHA-256 row — cor neutra
     const hashDisplay = integrityFull.length > 74 ? `${integrityFull.slice(0, 71)}...` : integrityFull;
     page.drawText('SHA-256:', {
       x: tx, y: boxY + boxH - 52, size: 6, font: helvetica, color: cardMuted,
     });
     page.drawText(hashDisplay, {
-      x: tx + 42, y: boxY + boxH - 52, size: 5.5, font: helvetica, color: cardSoft,
+      x: tx + 50, y: boxY + boxH - 52, size: 5.5, font: helvetica, color: cardValueAlt,
     });
 
     // Verification URL
@@ -515,7 +565,7 @@ class PdfSignatureService {
         thickness: 0.4, color: cardBorder,
       });
       page.drawText(urlDisplay, {
-        x: tx, y: boxY + 12, size: 5.5, font: helvetica, color: cardOrange,
+        x: tx, y: boxY + 12, size: 5.5, font: helvetica, color: cardValueAlt,
       });
     }
   }
@@ -1009,7 +1059,9 @@ class PdfSignatureService {
       const cbDark   = rgb(0.09, 0.12, 0.18);
       const cbSoft   = rgb(0.45, 0.50, 0.58);
       const cbMuted  = rgb(0.62, 0.67, 0.74);
-      const cbOrange = rgb(0.91, 0.32, 0.04);
+      const cbValue  = rgb(0.20, 0.255, 0.333); // #334155 — código
+      const cbValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
+      const cbOrange = rgb(0.91, 0.32, 0.04);    // acento institucional apenas
 
       // Rounded card with top orange accent
       roundRect(page, lm, legalTopY, verBlockW, verBlockH, 9, { fill: cbWhite, stroke: cbBorder, strokeW: 0.8 });
@@ -1036,12 +1088,12 @@ class PdfSignatureService {
 
       // Code row
       page.drawText('CÓDIGO:', { x: vtx, y: legalTopY - 38, size: 6, font: helvetica, color: cbMuted });
-      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 42, y: legalTopY - 38, size: 7.5, font: helveticaBold, color: cbDark });
+      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 50, y: legalTopY - 38, size: 7.5, font: helveticaBold, color: cbValue });
 
-      // SHA-256 — hash de integridade REAL (completo, 64 hex)
+      // SHA-256 — hash de integridade REAL (completo, 64 hex) — cor neutra
       const cbHash = this.formatIntegrityHash(integritySha256, false);
       page.drawText('SHA-256:', { x: vtx, y: legalTopY - 52, size: 6, font: helvetica, color: cbMuted });
-      page.drawText(cbHash, { x: vtx + 42, y: legalTopY - 52, size: 5.5, font: helvetica, color: cbSoft });
+      page.drawText(cbHash, { x: vtx + 50, y: legalTopY - 52, size: 5.5, font: helvetica, color: cbValueAlt });
 
       // Separator
       page.drawLine({ start: { x: vtx, y: legalTopY - 60 }, end: { x: cbQrX - 8, y: legalTopY - 60 }, thickness: 0.4, color: cbBorder });
@@ -1049,7 +1101,7 @@ class PdfSignatureService {
       // Verification URL
       if (asset.verificationUrl) {
         const urlD = asset.verificationUrl.length > 80 ? `${asset.verificationUrl.slice(0, 77)}...` : asset.verificationUrl;
-        page.drawText(urlD, { x: vtx, y: verBlockY + 14, size: 5.5, font: helvetica, color: cbOrange });
+        page.drawText(urlD, { x: vtx, y: verBlockY + 14, size: 5.5, font: helvetica, color: cbValueAlt });
       }
 
       // Signer note
@@ -1213,7 +1265,7 @@ class PdfSignatureService {
     historyPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 
-  async generateSignedPdf(options: SignedPdfOptions): Promise<Uint8Array> {
+  async generateSignedPdf(options: SignedPdfOptions): Promise<{ bytes: Uint8Array; integritySha256: string }> {
     const { request, signer, originalPdfUrl, creator, attachmentPdfItems } = options;
 
     console.log('[PDF] Gerando PDF assinado para:', signer.name);
@@ -1371,7 +1423,7 @@ class PdfSignatureService {
     //
     // As páginas do relatório (criadas depois deste passo) NÃO são afetadas,
     // pois já têm layout próprio com espaço para o rodapé.
-    const FOOTER_RESERVED_H = 56;
+    const FOOTER_RESERVED_H = 64;
     const contentPageCount = pdfDoc.getPageCount();
     for (let i = 0; i < contentPageCount; i++) {
       const p = pdfDoc.getPage(i);
@@ -1421,7 +1473,7 @@ class PdfSignatureService {
       });
     }
 
-    return await pdfDoc.save();
+    return { bytes: await pdfDoc.save(), integritySha256 };
   }
 
   /**
@@ -1479,7 +1531,7 @@ class PdfSignatureService {
   }
 
   async downloadSignedPdf(options: SignedPdfOptions): Promise<void> {
-    const pdfBytes = await this.generateSignedPdf(options);
+    const { bytes: pdfBytes } = await this.generateSignedPdf(options);
 
     // @ts-ignore - Uint8Array Ã© aceito em runtime
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -1507,8 +1559,8 @@ class PdfSignatureService {
   /**
    * Gera e salva o PDF assinado no bucket 'assinados', retornando o path
    */
-  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string }> {
-    const pdfBytes = await this.generateSignedPdf(options);
+  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
+    const { bytes: pdfBytes, integritySha256 } = await this.generateSignedPdf(options);
     const sha256 = await this.sha256Hex(pdfBytes);
     
     // @ts-ignore - Uint8Array Ã© aceito em runtime
@@ -1529,7 +1581,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] PDF assinado salvo no bucket assinados:', filePath);
-    return { filePath, sha256 };
+    return { filePath, sha256, integritySha256 };
   }
   /**
    * Gera e salva PDF completo para documentos DOCX
@@ -1543,7 +1595,7 @@ class PdfSignatureService {
     attachmentDocxItems?: { documentId: string; container: HTMLElement }[];
     attachmentPdfItems?: { documentId: string; url: string }[];
     fieldsOverride?: SignatureField[];
-  }): Promise<{ filePath: string; sha256: string }> {
+  }): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
     const { request, signer, creator, docxContainer, attachmentDocxItems, attachmentPdfItems, fieldsOverride } = options;
     
     console.log('[PDF] Convertendo DOCX para PDF...');
@@ -1553,7 +1605,7 @@ class PdfSignatureService {
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
     const A4_HEIGHT_PX = 1123; // A4 @ 96 DPI — mesma grade de página virtual usada no designer
-    const FOOTER_RESERVED_H = 56; // strip height=52 + 4pt margem — conteúdo escala ~6% p/ rodapé limpo
+    const FOOTER_RESERVED_H = 64; // strip height=52 + 4pt margem — conteúdo escala ~6% p/ rodapé limpo
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
@@ -2295,7 +2347,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] PDF do DOCX salvo no bucket assinados:', filePath);
-    return { filePath, sha256 };
+    return { filePath, sha256, integritySha256 };
   }
 
   /**
@@ -2305,9 +2357,9 @@ class PdfSignatureService {
     request: SignatureRequest;
     signer: Signer;
     creator?: { name: string } | null;
-  }): Promise<{ filePath: string; sha256: string }> {
+  }): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
     const { request, signer, creator } = options;
-    
+
     // Criar PDF apenas com o relatÃ³rio de assinatura
     const pdfDoc = await PDFDocument.create();
     
@@ -2372,7 +2424,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] RelatÃ³rio de assinatura salvo no bucket assinados:', filePath);
-    return { filePath, sha256 };
+    return { filePath, sha256, integritySha256: null };
   }
 
   /**

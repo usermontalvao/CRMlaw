@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.256': { name: 'Cafe Verificacao e Blindagem Final', emoji: '[shield]' },
   '1.10.255': { name: 'Cafe Arquivo Publico Blindado', emoji: '[lock]' },
   '1.10.254': { name: 'Cafe Assinatura e Ficha Alinhadas', emoji: '[sync]' },
   '1.10.253': { name: 'Cafe Fluxo de Assinatura Editorial', emoji: '[signature]' },
@@ -908,6 +909,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.256',
+    date: '21/06/2026',
+    summary: 'Seguranca, verificacao publica e automacoes: o CRM consolidou ajustes visuais na validacao, endureceu fluxos tecnicos de console e IA e adicionou migrations finais para fechamento de exposicoes anonimas no banco e no storage.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Pagina publica de verificacao foi refinada', description: 'A tela de validacao recebeu reorganizacao visual, ajustes de estrutura e melhor apresentacao dos blocos tecnicos para consulta publica do documento.' },
+        { type: 'improvement' as const, title: 'PDF e servicos de assinatura foram alinhados ao novo fluxo tecnico', description: 'Os servicos ligados a hash, relatorio, abertura de arquivo e metadados publicos foram revisitados para manter consistencia entre pagina, PDF e verificacao.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'security' as const, title: 'Console e superficies de execucao no frontend foram endurecidos', description: 'O bootstrap principal, utilitarios auxiliares e pontos de configuracao receberam ajustes para reduzir exposicao operacional e reforcar o comportamento esperado em ambiente publicado.' },
+        { type: 'security' as const, title: 'Migrations finais fecharam brechas anonimas em banco e storage', description: 'Novas migrations complementares foram adicionadas para restringir acessos indevidos por anon, inclusive em cenarios de consulta indevida entre portal, tabelas sensiveis e buckets de documentos.' },
+      ]},
+      { moduleId: 'intimacoes', changes: [
+        { type: 'improvement' as const, title: 'Servico de IA e timeline receberam simplificacoes estruturais', description: 'Os fluxos de analise e linha do tempo foram ajustados junto com configuracoes do sistema para acompanhar a rodada atual de endurecimento e limpeza operacional.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.255',
     date: '21/06/2026',
