@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.258': { name: 'Cafe Sessao Sob Controle do Supabase', emoji: '[lock]' },
   '1.10.257': { name: 'Cafe Assinatura Publica Fortificada', emoji: '[shield]' },
   '1.10.256': { name: 'Cafe Verificacao e Blindagem Final', emoji: '[shield]' },
   '1.10.255': { name: 'Cafe Arquivo Publico Blindado', emoji: '[lock]' },
@@ -910,6 +911,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.258',
+    date: '21/06/2026',
+    summary: 'Sessao e autenticacao: o frontend deixou de encerrar sessoes por timeout proprio e passou a respeitar somente o ciclo de expiracao configurado no Supabase para staff e portal.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'security' as const, title: 'Staff deixou de impor logout local por inatividade e time-box', description: 'O AuthContext foi simplificado para parar de invalidar a sessao por temporizadores no navegador, deixando o controle de expiracao exclusivamente com o Supabase.' },
+        { type: 'security' as const, title: 'Portal do cliente tambem passou a respeitar apenas a sessao real do Supabase', description: 'O ClientAuthContext removeu o corte local de inatividade e o descarte de time-box salvo no navegador, mantendo apenas a verificacao da sessao JWT real.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.257',
     date: '21/06/2026',
