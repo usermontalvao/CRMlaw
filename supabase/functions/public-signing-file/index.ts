@@ -52,21 +52,35 @@ Deno.serve(async (req: Request) => {
 
     const { data: request } = await supabase
       .from('signature_requests')
-      .select('document_path, attachment_paths')
+      .select('document_path, attachment_paths, signature_image_path, facial_image_path, document_image_path')
       .eq('id', requestId)
       .maybeSingle();
     if (!request) return jsonResponse({ error: 'Solicitação não encontrada' }, 403);
 
     const { data: allSigners } = await supabase
       .from('signature_signers')
-      .select('signed_document_path')
+      .select('signed_document_path, signature_image_path, facial_image_path, document_image_path')
       .eq('signature_request_id', requestId);
 
-    // 2) conjunto de arquivos que pertencem a esta solicitação
+    // 2) conjunto de arquivos que pertencem a esta solicitação.
+    // Inclui o documento, anexos, PDFs assinados E as imagens de evidência
+    // (assinatura manuscrita / selfie facial / foto do documento) — tanto no
+    // nível da solicitação quanto de cada signatário — pois a geração do PDF
+    // assinado (pdfSignatureService) precisa lê-las via edge depois que o
+    // acesso anon direto a `document-templates` for fechado (migration 3).
     const allowed = new Set<string>();
-    if (request.document_path) allowed.add(request.document_path);
-    for (const p of (request.attachment_paths ?? []) as string[]) if (p) allowed.add(p);
-    for (const s of allSigners ?? []) if (s.signed_document_path) allowed.add(s.signed_document_path);
+    const addPath = (p?: string | null) => { if (p && typeof p === 'string') allowed.add(p); };
+    addPath(request.document_path as string | null);
+    for (const p of (request.attachment_paths ?? []) as string[]) addPath(p);
+    addPath((request as any).signature_image_path);
+    addPath((request as any).facial_image_path);
+    addPath((request as any).document_image_path);
+    for (const s of allSigners ?? []) {
+      addPath((s as any).signed_document_path);
+      addPath((s as any).signature_image_path);
+      addPath((s as any).facial_image_path);
+      addPath((s as any).document_image_path);
+    }
 
     const belongsToRequest =
       allowed.has(path) || path.includes(`signature-requests/${requestId}/`);

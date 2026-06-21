@@ -143,13 +143,18 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const ttlMediumRef    = useRef(TTL_MEDIUM_MS);
   const ttlFinancialRef = useRef(TTL_FINANCIAL_MS);
 
-  // Carregar TTLs configurados
+  // Carregar TTLs configurados — só para staff autenticado. Em rotas PÚBLICAS
+  // (assinatura/verificação) não há sessão e `system_settings` é fechado p/
+  // anon: ler aqui geraria um 401 inútil (o PIN nem é usado no fluxo público).
   useEffect(() => {
-    settingsService.getSecurityConfig().then(cfg => {
-      const pinMs = Math.max(1, cfg.pin_session_minutes ?? 5) * 60 * 1000;
-      ttlHighRef.current   = pinMs;
-      ttlMediumRef.current = pinMs;
-      ttlFinancialRef.current = Math.max(0.5, cfg.financial_view_hours ?? 2) * 60 * 60 * 1000;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return;
+      settingsService.getSecurityConfig().then(cfg => {
+        const pinMs = Math.max(1, cfg.pin_session_minutes ?? 5) * 60 * 1000;
+        ttlHighRef.current   = pinMs;
+        ttlMediumRef.current = pinMs;
+        ttlFinancialRef.current = Math.max(0.5, cfg.financial_view_hours ?? 2) * 60 * 60 * 1000;
+      }).catch(() => {});
     }).catch(() => {});
   }, []);
 

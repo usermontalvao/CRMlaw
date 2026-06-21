@@ -1203,6 +1203,83 @@ class SignatureService {
     return data.url as string;
   }
 
+  /**
+   * Fluxo PÚBLICO de VERIFICAÇÃO: obtém a URL assinada do PDF assinado validando
+   * o `verification_hash` no servidor (edge hash-scoped), sem expor o bucket
+   * `assinados` ao papel `anon`. Retorna null se não autorizado/inexistente.
+   */
+  async getVerifiedFileUrl(hash: string, expiresIn = 3600): Promise<string | null> {
+    if (!hash) return null;
+    const { data, error } = await supabase.functions.invoke('public-verify-file', {
+      body: { hash, expiresIn },
+    });
+    if (error || !data?.url) {
+      console.warn('[getVerifiedFileUrl] falha ao obter URL:', error ?? data?.error);
+      return null;
+    }
+    return data.url as string;
+  }
+
+  /**
+   * Fluxo PÚBLICO: lista os co-signatários do request do `token` via RPC
+   * SECURITY DEFINER token-scoped, sem leitura anon direta na tabela. Usado
+   * para compor o certificado/relatório do PDF assinado (multi-signatário).
+   */
+  async getPublicReportSigners(token: string): Promise<Signer[] | null> {
+    if (!token) return null;
+    const { data, error } = await supabase.rpc('public_signing_request_signers', { p_token: token });
+    if (error) {
+      console.warn('[getPublicReportSigners] falha:', error);
+      return null;
+    }
+    return (data ?? []) as Signer[];
+  }
+
+  /**
+   * Fluxo PÚBLICO: lista a trilha de auditoria do request do `token` via RPC
+   * SECURITY DEFINER token-scoped, sem leitura anon direta na tabela.
+   */
+  async getPublicReportAuditLog(token: string): Promise<SignatureAuditLog[] | null> {
+    if (!token) return null;
+    const { data, error } = await supabase.rpc('public_signing_audit_log', { p_token: token });
+    if (error) {
+      console.warn('[getPublicReportAuditLog] falha:', error);
+      return null;
+    }
+    return (data ?? []) as SignatureAuditLog[];
+  }
+
+  /**
+   * Fluxo PÚBLICO: grava o PDF assinado/relatório no bucket `assinados` via
+   * edge token-scoped (`public-signing-upload`), em vez do INSERT anon direto.
+   * Retorna true em sucesso. O servidor valida token → request e que o path
+   * pertence ao próprio signatário.
+   */
+  async uploadSignedFilePublic(
+    token: string,
+    path: string,
+    bytes: Uint8Array,
+    contentType = 'application/pdf',
+  ): Promise<boolean> {
+    if (!token || !path || !bytes?.length) return false;
+    // Converte para base64 em blocos (evita estouro de pilha em arquivos grandes).
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+    }
+    const contentBase64 = btoa(binary);
+
+    const { data, error } = await supabase.functions.invoke('public-signing-upload', {
+      body: { token, path, contentBase64, contentType },
+    });
+    if (error || !data?.success) {
+      console.warn('[uploadSignedFilePublic] falha:', error ?? data?.error);
+      return false;
+    }
+    return true;
+  }
+
   async getSignedImageUrl(path: string, expiresIn = 3600): Promise<string> {
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)

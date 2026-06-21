@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.257': { name: 'Cafe Assinatura Publica Fortificada', emoji: '[shield]' },
   '1.10.256': { name: 'Cafe Verificacao e Blindagem Final', emoji: '[shield]' },
   '1.10.255': { name: 'Cafe Arquivo Publico Blindado', emoji: '[lock]' },
   '1.10.254': { name: 'Cafe Assinatura e Ficha Alinhadas', emoji: '[sync]' },
@@ -909,6 +910,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.257',
+    date: '21/06/2026',
+    summary: 'Assinatura publica e storage: o fluxo passou a usar edges mais restritas para leitura e upload, a verificacao publica ganhou acesso hash-scoped ao PDF e o fechamento dos buckets sensiveis foi preparado com migrations e fallback de transicao.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'security' as const, title: 'Verificacao publica passou a abrir PDF por edge hash-scoped', description: 'A pagina publica de verificacao e o servico de assinatura agora resolvem o documento assinado por `verification_hash`, sem depender diretamente de leitura anon no bucket de assinados.' },
+        { type: 'security' as const, title: 'Fluxo publico de assinatura foi preparado para leitura e upload protegidos', description: 'A edge `public-signing-file`, a nova `public-signing-upload`, `PublicSigningPage`, `PublicDocumentPage` e o `pdfSignatureService` foram ajustados para migrar acessos de arquivos do fluxo publico para caminhos controlados por edge com fallback temporario.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'security' as const, title: 'Plano e migrations de fechamento do storage foram consolidados', description: 'O workspace recebeu documentacao operacional da rodada de blindagem e novas migrations para restringir buckets sensiveis apos a migracao completa dos consumidores publicos.' },
+        { type: 'improvement' as const, title: 'Contexto de PIN e protecoes auxiliares foram alinhados com a rodada atual', description: 'Ajustes complementares de contexto e suporte foram aplicados para manter a navegacao e a seguranca consistentes durante a transicao do fluxo publico.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.256',
     date: '21/06/2026',

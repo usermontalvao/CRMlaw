@@ -75,6 +75,21 @@ export default function PublicDocumentPage({ token }: Props) {
   const inlineIframeRef    = useRef<HTMLIFrameElement>(null);
   const fullscreenIframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Roteia as leituras de storage (incl. getSignedPdfUrl) pela edge
+  // token-scoped, sem acesso anon direto aos buckets.
+  useEffect(() => {
+    pdfSignatureService.setPublicFileResolver((path) => signatureService.getPublicFileUrl(token, path));
+    return () => pdfSignatureService.setPublicFileResolver(null);
+  }, [token]);
+
+  // Resolve um path de documento via edge token-scoped, com fallback para o
+  // caminho anon antigo enquanto o acesso anon ainda estiver aberto (pré-migration 3).
+  const resolveDocUrl = async (path: string): Promise<string | null> => {
+    const viaEdge = await signatureService.getPublicFileUrl(token, path).catch(() => null);
+    if (viaEdge) return viaEdge;
+    return signatureService.getDocumentPreviewUrl(path).catch(() => null);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -91,7 +106,7 @@ export default function PublicDocumentPage({ token }: Props) {
           const url = await pdfSignatureService.getSignedPdfUrl(latestSigned.signed_document_path).catch(() => null);
           if (url) { setSignedUrl(url); setPreviewUrl(url); }
         } else if (data.document_path && !/\.(docx?|doc)$/i.test(data.document_path)) {
-          const url = await signatureService.getDocumentPreviewUrl(data.document_path).catch(() => null);
+          const url = await resolveDocUrl(data.document_path);
           if (url) setPreviewUrl(url);
         }
 
@@ -356,7 +371,7 @@ export default function PublicDocumentPage({ token }: Props) {
                       const name = raw.replace(/^\d{10,}_/, '').replace(/_\d{10,}[_.]/g, (m) => m[m.length - 1]);
                       return (
                         <button key={path} onClick={async () => {
-                          const url = await signatureService.getDocumentPreviewUrl(path).catch(() => null);
+                          const url = await resolveDocUrl(path);
                           if (url) setViewerUrl(url);
                         }} style={ST.sideBtnGhost} className="btn-hover">
                           <Paperclip style={{ width: 13, height: 13, flexShrink: 0 }} />

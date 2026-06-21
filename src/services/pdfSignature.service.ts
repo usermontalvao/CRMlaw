@@ -17,6 +17,17 @@ interface SignedPdfOptions {
 
 type EmbeddedImage = any;
 
+/** Linha da trilha de auditoria usada na geração do relatório (interno e público). */
+export type AuditLogRow = {
+  id: string;
+  signer_id: string | null;
+  action: string;
+  description: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+};
+
 interface GeoInfo {
   coordinates?: string;
   address?: string;
@@ -24,6 +35,108 @@ interface GeoInfo {
 
 class PdfSignatureService {
   private readonly storageBucketCache = new Map<string, string>();
+
+  /**
+   * Resolver opcional para o fluxo PÚBLICO. Quando definido (ex.: pela
+   * PublicSigningPage / PublicDocumentPage), as leituras de storage da geração
+   * de PDF resolvem o path → URL assinada via edge token-scoped
+   * (`public-signing-file`) em vez de acessar o bucket diretamente como `anon`.
+   * Isso é o que permite fechar o acesso anon a `document-templates` /
+   * `assinados` (migration 3) sem quebrar a assinatura pública. Mantém-se o
+   * fallback direto enquanto o anon ainda estiver aberto.
+   *
+   * Singleton com try/finally nas páginas públicas: como as telas públicas são
+   * rotas isoladas (uma geração por vez por aba), não há concorrência real.
+   */
+  private publicFileResolver: ((path: string) => Promise<string | null>) | null = null;
+
+  /** Define (ou limpa, com null) o resolver token-scoped do fluxo público. */
+  setPublicFileResolver(fn: ((path: string) => Promise<string | null>) | null): void {
+    this.publicFileResolver = fn;
+  }
+
+  /**
+   * Provider opcional para os DADOS do relatório no fluxo PÚBLICO. Quando
+   * definido, as listagens de co-signatários e da trilha de auditoria usadas
+   * para montar o certificado/relatório do PDF resolvem via RPC token-scoped
+   * (`public_signing_request_signers` / `public_signing_audit_log`) em vez de
+   * leitura anon direta nas tabelas (que retorna 401 com RLS fechado e fazia o
+   * relatório cair em fallback incompleto: sem co-signatários e sem trilha).
+   */
+  private publicReportData: {
+    signers?: (requestId: string) => Promise<Signer[] | null>;
+    auditLog?: (requestId: string) => Promise<AuditLogRow[] | null>;
+  } | null = null;
+
+  /** Define (ou limpa, com null) o provider de dados token-scoped do relatório público. */
+  setPublicReportDataProvider(
+    provider: {
+      signers?: (requestId: string) => Promise<Signer[] | null>;
+      auditLog?: (requestId: string) => Promise<AuditLogRow[] | null>;
+    } | null,
+  ): void {
+    this.publicReportData = provider;
+  }
+
+  /**
+   * Resolver opcional de UPLOAD para o fluxo PÚBLICO. Quando definido, a
+   * gravação do PDF assinado/relatório vai pela edge token-scoped
+   * (`public-signing-upload`) em vez do INSERT anon direto em `assinados` —
+   * o que permite remover o INSERT anon (migration 4) sem quebrar a assinatura.
+   * Mantém-se o fallback direto enquanto o anon ainda estiver aberto.
+   */
+  private publicUploadResolver:
+    | ((params: { path: string; bytes: Uint8Array; contentType: string }) => Promise<boolean>)
+    | null = null;
+
+  /** Define (ou limpa, com null) o resolver de upload token-scoped do fluxo público. */
+  setPublicUploadResolver(
+    fn: ((params: { path: string; bytes: Uint8Array; contentType: string }) => Promise<boolean>) | null,
+  ): void {
+    this.publicUploadResolver = fn;
+  }
+
+  /**
+   * Grava o PDF assinado/relatório em `assinados`: no fluxo público via edge
+   * token-scoped; no interno (ou fallback enquanto anon aberto) direto.
+   */
+  private async persistSignedPdf(filePath: string, pdfBytes: Uint8Array, errorLabel: string): Promise<void> {
+    if (this.publicUploadResolver) {
+      const ok = await this.publicUploadResolver({ path: filePath, bytes: pdfBytes, contentType: 'application/pdf' });
+      if (ok) {
+        console.log(`[PDF] ${errorLabel} gravado via edge pública:`, filePath);
+        return;
+      }
+      console.warn(`[PDF] edge de upload falhou para ${filePath}; tentando acesso direto (fallback)`);
+    }
+
+    // @ts-ignore - Uint8Array é aceito em runtime
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const { error } = await supabase.storage
+      .from('assinados')
+      .upload(filePath, blob, { contentType: 'application/pdf', upsert: true });
+    if (error) {
+      console.error(`[PDF] Erro ao salvar ${errorLabel}:`, error);
+      throw new Error(`Erro ao salvar ${errorLabel}: ${error.message}`);
+    }
+    console.log(`[PDF] ${errorLabel} salvo no bucket assinados:`, filePath);
+  }
+
+  /**
+   * Resolve um path de storage para uma URL assinada respeitando o fluxo
+   * público: tenta primeiro o resolver token-scoped (edge); se não houver
+   * resolver (fluxo interno autenticado) retorna null para o chamador usar o
+   * caminho direto.
+   */
+  private async resolvePublicUrl(path: string): Promise<string | null> {
+    if (!this.publicFileResolver || !path || /^https?:\/\//i.test(path)) return null;
+    try {
+      return await this.publicFileResolver(path);
+    } catch (e) {
+      console.warn('[PDF] resolver público falhou para', path, e);
+      return null;
+    }
+  }
 
   private isInternalPlaceholderEmail(email: string | null | undefined): boolean {
     const e = String(email || '').trim().toLowerCase();
@@ -63,6 +176,18 @@ class PdfSignatureService {
       const res = await fetch(pathOrUrl);
       if (!res.ok) return null;
       return new Uint8Array(await res.arrayBuffer());
+    }
+
+    // Fluxo PÚBLICO: resolve o path via edge token-scoped antes de tentar o
+    // acesso direto ao bucket (que será fechado para anon na migration 3).
+    const publicUrl = await this.resolvePublicUrl(pathOrUrl);
+    if (publicUrl) {
+      try {
+        const res = await fetch(publicUrl);
+        if (res.ok) return new Uint8Array(await res.arrayBuffer());
+      } catch {
+        // cai no fallback direto abaixo
+      }
     }
 
     // Path do storage (tentar buckets conhecidos)
@@ -186,20 +311,25 @@ class PdfSignatureService {
     }
     console.log('[PDF] loadStorageImage: tentando carregar', path);
     
-    // Tentar mÃºltiplos buckets onde as imagens podem estar
+    // Fluxo PÚBLICO: resolve via edge token-scoped (não acessa o bucket como anon).
+    let signedUrl: string | null = await this.resolvePublicUrl(path);
+    if (signedUrl) console.log('[PDF] Imagem resolvida via edge pública');
+
+    // Fluxo INTERNO (ou fallback enquanto o anon ainda está aberto):
+    // tenta mÃºltiplos buckets onde as imagens podem estar.
     const bucketsToTry = ['document-templates', 'generated-documents', 'signatures'];
-    let signedUrl: string | null = null;
-    
-    for (const bucket of bucketsToTry) {
-      try {
-        const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-        if (!error && data?.signedUrl) {
-          console.log(`[PDF] Imagem localizada no bucket ${bucket}`);
-          signedUrl = data.signedUrl;
-          break;
+    if (!signedUrl) {
+      for (const bucket of bucketsToTry) {
+        try {
+          const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+          if (!error && data?.signedUrl) {
+            console.log(`[PDF] Imagem localizada no bucket ${bucket}`);
+            signedUrl = data.signedUrl;
+            break;
+          }
+        } catch {
+          // silencioso — tenta próximo bucket
         }
-      } catch {
-        // silencioso — tenta próximo bucket
       }
     }
     
@@ -590,13 +720,20 @@ class PdfSignatureService {
 
     const signedRequestSigners = await (async () => {
       try {
-        const { data } = await supabase
-          .from('signature_signers')
-          .select('*')
-          .eq('signature_request_id', request.id)
-          .order('order', { ascending: true });
-        const all = (data as Signer[] | null) ?? [];
-        const signed = all.filter((item) => item.status === 'signed');
+        // Fluxo PÚBLICO: via RPC token-scoped; INTERNO: leitura direta.
+        let all: Signer[] | null = null;
+        if (this.publicReportData?.signers) {
+          all = await this.publicReportData.signers(request.id);
+        }
+        if (!all) {
+          const { data } = await supabase
+            .from('signature_signers')
+            .select('*')
+            .eq('signature_request_id', request.id)
+            .order('order', { ascending: true });
+          all = (data as Signer[] | null) ?? [];
+        }
+        const signed = (all ?? []).filter((item) => item.status === 'signed');
         return signed.length > 0 ? signed : [signer];
       } catch {
         return [signer];
@@ -615,6 +752,11 @@ class PdfSignatureService {
     };
     const auditLogEntries: AuditEntry[] = await (async () => {
       try {
+        // Fluxo PÚBLICO: via RPC token-scoped; INTERNO: leitura direta.
+        if (this.publicReportData?.auditLog) {
+          const viaRpc = await this.publicReportData.auditLog(request.id);
+          if (viaRpc) return viaRpc as AuditEntry[];
+        }
         const { data } = await supabase
           .from('signature_audit_log')
           .select('id, signer_id, action, description, ip_address, user_agent, created_at')
@@ -1562,25 +1704,11 @@ class PdfSignatureService {
   async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
     const { bytes: pdfBytes, integritySha256 } = await this.generateSignedPdf(options);
     const sha256 = await this.sha256Hex(pdfBytes);
-    
-    // @ts-ignore - Uint8Array Ã© aceito em runtime
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
     const fileName = `signed_${options.signer.id}_${Date.now()}.pdf`;
     const filePath = `${options.request.id}/${fileName}`;
-    
-    const { error } = await supabase.storage
-      .from('assinados')
-      .upload(filePath, blob, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-    
-    if (error) {
-      console.error('[PDF] Erro ao salvar PDF assinado:', error);
-      throw new Error(`Erro ao salvar PDF assinado: ${error.message}`);
-    }
-    
-    console.log('[PDF] PDF assinado salvo no bucket assinados:', filePath);
+
+    await this.persistSignedPdf(filePath, pdfBytes, 'PDF assinado');
     return { filePath, sha256, integritySha256 };
   }
   /**
@@ -1695,12 +1823,20 @@ class PdfSignatureService {
       }
     }
 
-    const { data: signedRequestSignersDataForDocx } = await supabase
-      .from('signature_signers')
-      .select('*')
-      .eq('signature_request_id', request.id)
-      .order('order', { ascending: true });
-    const docxSignedRequestSigners = ((signedRequestSignersDataForDocx as Signer[] | null) ?? []).filter((item) => item.status === 'signed');
+    // Fluxo PÚBLICO: via RPC token-scoped; INTERNO: leitura direta.
+    let signedRequestSignersDataForDocx: Signer[] | null = null;
+    if (this.publicReportData?.signers) {
+      signedRequestSignersDataForDocx = await this.publicReportData.signers(request.id);
+    }
+    if (!signedRequestSignersDataForDocx) {
+      const { data } = await supabase
+        .from('signature_signers')
+        .select('*')
+        .eq('signature_request_id', request.id)
+        .order('order', { ascending: true });
+      signedRequestSignersDataForDocx = (data as Signer[] | null) ?? [];
+    }
+    const docxSignedRequestSigners = (signedRequestSignersDataForDocx ?? []).filter((item) => item.status === 'signed');
     const docxSignerDrawAssets = await Promise.all((docxSignedRequestSigners.length > 0 ? docxSignedRequestSigners : [signer]).map(async (item) => ({
       signer: item,
       signature: item.id === signer.id ? signatureImage : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
@@ -2328,25 +2464,11 @@ class PdfSignatureService {
 
     const pdfBytes = await pdfDoc.save();
     const sha256 = await this.sha256Hex(pdfBytes);
-    
-    // @ts-ignore - Uint8Array Ã© aceito em runtime
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
     const fileName = `signed_${signer.id}_${Date.now()}.pdf`;
     const filePath = `${request.id}/${fileName}`;
-    
-    const { error } = await supabase.storage
-      .from('assinados')
-      .upload(filePath, blob, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-    
-    if (error) {
-      console.error('[PDF] Erro ao salvar PDF do DOCX:', error);
-      throw new Error(`Erro ao salvar PDF do DOCX: ${error.message}`);
-    }
-    
-    console.log('[PDF] PDF do DOCX salvo no bucket assinados:', filePath);
+
+    await this.persistSignedPdf(filePath, pdfBytes, 'PDF do DOCX');
     return { filePath, sha256, integritySha256 };
   }
 
@@ -2405,25 +2527,11 @@ class PdfSignatureService {
     
     const pdfBytes = await pdfDoc.save();
     const sha256 = await this.sha256Hex(pdfBytes);
-    
-    // @ts-ignore - Uint8Array Ã© aceito em runtime
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
     const fileName = `report_${signer.id}_${Date.now()}.pdf`;
     const filePath = `${request.id}/${fileName}`;
-    
-    const { error } = await supabase.storage
-      .from('assinados')
-      .upload(filePath, blob, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-    
-    if (error) {
-      console.error('[PDF] Erro ao salvar relatÃ³rio de assinatura:', error);
-      throw new Error(`Erro ao salvar relatÃ³rio de assinatura: ${error.message}`);
-    }
-    
-    console.log('[PDF] RelatÃ³rio de assinatura salvo no bucket assinados:', filePath);
+
+    await this.persistSignedPdf(filePath, pdfBytes, 'relatório de assinatura');
     return { filePath, sha256, integritySha256: null };
   }
 
@@ -2432,16 +2540,20 @@ class PdfSignatureService {
    */
   async getSignedPdfUrl(signedDocumentPath: string): Promise<string | null> {
     if (!signedDocumentPath) return null;
-    
+
+    // Fluxo PÚBLICO: resolve via edge token-scoped (não lê `assinados` como anon).
+    const publicUrl = await this.resolvePublicUrl(signedDocumentPath);
+    if (publicUrl) return publicUrl;
+
     const { data, error } = await supabase.storage
       .from('assinados')
       .createSignedUrl(signedDocumentPath, 3600); // 1 hora
-    
+
     if (error || !data?.signedUrl) {
       console.warn('[PDF] Erro ao obter URL do PDF assinado:', error?.message);
       return null;
     }
-    
+
     return data.signedUrl;
   }
 

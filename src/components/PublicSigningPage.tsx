@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
+import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, Eye, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
+import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
@@ -733,6 +734,28 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
 
+  // Roteia as leituras de storage da geração do PDF assinado pela edge
+  // token-scoped (`public-signing-file`), em vez do acesso anon direto aos
+  // buckets. É isso que permite fechar o acesso anon a `document-templates` /
+  // `assinados` (migration 3) sem quebrar a assinatura pública.
+  useEffect(() => {
+    pdfSignatureService.setPublicFileResolver((path) => signatureService.getPublicFileUrl(token, path));
+    // Dados do relatório (co-signatários + trilha de auditoria) via RPC
+    // token-scoped, evitando os 401 das leituras anon diretas nas tabelas.
+    pdfSignatureService.setPublicReportDataProvider({
+      signers: () => signatureService.getPublicReportSigners(token),
+      auditLog: () => signatureService.getPublicReportAuditLog(token) as any,
+    });
+    // Gravação do PDF assinado/relatório via edge token-scoped (sem INSERT anon).
+    pdfSignatureService.setPublicUploadResolver(({ path, bytes, contentType }) =>
+      signatureService.uploadSignedFilePublic(token, path, bytes, contentType));
+    return () => {
+      pdfSignatureService.setPublicFileResolver(null);
+      pdfSignatureService.setPublicReportDataProvider(null);
+      pdfSignatureService.setPublicUploadResolver(null);
+    };
+  }, [token]);
+
   const isSignerDataComplete = (data: SignerData) => data.name.trim().length >= 3 && data.cpf.replace(/\D/g, '').length === 11;
 
   const isTemplateFillSigner = (email?: string | null) => {
@@ -957,6 +980,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // Signed document viewer
   const [signedDocumentUrl, setSignedDocumentUrl] = useState<string | null>(null);
   const [downloadingAlreadySigned, setDownloadingAlreadySigned] = useState(false);
+  // Visualizador interno (iframe) do PDF assinado — não expõe a URL do Supabase.
+  const [signedViewerUrl, setSignedViewerUrl] = useState<string | null>(null);
 
   // Google Auth
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -1027,7 +1052,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       try {
         setAuditLogLoading(true);
         setAuditLogError(null);
-        const data = await signatureService.getAuditLog(request.id);
+        // Fluxo PÚBLICO: via RPC token-scoped (sem leitura anon direta → sem 401).
+        const data = (await signatureService.getPublicReportAuditLog(token)) ?? [];
         if (cancelled) return;
         // Deduplicar itens idênticos no mesmo minuto (evita poluição por logs duplicados)
         const seen = new Set<string>();
@@ -1801,6 +1827,70 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     return null;
   };
+
+  // Abre o PDF assinado num visualizador interno (iframe), sem expor a URL do
+  // Supabase: busca o arquivo e exibe via blob: — o link assinado nunca vai
+  // para o DOM/barra de endereços. Fallback: usa a própria URL se o fetch falhar.
+  const openSignedDocumentViewer = async (setLoading: (b: boolean) => void) => {
+    if (!request || !signer) return;
+    try {
+      setLoading(true);
+      const url = await waitForSignedDocumentUrl();
+      if (!url) {
+        toast.error('O documento foi assinado, mas ainda está sendo finalizado. Tente novamente em alguns segundos.');
+        return;
+      }
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        setSignedViewerUrl(URL.createObjectURL(blob));
+      } catch {
+        setSignedViewerUrl(url);
+      }
+    } catch (e) {
+      console.error('Erro ao abrir documento assinado:', e);
+      toast.error('Erro ao abrir documento assinado');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const closeSignedViewer = () => {
+    setSignedViewerUrl((prev) => {
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  useEffect(() => () => {
+    if (signedViewerUrl && signedViewerUrl.startsWith('blob:')) URL.revokeObjectURL(signedViewerUrl);
+  }, [signedViewerUrl]);
+
+  // Modal do visualizador — compartilhado entre as telas "já assinado" e "sucesso".
+  const signedDocViewer = signedViewerUrl ? (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900/70 backdrop-blur-sm" onClick={closeSignedViewer}>
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-slate-900 text-white shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-4 h-4 text-orange-400 shrink-0" />
+          <span className="text-sm font-medium truncate">{request?.document_name || 'Documento assinado'}</span>
+        </div>
+        <button
+          onClick={closeSignedViewer}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors"
+        >
+          <X className="w-4 h-4" />
+          Fechar
+        </button>
+      </div>
+      <iframe
+        title="Documento assinado"
+        src={signedViewerUrl}
+        className="flex-1 w-full bg-white"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  ) : null;
 
   const loadSignerData = async () => {
     try {
@@ -2795,27 +2885,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
 
-    const handleDownloadAlreadySigned = async () => {
-      if (!request || !signer) return;
-      try {
-        setDownloadingAlreadySigned(true);
-
-        const signedUrl = await waitForSignedDocumentUrl();
-        if (signedUrl) {
-          console.log('[DOWNLOAD] Documento assinado pronto para abertura');
-          window.open(signedUrl, '_blank');
-          return;
-        }
-
-        toast.error('O documento foi assinado, mas ainda está sendo finalizado. Tente novamente em alguns segundos.');
-      } catch (e) {
-        console.error('Erro ao baixar:', e);
-        toast.error('Erro ao abrir documento assinado');
-      } finally {
-        setDownloadingAlreadySigned(false);
-      }
-    };
-
     const handleCopyVerificationCode = async () => {
       try {
         const code = (signer?.verification_hash || '').trim();
@@ -2824,24 +2893,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         toast.success('Código copiado.');
       } catch {
         toast.error('Não foi possível copiar o código.');
-      }
-    };
-
-    const handleCopySignedLink = async () => {
-      try {
-        if (!signer?.signed_document_path) {
-          toast.error('Link indisponível no momento.');
-          return;
-        }
-        const url = await signatureService.getPublicFileUrl(token,signer.signed_document_path);
-        if (!url) {
-          toast.error('Link indisponível no momento.');
-          return;
-        }
-        await navigator.clipboard.writeText(url);
-        toast.success('Link do documento copiado.');
-      } catch {
-        toast.error('Não foi possível copiar o link.');
       }
     };
 
@@ -2857,176 +2908,101 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     const verificationUrl = signer?.verification_hash ? `${window.location.origin}/#/verificar/${signer.verification_hash}` : null;
+    const termsUrl = buildPublicSignatureTermsUrl();
 
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] flex flex-col items-center justify-center p-4" style={{ background: '#f8fafc' }}>
-        <div className="w-full max-w-md">
+        <div className="min-h-[100dvh] flex flex-col" style={{ background: '#f4f7f9' }}>
+          <div className="h-[3px] w-full flex-shrink-0" style={{ background: 'linear-gradient(90deg,#ea580c,#f97316 45%,#fb923c)' }} />
 
-          <div className="bg-[#f8f7f5] rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <div className="w-full max-w-[400px]">
+              <div className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[0_10px_34px_-12px_rgba(15,23,42,0.18)]">
+                <div className="h-1" style={{ background: 'linear-gradient(90deg,#ea580c,#f59e0b)' }} />
 
-            {/* Cabeçalho esmeralda — documento já processado */}
-            <div className="relative px-6 pt-10 pb-8 flex flex-col items-center overflow-hidden"
-              style={{ background: 'linear-gradient(145deg, #064e3b 0%, #065f46 35%, #047857 70%, #059669 100%)' }}>
-              <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.20), transparent)' }} />
-              <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.04)' }} />
-              <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full" style={{ background: 'rgba(0,0,0,0.07)' }} />
-
-              {/* Ícone */}
-              <div className="relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center mb-5"
-                style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                <svg viewBox="0 0 24 24" className="w-9 h-9" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-              </div>
-
-              <h1 className="text-[22px] font-bold text-white text-center leading-tight mb-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                Documento já assinado
-              </h1>
-              <p className="text-[13px] text-center" style={{ color: 'rgba(255,255,255,0.78)' }}>
-                Uma cópia assinada está disponível para você.
-              </p>
-
-              <div className="mt-4 px-3 py-1 rounded-full flex items-center gap-1.5"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.20)' }}>
-                <div className="w-[5px] h-[5px] rounded-full bg-emerald-300 flex-shrink-0" style={{ boxShadow: '0 0 5px rgba(110,231,183,0.8)' }} />
-                <span className="text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: 'rgba(255,255,255,0.90)' }}>
-                  Assinado · JURIUS
-                </span>
-              </div>
-            </div>
-
-            {/* Corpo */}
-            <div className="px-5 pt-5 pb-2 space-y-3">
-
-              {/* Card do documento */}
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f1f5f9', background: '#fafafa' }}>
-                <div className="h-[3px]" style={{ background: 'linear-gradient(90deg, #047857, #10b981)' }} />
-                <div className="p-4 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                    <FileText className="w-[18px] h-[18px]" style={{ color: '#ea580c' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-[13.5px] text-slate-900 truncate">{request?.document_name}</div>
-                    <div className="text-[12px] text-slate-400 mt-0.5">
-                      Assinado por <span className="font-medium text-slate-600">{signer?.name || 'Signatário'}</span>
+                <div className="p-5 sm:p-6">
+                  {/* Topo: marca + selo */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-extrabold text-[13px]" style={{ background: 'linear-gradient(150deg,#FF7A33,#EA5310)' }}>J</div>
+                      <span className="text-[15px] font-black tracking-tight text-slate-900">JURIUS</span>
                     </div>
-                    {signer?.signed_at && (
-                      <div className="text-[11px] text-slate-400 mt-0.5">{formatDate(signer.signed_at)}</div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+                      <CheckCircle className="w-3 h-3 text-emerald-600" />
+                      <span className="text-[9px] font-bold tracking-[0.12em] uppercase text-emerald-700">Assinado</span>
+                    </span>
+                  </div>
+
+                  <h1 className="text-[18px] font-bold text-slate-900 leading-tight">Documento assinado</h1>
+                  <p className="text-[12.5px] text-slate-500 mt-0.5">Uma cópia assinada está disponível para você.</p>
+
+                  {/* Documento */}
+                  <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                      <FileText className="w-4 h-4" style={{ color: '#ea580c' }} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold text-slate-900 truncate">{request?.document_name}</div>
+                      <div className="text-[11.5px] text-slate-400 mt-0.5 truncate">
+                        {signer?.name || 'Signatário'}{signer?.signed_at ? ` · ${formatDate(signer.signed_at)}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Código de autenticação */}
+                  {signer?.verification_hash && (
+                    <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Código de autenticação</span>
+                        <button type="button" onClick={handleCopyVerificationCode} className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700">
+                          <Copy className="w-3 h-3" />Copiar
+                        </button>
+                      </div>
+                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{signer.verification_hash}</div>
+                      {verificationUrl && (
+                        <a href={verificationUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-orange-600">
+                          <ExternalLink className="w-3 h-3" />Verificar autenticidade
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Ações */}
+                  <button
+                    type="button"
+                    onClick={() => openSignedDocumentViewer(setDownloadingAlreadySigned)}
+                    disabled={downloadingAlreadySigned}
+                    className="mt-4 w-full bg-orange-600 text-white px-4 py-3 rounded-xl font-semibold text-[13.5px] flex items-center justify-center gap-2 hover:bg-orange-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {downloadingAlreadySigned ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                    Abrir documento assinado
+                  </button>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button type="button" onClick={() => setShowReport(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
+                      <FileText className="w-3.5 h-3.5" />Ver relatório
+                    </button>
+                    {signer?.public_token && (
+                      <button type="button" onClick={handleCopySignerToken} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
+                        <Shield className="w-3.5 h-3.5" />Copiar token
+                      </button>
                     )}
                   </div>
                 </div>
-              </div>
 
-              {/* Código de autenticação */}
-              {signer?.verification_hash && (
-                <div className="rounded-2xl p-4" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-1.5">
-                        Código de autenticação
-                      </div>
-                      <div className="font-mono text-[12.5px] font-semibold tracking-wider text-slate-700 break-all">
-                        {signer.verification_hash}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleCopyVerificationCode}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition flex-shrink-0"
-                      style={{ background: '#0f172a', color: 'white' }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copiar
-                    </button>
-                  </div>
-
-                  {verificationUrl && (
-                    <button
-                      type="button"
-                      onClick={() => window.open(verificationUrl, '_blank')}
-                      className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold"
-                      style={{ color: '#ea580c' }}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Verificar autenticidade
-                    </button>
-                  )}
+                <div className="px-5 sm:px-6 py-3 border-t border-slate-100 flex items-center gap-2">
+                  <Lock className="w-3 h-3 text-slate-300 flex-shrink-0" />
+                  <p className="text-[10px] text-slate-400 leading-relaxed">Guarde o código de autenticação para conferência futura.</p>
                 </div>
-              )}
-            </div>
-
-            {/* Botões */}
-            <div className="px-5 pt-3 pb-5 space-y-2.5">
-              <button
-                onClick={handleDownloadAlreadySigned}
-                disabled={downloadingAlreadySigned}
-                className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-white rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-70"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)', boxShadow: '0 6px 20px -4px rgba(194,65,12,0.45)' }}
-              >
-                {downloadingAlreadySigned ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />Preparando...</>
-                ) : (
-                  <><Download className="w-4 h-4" />Abrir documento assinado</>
-                )}
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReport(true)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
-                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
-                >
-                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                  Ver relatório
-                </button>
-
-                {signer?.signed_document_path && (
-                  <button
-                    type="button"
-                    onClick={handleCopySignedLink}
-                    className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
-                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
-                  >
-                    <Share2 className="w-3.5 h-3.5 flex-shrink-0" />
-                    Copiar link
-                  </button>
-                )}
               </div>
 
-              {signer?.public_token && (
-                <button
-                  type="button"
-                  onClick={handleCopySignerToken}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[12px] font-medium transition-all"
-                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b' }}
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  Copiar token de acesso
-                </button>
-              )}
-            </div>
-
-            {/* Rodapé */}
-            <div className="px-5 pb-5">
-              <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
-                <Lock className="w-3 h-3 flex-shrink-0" style={{ color: '#94a3b8' }} />
-                <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
-                  Guarde o código de autenticação para conferência futura.
-                </p>
+              <div className="text-center mt-3">
+                <a href={termsUrl} className="text-[10px] font-semibold tracking-[0.1em] uppercase text-slate-400 hover:text-orange-600 transition">Termos de Uso</a>
               </div>
             </div>
           </div>
-
-          <p className="text-center mt-4 text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: '#cbd5e1' }}>
-            JURIUS · Assinatura Digital Certificada
-          </p>
         </div>
-        </div>
+        {signedDocViewer}
       </>
     );
   }
@@ -3103,25 +3079,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
     
-    // Abrir/baixar o documento assinado (apenas o PDF salvo no storage)
-    const handleDownload = async () => {
-      if (!request || !signer) return;
-      try {
-        setDownloading(true);
-        const url = await waitForSignedDocumentUrl();
-        if (!url) {
-          toast.error('O documento foi assinado, mas ainda está sendo finalizado. Tente novamente em alguns segundos.');
-          return;
-        }
-
-        window.open(url, '_blank');
-      } catch (e) {
-        console.error('Erro ao baixar documento:', e);
-        toast.error('Erro ao abrir documento assinado');
-      } finally {
-        setDownloading(false);
-      }
-    };
+    // Abre o documento assinado no visualizador interno (iframe), sem expor a URL do Supabase.
+    const handleDownload = () => openSignedDocumentViewer(setDownloading);
 
     const handleShare = async () => {
       if (!request || !signer) {
@@ -3321,6 +3280,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
           </div>
         </div>
+        {signedDocViewer}
       </>
     );
   }
@@ -4184,19 +4144,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         </div>
                       </div>
                       
-                      {/* Botão discreto p/ refazer; ao aprovar, avança sozinho para a confirmação */}
-                      <button
-                        onClick={() => {
-                          setFacialData(null);
-                          setFacialValidation(null);
-                          startCamera();
-                        }}
-                        disabled={facialValidating}
-                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        Tirar novamente
-                      </button>
+                      {/* Botão de refazer aparece SÓ quando a foto é reprovada.
+                          Durante a análise e ao aprovar (avança sozinho) ele some. */}
+                      {facialValidation?.valid === false && (
+                        <button
+                          onClick={() => {
+                            setFacialData(null);
+                            setFacialValidation(null);
+                            startCamera();
+                          }}
+                          className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          Tirar novamente
+                        </button>
+                      )}
 
                       {!facialValidating && facialValidation?.valid !== false && (
                         <div className="flex items-center justify-center gap-2 text-sm text-slate-500">

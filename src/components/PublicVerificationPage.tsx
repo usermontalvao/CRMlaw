@@ -150,10 +150,13 @@ const PublicVerificationPage: React.FC = () => {
 
   // Abre o documento assinado num visualizador interno (iframe), sem expor a URL do Supabase.
   // Busca o PDF e exibe via blob: — o link assinado nunca vai para o DOM. Fallback: iframe direto.
-  const openDocumentViewer = async (path: string) => {
+  const openDocumentViewer = async (code: string, fallbackPath?: string | null) => {
     try {
       setViewerLoading(true);
-      const url = await pdfSignatureService.getSignedPdfUrl(path);
+      // Caminho seguro: resolve via edge hash-scoped (não expõe o bucket ao anon).
+      // Fallback (transição / anon ainda aberto): URL assinada direta pelo path.
+      let url = await signatureService.getVerifiedFileUrl(code);
+      if (!url && fallbackPath) url = await pdfSignatureService.getSignedPdfUrl(fallbackPath);
       if (!url) return;
       try {
         const res = await fetch(url);
@@ -345,7 +348,7 @@ const PublicVerificationPage: React.FC = () => {
                 {result.signer.signed_document_path && (
                   <div className="px-6 sm:px-8 pb-8">
                     <button
-                      onClick={() => openDocumentViewer(result.signer!.signed_document_path!)}
+                      onClick={() => openDocumentViewer(result.signer!.verification_hash || hash, result.signer!.signed_document_path)}
                       disabled={viewerLoading}
                       className="w-full sm:w-auto bg-orange-600 text-white px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
