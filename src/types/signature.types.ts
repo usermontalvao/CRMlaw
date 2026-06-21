@@ -85,6 +85,9 @@ export interface Signer {
   auth_email?: string | null; // E-mail usado na autenticação
   auth_google_sub?: string | null; // ID único do Google (sub)
   auth_google_picture?: string | null; // URL da foto do Google
+  // Aceite dos Termos de Uso (LGPD) no momento da assinatura
+  terms_accepted_at?: string | null;
+  terms_version?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -141,6 +144,9 @@ export interface SignDocumentDTO {
   auth_email?: string | null;
   auth_google_sub?: string | null;
   auth_google_picture?: string | null;
+  // Aceite dos Termos de Uso (LGPD)
+  terms_accepted?: boolean;
+  terms_version?: string | null;
 }
 
 export interface SignatureRequestWithSigners extends SignatureRequest {

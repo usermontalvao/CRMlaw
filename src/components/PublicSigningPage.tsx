@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
+import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
@@ -719,6 +720,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [refusing, setRefusing] = useState(false);
   const [refuseError, setRefuseError] = useState<string | null>(null);
   const [creator, setCreator] = useState<{ name: string; email: string } | null>(null);
+  // Aceite dos Termos de Uso (LGPD) — obrigatório para enviar a assinatura
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
   const [zoom, setZoom] = useState(100);
@@ -2004,6 +2008,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // ========== SUBMIT ==========
   const handleSign = async () => {
     if (!signer || !signatureData) return;
+    if (!termsAccepted) {
+      toast.error('É necessário aceitar os Termos de Uso para assinar.');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -2031,6 +2039,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         auth_email: googleUser?.email || (emailOtpVerified ? (verifiedEmail || emailToVerify || undefined) : undefined),
         auth_google_sub: googleUser?.sub || undefined,
         auth_google_picture: googleUser?.picture || undefined,
+        // Aceite dos Termos de Uso (LGPD)
+        terms_accepted: true,
+        terms_version: SIGNATURE_TERMS_VERSION,
       };
 
       // Usar signDocumentPublic (Edge Function) para evitar erros de RLS em página pública
@@ -3242,6 +3253,43 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         </button>
       )}
 
+      {/* Modal dos Termos de Uso (LGPD) */}
+      {showTermsModal && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0"><Shield className="w-5 h-5 text-orange-600" /></div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900 truncate">{SIGNATURE_TERMS_TITLE}</div>
+                  <div className="text-xs text-slate-400">Versão {SIGNATURE_TERMS_VERSION}</div>
+                </div>
+              </div>
+              <button onClick={() => setShowTermsModal(false)} className="p-2 text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              {SIGNATURE_TERMS_TEXT.trim() ? (
+                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{SIGNATURE_TERMS_TEXT}</div>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  O texto dos Termos de Uso ainda será publicado.
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 flex gap-2 flex-shrink-0">
+              <button onClick={() => setShowTermsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100">Fechar</button>
+              <button
+                onClick={() => { setTermsAccepted(true); setShowTermsModal(false); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Li e aceito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de recusa */}
       {isRefuseModalOpen && (
         <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -3902,11 +3950,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         <RotateCcw className="w-4 h-4" />
                         Tirar novamente
                       </button>
+
+                      {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
+                      <label className="flex items-start gap-3 rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={termsAccepted}
+                          onChange={(e) => setTermsAccepted(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 accent-emerald-600 flex-shrink-0"
+                        />
+                        <span className="text-xs text-slate-700 leading-relaxed">
+                          Li e aceito os{' '}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
+                            className="font-semibold text-orange-600 underline hover:text-orange-700"
+                          >
+                            {SIGNATURE_TERMS_TITLE}
+                          </button>
+                          {' '}<span className="text-slate-400">({SIGNATURE_TERMS_VERSION})</span>.
+                        </span>
+                      </label>
+
                       <button
                         onClick={handleSign}
-                        disabled={loading || facialValidating || facialValidation?.valid === false}
+                        disabled={loading || facialValidating || facialValidation?.valid === false || !termsAccepted}
                         className={`w-full py-4 text-white rounded-xl font-semibold text-base shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
-                          (loading || facialValidating || facialValidation?.valid === false)
+                          (loading || facialValidating || facialValidation?.valid === false || !termsAccepted)
                             ? 'bg-slate-400 shadow-slate-400/20 cursor-not-allowed'
                             : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30'
                         }`}

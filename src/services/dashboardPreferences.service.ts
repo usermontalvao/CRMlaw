@@ -9,8 +9,15 @@ export interface DashboardPreferences {
   grid_layout?: Record<string, Array<{ i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number }>> | null;
   /** Timestamp até quando os valores financeiros ficam visíveis. NULL = sempre censurado. */
   financial_revealed_until?: string | null;
+  /** Tamanho do widget de mensagens flutuante. NULL = padrão. */
+  chat_widget_prefs?: ChatWidgetPrefs | null;
   updated_at?: string;
   created_at?: string;
+}
+
+export interface ChatWidgetPrefs {
+  w: number;
+  h: number;
 }
 
 /** Retorna true se o reveal ainda está ativo (dentro do prazo). */
@@ -115,6 +122,44 @@ class DashboardPreferencesService {
     }
 
     return (data?.grid_layout as DashboardPreferences['grid_layout']) ?? null;
+  }
+
+  /** Lê o tamanho salvo do widget de mensagens (null se não existir). */
+  async getChatWidgetPrefs(userId: string): Promise<ChatWidgetPrefs | null> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('chat_widget_prefs')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar prefs do widget de mensagens:', error);
+      return null;
+    }
+    return (data?.chat_widget_prefs as ChatWidgetPrefs | null) ?? null;
+  }
+
+  /** Salva (ou limpa, com null) o tamanho do widget de mensagens, preservando o resto. */
+  async saveChatWidgetPrefs(userId: string, prefs: ChatWidgetPrefs | null): Promise<boolean> {
+    const updated_at = new Date().toISOString();
+
+    const { data: updated, error: updErr } = await supabase
+      .from(this.tableName)
+      .update({ chat_widget_prefs: prefs, updated_at })
+      .eq('user_id', userId)
+      .select('user_id');
+
+    if (!updErr && updated && updated.length > 0) return true;
+
+    const { error: insErr } = await supabase
+      .from(this.tableName)
+      .insert({ user_id: userId, chat_widget_prefs: prefs, left_widgets: [], right_widgets: [], updated_at });
+
+    if (insErr) {
+      console.error('Erro ao salvar prefs do widget de mensagens:', insErr);
+      return false;
+    }
+    return true;
   }
 
   async updateLeftWidgets(userId: string, leftWidgets: string[]): Promise<boolean> {

@@ -16,6 +16,14 @@ import { buildPublicSigningUrl, buildPublicVerificationUrl } from '../utils/publ
 
 const STORAGE_BUCKET = 'document-templates';
 
+/**
+ * Rótulo do emissor exibido quando a autoria não deve ser atribuída a uma
+ * pessoa: documentos de origem KIT ou cujo emissor foi desativado
+ * (profiles.is_active = false). Centralizado para manter o fluxo público,
+ * o PDF assinado e o relatório de assinatura sempre consistentes.
+ */
+export const SYSTEM_ISSUER_LABEL = 'Jurius CRM';
+
 /** Resultado da verificação pública por hash. */
 export type VerifyResult =
   | { status: 'valid';   signer: Signer; request: SignatureRequest }
@@ -575,9 +583,9 @@ class SignatureService {
       if (userData) {
         creator = { name: userData.name || 'Usuário', email: userData.email || '' };
         // Documentos de ORIGEM KIT (ou cujo emissor foi desativado) não devem
-        // atribuir a autoria a uma pessoa — aparecem como "Sistema".
+        // atribuir a autoria a uma pessoa — aparecem como SYSTEM_ISSUER_LABEL.
         if ((await this.isKitOrigin(request.id)) || userData.is_active === false) {
-          creator = { name: 'Sistema', email: '' };
+          creator = { name: SYSTEM_ISSUER_LABEL, email: '' };
         }
       }
     }
@@ -623,10 +631,16 @@ class SignatureService {
         }
       : undefined;
 
-    // Origem KIT → emissor aparece como "Sistema" (não atribui a uma pessoa).
+    // Emissor desativado (profiles.is_active = false) não deve ter o nome
+    // exposto no fluxo público nem no PDF — a RPC retorna o perfil completo
+    // (to_jsonb), então o flag chega aqui em data.creator.is_active.
+    const creatorInactive = data.creator?.is_active === false;
+
+    // Origem KIT ou emissor desativado → aparece como SYSTEM_ISSUER_LABEL
+    // (não atribui a autoria a uma pessoa). Mesma regra do fluxo por token.
     const reqId = (data.request as SignatureRequest)?.id;
-    if (reqId && await this.isKitOrigin(reqId)) {
-      creator = { name: 'Sistema', email: '' };
+    if (creatorInactive || (reqId && await this.isKitOrigin(reqId))) {
+      creator = { name: SYSTEM_ISSUER_LABEL, email: '' };
     }
 
     return {
@@ -816,6 +830,8 @@ class SignatureService {
         auth_email: payload.auth_email,
         auth_google_sub: payload.auth_google_sub,
         auth_google_picture: payload.auth_google_picture,
+        terms_accepted: payload.terms_accepted,
+        terms_version: payload.terms_version,
         ip_address: ipAddress,
         user_agent: userAgent,
       },

@@ -101,10 +101,12 @@ Deno.serve(async (req: Request) => {
 
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
-    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent } = payload;
+    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
     if (!signature_image) return jsonResponse({ success: false, error: 'Signature image is required' }, 400);
+    // Aceite dos Termos de Uso (LGPD) e obrigatorio para assinar. Backstop do servidor.
+    if (terms_accepted !== true) return jsonResponse({ success: false, error: 'E necessario aceitar os Termos de Uso para assinar.' }, 400);
 
     const { data: signer, error: signerError } = await supabase.from('signature_signers').select('*').eq('public_token', token).maybeSingle();
     if (signerError || !signer) return jsonResponse({ success: false, error: 'Signer not found' }, 404);
@@ -170,6 +172,7 @@ Deno.serve(async (req: Request) => {
       verification_hash: generateVerificationHash(),
       name: signer_name??signer.name, cpf: signer_cpf??signer.cpf, phone: signer_phone??signer.phone,
       auth_provider: auth_provider||null, auth_email: auth_email||null, auth_google_sub: auth_google_sub||null, auth_google_picture: auth_google_picture||null,
+      terms_accepted_at: new Date().toISOString(), terms_version: terms_version||'v1',
     };
 
     try {

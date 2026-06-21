@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Users,
   Layers,
+  Archive,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
@@ -63,7 +64,7 @@ const STATUS_TO_STAGE_INDEX: Record<string, number> = {
   sentenca: 5,
   recurso: 6,
   cumprimento: 8,
-  arquivado: 8,
+  arquivado: 9,
 };
 
 const resolveDisplayStatus = (
@@ -112,6 +113,7 @@ const PROCESS_STAGES = [
   { key: 'recurso', label: 'Recurso', icon: TrendingUp },
   { key: 'transito', label: 'Trânsito', icon: CheckCircle2 },
   { key: 'execucao', label: 'Execução', icon: Flag },
+  { key: 'arquivado', label: 'Arquivado', icon: Archive },
 ];
 
 const EVENT_TYPES = [

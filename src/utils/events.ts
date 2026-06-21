@@ -33,10 +33,13 @@ class EventEmitter {
    * Dispara um evento com dados opcionais
    */
   emit(event: string, data?: any) {
-    if (!this.events[event]) return;
-    this.events[event].forEach(callback => callback(data));
-    
-    // Também dispara um evento nativo do DOM para compatibilidade fora do React se necessário
+    // Notifica os listeners in-memory (se houver).
+    if (this.events[event]) {
+      this.events[event].forEach(callback => callback(data));
+    }
+    // SEMPRE dispara o evento nativo do DOM — assim consumidores via
+    // window.addEventListener (ex.: chunks lazy) recebem mesmo quando não há
+    // nenhum listener in-memory registrado para este evento.
     const customEvent = new CustomEvent(`crm:${event}`, { detail: data });
     window.dispatchEvent(customEvent);
   }
@@ -70,6 +73,10 @@ export const SYSTEM_EVENTS = {
   NAVIGATE_REQUEST: 'navigate_request',
   // Presence: widget broadcasts online user IDs so other components can read them
   PRESENCE_UPDATED: 'presence_updated',
+  // WhatsApp: notificação visual de mensagem nova de uma conversa "minha" (fora
+  // do módulo) — consumida pelo ChatFloatingWidget para exibir o toast ancorado
+  // ao widget em vez do toast global no topo da tela.
+  WHATSAPP_NOTIFY: 'whatsapp_notify',
   // Admin alterou quais módulos aparecem no menu lateral
   MODULES_CONFIG_UPDATED: 'modules_config_updated',
 };

@@ -127,7 +127,7 @@ const WaOverlay: React.FC<{
   const maxW = size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-xl';
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
         className={`${maxW} w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden`}
         onClick={e => e.stopPropagation()}
@@ -266,7 +266,7 @@ const WaTimelineModal: React.FC<{
   // Portal para document.body: replica o padrão comprovado do ProcessesModule e
   // escapa de qualquer stacking context do shell do WhatsApp.
   createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10">
         <ProcessTimeline
@@ -692,7 +692,7 @@ const WaDeadlineModal: React.FC<{
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
         <Loader2 size={24} className="animate-spin text-white" />
       </div>
     );

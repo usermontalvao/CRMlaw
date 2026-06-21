@@ -686,7 +686,11 @@ class ChatService {
     return () => { supabase.removeChannel(channel); };
   }
 
-  subscribeToAllMessages(params: { onInsert: (message: ChatMessage) => void }): () => void {
+  subscribeToAllMessages(params: {
+    onInsert: (message: ChatMessage) => void;
+    /** UPDATE em mensagens (edição e soft-delete via edited_at/deleted_at). Opcional. */
+    onUpdate?: (message: ChatMessage) => void;
+  }): () => void {
     const channel = supabase.channel('chat_messages_all');
 
     channel.on(
@@ -701,6 +705,20 @@ class ChatService {
         params.onInsert(msg);
       }
     );
+
+    if (params.onUpdate) {
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: this.messagesTable,
+        },
+        (payload) => {
+          params.onUpdate!(payload.new as ChatMessage);
+        }
+      );
+    }
 
     channel.subscribe();
 

@@ -905,6 +905,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.251',
+    date: '20/06/2026',
+    summary: 'Assinaturas, WhatsApp e Processos: o CRM consolidou o novo termo do fluxo publico, refinou relatorio e servicos de assinatura, reorganizou o atendimento/chat e adicionou migrations para inferencia de estagios sem regressao.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Fluxo publico de assinatura ganhou termos e ajustes de persistencia', description: 'A pagina publica, os tipos e o backend de assinatura foram alinhados para trabalhar com termos versionados e metadados complementares sem perder compatibilidade com o fluxo existente.' },
+        { type: 'improvement' as const, title: 'Relatorio e PDF de assinatura ficaram mais consistentes', description: 'O resumo visual e a geracao do PDF receberam refinamentos para refletir melhor os dados capturados e reduzir discrepancias entre pagina, servicos e artefato final.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Workspace e modulo do WhatsApp foram reorganizados', description: 'Os componentes principais do atendimento, notificacoes e conversas foram refatorados em conjunto com servicos de apoio para deixar o fluxo mais previsivel e reduzir acoplamentos internos.' },
+        { type: 'improvement' as const, title: 'Chat flutuante recebeu novo lote de ajustes estruturais', description: 'O widget e os servicos compartilhados do chat foram revisados para acompanhar a reorganizacao do atendimento e melhorar o comportamento dos eventos em tempo real.' },
+      ]},
+      { moduleId: 'processos', changes: [
+        { type: 'feature' as const, title: 'Novas migrations inferem estagios processuais sem regredir status efetivo', description: 'O banco ganhou correcoes dedicadas para preservar o status efetivo e inferir transito em julgado, extincao da execucao e baixa definitiva a partir das regras atuais do projeto.' },
+        { type: 'fix' as const, title: 'Linha do tempo recebeu ajuste pontual de comportamento', description: 'O componente de timeline foi alinhado ao novo conjunto de inferencias para evitar leitura inconsistente da fase exibida ao usuario.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.250',
     date: '19/06/2026',
     summary: 'Portal e Sistema: o logout ganhou despedida cinematográfica com nome do usuário, o fluxo de sessão passou a suportar saída sem redirect imediato e a Área Restrita recebeu um acabamento mobile mais editorial.',

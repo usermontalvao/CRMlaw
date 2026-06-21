@@ -249,7 +249,7 @@ export const conversationsApi = {
    */
   async closeConversation(conversationId: string, reason: string, options?: { farewell?: string }): Promise<void> {
     const note = reason.trim();
-    if (!note) throw new Error('Informe o motivo do encerramento.');
+    // Motivo é opcional (interno): se vazio, encerra sem registrar motivo.
     // Aviso ao cliente antes de fechar (não bloqueia o encerramento se falhar).
     const farewell = options?.farewell?.trim();
     if (farewell) {
@@ -260,7 +260,7 @@ export const conversationsApi = {
       status: 'closed',
       closed_at: new Date().toISOString(),
       closed_by: auth?.user?.id ?? null,
-      closure_reason: note,
+      closure_reason: note || null,
       // Encerrar zera a pausa do aviso de horário: volta ao normal no próximo contato.
       absence_suppressed: false,
       // Permite que uma nova retomada fora do horário dispare novamente o aviso comercial.

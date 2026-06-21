@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
+import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
 interface SignedPdfOptions {
@@ -374,8 +375,6 @@ class PdfSignatureService {
       const stripSoft    = rgb(0.45, 0.50, 0.58);
       const stripMuted   = rgb(0.62, 0.67, 0.74);
       const stripOrange  = rgb(0.91, 0.32, 0.04);
-      const stripEmerald = rgb(0.05, 0.49, 0.29);
-      const stripEmSoft  = rgb(0.90, 0.96, 0.92);
 
       // Local helpers (drawFooterStamp não tem acesso aos helpers de addReportPages)
       const rr = (xx: number, topY: number, ww: number, hh: number, r: number, fill?: any, stroke?: any, sw = 0.7) => {
@@ -384,18 +383,6 @@ class PdfSignatureService {
           `M ${rad} 0 L ${ww - rad} 0 Q ${ww} 0 ${ww} ${rad} L ${ww} ${hh - rad} Q ${ww} ${hh} ${ww - rad} ${hh} L ${rad} ${hh} Q 0 ${hh} 0 ${hh - rad} L 0 ${rad} Q 0 0 ${rad} 0 Z`,
           { x: xx, y: topY, color: fill, borderColor: stroke, borderWidth: stroke ? sw : 0 }
         );
-      };
-      // check(cx, cy, r) — checkmark centrado em (cx,cy) com raio r
-      const check = (cx: number, cy: number, r: number, color: any, weight = 1.5) => {
-        const s = r * 2;
-        const x1 = 0.15 * s; const y1 = 0.50 * s;
-        const x2 = 0.40 * s; const y2 = 0.75 * s;
-        const x3 = 0.85 * s; const y3 = 0.25 * s;
-        page.drawSvgPath(`M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3}`, {
-          x: cx - r, y: cy + r,
-          borderColor: color, borderWidth: weight,
-          borderLineCap: LineCapStyle.Round,
-        });
       };
 
       // Background + top accents
@@ -416,22 +403,13 @@ class PdfSignatureService {
       const dividerX = qrX - 14;
       page.drawLine({ start: { x: dividerX, y: y + 9 }, end: { x: dividerX, y: y + h - 9 }, thickness: 0.5, color: stripBorder });
 
-      // ── Selo de verificação (esquerda) ──
-      const sealCX = x + 26;
-      const sealCY = y + 28;
-      page.drawCircle({ x: sealCX, y: sealCY, size: 10, color: stripEmSoft });
-      page.drawCircle({ x: sealCX, y: sealCY, size: 7.5, color: stripEmerald });
-      check(sealCX, sealCY, 5, stripWhite, 1.5);
+      const tx = x + 14;
 
-      const tx = x + 44;
-
-      // Linha 1 — marca + verificado
+      // Linha 1 — marca
       page.drawText('JURIUS', { x: tx, y: y + h - 15, size: 8, font: helveticaBold, color: stripDark });
       const jw = helveticaBold.widthOfTextAtSize('JURIUS', 8);
       page.drawCircle({ x: tx + jw + 5, y: y + h - 12, size: 1.3, color: stripOrange });
       page.drawText('ASSINATURA ELETRÔNICA', { x: tx + jw + 11, y: y + h - 14.5, size: 6, font: helveticaBold, color: stripSoft });
-      const lblW = helveticaBold.widthOfTextAtSize('ASSINATURA ELETRÔNICA', 6);
-      page.drawText('· VERIFICADO', { x: tx + jw + 16 + lblW, y: y + h - 14.5, size: 6, font: helveticaBold, color: stripEmerald });
 
       // Separador
       page.drawLine({ start: { x: tx, y: y + h - 22 }, end: { x: dividerX - 10, y: y + h - 22 }, thickness: 0.4, color: stripBorder });
@@ -1080,7 +1058,7 @@ class PdfSignatureService {
     const history: HistoryItem[] = [];
     // Criador: mostra nome sem email pessoal no PDF público — o email interno
     // do escritório não precisa aparecer no certificado do signatário externo.
-    const creatorName = creator?.name || 'Emissor';
+    const creatorName = creator?.name || SYSTEM_ISSUER_LABEL;
     history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime() });
 
     for (const item of signedRequestSigners) {
@@ -1138,6 +1116,17 @@ class PdfSignatureService {
           sortAt: signedAtDate?.getTime() ?? 0,
         });
       }
+
+      if (item.terms_accepted_at) {
+        const termsAtDate = this.toDateValue(item.terms_accepted_at);
+        const termsVersion = String(item.terms_version || 'v1');
+        history.push({
+          label: 'Termos',
+          when: this.formatManausDateTime(item.terms_accepted_at),
+          detail: `${item.name}${signerContact}${signerCpf} declarou ter lido e aceitado os Termos de Uso (versão ${termsVersion})${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}.`,
+          sortAt: termsAtDate?.getTime() ?? 0,
+        });
+      }
     }
 
     history.sort((a, b) => a.sortAt - b.sortAt);
@@ -1166,10 +1155,12 @@ class PdfSignatureService {
       const isCreated = histItem.label === 'Criado';
       const isViewed  = histItem.label === 'Visualizado';
       const isSigned  = histItem.label === 'Assinado';
+      const isTerms   = histItem.label === 'Termos';
 
       const viewedColor = rgb(0.35, 0.40, 0.52);
-      const dotColor = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : txtSoft;
-      const badgeBg  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : navyMid;
+      const termsColor  = rgb(0.45, 0.32, 0.72);
+      const dotColor = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : isTerms ? termsColor : txtSoft;
+      const badgeBg  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : isTerms ? termsColor : navyMid;
 
       // Timeline node: real circle with white ring + small inner dot
       circleDot(historyPage, timelineX, y - 4, 6, white);

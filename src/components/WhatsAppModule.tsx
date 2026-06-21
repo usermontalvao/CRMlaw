@@ -544,9 +544,20 @@ interface WhatsAppModuleProps {
   onParamConsumed?: () => void;
   /** Converte um lead em cliente (delega ao fluxo global do App). */
   onConvertLead?: (lead: Lead) => void;
+  /**
+   * `'embedded'` = modo lite dentro do widget flutuante: força painel único
+   * (lista OU conversa), sem painel de contato fixo, e oculta o chrome largo
+   * (Funil de Leads e Dashboard). `'full'` (default) = página completa.
+   */
+  variant?: 'full' | 'embedded';
+  /** Reporta o total de conversas não-lidas (alimenta o badge da aba no widget). */
+  onUnreadChange?: (total: number) => void;
+  /** Reporta a conversa aberta (deep-link ao maximizar o widget). */
+  onActiveConversationChange?: (id: string | null) => void;
 }
 
-const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead }) => {
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead, variant = 'full', onUnreadChange, onActiveConversationChange }) => {
+  const embedded = variant === 'embedded';
   const { user } = useAuth();
   const toast = useToastContext();
   const { navigateTo } = useNavigation();
@@ -581,9 +592,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Responsividade: abaixo de `md` (768px) a lista e a thread não cabem lado a
   // lado, então alternamos para um painel por vez (estilo WhatsApp mobile).
-  const isMobile = useWaIsMobile();
+  // No modo embutido (widget estreito) forçamos esse mesmo painel único — os
+  // hooks são baseados em window.matchMedia e dariam "desktop" dentro do widget.
+  const rawIsMobile = useWaIsMobile();
+  const isMobile = embedded || rawIsMobile;
   // Abaixo do `xl` o painel do contato não cabe fixo: vira gaveta sobreposta.
-  const panelDocked = useWaIsPanelDocked();
+  // No embutido nunca fica fixo (não há largura).
+  const rawPanelDocked = useWaIsPanelDocked();
+  const panelDocked = embedded ? false : rawPanelDocked;
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   // Menu "⋮" do cabeçalho da thread (agrupa as ações em telas estreitas).
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
@@ -631,6 +647,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Fase 5: a inbox abre em "Minhas" por padrão (escopo do próprio atendente).
   // A escolha persiste localmente — quem trabalha em "Todas" não reabre em Minhas.
   const [filter, setFilter] = useState<FilterTab>(() => {
+    // No widget embutido a inbox é pessoal: sempre abre em "Minhas", ignorando
+    // a preferência persistida do módulo cheio (quem trabalha em "Todas" lá não
+    // arrasta esse escopo para o widget).
+    if (embedded) return 'mine';
     const v = localStorage.getItem('wa_filter');
     return v === 'all' || v === 'unread' || v === 'mine' ? v : 'mine';
   });
@@ -752,7 +772,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   useEffect(() => { localStorage.setItem('wa_list_w', String(listWidth)); }, [listWidth]);
   // Persistência local dos filtros da inbox (Fase 3/5): o escopo escolhido pelo
   // atendente sobrevive ao recarregar — sem reimpor o padrão a cada abertura.
-  useEffect(() => { localStorage.setItem('wa_filter', filter); }, [filter]);
+  useEffect(() => { if (!embedded) localStorage.setItem('wa_filter', filter); }, [filter, embedded]);
   useEffect(() => { localStorage.setItem('wa_status_filter', statusFilter); }, [statusFilter]);
   // Drag and drop de arquivos na thread (estilo WhatsApp Web). `dragDepth` conta
   // enter/leave para não piscar o overlay ao cruzar elementos filhos.
@@ -876,6 +896,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Marca se já fixamos a thread no fim para a conversa atual (após as mensagens
   // realmente carregarem). Evita "abrir no topo" quando o 1º paint vem vazio.
   const didInitialScrollRef = useRef(false);
+  // "Grudar no fim": permanece true desde a abertura/troca da conversa até o
+  // usuário SUBIR manualmente. Mais confiável que `atBottomRef` para o período de
+  // assentamento inicial (texto → mídia → cards/ghosts → banners mudam a altura
+  // depois do 1º scroll). É limpo só por scroll-up deliberado em `onThreadScroll`.
+  const stickBottomRef = useRef(true);
+  // Último scrollTop, para detectar direção do scroll (subir = usuário; descer até
+  // o fim = pin) sem depender só da distância — evita soltar o grude na corrida
+  // entre o pin e o crescimento tardio de mídia/blocos.
+  const lastScrollTopRef = useRef(0);
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
   const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
@@ -1352,6 +1381,41 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     });
   }, [messages]);
 
+  // Salto instantâneo ao fim (sem animação). Reconcilia em passes encadeados de
+  // requestAnimationFrame: o conteúdo que muda de altura logo após o commit
+  // (layout de mídia, cards, ghosts) é capturado sem timeout arbitrário.
+  const jumpToBottom = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    // Dois rAF: 1º após o paint deste commit, 2º após o reflow que ele provocar.
+    requestAnimationFrame(() => {
+      const e2 = threadRef.current;
+      if (e2 && stickBottomRef.current) {
+        e2.scrollTop = e2.scrollHeight;
+        requestAnimationFrame(() => {
+          const e3 = threadRef.current;
+          if (e3 && stickBottomRef.current) e3.scrollTop = e3.scrollHeight;
+        });
+      }
+    });
+  }, []);
+
+  // Ref de callback do contêiner da thread: dispara exatamente quando o DOM da
+  // thread MONTA. Cobre o fluxo de deep-link/notificação — ali o módulo monta do
+  // zero e as mensagens podem chegar ANTES de `selected` existir, então a thread
+  // só renderiza depois do último disparo do efeito de auto-scroll (que via
+  // threadRef nulo e desistia). Ao montar, re-gruda no fim. Em troca de conversa
+  // o nó NÃO remonta (mesmo div), então isto não interfere — quem cuida é o efeito.
+  const setThreadEl = useCallback((node: HTMLDivElement | null) => {
+    threadRef.current = node;
+    if (node && !didInitialScrollRef.current) {
+      stickBottomRef.current = true;
+      atBottomRef.current = true;
+      jumpToBottom();
+    }
+  }, [jumpToBottom]);
+
   // Auto-scroll: salto instantâneo ao abrir/trocar conversa; suave em mensagem
   // nova só quando o usuário já está no fim (não puxa quem está lendo histórico).
   useEffect(() => {
@@ -1360,26 +1424,29 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     const isSwitch = lastConvRef.current !== selectedId;
     if (isSwitch) {
       // Render da troca: `messages` ainda é da conversa anterior (o clear só aplica
-      // no próximo render). Salta pro fim, zera o "pronto" e NÃO marca como feito
-      // aqui — a fixação real acontece quando as mensagens DESTA conversa chegam.
+      // no próximo render). Salta pro fim, zera o "pronto" e RE-GRUDA no fim — a
+      // fixação real acontece quando as mensagens DESTA conversa chegam.
       lastConvRef.current = selectedId;
       didInitialScrollRef.current = false;
       atBottomRef.current = true;
-      el.scrollTop = el.scrollHeight;
+      stickBottomRef.current = true;
+      jumpToBottom();
       return;
     }
     // Enquanto não fixamos o fim desta conversa, salta para baixo a cada leva de
     // mensagens (o 1º paint vem vazio); só marca como pronto quando há conteúdo.
     // Garante abrir SEMPRE na mensagem mais recente, sem scroll suave a partir do topo.
     if (!didInitialScrollRef.current) {
-      el.scrollTop = el.scrollHeight;
       atBottomRef.current = true;
+      stickBottomRef.current = true;
+      jumpToBottom();
       if (allMessages.length > 0) didInitialScrollRef.current = true;
       return;
     }
-    // Já fixado no fim: mensagem nova só puxa o scroll se o usuário está no fim.
-    if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [allMessages, selectedId]);
+    // Já fixado no fim: mensagem nova só puxa o scroll se o usuário continua no fim
+    // (stick) — quem subiu para ler histórico não é arrastado.
+    if (stickBottomRef.current || atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [allMessages, selectedId, jumpToBottom]);
 
   // O recálculo periódico da presença ("online" expira virando "visto por último")
   // vive agora dentro de <PresenceText/>, que tem o próprio tick de 15s — evita
@@ -1398,20 +1465,36 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Mantém o fim "grudado" enquanto o conteúdo cresce depois de renderizado —
   // imagens/áudio têm altura desconhecida no 1º paint e esticam a thread depois,
   // o que empurrava a última mensagem pra fora de vista ao abrir a conversa.
+  // Observa o CONTEÚDO (cresce com mídia/cards) e o PRÓPRIO contêiner de scroll
+  // (clientHeight muda quando banner de reply/bloqueio aparece) — ambos movem o
+  // "fim real". Re-gruda quando o usuário não subiu (stick) ou está no fim.
   useEffect(() => {
     const el = threadRef.current;
     const content = threadContentRef.current;
     if (!el || !content || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
-      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+      if (stickBottomRef.current || atBottomRef.current) el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [selectedId]);
 
   const onThreadScroll = useCallback(() => {
     const el = threadRef.current;
-    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = dist < 80;
+    // Distingue intenção do usuário de pin programático SEM olhar só a distância:
+    // um pin sempre AUMENTA o scrollTop (vai ao fim); o usuário subindo DIMINUI o
+    // scrollTop. Assim, mídia/bloco que cresce logo após o pin (e momentaneamente
+    // deixa dist>80) não desliga mais o "grudar" por engano.
+    if (el.scrollTop < lastScrollTopRef.current - 4 && dist > 80) {
+      stickBottomRef.current = false; // usuário subiu deliberadamente
+    } else if (dist < 4) {
+      stickBottomRef.current = true;  // voltou ao fim → volta a grudar
+    }
+    lastScrollTopRef.current = el.scrollTop;
   }, []);
 
   const filtered = useMemo(() => {
@@ -1481,6 +1564,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
+
+  // Badge da aba "WHATSAPP" do widget: usa a MESMA fonte de verdade da tab
+  // "Não lidas" da inbox (`tabCounts.unread` = QUANTIDADE de conversas com não
+  // lidas, sob os mesmos filtros de fila), e não a soma bruta de mensagens.
+  // Assim o número do topo nunca diverge do que a lista mostra.
+  useEffect(() => { onUnreadChange?.(tabCounts.unread); }, [tabCounts.unread, onUnreadChange]);
+
+  // Reporta a conversa aberta (deep-link ao maximizar o widget).
+  useEffect(() => { onActiveConversationChange?.(selectedId); }, [selectedId, onActiveConversationChange]);
 
   // Abre a conversa recém-criada/reaberta na inbox (recarrega para trazer avatar etc.).
   const handleConversationOpened = useCallback(async (conversationId: string) => {
@@ -2111,10 +2203,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         stream.getTracks().forEach(t => t.stop());
         if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
         const blob = new Blob(recChunksRef.current, { type: rec.mimeType || 'audio/webm' });
-        if (blob.size > 0) void sendAudioBlob(blob);
+        // Blob minúsculo = só o cabeçalho do container, sem áudio real (captura
+        // falhou). Avisa em vez de enviar um áudio mudo.
+        if (blob.size < 1024) { toast.error('Gravação vazia', 'Nenhum áudio foi capturado. Tente novamente.'); return; }
+        void sendAudioBlob(blob);
       };
       mediaRecRef.current = rec;
-      rec.start();
+      // timeslice: emite chunks a cada 250ms. Sem isso, o flush único no stop()
+      // às vezes entrega blob vazio/minúsculo no Chromium (áudio "não capturado").
+      rec.start(250);
       setRecording(true); setRecSeconds(0);
       recTimerRef.current = window.setInterval(() => setRecSeconds(s => s + 1), 1000);
     } catch {
@@ -2203,12 +2300,99 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
   }), []);
 
+  // Cluster de ações do cabeçalho da lista (status online + sino de notificações
+  // + nova conversa). Extraído para reposicionar no modo embutido: lá vai para a
+  // linha da busca, eliminando a linha de título "WhatsApp" redundante (o widget
+  // já mostra "Mensagens" + aba). Só uma instância é montada por vez.
+  const listHeaderActions = (
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+        <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
+        {anyConnected ? 'Online' : 'Offline'}
+      </span>
+      {(() => {
+        // Sino unificado: agrupa "som das notificações" e "push do navegador"
+        // num único ícone com menu. O ícone reflete o estado geral — toca
+        // (BellRing) com push ligado, sino simples só com som, e BellOff
+        // quando tudo está desligado.
+        const pushSupported = pushState !== 'unsupported' && pushState !== 'unknown';
+        const pushOn = pushState === 'on';
+        const soundOn = !soundMuted;
+        const active = soundOn || pushOn;
+        const Icon = pushOn ? BellRing : soundOn ? Bell : BellOff;
+        const toggleSound = () => {
+          const next = !soundMuted;
+          setSoundMuted(next);
+          setNotifySoundMuted(next);
+          if (!next) { playNotificationSound(); toast.success('Som das notificações ativado'); }
+          else toast.info('Som das notificações silenciado');
+        };
+        const row = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-amber-50 transition text-left';
+        const pill = (on: boolean) => `ml-auto text-[10.5px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`;
+        const r = notifyBtnRef.current?.getBoundingClientRect();
+        const menuTop = r ? r.bottom + 6 : 0;
+        const menuRight = r ? Math.max(8, window.innerWidth - r.right) : 8;
+        return (
+          <>
+            <button
+              ref={notifyBtnRef}
+              onClick={() => setNotifyMenuOpen(o => !o)}
+              title="Notificações"
+              aria-haspopup="menu" aria-expanded={notifyMenuOpen}
+              className={`flex items-center justify-center w-7 h-7 rounded-full transition ${active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
+              <Icon size={15} />
+            </button>
+            {notifyMenuOpen && createPortal(
+              <>
+                <div className="fixed inset-0 z-[70]" onClick={() => setNotifyMenuOpen(false)} />
+                <div role="menu" style={{ position: 'fixed', top: menuTop, right: menuRight }}
+                  className="z-[71] w-[min(17rem,calc(100vw-1rem))] rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
+                  <p className="px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Notificações</p>
+                  <button className={row} onClick={toggleSound}>
+                    {soundOn ? <Bell size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
+                    <span className="min-w-0">
+                      <span className="block leading-tight">Som das notificações</span>
+                      <span className="block text-[11px] text-slate-400">Toca ao chegar mensagem nas suas conversas</span>
+                    </span>
+                    <span className={pill(soundOn)}>{soundOn ? 'ON' : 'OFF'}</span>
+                  </button>
+                  {pushSupported && (
+                    <button className={row} onClick={toggleStaffPush} disabled={pushState === 'busy'}>
+                      {pushState === 'busy' ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0" /> : pushOn ? <BellRing size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
+                      <span className="min-w-0">
+                        <span className="block leading-tight">Notificações no navegador</span>
+                        <span className="block text-[11px] text-slate-400">Avisa mesmo com a aba fechada</span>
+                      </span>
+                      <span className={pill(pushOn)}>{pushOn ? 'ON' : 'OFF'}</span>
+                    </button>
+                  )}
+                </div>
+              </>,
+              document.body,
+            )}
+          </>
+        );
+      })()}
+      {!embedded && (
+        <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
+          <BarChart2 size={15} />
+        </button>
+      )}
+      <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
+        className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
+        <Plus size={16} />
+      </button>
+    </div>
+  );
+
   return (
     <div className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
       {/* ── Painel de Leads embutido (funil comercial/jurídico) ──
           A altura segue o CONTEÚDO (sem espaço em branco). A revelação anima por
           max-height (clip, sem reflow do funil); o atendimento é empurrado para
-          baixo mas continua visível. */}
+          baixo mas continua visível. Oculto no modo embutido (sem largura). */}
+      {!embedded && (<>
       <div
         className={`flex-shrink-0 overflow-hidden bg-[#f5f5f3] transition-[max-height] duration-300 ease-out ${
           leadsPanelOpen ? 'max-h-[480px] border-b border-[#e7e5df]' : 'max-h-0'
@@ -2263,104 +2447,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           <ChevronDown size={13} className={`text-slate-400 group-hover:text-amber-700 transition-transform duration-300 ${leadsPanelOpen ? 'rotate-180' : ''}`} />
         </button>
       </div>
+      </>)}
 
       {/* ── Conteúdo principal do módulo (atendimento) ── */}
       <div className="flex flex-1 min-h-0">
       {/* ── Lista de conversas ── */}
       <aside style={isMobile ? undefined : { width: listWidth }}
         className={`flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
-        <div className="px-4 pt-4 pb-3 border-b border-[#e7e5df]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <MessageCircle size={18} className="text-amber-600" />
-              <h2 className="text-[15px] font-bold text-slate-800">WhatsApp</h2>
+        <div className={`border-b border-[#e7e5df] ${embedded ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
+          {!embedded && (
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={18} className="text-amber-600" />
+                <h2 className="font-bold text-slate-800 text-[15px]">WhatsApp</h2>
+              </div>
+              {listHeaderActions}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
-                {anyConnected ? 'Online' : 'Offline'}
-              </span>
-              {(() => {
-                // Sino unificado: agrupa "som das notificações" e "push do navegador"
-                // num único ícone com menu. O ícone reflete o estado geral — toca
-                // (BellRing) com push ligado, sino simples só com som, e BellOff
-                // quando tudo está desligado.
-                const pushSupported = pushState !== 'unsupported' && pushState !== 'unknown';
-                const pushOn = pushState === 'on';
-                const soundOn = !soundMuted;
-                const active = soundOn || pushOn;
-                const Icon = pushOn ? BellRing : soundOn ? Bell : BellOff;
-                const toggleSound = () => {
-                  const next = !soundMuted;
-                  setSoundMuted(next);
-                  setNotifySoundMuted(next);
-                  if (!next) { playNotificationSound(); toast.success('Som das notificações ativado'); }
-                  else toast.info('Som das notificações silenciado');
-                };
-                const row = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-amber-50 transition text-left';
-                const pill = (on: boolean) => `ml-auto text-[10.5px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`;
-                // Coords do dropdown ancoradas ao botão (canto superior-direito
-                // alinhado). Renderizado em portal/fixed para não ser recortado por
-                // ancestrais com overflow (o painel da lista é estreito).
-                const r = notifyBtnRef.current?.getBoundingClientRect();
-                const menuTop = r ? r.bottom + 6 : 0;
-                const menuRight = r ? Math.max(8, window.innerWidth - r.right) : 8;
-                return (
-                  <>
-                    <button
-                      ref={notifyBtnRef}
-                      onClick={() => setNotifyMenuOpen(o => !o)}
-                      title="Notificações"
-                      aria-haspopup="menu" aria-expanded={notifyMenuOpen}
-                      className={`flex items-center justify-center w-7 h-7 rounded-full transition ${active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
-                      <Icon size={15} />
-                    </button>
-                    {notifyMenuOpen && createPortal(
-                      <>
-                        <div className="fixed inset-0 z-[70]" onClick={() => setNotifyMenuOpen(false)} />
-                        <div role="menu" style={{ position: 'fixed', top: menuTop, right: menuRight }}
-                          className="z-[71] w-[min(17rem,calc(100vw-1rem))] rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
-                          <p className="px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Notificações</p>
-                          <button className={row} onClick={toggleSound}>
-                            {soundOn ? <Bell size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
-                            <span className="min-w-0">
-                              <span className="block leading-tight">Som das notificações</span>
-                              <span className="block text-[11px] text-slate-400">Toca ao chegar mensagem nas suas conversas</span>
-                            </span>
-                            <span className={pill(soundOn)}>{soundOn ? 'ON' : 'OFF'}</span>
-                          </button>
-                          {pushSupported && (
-                            <button className={row} onClick={toggleStaffPush} disabled={pushState === 'busy'}>
-                              {pushState === 'busy' ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0" /> : pushOn ? <BellRing size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}
-                              <span className="min-w-0">
-                                <span className="block leading-tight">Notificações no navegador</span>
-                                <span className="block text-[11px] text-slate-400">Avisa mesmo com a aba fechada</span>
-                              </span>
-                              <span className={pill(pushOn)}>{pushOn ? 'ON' : 'OFF'}</span>
-                            </button>
-                          )}
-                        </div>
-                      </>,
-                      document.body,
-                    )}
-                  </>
-                );
-              })()}
-              <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
-                <BarChart2 size={15} />
-              </button>
-              <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
+          )}
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar conversa…"
-                className="w-full pl-9 pr-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                className={`w-full pl-9 pr-3 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none ${embedded ? 'py-1.5' : 'py-2'}`} />
             </div>
             {(() => {
               const active = (channelFilter !== 'all' ? 1 : 0) + (deptFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (labelFilter !== '' ? 1 : 0);
@@ -2373,6 +2481,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               );
             })()}
+            {/* No modo embutido as ações (online/sino/nova conversa) vêm para esta
+                linha, eliminando a linha de título "WhatsApp" redundante. */}
+            {embedded && listHeaderActions}
           </div>
 
           {filtersOpen && (
@@ -2406,7 +2517,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           )}
 
           {/* Abas de situação (restauradas): Todas / Não lidas / Minhas */}
-          <div className="flex items-center gap-1 mt-2.5">
+          <div className={`flex items-center gap-1 ${embedded ? 'mt-2' : 'mt-2.5'}`}>
             {([
               ['all', `Todas (${tabCounts.all})`],
               ['unread', `Não lidas (${tabCounts.unread})`],
@@ -2477,7 +2588,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         ) : (
           <>
-            <header className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-5 py-3 border-b border-[#e7e5df] bg-white">
+            <header className={`flex items-center gap-2 sm:gap-3 border-b border-[#e7e5df] bg-white ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-3'}`}>
               {isMobile && (
                 <button onClick={() => setSelectedId(null)} title="Voltar à lista"
                   className="flex-shrink-0 -ml-1 w-9 h-9 rounded-lg text-slate-600 hover:bg-[#f3f2ef] flex items-center justify-center transition">
@@ -2532,12 +2643,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
                   <button onClick={handleAccept} title="Assumir este atendimento"
-                    className="hidden sm:inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition">
+                    className={`${isMobile ? 'hidden' : 'inline-flex'} items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition`}>
                     <CheckCircle2 size={15} /> Aceitar
                   </button>
                 )}
-                {/* Ações inline — apenas em telas largas (≥640px); abaixo disso viram o menu "⋮" */}
-                <div className="hidden sm:flex items-center gap-1.5">
+                {/* Ações inline — só no módulo cheio largo; no widget embutido (estreito,
+                    mas viewport desktop) e no mobile, viram o menu "⋮". Usar o flag
+                    `isMobile` (consciente do contêiner) em vez de breakpoint de viewport. */}
+                <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-1.5`}>
                 {/* Comandos de fila (atribuição direta, sem transferência) */}
                 {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
                   <button onClick={handleAssume} title={selected.assigned_user_id ? 'Assumir este atendimento' : 'Assumir da fila'}
@@ -2629,7 +2742,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   if (canAccept || canAssume) {
                     return (
                       <button onClick={canAccept ? handleAccept : handleAssume} title="Aceitar atendimento"
-                        className="sm:hidden flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center transition">
+                        className={`${isMobile ? 'flex' : 'hidden'} flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 items-center justify-center transition`}>
                         <Check size={18} strokeWidth={2.75} />
                       </button>
                     );
@@ -2637,7 +2750,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   if (isMineOpen) {
                     return (
                       <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
-                        className="sm:hidden flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition">
+                        className={`${isMobile ? 'flex' : 'hidden'} flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 items-center justify-center transition`}>
                         <CheckCircle2 size={18} />
                       </button>
                     );
@@ -2645,8 +2758,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   return null;
                 })()}
 
-                {/* Menu "⋮" — agrupa as ações em telas estreitas (<640px) */}
-                <div className="sm:hidden relative flex-shrink-0">
+                {/* Menu "⋮" — agrupa as ações no widget embutido e no mobile */}
+                <div className={`${isMobile ? 'block' : 'hidden'} relative flex-shrink-0`}>
                   <button onClick={() => setHeaderMenuOpen(o => !o)} title="Mais ações" aria-haspopup="menu" aria-expanded={headerMenuOpen}
                     className="w-9 h-9 rounded-lg bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 flex items-center justify-center transition">
                     <MoreVertical size={18} />
@@ -2690,7 +2803,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             </header>
 
-            {selected.client_id && <ConversationSummaryBanner overview={overview} docStatus={effectiveDocStatus(selected.client_id)} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
+            {selected.client_id && <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={effectiveDocStatus(selected.client_id)} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
 
             {/* Fase J: banner de sessão de IA ativa */}
             {aiSession?.status === 'active' && (
@@ -2727,7 +2840,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
-            <div ref={threadRef} onScroll={onThreadScroll} className="flex-1 overflow-y-auto min-h-0" style={{ background: '#f3f2ef' }}>
+            <div ref={setThreadEl} onScroll={onThreadScroll} className="flex-1 overflow-y-auto min-h-0" style={{ background: '#F8F9FA' }}>
               <div ref={threadContentRef} className="px-3 sm:px-5 py-4 space-y-1.5">
               {loadingMsgs ? (
                 <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
@@ -3326,10 +3439,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       {lightbox && (() => {
         const idx = lightboxImages.indexOf(lightbox);
         const hasGallery = idx >= 0 && lightboxImages.length > 1;
-        return (
-        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
-          <button onClick={() => setLightbox(null)} className="absolute top-5 right-5 text-white/80 hover:text-white"><X size={26} /></button>
+        // Portal para document.body: escapa do containing block do widget embutido
+        // (o painel usa transform + overflow-hidden, que prenderiam o `fixed`
+        // dentro da thread). z-index acima do widget (z-[9999]). Fecha por
+        // clique fora, X e ESC (handler de teclado já registrado no efeito).
+        return createPortal(
+        <div className="fixed inset-0 z-[100000] bg-black/85 flex items-center justify-center p-6" style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-5 right-5 h-10 w-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center ring-1 ring-white/20 transition" title="Fechar"><X size={22} /></button>
           {hasGallery && (
             <>
               <button
@@ -3351,12 +3468,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </span>
             </>
           )}
-        </div>
+        </div>,
+        document.body
         );
       })()}
 
-      {/* Fase M: dashboard de atendimento */}
-      {showDashboard && (
+      {/* Fase M: dashboard de atendimento (oculto no modo embutido) */}
+      {!embedded && showDashboard && (
         <AttendanceDashboard onClose={() => setShowDashboard(false)} />
       )}
 
@@ -3454,12 +3572,12 @@ const MessageBubble: React.FC<{
         </div>
       )}
 
-      <div className={`wa-bubble wa-bubble-in ${out ? 'origin-bottom-right' : 'origin-bottom-left'} relative text-[13.5px] leading-snug text-slate-800 rounded-2xl ${m.type === 'audio' ? '' : 'shadow-sm'} ${out ? 'rounded-br-sm' : 'rounded-bl-sm'} ${mediaOnly ? 'max-w-[280px] p-0 overflow-hidden bg-black/5' : `max-w-[70%] px-3 py-2 ${out ? 'bg-[#d9fdd3]' : 'bg-white'}`}`}>
+      <div className={`wa-bubble wa-bubble-in ${out ? 'origin-bottom-right' : 'origin-bottom-left'} relative text-[13.5px] leading-snug text-slate-800 rounded-2xl ${m.type === 'audio' ? '' : 'shadow-sm'} ${out ? 'rounded-br-sm' : 'rounded-bl-sm'} ${mediaOnly ? 'max-w-[280px] p-0 overflow-hidden bg-black/5' : `max-w-[70%] px-3 py-2 border ${out ? 'bg-[#E8F5E9] border-[#C8E6C9]' : 'bg-white border-slate-200/70'}`}`}>
         {senderName && (
-          <span className="flex items-center gap-1 text-[11px] font-bold mb-0.5 text-emerald-700">
-            {senderName}
+          <span className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-tight text-emerald-700 truncate">{senderName}</span>
             {senderRole && (
-              <span className="px-1 py-px rounded text-[9px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-700">{senderRole}</span>
+              <span className="shrink-0 px-1.5 py-px rounded text-[9px] font-bold uppercase tracking-wide bg-emerald-200 text-emerald-800">{senderRole}</span>
             )}
           </span>
         )}
@@ -4646,20 +4764,68 @@ const ClientAgreementsPanel: React.FC<{
 
 // ── Resumo rápido do cliente/processo no topo da thread (Fase 6/10/G) ──
 // Cada segmento abre um cartão de detalhes (fade) ao passar o mouse.
-const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children: React.ReactNode }> = ({ trigger, width = 'w-72', children }) => (
-  <span className="relative group/hd inline-flex items-center gap-1 cursor-default">
-    {trigger}
-    <span className={`pointer-events-none group-hover/hd:pointer-events-auto absolute left-0 top-full z-40 pt-2 ${width} origin-top-left scale-95 opacity-0 transition-all duration-150 group-hover/hd:scale-100 group-hover/hd:opacity-100`}>
-      <span className="block rounded-xl border border-[#e7e5df] bg-white p-3 shadow-xl text-slate-600 normal-case tracking-normal font-normal">
-        {children}
-      </span>
+// Largura (px) de cada classe Tailwind aceita — usada para posicionar o painel.
+const HD_WIDTH_PX: Record<string, number> = { 'w-72': 288, 'w-80': 320, 'w-96': 384 };
+
+// O painel é renderizado em portal (document.body) com posição fixa calculada a
+// partir do gatilho. Isso evita que ele seja cortado/escape pelo `overflow-hidden`
+// do widget flutuante (abria "abaixo do widget"); ele se ancora ao gatilho,
+// fixa a largura ao viewport e inverte para cima quando não há espaço abaixo.
+const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children: React.ReactNode }> = ({ trigger, width = 'w-72', children }) => {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH: number } | null>(null);
+
+  const open = useCallback(() => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    const el = anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const margin = 8;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const w = Math.min(HD_WIDTH_PX[width] ?? 288, vw - margin * 2);
+    const left = Math.max(margin, Math.min(r.left, vw - w - margin));
+    const spaceBelow = vh - r.bottom - margin * 2;
+    const spaceAbove = r.top - margin * 2;
+    if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+      setPos({ left, bottom: vh - r.top + 6, maxH: Math.max(140, spaceAbove) });
+    } else {
+      setPos({ left, top: r.bottom + 6, maxH: Math.max(140, spaceBelow) });
+    }
+  }, [width]);
+
+  const scheduleClose = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setPos(null), 120);
+  }, []);
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  }, []);
+
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  return (
+    <span ref={anchorRef} className="relative inline-flex items-center gap-1 cursor-default"
+      onMouseEnter={open} onMouseLeave={scheduleClose}>
+      {trigger}
+      {pos && createPortal(
+        <span onMouseEnter={cancelClose} onMouseLeave={scheduleClose}
+          className={`fixed z-[10000] ${width} max-w-[calc(100vw-16px)] text-[12px]`}
+          style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}>
+          <span className="block rounded-xl border border-[#e7e5df] bg-white p-3 shadow-xl text-slate-600 normal-case tracking-normal font-normal overflow-auto"
+            style={{ maxHeight: pos.maxH }}>
+            {children}
+          </span>
+        </span>,
+        document.body
+      )}
     </span>
-  </span>
-);
+  );
+};
 
 const DOC_REQ_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando', partial: 'Parcial', complete: 'Concluído', cancelled: 'Cancelado' };
 
-const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; clientId?: string | null; onOpenWorkspace?: WaOpenWorkspaceFn; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, clientId, onOpenWorkspace, onDismissDocReady, onDismissTemplateFill }) => {
+const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; docStatus?: 'awaiting' | 'ready' | null; clientId?: string | null; embedded?: boolean; onOpenWorkspace?: WaOpenWorkspaceFn; onDismissDocReady?: () => void; onDismissTemplateFill?: (linkId: string) => void }> = ({ overview, docStatus, clientId, embedded, onOpenWorkspace, onDismissDocReady, onDismissTemplateFill }) => {
   if (!overview) return null;
   const s = summarizeOverview(overview);
   // Sem contexto relevante → não polui o topo da thread.
@@ -4730,7 +4896,7 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
     }
   }
   return (
-    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-5 py-2 bg-amber-50/70 border-b border-amber-100 text-[12px] text-slate-600">
+    <div className={`flex items-center gap-y-1 flex-wrap bg-amber-50/70 border-b border-amber-100 text-[12px] text-slate-600 ${embedded ? 'gap-x-3 px-3 py-1.5' : 'gap-x-4 px-5 py-2'}`}>
       <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-800">
         <UserCheck size={12} /> Resumo
       </span>
@@ -4806,7 +4972,11 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
         <HoverDetail trigger={
           <span className="inline-flex items-center gap-1">
             <Calendar size={13} className="text-slate-400" />
-            Próx. prazo: <strong className="text-slate-700 truncate max-w-[180px]">{s.nextDeadline.title}</strong>
+            {embedded ? (
+              <><strong className="text-slate-700">{deadlines.length}</strong> {deadlines.length > 1 ? 'prazos' : 'prazo'}</>
+            ) : (
+              <>Próx. prazo: <strong className="text-slate-700 truncate max-w-[180px]">{s.nextDeadline.title}</strong></>
+            )}
             {dl && <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${dl.tone === 'red' ? 'text-red-600 bg-red-50' : dl.tone === 'amber' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'}`}>{dl.label}</span>}
           </span>
         } width="w-80">
@@ -4839,8 +5009,14 @@ const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | null; doc
         <HoverDetail trigger={
           <span className="inline-flex items-center gap-1">
             <Clock size={13} className="text-slate-400" />
-            <strong className="text-slate-700 truncate max-w-[160px]">{s.nextEvent.title}</strong>
-            <span className="text-slate-400">{new Date(s.nextEvent.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+            {embedded ? (
+              <><strong className="text-slate-700">{events.length}</strong> {events.length > 1 ? 'compromissos' : 'compromisso'}</>
+            ) : (
+              <>
+                <strong className="text-slate-700 truncate max-w-[160px]">{s.nextEvent.title}</strong>
+                <span className="text-slate-400">{new Date(s.nextEvent.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+              </>
+            )}
           </span>
         }>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Próximo compromisso</p>
@@ -5108,8 +5284,8 @@ const AttachmentPreviewModal: React.FC<{
   const isImg = cur?.type.startsWith('image/');
   const isVid = cur?.type.startsWith('video/');
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-[520px] max-w-[96vw] flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 bg-[#0b141a]"
         style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
 
@@ -5190,7 +5366,8 @@ const AttachmentPreviewModal: React.FC<{
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

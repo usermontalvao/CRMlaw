@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileText, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { buildPortalFarewellMessage, chatService } from '../services/chat.service';
@@ -9,6 +9,19 @@ import type { ChatMessage, ChatRoom } from '../types/chat.types';
 import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
+import WhatsAppModule from './WhatsAppModule';
+import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+
+// Tamanho padrão do widget (usado no reset e quando não há preferência salva).
+const WIDGET_DEFAULT_W = 384;
+const WIDGET_DEFAULT_H = 590;
+const WIDGET_MIN_W = 320;
+const WIDGET_MAX_W = 720;
+const WIDGET_MIN_H = 420;
+const WIDGET_MAX_H = 900;
+// Alturas de defaults antigos: quem tinha uma delas salva migra para o default
+// atual (inclui 460/560/620 anteriores).
+const LEGACY_WIDGET_DEFAULT_HEIGHTS = new Set([600, 570, 540, 500, 460, 560, 620]);
 
 // No localStorage cache for chat data — all state comes from DB/realtime only.
 
@@ -547,7 +560,61 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [members, setMembers] = useState<Profile[]>([]);
   const [roomMembers, setRoomMembers] = useState<Map<string, string[]>>(new Map());
 
-  const [chatTab, setChatTab] = useState<'equipe' | 'ticket'>('equipe');
+  // Posição (offset de arraste a partir do canto inferior-direito) e largura/altura
+  // do painel — permite mover de lado e redimensionar a largura. Sem persistência
+  // (regra do widget: nada de localStorage além de imagens).
+  const [panelPos, setPanelPos] = useState({ x: 0, y: 0 });
+  const [panelW, setPanelW] = useState(WIDGET_DEFAULT_W);
+  const [panelH, setPanelH] = useState(WIDGET_DEFAULT_H);
+  const dragRef = useRef<{ mode: 'move' | 'w' | 'h' | 'wh'; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number } | null>(null);
+  // Preferência de tamanho carregada do banco (evita salvar durante o load inicial).
+  const widgetPrefsLoaded = useRef(false);
+  const sizeRef = useRef({ w: WIDGET_DEFAULT_W, h: WIDGET_DEFAULT_H });
+  sizeRef.current = { w: panelW, h: panelH };
+
+  // ── Carregar/salvar o tamanho do widget (preferência por usuário no banco) ──
+  // IMPORTANTE: estes hooks ficam ANTES de qualquer early return do componente.
+  useEffect(() => {
+    if (!user?.id) return;
+    let alive = true;
+    dashboardPreferencesService.getChatWidgetPrefs(user.id).then((p) => {
+      if (!alive) return;
+      if (p && Number.isFinite(p.w) && Number.isFinite(p.h)) {
+        const nextW = Math.max(WIDGET_MIN_W, Math.min(WIDGET_MAX_W, p.w));
+        const migratedH = LEGACY_WIDGET_DEFAULT_HEIGHTS.has(p.h) ? WIDGET_DEFAULT_H : p.h;
+        const nextH = Math.max(WIDGET_MIN_H, Math.min(WIDGET_MAX_H, migratedH));
+        setPanelW(nextW);
+        setPanelH(nextH);
+        if (nextW !== p.w || nextH !== p.h) {
+          void dashboardPreferencesService.saveChatWidgetPrefs(user.id, { w: nextW, h: nextH });
+        }
+      }
+      widgetPrefsLoaded.current = true;
+    }).catch(() => { widgetPrefsLoaded.current = true; });
+    return () => { alive = false; };
+  }, [user?.id]);
+
+  const persistWidgetSize = useCallback((w: number, h: number) => {
+    if (!user?.id) return;
+    void dashboardPreferencesService.saveChatWidgetPrefs(user.id, { w, h });
+  }, [user?.id]);
+
+  const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('whatsapp');
+  // Aba WhatsApp (modo lite): o WhatsAppModule embutido é dono da seleção; aqui
+  // só guardamos o total de não-lidas (badge) e a conversa ativa (deep-link ao maximizar).
+  const [waUnread, setWaUnread] = useState(0);
+  const [waActiveConvId, setWaActiveConvId] = useState<string | null>(null);
+  // Deep-link da aba WhatsApp embutida: ao clicar no toast de notificação, abrimos
+  // o widget já naquela conversa (consumido por onParamConsumed → volta a null).
+  const [waOpenConvId, setWaOpenConvId] = useState<string | null>(null);
+  // Toast de WhatsApp ancorado ao widget (emitido por useWhatsAppNotifications).
+  const [waToast, setWaToast] = useState<{ id: string; conversationId: string; name: string; preview: string } | null>(null);
+  const waToastTimerRef = useRef<number | null>(null);
+  // Contador de não-lidas do WhatsApp para o BADGE do launcher (estrutura do
+  // widget antigo): quando o widget está fechado o WhatsAppModule embutido não
+  // está montado e não há waUnread vivo, então acumulamos aqui via o evento de
+  // notificação. Zera ao abrir a aba WhatsApp.
+  const [waNotifyCount, setWaNotifyCount] = useState(0);
   const [ticketTyping, setTicketTyping] = useState<Map<string, string>>(new Map());
   const [liveTypingText, setLiveTypingText] = useState('');
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -1074,6 +1141,46 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
+
+  // Ao abrir a aba WhatsApp do widget, zera o badge acumulado (o módulo embutido
+  // passa a refletir as não-lidas reais).
+  useEffect(() => {
+    if (open && chatTab === 'whatsapp') setWaNotifyCount(0);
+  }, [open, chatTab]);
+
+  // Notificação de WhatsApp ancorada ao widget: o hook global (App) faz toda a
+  // filtragem ("é minha?", silenciada, fora do módulo) e emite o evento; aqui só
+  // exibimos o toast reaproveitando a estrutura visual já pronta do widget.
+  useEffect(() => {
+    const handle = (data?: any) => {
+      const conversationId = data?.conversationId;
+      if (!conversationId) return;
+      // Badge do launcher (sempre, mesmo com a aba WhatsApp aberta noutra conversa).
+      const viewingThis = open && chatTab === 'whatsapp' && waActiveConvId === conversationId;
+      if (!viewingThis) setWaNotifyCount((c) => c + 1);
+      // Já vendo essa conversa na aba WhatsApp do widget? Não precisa do toast.
+      if (viewingThis) return;
+      // Widget ABERTO: não exibe o toast flutuante (sobrepõe o painel e deforma o
+      // layout). O contador da aba WhatsApp (+1/+2) e a lista já mostram a chegada.
+      if (open) return;
+      setWaToast({
+        id: `${conversationId}:${Date.now()}`,
+        conversationId,
+        name: data?.name || 'Contato',
+        preview: data?.preview || 'Nova mensagem',
+      });
+      if (waToastTimerRef.current) window.clearTimeout(waToastTimerRef.current);
+      waToastTimerRef.current = window.setTimeout(() => setWaToast(null), 7000);
+    };
+    // Escuta o CustomEvent nativo no window (o emitter sempre o dispara). Usar só
+    // o window evita disparo duplo e sobrevive a divergência de instância entre
+    // chunks lazy (o emitter in-memory dependeria de timing de registro).
+    const domHandler = (e: Event) => handle((e as CustomEvent).detail);
+    window.addEventListener(`crm:${SYSTEM_EVENTS.WHATSAPP_NOTIFY}`, domHandler);
+    return () => {
+      window.removeEventListener(`crm:${SYSTEM_EVENTS.WHATSAPP_NOTIFY}`, domHandler);
+    };
+  }, [open, chatTab, waActiveConvId]);
 
   useEffect(() => {
     const map = new Map<string, Profile>();
@@ -1644,6 +1751,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             .sort((a, b) => (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at))
           );
         },
+        // ── Edição / exclusão (soft-delete) de mensagem refletidas ao vivo ──
+        // O widget usa um canal global (sem assinatura por-sala), então UPDATE
+        // entra aqui. Atualiza a mensagem na sala aberta e o preview da lista.
+        onUpdate: (msg) => {
+          if (msg.room_id === selectedRoomIdRef.current) {
+            setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, ...msg } : m));
+          }
+          // Só mexe no preview quando a ÚLTIMA mensagem muda (não reordena).
+          setRooms((prev) => prev.map((r) =>
+            r.id === msg.room_id && (r.last_message_at ?? r.created_at) === msg.created_at
+              ? { ...r, last_message_preview: msg.deleted_at ? '🗑️ Mensagem apagada' : getPreview(msg.content) }
+              : r
+          ));
+        },
       });
     };
 
@@ -1690,9 +1811,18 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           // We use a functional update reading the removed room's count before deletion.
           setNotifyCount((prev) => Math.max(0, prev - 1));
         } else {
-          setRooms((prev) =>
-            prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r)),
-          );
+          // accepted_by é null (devolvido à fila) ou == eu (transferido PARA mim):
+          // em ambos a sala é visível para mim. Se já está na lista, só mescla;
+          // se NÃO está (acabou de ser transferida pra mim), busca completa — o
+          // payload do realtime não traz preview/membros/não-lidas.
+          const exists = stableCallbacksRef.current.getRooms().some((r) => r.id === updatedRoom.id);
+          if (exists) {
+            setRooms((prev) =>
+              prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r)),
+            );
+          } else {
+            stableCallbacksRef.current.loadRooms();
+          }
         }
       },
     });
@@ -1797,11 +1927,62 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   // totalUnreadFromRooms is updated optimistically by realtime handlers, so it's
   // always accurate. notifyCount is a session-only increment that can become stale
   // (e.g. after acceptedByOther removes the room), so we don't use Math.max here.
-  const badgeCount = totalUnreadFromRooms;
+  const badgeCount = totalUnreadFromRooms + waNotifyCount;
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
 
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
   const headerVerified = getVerifiedVariant(otherUser);
+
+  // ── Arrastar (mover) e redimensionar (largura/altura) o painel ──
+  const onPanelDragMove = (e: PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    if (d.mode === 'move') {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let nx = d.ox + (e.clientX - d.sx);
+      let ny = d.oy + (e.clientY - d.sy);
+      nx = Math.min(0, Math.max(-(vw - panelW - 32), nx)); // não passa da borda esquerda
+      ny = Math.min(0, Math.max(-(vh - panelH - 100), ny)); // nem do topo
+      setPanelPos({ x: nx, y: ny });
+      return;
+    }
+    // Ancorado no canto inferior-direito: arrastar p/ esquerda alarga; p/ cima aumenta a altura.
+    if (d.mode === 'w' || d.mode === 'wh') {
+      let nw = d.ow - (e.clientX - d.sx);
+      nw = Math.max(WIDGET_MIN_W, Math.min(Math.min(WIDGET_MAX_W, window.innerWidth - 32), nw));
+      setPanelW(nw);
+    }
+    if (d.mode === 'h' || d.mode === 'wh') {
+      let nh = d.oh - (e.clientY - d.sy);
+      nh = Math.max(WIDGET_MIN_H, Math.min(Math.min(WIDGET_MAX_H, window.innerHeight - 120), nh));
+      setPanelH(nh);
+    }
+  };
+  const onPanelDragEnd = () => {
+    const wasResize = dragRef.current && dragRef.current.mode !== 'move';
+    dragRef.current = null;
+    window.removeEventListener('pointermove', onPanelDragMove);
+    window.removeEventListener('pointerup', onPanelDragEnd);
+    document.body.style.userSelect = '';
+    if (wasResize) persistWidgetSize(sizeRef.current.w, sizeRef.current.h);
+  };
+  const startPanelDrag = (mode: 'move' | 'w' | 'h' | 'wh') => (e: React.PointerEvent) => {
+    if (mode === 'move' && (e.target as HTMLElement).closest('button,a,input,textarea')) return;
+    if (mode !== 'move') { e.preventDefault(); e.stopPropagation(); }
+    dragRef.current = { mode, sx: e.clientX, sy: e.clientY, ox: panelPos.x, oy: panelPos.y, ow: panelW, oh: panelH };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onPanelDragMove);
+    window.addEventListener('pointerup', onPanelDragEnd);
+  };
+
+  // Volta ao tamanho/posição padrão e salva a preferência.
+  const resetWidgetSize = () => {
+    setPanelW(WIDGET_DEFAULT_W);
+    setPanelH(WIDGET_DEFAULT_H);
+    setPanelPos({ x: 0, y: 0 });
+    persistWidgetSize(WIDGET_DEFAULT_W, WIDGET_DEFAULT_H);
+  };
+  const isCustomSize = panelW !== WIDGET_DEFAULT_W || panelH !== WIDGET_DEFAULT_H || panelPos.x !== 0 || panelPos.y !== 0;
 
   if (hidden) return null;
 
@@ -1816,6 +1997,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         @keyframes chatNudgeRing2{0%{box-shadow:0 0 0 0 rgba(251,146,60,.4);opacity:1}100%{box-shadow:0 0 0 72px rgba(251,146,60,0);opacity:0}}
         @keyframes chatNudgeFlash{0%{opacity:.22}100%{opacity:0}}
         @keyframes chatPanelIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes chatBackdropIn{from{opacity:0}to{opacity:1}}
         @keyframes chatGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0)}50%{box-shadow:0 0 0 8px rgba(251,146,60,.15)}}
         @keyframes chatLauncherGlow{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 0 rgba(251,146,60,.4)}50%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 12px rgba(251,146,60,0)}}
         @keyframes chatTypingDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-3px);opacity:1}}
@@ -1825,8 +2007,44 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         @keyframes chatWaveBar{0%,100%{transform:scaleY(.22);opacity:.45}50%{transform:scaleY(1);opacity:1}}
         .chat-scrollbar::-webkit-scrollbar{width:6px}
         .chat-scrollbar::-webkit-scrollbar-track{background:transparent}
-        .chat-scrollbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
-        .chat-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.15)}
+        .chat-scrollbar::-webkit-scrollbar-thumb{background:rgba(15,23,42,.14);border-radius:3px}
+        .chat-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(15,23,42,.26)}
+        /* ── Tema CLARO do widget (escopo .cw-light) ──
+           O markup foi desenhado para fundo escuro (text-white + overlays
+           translúcidos brancos). Em vez de reescrever ~150 classes, remapeamos
+           cada utilitário translúcido-branco para o equivalente translúcido-escuro,
+           reusando o MESMO alfa para preservar a hierarquia visual. Os text-white
+           SÓLIDOS (em botões/avatars coloridos) não casam estes seletores e
+           permanecem brancos. Usamos seletor de atributo [class~="…"] para não
+           depender de escapes de barra/colchete (que o template literal removeria). */
+        .cw-light{color:#1e293b}
+        .cw-light [class~="text-white/95"]{color:rgba(15,23,42,.95)}
+        .cw-light [class~="text-white/85"]{color:rgba(15,23,42,.85)}
+        .cw-light [class~="text-white/80"]{color:rgba(15,23,42,.8)}
+        .cw-light [class~="text-white/70"]{color:rgba(15,23,42,.7)}
+        .cw-light [class~="text-white/60"]{color:rgba(15,23,42,.6)}
+        .cw-light [class~="text-white/55"]{color:rgba(15,23,42,.55)}
+        .cw-light [class~="text-white/50"]{color:rgba(15,23,42,.5)}
+        .cw-light [class~="text-white/45"]{color:rgba(15,23,42,.48)}
+        .cw-light [class~="text-white/40"]{color:rgba(15,23,42,.45)}
+        .cw-light [class~="text-white/35"]{color:rgba(15,23,42,.42)}
+        .cw-light [class~="text-white/30"]{color:rgba(15,23,42,.38)}
+        .cw-light [class~="text-white/25"]{color:rgba(15,23,42,.34)}
+        .cw-light [class~="hover:text-white"]:hover{color:#0f172a}
+        .cw-light [class~="hover:text-white/70"]:hover{color:rgba(15,23,42,.7)}
+        .cw-light [class~="bg-white/[0.04]"],.cw-light [class~="bg-white/[0.05]"]{background-color:rgba(15,23,42,.04)}
+        .cw-light [class~="bg-white/[0.06]"],.cw-light [class~="bg-white/[0.08]"]{background-color:rgba(15,23,42,.06)}
+        .cw-light [class~="bg-white/10"]{background-color:rgba(15,23,42,.08)}
+        .cw-light [class~="hover:bg-white/[0.04]"]:hover,.cw-light [class~="hover:bg-white/[0.05]"]:hover,.cw-light [class~="hover:bg-white/[0.06]"]:hover{background-color:rgba(15,23,42,.05)}
+        .cw-light [class~="hover:bg-white/[0.10]"]:hover,.cw-light [class~="hover:bg-white/10"]:hover{background-color:rgba(15,23,42,.07)}
+        .cw-light [class~="hover:bg-white/20"]:hover{background-color:rgba(15,23,42,.1)}
+        .cw-light [class~="bg-[#f8f7f5]/[0.04]"]{background-color:rgba(15,23,42,.04)}
+        .cw-light [class~="bg-[#f8f7f5]/[0.06]"]{background-color:rgba(15,23,42,.05)}
+        .cw-light [class~="bg-[#f8f7f5]/[0.10]"]{background-color:rgba(15,23,42,.07)}
+        .cw-light [class~="border-white/[0.06]"]{border-color:rgba(15,23,42,.08)}
+        .cw-light [class~="border-white/[0.08]"]{border-color:rgba(15,23,42,.1)}
+        .cw-light [class~="ring-white/20"],.cw-light [class~="ring-white/10"],.cw-light [class~="ring-white/5"],.cw-light [class~="ring-white/[0.08]"],.cw-light [class~="ring-white/[0.07]"],.cw-light [class~="ring-white/[0.06]"]{--tw-ring-color:rgba(15,23,42,.1)}
+        .cw-light [class~="placeholder-white/40"]::placeholder,.cw-light [class~="placeholder-white/30"]::placeholder{color:rgba(15,23,42,.4)}
       `}</style>
       {open && (
         <div className="relative mb-3">
@@ -1838,19 +2056,41 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               style={{ animation: 'chatNudgeRing2 0.75s 0.08s ease-out both' }} />
           </>}
         <div
-          className="w-[380px] max-w-[calc(100vw-24px)] rounded-[24px] text-white overflow-hidden flex flex-col h-[520px] max-h-[calc(100vh-120px)] relative"
+          className="cw-light max-w-[calc(100vw-24px)] rounded-[24px] text-slate-800 overflow-hidden flex flex-col max-h-[calc(100vh-120px)] relative border border-slate-900/[0.10]"
           style={{
+            width: panelW,
+            height: panelH,
+            transform: `translate(${panelPos.x}px, ${panelPos.y}px)`,
             ...(shaking
               ? { animation: 'chatShake 1s cubic-bezier(.36,.07,.19,.97) both, chatShakeGlow 1s ease-out both' }
               : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
-            background:
-              'linear-gradient(180deg, rgba(15,23,42,.97) 0%, rgba(10,15,28,.98) 100%)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            background: '#ffffff',
             boxShadow:
-              '0 40px 80px -20px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.08)',
+              '0 34px 72px -20px rgba(15,23,42,.24), 0 16px 34px -18px rgba(15,23,42,.18), 0 0 0 1px rgba(15,23,42,.08), 0 0 0 6px rgba(255,255,255,.34), inset 0 1px 0 rgba(255,255,255,.78)',
           }}
         >
+          {/* Pega de redimensionamento (largura) na borda esquerda */}
+          <div
+            onPointerDown={startPanelDrag('w')}
+            className="absolute left-0 top-12 bottom-12 w-1.5 z-50 cursor-ew-resize group/resize"
+            title="Arrastar para mudar a largura"
+          >
+            <div className="absolute inset-y-0 left-0 w-1 rounded-full bg-transparent group-hover/resize:bg-orange-400/40 transition-colors" />
+          </div>
+          {/* Pega de redimensionamento (altura) na borda superior */}
+          <div
+            onPointerDown={startPanelDrag('h')}
+            className="absolute top-0 left-12 right-12 h-1.5 z-50 cursor-ns-resize group/resizeh"
+            title="Arrastar para mudar a altura"
+          >
+            <div className="absolute inset-x-0 top-0 h-1 rounded-full bg-transparent group-hover/resizeh:bg-orange-400/40 transition-colors" />
+          </div>
+          {/* Canto superior-esquerdo: largura + altura juntas */}
+          <div
+            onPointerDown={startPanelDrag('wh')}
+            className="absolute top-0 left-0 w-4 h-4 z-50 cursor-nwse-resize"
+            title="Arrastar para redimensionar"
+          />
           {/* Brilho sutil no topo */}
           <div
             aria-hidden
@@ -1885,8 +2125,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               <Zap className="w-3.5 h-3.5" style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,.6))' }} />
             </div>
           )}
-          <div className="relative px-4 py-3.5 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div onPointerDown={startPanelDrag('move')} className="relative px-3 py-2 flex items-center justify-between shrink-0 border-b border-white/[0.06] cursor-grab active:cursor-grabbing select-none touch-none">
+            <div className={`flex items-center min-w-0 ${!selectedRoomId && !showNewChatModal ? 'gap-2 shrink-0' : 'gap-2.5 flex-1'}`}>
               {selectedRoomId ? (
                 <>
                   <button
@@ -1940,33 +2180,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 </>
               ) : (
                 <>
-                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-[0_4px_12px_rgba(251,146,60,.35)]">
+                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-[0_4px_12px_rgba(251,146,60,.35)] shrink-0">
                     <MessageCircle className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[15px] font-semibold tracking-tight">Mensagens</span>
-                      {badgeCount > 0 && (
-                        <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[11px] font-bold shadow-[0_2px_6px_rgba(239,68,68,.5)]">
-                          {badgeCount > 99 ? '99+' : badgeCount}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-white/40 font-medium">
-                      {(() => {
-                        const equipe = rooms.filter(r => !r.portal_client_id).length;
-                        // Only count open tickets (same filter as the TICKET tab render)
-                        const ticket = rooms.filter(r => !!r.portal_client_id && !r.created_by).length;
-                        const parts: string[] = [];
-                        if (equipe > 0) parts.push(`${equipe} equipe`);
-                        if (ticket > 0) parts.push(`${ticket} ticket${ticket !== 1 ? 's' : ''}`);
-                        return parts.length > 0 ? parts.join(' · ') : '0 conversas';
-                      })()}
-                    </span>
                   </div>
                 </>
               )}
             </div>
+            {/* Abas EQUIPE | WHATSAPP — embutidas na própria linha do título (topo enxuto) */}
+            {!selectedRoomId && !showNewChatModal && (
+              <nav className="flex-1 flex items-stretch self-stretch min-w-0 mx-2">
+                {(['whatsapp', 'equipe'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setChatTab(tab)}
+                    className={`relative flex-1 text-[11px] font-bold tracking-wide uppercase transition-colors ${
+                      chatTab === tab ? 'text-orange-600' : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {tab === 'equipe' ? 'Equipe' : 'WhatsApp'}
+                    {tab === 'whatsapp' && (waUnread || waNotifyCount) > 0 && (
+                      <span className="ml-1 inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold align-middle">
+                        {(waUnread || waNotifyCount) > 9 ? '9+' : (waUnread || waNotifyCount)}
+                      </span>
+                    )}
+                    {chatTab === tab && (
+                      <span className="absolute -bottom-2 left-3 right-3 h-[2.5px] rounded-full bg-orange-500" />
+                    )}
+                  </button>
+                ))}
+              </nav>
+            )}
             <div className="flex items-center gap-1">
               {/* Botões de ação — salas ticket */}
               {selectedRoomId && selectedRoom?.portal_client_id && (
@@ -2014,28 +2257,30 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </button>
                 </>
               )}
-              {!selectedRoomId && !showNewChatModal && (
+              {isCustomSize && (
                 <button
                   type="button"
-                  onClick={() => setShowNewChatModal(true)}
-                  className="h-9 w-9 rounded-xl bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70"
-                  title="Nova Conversa"
+                  onClick={resetWidgetSize}
+                  className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
+                  title="Voltar ao tamanho padrão"
                 >
-                  <MessageCircle className="w-4 h-4" />
+                  <Minimize2 className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => {
                   setOpen(false);
-                  if (selectedRoomId) {
+                  if (chatTab === 'whatsapp') {
+                    navigateTo('whatsapp', (waActiveConvId ? { conversationId: waActiveConvId } : undefined) as any);
+                  } else if (selectedRoomId) {
                     navigateTo('chat', { roomId: selectedRoomId } as any);
                   } else {
                     navigateTo('chat');
                   }
                 }}
-                className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
-                title="Abrir Chat"
+                className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
+                title={chatTab === 'whatsapp' ? 'Abrir WhatsApp' : 'Abrir Chat'}
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
@@ -2045,13 +2290,27 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   setOpen(false);
                   setSelectedRoomId(null);
                 }}
-                className="h-9 w-9 rounded-xl hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
+                className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
                 title="Fechar"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
+
+          {/* FAB "+" — nova conversa da Equipe. Fica na área da lista (não no
+              header), com hierarquia clara; oculto no WhatsApp/conversa/modal. */}
+          {!selectedRoomId && !showNewChatModal && chatTab === 'equipe' && (
+            <button
+              type="button"
+              onClick={() => setShowNewChatModal(true)}
+              className="absolute bottom-4 right-4 z-20 h-12 w-12 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-[0_8px_24px_-4px_rgba(251,146,60,.6)] ring-1 ring-white/20 hover:scale-105 active:scale-95 transition-transform duration-150"
+              title="Nova conversa"
+              aria-label="Nova conversa"
+            >
+              <Plus className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+          )}
 
           {!selectedRoomId ? (
             showNewChatModal ? (
@@ -2065,7 +2324,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       onChange={(e) => setSearchMember(e.target.value)}
                       placeholder="Buscar pessoa..."
                       autoFocus
-                      className="w-full pl-9 pr-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-[13px] text-white placeholder-white/30 focus:outline-none focus:border-orange-500/60 focus:bg-white/[0.06] transition-all"
+                      className="w-full pl-9 pr-3 py-2.5 bg-slate-900/[0.03] border border-slate-900/[0.08] rounded-xl text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-orange-500/60 focus:bg-white transition-all"
                     />
                   </div>
                 </div>
@@ -2111,35 +2370,19 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               </>
             ) : (
               <>
-              {/* ── Tabs EQUIPE | TICKET ── */}
-              {(() => {
-                const ticketRooms = rooms.filter(r => r.portal_client_id);
-                const ticketUnread = ticketRooms.reduce((s, r) => s + getEffectiveRoomUnread(r), 0);
-                return (
-                  <div className="flex shrink-0 border-b border-white/[0.06] mx-3 mb-1">
-                    {(['equipe', 'ticket'] as const).map(tab => (
-                      <button
-                        key={tab}
-                        onClick={() => setChatTab(tab)}
-                        className={`relative flex-1 py-2.5 text-[12px] font-semibold tracking-wide uppercase transition-colors ${
-                          chatTab === tab ? 'text-white' : 'text-white/40 hover:text-white/70'
-                        }`}
-                      >
-                        {tab === 'equipe' ? 'Equipe' : 'Ticket'}
-                        {tab === 'ticket' && ticketUnread > 0 && (
-                          <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold">
-                            {ticketUnread > 9 ? '9+' : ticketUnread}
-                          </span>
-                        )}
-                        {chatTab === tab && (
-                          <span className="absolute bottom-0 left-1/4 right-1/4 h-[2px] rounded-full bg-orange-500" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-
+              {chatTab === 'whatsapp' ? (
+                // Modo lite: o WhatsAppModule real, embutido — herda todos os
+                // recursos (reply, áudio, mídia/preview, transferência, lightbox…).
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <WhatsAppModule
+                    variant="embedded"
+                    openConversationId={waOpenConvId ?? undefined}
+                    onParamConsumed={() => setWaOpenConvId(null)}
+                    onUnreadChange={setWaUnread}
+                    onActiveConversationChange={setWaActiveConvId}
+                  />
+                </div>
+              ) : (
               <div className="flex-1 overflow-y-auto chat-scrollbar py-1">
                 {loadingRooms && rooms.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-8 text-sm text-white/50">
@@ -2156,10 +2399,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </div>
                 ) : (
                   [...rooms]
-                  .filter(r => chatTab === 'ticket'
-                    ? !!r.portal_client_id && !r.created_by  // ticket: só abertas
-                    : !r.portal_client_id                     // equipe: sem portal
-                  )
+                  .filter(r => !r.portal_client_id) // equipe: sem portal (tickets saíram do widget)
                   .sort((a, b) => {
                     const ua = getEffectiveRoomUnread(a);
                     const ub = getEffectiveRoomUnread(b);
@@ -2218,7 +2458,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <div className={`text-[13px] truncate ${roomUnread > 0 ? 'font-bold text-white' : 'font-semibold text-white/95'}`}>{displayName}</div>
+                            <div className={`text-[13px] truncate ${roomUnread > 0 ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'}`}>{displayName}</div>
                             {verified && <VerifiedBadge variant={verified} />}
                           </div>
                           <div className={`text-[10px] shrink-0 ${roomUnread > 0 ? 'text-orange-300 font-semibold' : 'text-white/40'}`}>
@@ -2261,6 +2501,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 })
                 )}
               </div>
+              )}
               </>
             )
           ) : (
@@ -2338,11 +2579,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       <React.Fragment key={msg.id}>
                         {showSeparator && (
                           <div className="flex items-center gap-3 py-3 my-1">
-                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-900/10 to-transparent" />
                             <span className="text-[10px] text-white/40 font-semibold tracking-wider uppercase px-2 shrink-0">
                               {formatDateSeparator(msg.created_at)}
                             </span>
-                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-900/10 to-transparent" />
                           </div>
                         )}
                         {/* ── Mensagem de sistema (nudge, eventos) ── */}
@@ -2388,7 +2629,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                                 isDeleted
                                   ? 'bg-[#f8f7f5]/[0.04] text-white/30 italic ring-1 ring-white/5'
                                   : isMine
-                                    ? 'bg-slate-700/75 text-white rounded-br-md ring-1 ring-white/[0.07] shadow-[0_2px_8px_rgba(0,0,0,.3)]'
+                                    ? 'bg-slate-100 text-slate-800 rounded-br-md ring-1 ring-slate-900/[0.06] shadow-[0_2px_8px_rgba(15,23,42,.08)]'
                                     : 'bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-bl-md shadow-[0_4px_16px_-4px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.18)]'
                               }`}
                             >
@@ -2495,7 +2736,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </div>
                 )}
 
-              <div className="p-3 border-t border-white/[0.06] bg-gradient-to-t from-black/20 to-transparent">
+              <div className="p-3 border-t border-white/[0.06] bg-white">
                 {/* ── Barra de gravação estilo WhatsApp ── */}
                 {isRecording ? (
                   <div className="flex items-center gap-2" style={{ animation: 'chatPanelIn 220ms cubic-bezier(.22,1,.36,1) both' }}>
@@ -2511,7 +2752,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             <Trash2 className="w-4 h-4" />
                           </button>
                           <div className="flex-1 flex items-center gap-2 rounded-2xl px-3"
-                            style={{ height: '38px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                            style={{ height: '38px', background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.08)' }}>
                             {/* Botão play inline */}
                             <button type="button" onClick={handleTogglePreviewPlayback}
                               className="shrink-0 w-6 h-6 rounded-full bg-[#f8f7f5]/[0.10] hover:bg-orange-500/30 flex items-center justify-center transition-all active:scale-90"
@@ -2523,7 +2764,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             <div className="flex-1 flex items-end gap-[2px]" style={{ height: '16px' }}>
                               {Array.from({ length: 32 }, (_, i) => (
                                 <div key={i} className="flex-1 rounded-full"
-                                  style={{ height: `${18 + ((i * 43 + i * i * 7) % 82)}%`, background: 'rgba(255,255,255,0.16)' }} />
+                                  style={{ height: `${18 + ((i * 43 + i * i * 7) % 82)}%`, background: 'rgba(15,23,42,0.18)' }} />
                               ))}
                             </div>
                             <span className="text-[11px] font-mono text-white/40 font-semibold tabular-nums shrink-0">
@@ -2558,7 +2799,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                           <Trash2 className="w-4 h-4" />
                         </button>
                         <div className="flex-1 flex items-center gap-2 rounded-2xl px-3"
-                          style={{ height: '40px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                          style={{ height: '40px', background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(239,68,68,0.15)' }}>
                           <div className="flex-1 flex items-end gap-[2px]" style={{ height: '22px' }}>
                             {Array.from({ length: 32 }, (_, i) => {
                               const baseH = 18 + ((i * 43 + i * i * 7) % 82);
@@ -2599,7 +2840,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 <div className="relative flex items-center gap-1.5">
                   {showEmojiPicker && (
                     <div
-                      className="absolute bottom-14 left-0 z-20 w-[300px] rounded-2xl bg-[#0b1220]/95 backdrop-blur-xl p-3 ring-1 ring-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+                      className="absolute bottom-14 left-0 z-20 w-[300px] rounded-2xl bg-white p-3 ring-1 ring-slate-900/[0.08] shadow-[0_20px_60px_rgba(15,23,42,.18)]"
                       style={{ animation: 'chatPanelIn 240ms cubic-bezier(.22,1,.36,1) both' }}
                     >
                       <div className="grid grid-cols-8 gap-0.5">
@@ -2697,7 +2938,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       if (e.key === 'Escape' && replyTo) setReplyTo(null);
                     }}
                     placeholder={replyTo ? 'Escreva sua resposta...' : 'Digite uma mensagem...'}
-                    className="min-w-0 flex-1 bg-white/[0.05] border border-white/[0.08] rounded-xl px-3.5 py-2 text-[13.5px] text-white placeholder-white/40 focus:outline-none focus:border-orange-500/50 focus:bg-white/[0.08] focus:shadow-[0_0_0_3px_rgba(251,146,60,.1)] transition-all"
+                    className="min-w-0 flex-1 bg-slate-900/[0.03] border border-slate-900/[0.08] rounded-xl px-3.5 py-2 text-[13.5px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-orange-500/60 focus:bg-white focus:shadow-[0_0_0_3px_rgba(251,146,60,.12)] transition-all"
                     disabled={sendingMessage || uploadingAttachment}
                   />
 
@@ -2727,6 +2968,123 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             </div>
           )}
         </div>
+        </div>
+      )}
+
+      {/* Toast de WhatsApp — notificação premium ancorada ao widget (acima do
+          launcher). Cartão claro com selo de marca, hierarquia tipográfica
+          refinada e barra de progresso fina. */}
+      {waToast && (
+        <div
+          key={waToast.id}
+          className="mb-3 w-[332px] max-w-[calc(100vw-24px)]"
+          style={{ animation: 'chatToastIn 480ms cubic-bezier(.34,1.56,.64,1) both, chatToastOut 560ms 6.6s ease-in both' }}
+        >
+          <div
+            className="relative overflow-hidden rounded-[18px]"
+            style={{
+              background: 'linear-gradient(180deg,#ffffff 0%,#f9fdfb 100%)',
+              boxShadow:
+                '0 20px 48px -14px rgba(6,78,59,.30), 0 8px 18px -10px rgba(15,23,42,.20), inset 0 1px 0 rgba(255,255,255,.85)',
+              border: '1px solid rgba(16,185,129,.18)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+            }}
+          >
+            {/* Trilho de acento (verde WhatsApp) na borda esquerda */}
+            <span
+              aria-hidden
+              className="absolute left-0 top-0 bottom-0 w-[3px]"
+              style={{ background: 'linear-gradient(180deg,#25D366 0%,#0e9f6e 100%)' }}
+            />
+            {/* Brilho sutil no canto superior */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-16"
+              style={{ background: 'radial-gradient(70% 100% at 18% 0%, rgba(37,211,102,.10) 0%, transparent 70%)' }}
+            />
+
+            {/* Fechar */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (waToastTimerRef.current) { window.clearTimeout(waToastTimerRef.current); waToastTimerRef.current = null; }
+                setWaToast(null);
+              }}
+              className="absolute top-2.5 right-2.5 z-10 h-6 w-6 rounded-full flex items-center justify-center text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              title="Dispensar"
+              aria-label="Dispensar notificação"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Corpo clicável */}
+            <button
+              type="button"
+              className="group/watoast relative w-full flex items-start gap-3 pl-4 pr-9 py-3.5 text-left"
+              onClick={async () => {
+                if (waToastTimerRef.current) { window.clearTimeout(waToastTimerRef.current); waToastTimerRef.current = null; }
+                const convId = waToast.conversationId;
+                setWaToast(null);
+                await ensureAudioContext();
+                setSelectedRoomId(null);
+                setChatTab('whatsapp');
+                setWaOpenConvId(convId);
+                setOpen(true);
+              }}
+            >
+              {/* Avatar com selo de marca WhatsApp */}
+              <span className="relative shrink-0">
+                <span
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-white text-[14px] font-semibold ring-2 ring-white"
+                  style={{ background: 'linear-gradient(135deg,#34d97e 0%,#0ea36a 100%)', boxShadow: '0 6px 14px -4px rgba(14,163,106,.55)' }}
+                >
+                  {waToast.name
+                    .split(' ')
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((n: string) => n[0])
+                    .join('')
+                    .toUpperCase() || 'W'}
+                </span>
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white shadow-[0_2px_5px_rgba(15,23,42,.18)]">
+                  <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#25D366]">
+                    <svg viewBox="0 0 24 24" className="h-[10px] w-[10px]" fill="#ffffff" aria-hidden>
+                      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.84 9.84 0 0 0 12.04 2zm5.9 13.98c-.25.7-1.45 1.34-2 1.42-.53.08-1.18.11-1.91-.12-.44-.14-1-.32-1.72-.63-3.03-1.31-5.01-4.36-5.16-4.56-.15-.2-1.23-1.64-1.23-3.12 0-1.49.78-2.22 1.06-2.52.28-.31.61-.38.81-.38.2 0 .41 0 .58.01.19.01.44-.07.69.53.25.61.86 2.1.94 2.25.08.15.13.33.02.53-.1.2-.15.33-.3.5-.15.18-.32.39-.46.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.7 2.11 1.17 1.04 2.15 1.36 2.46 1.51.3.15.48.13.66-.08.18-.2.76-.89.96-1.19.2-.3.41-.25.69-.15.28.1 1.77.83 2.07.99.3.15.5.22.58.35.07.12.07.72-.18 1.42z"/>
+                    </svg>
+                  </span>
+                </span>
+              </span>
+
+              {/* Texto */}
+              <span className="block min-w-0 flex-1">
+                <span className="flex items-baseline gap-2">
+                  <span className="flex-1 truncate text-[14px] font-semibold leading-tight text-slate-900">
+                    {/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+$/.test(waToast.name)
+                      ? waToast.name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+                      : waToast.name}
+                  </span>
+                  <span className="shrink-0 text-[10.5px] font-medium text-slate-400">agora</span>
+                </span>
+                <span className="mt-0.5 block text-[12.5px] leading-snug text-slate-500 line-clamp-2 break-words">
+                  {waToast.preview}
+                </span>
+                <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold tracking-wide text-[#0e9f6e]">
+                  Abrir conversa
+                  <ChevronRight className="w-3 h-3 transition-transform duration-150 group-hover/watoast:translate-x-0.5" />
+                </span>
+              </span>
+            </button>
+
+            {/* Barra de progresso fina */}
+            <span className="block h-[2px] overflow-hidden">
+              <span
+                className="block h-full w-full origin-left"
+                style={{ background: 'linear-gradient(90deg,#25D366 0%,#0e9f6e 100%)', animation: 'chatToastProgress 7s linear both' }}
+              />
+            </span>
+          </div>
         </div>
       )}
 

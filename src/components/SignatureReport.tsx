@@ -258,6 +258,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                   signer.signer_ip                  && { k: 'IP',          v: signer.signer_ip,                             mono: true  },
                   geo?.[0] && geo?.[1]              && { k: 'Coordenadas', v: `${geo[0]}, ${geo[1]}`,                       mono: true  },
                   ua                                && { k: 'Dispositivo', v: `${ua.device} · ${ua.browser} · ${ua.os}`,   mono: false },
+                  signer.terms_accepted_at          && { k: 'Termos de Uso', v: `Aceitos (${signer.terms_version || 'v1'}) em ${fmtFull(signer.terms_accepted_at)}`, mono: false },
                 ].filter(Boolean).map((row: any, i, arr) => (
                   <DataRow key={i} label={row.k} value={row.v} mono={row.mono} last={i === arr.length - 1} />
                 ))}

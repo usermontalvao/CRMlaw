@@ -9,8 +9,8 @@
 import { useEffect, useRef } from 'react';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
-import { useToastContext } from '../contexts/ToastContext';
 import { playNotificationSound, isNotifySoundMuted } from '../utils/notificationSound';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const SOUND_THROTTLE_MS = 1500; // evita rajada de "dings" em mensagens em sequência
 
@@ -53,18 +53,14 @@ interface Params {
 }
 
 export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): void {
-  const toast = useToastContext();
   const inModuleRef = useRef(inModule);
   const onOpenRef = useRef(onOpen);
-  const toastRef = useRef(toast);
   const lastSoundRef = useRef(0);
 
   // Refs atualizadas a cada render → inscrição realtime ESTÁVEL (deps só [userId])
-  // sem capturar valores velhos. `toast` muda de identidade a cada render (useToast
-  // não memoiza); tê-lo nas deps re-subscrevia a cada toast → eventos duplicados.
+  // sem capturar valores velhos.
   useEffect(() => { inModuleRef.current = inModule; }, [inModule]);
   useEffect(() => { onOpenRef.current = onOpen; }, [onOpen]);
-  useEffect(() => { toastRef.current = toast; }, [toast]);
 
   // Pede permissão de notificação do navegador uma vez (sem insistir se negada).
   useEffect(() => {
@@ -132,12 +128,10 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         const name = meta.contact_name || meta.contact_phone || 'Contato';
         const preview = previewOf(msg);
 
-        // Visual (in-app) — variante WhatsApp (verde), clicável, some em 5s.
-        toastRef.current.toast('whatsapp', name, {
-          description: preview,
-          duration: 5000,
-          action: { label: 'Abrir conversa', onClick: () => onOpenRef.current(convId) },
-        });
+        // Visual (in-app): em vez do toast global no topo, emite o evento que o
+        // ChatFloatingWidget consome para exibir o aviso ANCORADO ao widget
+        // (verde, clicável). Reaproveita a estrutura de toast já pronta do widget.
+        events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview });
 
         // Som (respeitando o mute por preferência local).
         if (!isNotifySoundMuted()) {
