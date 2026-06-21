@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.253': { name: 'Cafe Fluxo de Assinatura Editorial', emoji: '[signature]' },
   '1.10.252': { name: 'Cafe Assinatura Publica Blindada', emoji: '[shield]' },
   '1.10.250': { name: 'Cafe Despedida Cinematica', emoji: '🎬' },
   '1.10.249': { name: 'Cafe Agenda DJEN Vivo', emoji: '📅' },
@@ -905,6 +906,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.253',
+    date: '20/06/2026',
+    summary: 'Assinaturas: o fluxo publico ganhou stepper visual, card final mais editorial e refinamentos de UX nas etapas de assinatura, localizacao e selfie.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Comprovante final da assinatura foi redesenhado', description: 'A tela de sucesso passou a usar composicao em dois paineis, hierarquia visual mais forte e acoes principais mais claras para abrir, compartilhar e consultar o relatorio do documento assinado.' },
+        { type: 'improvement' as const, title: 'Modal publico ganhou stepper com icones e progressao mais legivel', description: 'O cabecalho do fluxo agora mostra as etapas de identidade, dados, assinatura, localizacao, foto e confirmacao em um stepper visual, reduzindo ambiguidade durante a jornada do signatario.' },
+        { type: 'improvement' as const, title: 'Etapas de localizacao e selfie ficaram mais enxutas no mobile', description: 'Os blocos de orientacao, a camera e os CTAs foram refinados para melhorar leitura, reduzir excesso visual e deixar a captura de selfie e a autorizacao final mais objetivas em telas pequenas.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.252',
     date: '20/06/2026',
