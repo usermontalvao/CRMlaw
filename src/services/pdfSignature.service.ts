@@ -11,7 +11,7 @@ interface SignedPdfOptions {
   request: SignatureRequest;
   signer: Signer;
   originalPdfUrl: string;
-  creator?: { name: string; email: string } | null;
+  creator?: { name: string } | null;
   attachmentPdfItems?: { documentId: string; url: string }[]; // anexos PDF para compilar
 }
 
@@ -523,7 +523,7 @@ class PdfSignatureService {
     pdfDoc: PDFDocument;
     request: SignatureRequest;
     signer: Signer;
-    creator?: { name: string; email: string } | null;
+    creator?: { name: string } | null;
     signatureImage?: EmbeddedImage | null;
     facialImage?: EmbeddedImage | null;
     qrImage?: EmbeddedImage | null;
@@ -1538,7 +1538,7 @@ class PdfSignatureService {
   async saveSignedDocxAsPdf(options: {
     request: SignatureRequest;
     signer: Signer;
-    creator?: { name: string; email: string } | null;
+    creator?: { name: string } | null;
     docxContainer: HTMLElement;
     attachmentDocxItems?: { documentId: string; container: HTMLElement }[];
     attachmentPdfItems?: { documentId: string; url: string }[];
@@ -2304,7 +2304,7 @@ class PdfSignatureService {
   async saveSignatureReportToStorage(options: {
     request: SignatureRequest;
     signer: Signer;
-    creator?: { name: string; email: string } | null;
+    creator?: { name: string } | null;
   }): Promise<{ filePath: string; sha256: string }> {
     const { request, signer, creator } = options;
     

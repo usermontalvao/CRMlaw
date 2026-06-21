@@ -50,6 +50,61 @@ const formatCpf = (value: string): string => {
   return formatted;
 };
 
+// ── Rascunho do fluxo público de assinatura ──────────────────────────────────
+// Persiste o progresso no localStorage por até 24h (sobrevive a refresh/fechar a
+// aba) e é apagado assim que o documento é assinado. Por segurança/LGPD NÃO
+// guarda a identidade verificada (OTP/Google) — refeita a cada sessão — nem a
+// selfie (biometria). O OTP obrigatório é o cadeado que protege os demais dados.
+const SIGNING_DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+interface SigningDraft {
+  signerData: SignerData;
+  signatureData: string | null;
+  locationData: { lat: number; lng: number } | null;
+}
+
+const readSigningDraft = (key: string): SigningDraft | null => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
+      window.localStorage.removeItem(key); // expirado → descarta
+      return null;
+    }
+    const sd = parsed.signerData ?? {};
+    const loc = parsed.locationData;
+    return {
+      signerData: {
+        name: typeof sd.name === 'string' ? sd.name : '',
+        cpf: typeof sd.cpf === 'string' ? sd.cpf : '',
+        phone: typeof sd.phone === 'string' ? sd.phone : '',
+      },
+      signatureData: typeof parsed.signatureData === 'string' ? parsed.signatureData : null,
+      locationData:
+        loc && typeof loc.lat === 'number' && typeof loc.lng === 'number'
+          ? { lat: loc.lat, lng: loc.lng }
+          : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeSigningDraft = (key: string, draft: SigningDraft): void => {
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ ...draft, expiresAt: Date.now() + SIGNING_DRAFT_TTL_MS }),
+    );
+  } catch { /* storage indisponível — ignora */ }
+};
+
+const clearSigningDraft = (key: string): void => {
+  try { window.localStorage.removeItem(key); } catch { /* ignora */ }
+};
+
 // Número lógico da etapa (1–6) para o indicador do cabeçalho do modal.
 const signStepNumber = (s: ModalStep): number =>
   (s === 'google_auth' || s === 'phone_otp' || s === 'email_otp') ? 1
@@ -775,6 +830,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
   const [signatureFields, setSignatureFields] = useState<SignatureField[]>([]);
   const [signerData, setSignerData] = useState<SignerData>({ name: '', cpf: '', phone: '' });
+  // Chave do rascunho por token. Ver helpers readSigningDraft/writeSigningDraft.
+  const signingDraftKey = `signing-draft:${token}`;
+  const draftLoadedRef = useRef(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<string | null>(null);
   const [facialValidating, setFacialValidating] = useState(false);
@@ -816,7 +874,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [refuseReason, setRefuseReason] = useState('');
   const [refusing, setRefusing] = useState(false);
   const [refuseError, setRefuseError] = useState<string | null>(null);
-  const [creator, setCreator] = useState<{ name: string; email: string } | null>(null);
+  const [creator, setCreator] = useState<{ name: string } | null>(null);
   // Aceite dos Termos de Uso (LGPD) — obrigatório para enviar a assinatura
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
@@ -928,6 +986,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
   const [showEmailAnimation, setShowEmailAnimation] = useState(false);
+
+  // Persiste o rascunho (formulário + assinatura desenhada + localização) a cada
+  // mudança. Só grava após o carregamento inicial, pra não sobrescrever um
+  // rascunho existente com o estado vazio. Renova a validade de 24h a cada escrita.
+  useEffect(() => {
+    if (!draftLoadedRef.current || step === 'success') return;
+    writeSigningDraft(signingDraftKey, { signerData, signatureData, locationData });
+  }, [signerData, signatureData, locationData, step, signingDraftKey]);
+
+  // Documento assinado → limpa o rascunho.
+  useEffect(() => {
+    if (step === 'success') clearSigningDraft(signingDraftKey);
+  }, [step, signingDraftKey]);
 
   useEffect(() => {
     loadSignerData();
@@ -1243,6 +1314,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   useEffect(() => {
     if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
       initCanvas();
+      // Redesenha a assinatura restaurada do rascunho sobre o canvas recém-limpo.
+      if (signatureData) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const rect = canvas.getBoundingClientRect();
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+          img.src = signatureData;
+        }
+      }
     }
   }, [isSignModalOpen, modalStep]);
 
@@ -1725,11 +1807,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         setAuthConfig({ google: true, email: true, phone: true });
       }
       setAllowSkipSignerDataStep(isTemplateFillSigner((data.signer as any)?.email ?? null));
-      setSignerData({
+      // Restaura rascunho salvo (refresh no meio do fluxo, validade de 24h) —
+      // dados do formulário têm prioridade sobre os valores pré-preenchidos.
+      // Identidade (OTP) e selfie NÃO são restauradas: refeitas a cada sessão.
+      const draft = data.signer.status !== 'signed' ? readSigningDraft(signingDraftKey) : null;
+      setSignerData(draft?.signerData ?? {
         name: data.signer.name || '',
-        cpf: data.signer.cpf || '',
+        cpf: formatCpf(data.signer.cpf || ''),
         phone: data.signer.phone || '',
       });
+      if (draft?.signatureData) {
+        setSignatureData(draft.signatureData);
+        setHasSignature(true);
+      }
+      if (draft?.locationData) setLocationData(draft.locationData);
+      draftLoadedRef.current = true;
       if (data.creator) setCreator(data.creator);
       if (data.signer.status !== 'signed') {
         const viewedKey = `public_signing_viewed_${data.signer.id}`;

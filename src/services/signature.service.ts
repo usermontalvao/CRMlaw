@@ -552,7 +552,7 @@ class SignatureService {
     return data;
   }
 
-  async getSignerWithRequestByToken(token: string): Promise<{ signer: Signer; request: SignatureRequest; creator?: { name: string; email: string } } | null> {
+  async getSignerWithRequestByToken(token: string): Promise<{ signer: Signer; request: SignatureRequest; creator?: { name: string } } | null> {
     const { data: signers, error } = await supabase
       .from(this.signersTable)
       .select('*')
@@ -573,19 +573,19 @@ class SignatureService {
     if (!request) return null;
 
     // Buscar dados do criador na tabela profiles
-    let creator: { name: string; email: string } | undefined;
+    let creator: { name: string } | undefined;
     if (request.created_by) {
       const { data: userData } = await supabase
         .from('profiles')
-        .select('name, email, is_active')
+        .select('name, is_active')
         .eq('user_id', request.created_by)
         .single();
       if (userData) {
-        creator = { name: userData.name || 'Usuário', email: userData.email || '' };
+        creator = { name: userData.name || 'Usuário' };
         // Documentos de ORIGEM KIT (ou cujo emissor foi desativado) não devem
         // atribuir a autoria a uma pessoa — aparecem como SYSTEM_ISSUER_LABEL.
         if ((await this.isKitOrigin(request.id)) || userData.is_active === false) {
-          creator = { name: SYSTEM_ISSUER_LABEL, email: '' };
+          creator = { name: SYSTEM_ISSUER_LABEL };
         }
       }
     }
@@ -607,7 +607,7 @@ class SignatureService {
   async getPublicSigningBundle(token: string): Promise<{
     signer: Signer;
     request: SignatureRequest;
-    creator?: { name: string; email: string };
+    creator?: { name: string };
     fields: SignatureField[];
     auth_config?: { google: boolean; email: boolean; phone: boolean };
     /** Em ordem sequencial, nome do signatário anterior ainda pendente (null = é a vez deste signatário). */
@@ -624,24 +624,13 @@ class SignatureService {
 
     if (!data) return null;
 
-    let creator = data.creator?.email
-      ? {
-          name: data.creator?.name || 'Usuário',
-          email: data.creator?.email || '',
-        }
+    // A RPC já resolve o nome do emissor server-side, retornando apenas
+    // { name } — inclusive "Jurius CRM" quando a origem é KIT ou o emissor
+    // está desativado (a re-derivação de is_active/KIT no cliente é
+    // desnecessária pois os campos não vêm mais no bundle público).
+    const creator = data.creator?.name
+      ? { name: data.creator.name as string }
       : undefined;
-
-    // Emissor desativado (profiles.is_active = false) não deve ter o nome
-    // exposto no fluxo público nem no PDF — a RPC retorna o perfil completo
-    // (to_jsonb), então o flag chega aqui em data.creator.is_active.
-    const creatorInactive = data.creator?.is_active === false;
-
-    // Origem KIT ou emissor desativado → aparece como SYSTEM_ISSUER_LABEL
-    // (não atribui a autoria a uma pessoa). Mesma regra do fluxo por token.
-    const reqId = (data.request as SignatureRequest)?.id;
-    if (creatorInactive || (reqId && await this.isKitOrigin(reqId))) {
-      creator = { name: SYSTEM_ISSUER_LABEL, email: '' };
-    }
 
     return {
       signer: data.signer as Signer,

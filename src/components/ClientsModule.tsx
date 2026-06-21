@@ -136,7 +136,13 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           );
         for (const req of signed) {
           for (const signer of req.signers ?? []) {
-            if (signer.facial_image_path && signer.status === 'signed') {
+            // LGPD: só usa a selfie da assinatura como foto de cliente quando o
+            // signatário autorizou explicitamente (consentimento separado).
+            if (
+              signer.facial_image_path &&
+              signer.status === 'signed' &&
+              signer.allow_signature_selfie_for_profile === true
+            ) {
               const url = await tryUrl(signer.facial_image_path);
               if (url) {
                 setEntry(c.id, { url, path: signer.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS });
@@ -144,13 +150,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               }
             }
           }
-          if (req.facial_image_path) {
-            const url = await tryUrl(req.facial_image_path);
-            if (url) {
-              setEntry(c.id, { url, path: req.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS });
-              return [c.id, url];
-            }
-          }
+          // Nota: a selfie no nível da request (modelo legado) não possui
+          // consentimento individual e por isso NÃO é usada como foto cadastral.
         }
       } catch { /* */ }
       // Marca como "miss" pra não voltar a buscar por 24h

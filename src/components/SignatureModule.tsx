@@ -6555,7 +6555,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           <SignatureReport
             request={reportTarget.request}
             signer={reportTarget.signer}
-            creator={user?.email ? { name: user.email.split('@')[0], email: user.email } : null}
+            creator={user?.email ? { name: user.email.split('@')[0] } : null}
             onClose={() => setReportTarget(null)}
           />
         </div>

@@ -26,6 +26,7 @@ import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { clientOverviewService } from '../services/clientOverview.service';
 import { financialService } from '../services/financial.service';
+import { SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
@@ -703,11 +704,94 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [signatureLoading, setSignatureLoading] = useState(false);
 
   // ── Selfies from facial signatures
-  interface SelfieEntry { path: string; url: string; label: string; }
+  // Conjunto probatório da autorização de uso da selfie como foto cadastral —
+  // todos os campos vêm da signature_signers (já carregada via select('*')).
+  interface ConsentEvidence {
+    signerName: string;
+    signerCpf: string;
+    consentText: string;
+    consentVersion: string;
+    consentAt: string | null;
+    termsVersion: string | null;
+    termsAcceptedAt: string | null;
+    authMethod: string | null;
+    authEmail: string | null;
+    documentName: string;
+    requestId: string;
+    signedAt: string | null;
+    signerIp: string | null;
+    signerUserAgent: string | null;
+    signerGeolocation: string | null;
+    verificationHash: string | null;
+    signedPdfSha256: string | null;
+  }
+  interface SelfieEntry { path: string; url: string; label: string; evidence: ConsentEvidence; }
   const [selfies, setSelfies] = useState<SelfieEntry[]>([]);
   const [pinnedPath, setPinnedPath] = useState<string | null>(client.photo_path ?? null);
   const [previewSelfie, setPreviewSelfie] = useState<SelfieEntry | null>(null);
+  const [consentTrail, setConsentTrail] = useState<ConsentEvidence | null>(null);
   const [selfiePickerOpen, setSelfiePickerOpen] = useState(false);
+
+  // Linhas da trilha de autorização (reutilizadas na tela e na impressão).
+  const buildConsentRows = (ev: ConsentEvidence): Array<[string, string]> => {
+    const dash = (v: string | null) => (v && v.trim() ? v : '—');
+    const dt = (v: string | null) => (v ? fmtDateTimeG(v) : '—');
+    const auth = [dash(ev.authMethod), dash(ev.authEmail)].filter((x) => x !== '—').join(' · ') || '—';
+    return [
+      ['Cliente (cadastro)', client.full_name || '—'],
+      ['Signatário', ev.signerName],
+      ['CPF', ev.signerCpf ? formatCpf(ev.signerCpf) : '—'],
+      ['Autenticação', auth],
+      ['Documento assinado', ev.documentName],
+      ['ID da solicitação', ev.requestId],
+      ['Data da assinatura', dt(ev.signedAt)],
+      ['Consentimento da foto em', dt(ev.consentAt)],
+      ['Versão do consentimento', dash(ev.consentVersion)],
+      ['Termos de uso aceitos em', dt(ev.termsAcceptedAt)],
+      ['Versão dos termos', dash(ev.termsVersion)],
+      ['Endereço IP', dash(ev.signerIp)],
+      ['Geolocalização', dash(ev.signerGeolocation)],
+      ['Navegador (user agent)', dash(ev.signerUserAgent)],
+      ['Hash de verificação', dash(ev.verificationHash)],
+      ['SHA-256 do PDF assinado', dash(ev.signedPdfSha256)],
+    ];
+  };
+
+  // Abre uma "Declaração de Consentimento" formatada no diálogo de impressão
+  // do navegador (Salvar como PDF) — pronta para juntar aos autos.
+  const printConsentTrail = (ev: ConsentEvidence) => {
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+    const rowsHtml = buildConsentRows(ev)
+      .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`)
+      .join('');
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>Declaração de Consentimento — ${esc(ev.signerName)}</title>
+      <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #1e293b; margin: 40px; font-size: 13px; line-height: 1.5; }
+        h1 { font-size: 18px; margin: 0 0 4px; }
+        .sub { color: #64748b; font-size: 12px; margin-bottom: 24px; }
+        .consent { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px; font-style: italic; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+        th { width: 38%; color: #475569; font-weight: 600; }
+        td { word-break: break-all; }
+        .foot { margin-top: 28px; color: #94a3b8; font-size: 11px; }
+        @media print { body { margin: 24px; } }
+      </style></head><body>
+        <h1>Declaração de Consentimento — Uso de Imagem</h1>
+        <div class="sub">Gerado em ${esc(fmtDateTimeG(new Date().toISOString()))} · Jurius CRM</div>
+        <div class="consent">"${esc(ev.consentText)}"</div>
+        <table>${rowsHtml}</table>
+        <div class="foot">Documento gerado a partir dos registros de auditoria da assinatura eletrônica. Os dados acima foram coletados no ato da assinatura e preservados de forma inalterável.</div>
+      </body></html>`;
+    const w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
   const [settingPhoto, setSettingPhoto] = useState(false);
   const [syncingSignatureData, setSyncingSignatureData] = useState(false);
   const [signatureSyncDismissed, setSignatureSyncDismissed] = useState(false);
@@ -794,7 +878,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     // Selfie processing: extrai fotos biométricas das assinaturas (assíncrono, não bloqueia o resto)
     const processSelfies = async (signatures: typeof signatureRequests) => {
       const seen = new Set<string>();
-      const entries: Array<{ path: string; label: string }> = [];
+      const entries: Array<{ path: string; label: string; evidence: ConsentEvidence }> = [];
       const signedReqs = [...signatures]
         .filter((req) => req.status === 'signed')
         .sort((a, b) => new Date(b.signed_at || b.updated_at).getTime() - new Date(a.signed_at || a.updated_at).getTime());
@@ -813,7 +897,30 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             !seen.has(signer.facial_image_path)
           ) {
             seen.add(signer.facial_image_path);
-            entries.push({ path: signer.facial_image_path, label: `${signer.name || 'Signatário'} · ${dateLabel}` });
+            const sg = signer as any;
+            entries.push({
+              path: signer.facial_image_path,
+              label: `${signer.name || 'Signatário'} · ${dateLabel}`,
+              evidence: {
+                signerName: signer.name || 'Signatário',
+                signerCpf: sg.cpf || '',
+                consentText: SELFIE_PROFILE_CONSENT_LABEL,
+                consentVersion: sg.selfie_profile_consent_version || '—',
+                consentAt: sg.selfie_profile_consent_at ?? null,
+                termsVersion: sg.terms_version ?? null,
+                termsAcceptedAt: sg.terms_accepted_at ?? null,
+                authMethod: sg.auth_method ?? sg.auth_provider ?? null,
+                authEmail: sg.auth_email ?? sg.email ?? null,
+                documentName: req.document_name || 'Documento',
+                requestId: req.id,
+                signedAt: signer.signed_at ?? req.signed_at ?? null,
+                signerIp: sg.signer_ip ?? null,
+                signerUserAgent: sg.signer_user_agent ?? null,
+                signerGeolocation: sg.signer_geolocation ?? null,
+                verificationHash: sg.verification_hash ?? null,
+                signedPdfSha256: sg.signed_pdf_sha256 ?? null,
+              },
+            });
           }
         }
         // Selfie no nível da request (legado) não tem consentimento individual:
@@ -830,7 +937,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       const excludedSet = new Set<string>(
         Array.isArray((client as any).excluded_photo_paths) ? (client as any).excluded_photo_paths : [],
       );
-      const valid = (withUrls.filter(Boolean) as Array<{ path: string; url: string; label: string }>)
+      const valid = (withUrls.filter(Boolean) as SelfieEntry[])
         .filter((e) => !excludedSet.has(e.path));
       if (!active || valid.length === 0) return;
       setSelfies(valid);
@@ -1969,6 +2076,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               </button>
                             )}
                             <button
+                              onClick={() => setConsentTrail(s.evidence)}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#f8f7f5]/20 hover:bg-orange-500/80 text-white backdrop-blur-sm transition"
+                              title="Ver trilha de autorização (uso judicial)"
+                            >
+                              <ShieldCheck className="w-3 h-3" />
+                            </button>
+                            <button
                               onClick={() => void handleExclude(s.path, s.label)}
                               disabled={settingPhoto}
                               className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#f8f7f5]/20 hover:bg-red-500/80 text-white backdrop-blur-sm transition disabled:opacity-50"
@@ -1994,6 +2108,69 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           </div>
         , document.body);
       })()}
+
+      {/* ── Trilha de autorização da foto (uso judicial) ── */}
+      {consentTrail && createPortal(
+        <div
+          className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+          onClick={() => setConsentTrail(null)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-lg flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl shadow-2xl"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <ShieldCheck className="w-5 h-5 text-orange-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-base font-bold text-slate-900 leading-tight">Trilha de Autorização</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Prova do consentimento de uso da imagem</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConsentTrail(null)}
+                className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 transition"
+              >
+                <X className="w-4 h-4 stroke-2" />
+              </button>
+            </div>
+
+            {/* Conteúdo */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 text-[13px] text-slate-700 italic">
+                “{consentTrail.consentText}”
+              </div>
+              <dl className="divide-y divide-slate-100">
+                {buildConsentRows(consentTrail).map(([k, v]) => (
+                  <div key={k} className="py-2 flex gap-3 text-[13px]">
+                    <dt className="w-2/5 flex-shrink-0 text-slate-500 font-medium">{k}</dt>
+                    <dd className="flex-1 text-slate-800 break-all">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setConsentTrail(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => printConsentTrail(consentTrail)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-xl transition"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir / Exportar
+              </button>
+            </div>
+          </div>
+        </div>
+      , document.body)}
 
       {/* ── Ações rápidas (toolbar integrada) ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/60 border-b border-slate-100 px-4 py-2.5">

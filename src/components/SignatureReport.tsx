@@ -8,7 +8,7 @@ import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 interface SignatureReportProps {
   signer: Signer;
   request: SignatureRequest;
-  creator?: { name: string; email: string } | null;
+  creator?: { name: string } | null;
   onClose?: () => void;
 }
 

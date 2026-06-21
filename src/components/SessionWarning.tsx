@@ -30,7 +30,7 @@ const SessionWarning: React.FC = () => {
                 Continuar Logado
               </button>
               <button
-                onClick={signOut}
+                onClick={() => signOut()}
                 className="text-xs text-amber-700 hover:text-amber-800 font-medium"
               >
                 Fazer Logout

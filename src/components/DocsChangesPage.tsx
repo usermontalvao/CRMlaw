@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.254': { name: 'Cafe Assinatura e Ficha Alinhadas', emoji: '[sync]' },
   '1.10.253': { name: 'Cafe Fluxo de Assinatura Editorial', emoji: '[signature]' },
   '1.10.252': { name: 'Cafe Assinatura Publica Blindada', emoji: '[shield]' },
   '1.10.250': { name: 'Cafe Despedida Cinematica', emoji: '🎬' },
@@ -906,6 +907,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.254',
+    date: '21/06/2026',
+    summary: 'Assinaturas e clientes: o CRM alinhou melhor o uso de selfies autorizadas, refinou relatorios e corrigiu pontos de tipagem e navegacao ligados ao fluxo de assinatura.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Fluxo publico e servicos de assinatura foram refinados', description: 'A pagina publica, os servicos e o modulo administrativo receberam ajustes complementares para deixar o ciclo de assinatura e consulta mais coeso depois do endurecimento anterior do fluxo.' },
+        { type: 'improvement' as const, title: 'Relatorio e PDF de assinatura ganharam ajustes finos', description: 'Os artefatos e componentes de exibicao do historico de assinatura foram revisados para refletir melhor os dados e o comportamento atual do fluxo.' },
+      ]},
+      { moduleId: 'clientes', changes: [
+        { type: 'improvement' as const, title: 'Ficha do cliente ficou mais alinhada ao consentimento de selfies', description: 'Os pontos de exibicao e reaproveitamento de fotos oriundas de assinatura foram revisitados para aproximar a experiencia do CRM das novas regras de autorizacao do fluxo publico.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Ajuste pontual de tipagem em interacao de sessao', description: 'Um ponto isolado do aviso de sessao foi ajustado para acompanhar a assinatura do fluxo de logout e reduzir atritos de compilacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.253',
     date: '20/06/2026',
