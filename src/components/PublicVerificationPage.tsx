@@ -5,6 +5,7 @@ import { pdfSignatureService } from '@/services/pdfSignature.service';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
+import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 
 interface VerificationResult {
   valid: boolean;
@@ -370,6 +371,14 @@ const PublicVerificationPage: React.FC = () => {
         <div className="mt-8 text-center text-xs text-slate-400 space-y-1">
           <p>
             A verificação garante a autenticidade e integridade do documento assinado digitalmente.
+          </p>
+          <p>
+            <a
+              href={buildPublicSignatureTermsUrl()}
+              className="text-slate-500 hover:text-slate-700 underline underline-offset-2 transition-colors"
+            >
+              Termos de Uso
+            </a>
           </p>
           <p>
             Jurius · {DISPLAY_APP_VERSION_LABEL}

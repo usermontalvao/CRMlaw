@@ -804,15 +804,20 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           ? new Date(req.signed_at).toLocaleDateString('pt-BR')
           : req.document_name || 'Documento';
         for (const signer of req.signers ?? []) {
-          if (signer.facial_image_path && signer.status === 'signed' && !seen.has(signer.facial_image_path)) {
+          // LGPD: só exibe/oferece a selfie como foto cadastral quando o
+          // signatário autorizou explicitamente (consentimento separado).
+          if (
+            signer.facial_image_path &&
+            signer.status === 'signed' &&
+            (signer as any).allow_signature_selfie_for_profile === true &&
+            !seen.has(signer.facial_image_path)
+          ) {
             seen.add(signer.facial_image_path);
             entries.push({ path: signer.facial_image_path, label: `${signer.name || 'Signatário'} · ${dateLabel}` });
           }
         }
-        if (req.facial_image_path && !seen.has(req.facial_image_path)) {
-          seen.add(req.facial_image_path);
-          entries.push({ path: req.facial_image_path, label: `${req.document_name || 'Documento'} · ${dateLabel}` });
-        }
+        // Selfie no nível da request (legado) não tem consentimento individual:
+        // não é usada como foto cadastral.
       }
       if (entries.length === 0 || !active) return;
 

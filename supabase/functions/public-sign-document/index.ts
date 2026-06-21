@@ -101,7 +101,7 @@ Deno.serve(async (req: Request) => {
 
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
-    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version } = payload;
+    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, allow_signature_selfie_for_profile, selfie_profile_consent_version } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
     if (!signature_image) return jsonResponse({ success: false, error: 'Signature image is required' }, 400);
@@ -173,6 +173,11 @@ Deno.serve(async (req: Request) => {
       name: signer_name??signer.name, cpf: signer_cpf??signer.cpf, phone: signer_phone??signer.phone,
       auth_provider: auth_provider||null, auth_email: auth_email||null, auth_google_sub: auth_google_sub||null, auth_google_picture: auth_google_picture||null,
       terms_accepted_at: new Date().toISOString(), terms_version: terms_version||'v1',
+      // Consentimento SEPARADO e opcional p/ usar a selfie como foto cadastral.
+      // Default false: a assinatura nunca depende deste consentimento.
+      allow_signature_selfie_for_profile: allow_signature_selfie_for_profile === true,
+      selfie_profile_consent_at: allow_signature_selfie_for_profile === true ? new Date().toISOString() : null,
+      selfie_profile_consent_version: allow_signature_selfie_for_profile === true ? (selfie_profile_consent_version||'v1') : null,
     };
 
     try {

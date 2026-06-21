@@ -3,6 +3,7 @@ import { CheckCircle, Download, FileText, Shield, User, Clock, Hash, X } from 'l
 import QRCode from 'qrcode';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { supabase } from '../config/supabase';
+import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 
 interface SignatureReportProps {
   signer: Signer;
@@ -258,7 +259,20 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                   signer.signer_ip                  && { k: 'IP',          v: signer.signer_ip,                             mono: true  },
                   geo?.[0] && geo?.[1]              && { k: 'Coordenadas', v: `${geo[0]}, ${geo[1]}`,                       mono: true  },
                   ua                                && { k: 'Dispositivo', v: `${ua.device} · ${ua.browser} · ${ua.os}`,   mono: false },
-                  signer.terms_accepted_at          && { k: 'Termos de Uso', v: `Aceitos (${signer.terms_version || 'v1'}) em ${fmtFull(signer.terms_accepted_at)}`, mono: false },
+                  signer.terms_accepted_at          && { k: 'Termos de Uso', v: (
+                    <>
+                      Aceitos em {fmtFull(signer.terms_accepted_at)}{' '}
+                      <a
+                        href={buildPublicSignatureTermsUrl(signer.terms_version || 'v1')}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold underline"
+                        style={{ color: '#ea580c' }}
+                      >
+                        (ver {signer.terms_version || 'v1'})
+                      </a>
+                    </>
+                  ), mono: false },
                 ].filter(Boolean).map((row: any, i, arr) => (
                   <DataRow key={i} label={row.k} value={row.v} mono={row.mono} last={i === arr.length - 1} />
                 ))}

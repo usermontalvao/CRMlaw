@@ -697,45 +697,42 @@ class SignatureService {
     return { email: data?.email ?? null };
   }
 
-  async markSignerAsViewed(signerId: string, ipAddress?: string, userAgent?: string): Promise<void> {
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from(this.signersTable)
-      .update({ viewed_at: nowIso })
-      .eq('id', signerId)
-      .is('viewed_at', null); // Só atualiza se ainda não foi visualizado
-
-    if (error) {
-      console.error('Erro ao marcar visualização:', error);
-    }
-
-    // Registrar no audit log com dedupe (evitar múltiplos "viewed" idênticos em curto intervalo)
+  /**
+   * Marca visualização + registra evento de auditoria pelo PÚBLICO.
+   * Usa RPC SECURITY DEFINER restrita por public_token — sem update anon direto.
+   */
+  async markSignerAsViewed(token: string, ipAddress?: string, userAgent?: string): Promise<void> {
     try {
-      await supabase.rpc('public_log_viewed_event', {
-        p_signer_id: signerId,
+      await supabase.rpc('public_mark_signer_viewed', {
+        p_token: token,
         p_ip_address: ipAddress ?? null,
         p_user_agent: userAgent ?? null,
       });
     } catch (e) {
-      console.warn('Não foi possível registrar audit log (acesso público):', e);
+      console.warn('Não foi possível registrar visualização (acesso público):', e);
     }
   }
 
-  async heartbeatSignerPresence(signerId: string): Promise<void> {
-    const nowIso = new Date().toISOString();
+  /** Heartbeat de presença pelo PÚBLICO via RPC restrita por public_token. */
+  async heartbeatSignerPresence(token: string): Promise<void> {
     try {
-      await supabase
-        .from(this.signersTable)
-        .update({ opened_at: nowIso, last_seen_at: nowIso })
-        .eq('id', signerId)
-        .is('opened_at', null);
-      await supabase
-        .from(this.signersTable)
-        .update({ last_seen_at: nowIso })
-        .eq('id', signerId);
+      await supabase.rpc('public_heartbeat_signer', { p_token: token });
     } catch (error) {
-      console.warn('NÃ£o foi possÃ­vel atualizar heartbeat da assinatura:', error);
+      console.warn('Não foi possível atualizar heartbeat da assinatura:', error);
     }
+  }
+
+  /**
+   * Anexa o PDF assinado/sha256 ao signatário pelo PÚBLICO via RPC restrita por
+   * public_token (substitui o update anon direto). Só grava após assinado.
+   */
+  async attachSignedPdfPublic(token: string, signedDocumentPath: string, sha256?: string | null): Promise<void> {
+    const { error } = await supabase.rpc('public_attach_signed_pdf', {
+      p_token: token,
+      p_path: signedDocumentPath,
+      p_sha256: sha256 ?? null,
+    });
+    if (error) console.warn('Não foi possível anexar PDF assinado (acesso público):', error);
   }
 
   async addSigner(requestId: string, signer: CreateSignerDTO): Promise<Signer> {
@@ -832,6 +829,8 @@ class SignatureService {
         auth_google_picture: payload.auth_google_picture,
         terms_accepted: payload.terms_accepted,
         terms_version: payload.terms_version,
+        allow_signature_selfie_for_profile: payload.allow_signature_selfie_for_profile === true,
+        selfie_profile_consent_version: payload.selfie_profile_consent_version,
         ip_address: ipAddress,
         user_agent: userAgent,
       },
@@ -1285,71 +1284,27 @@ class SignatureService {
     return buildPublicVerificationUrl(hash);
   }
 
+  /**
+   * Verificação pública por hash via RPC SECURITY DEFINER que retorna apenas
+   * os campos mínimos (sem PII como IP, user agent, geolocalização, e-mails ou
+   * auth_google_sub). Não depende de leitura anon direta nas tabelas.
+   */
   async verifySignatureByHash(hash: string): Promise<VerifyResult> {
-    // Buscar signatário pelo hash de verificação
-    const { data: signer, error } = await supabase
-      .from(this.signersTable)
-      .select('*')
-      .eq('verification_hash', hash)
-      .single();
-
-    if (error || !signer) {
-      // Tentar buscar na tabela de requests (assinatura única)
-      const { data: request, error: reqError } = await supabase
-        .from(this.requestsTable)
-        .select('*')
-        .eq('verification_hash', hash)
-        .single();
-
-      if (reqError || !request) {
-        return null;
-      }
-
-      // Documento bloqueado/revogado → informar mas manter auditável
-      if (request.blocked_at) return { status: 'blocked', reason: request.blocked_reason ?? null, signer: undefined, request };
-      // Documento na lixeira → ainda auditável (assinatura ocorreu)
-      if (request.deleted_at) return { status: 'valid', signer: undefined as any, request };
-
-      // Retornar request como signer simulado
-      return {
-        status: 'valid',
-        signer: {
-          id: request.id,
-          signature_request_id: request.id,
-          name: request.client_name || 'Signatário',
-          email: '',
-          cpf: null,
-          phone: null,
-          role: null,
-          order: 1,
-          status: request.status,
-          auth_method: request.auth_method,
-          signed_at: request.signed_at,
-          signature_image_path: request.signature_image_path,
-          facial_image_path: request.facial_image_path,
-          document_image_path: request.document_image_path,
-          signer_ip: request.signer_ip,
-          signer_user_agent: request.signer_user_agent,
-          signer_geolocation: request.signer_geolocation,
-          public_token: request.public_token,
-          verification_hash: request.verification_hash,
-          created_at: request.created_at,
-          updated_at: request.updated_at,
-        } as Signer,
-        request,
-      };
+    const { data, error } = await supabase.rpc('public_verify_by_hash', { p_hash: hash });
+    if (error) {
+      console.error('Erro na verificação por hash:', error);
+      return null;
     }
+    if (!data) return null;
 
-    // Buscar request associado
-    const request = await this.getRequest(signer.signature_request_id);
-    if (!request) return null;
+    const status = (data as any).status as string;
+    const signer = (data as any).signer ? ((data as any).signer as Signer) : undefined;
+    const request = (data as any).request ? ((data as any).request as SignatureRequest) : undefined;
 
-    // Documento bloqueado → auditável mas marcado
-    if (request.blocked_at) return { status: 'blocked', reason: request.blocked_reason ?? null, signer, request };
-    // Documento na lixeira → ainda auditável (a assinatura ocorreu)
-    if (request.deleted_at) return { status: 'valid', signer, request };
-
-    return { status: 'valid', signer, request };
+    if (status === 'blocked') {
+      return { status: 'blocked', reason: (data as any).reason ?? null, signer, request };
+    }
+    return { status: 'valid', signer: signer as any, request: request as any };
   }
 
   generateVerificationHash(): string {

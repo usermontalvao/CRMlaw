@@ -88,6 +88,10 @@ export interface Signer {
   // Aceite dos Termos de Uso (LGPD) no momento da assinatura
   terms_accepted_at?: string | null;
   terms_version?: string | null;
+  // Consentimento SEPARADO p/ usar a selfie da assinatura como foto cadastral
+  allow_signature_selfie_for_profile?: boolean | null;
+  selfie_profile_consent_at?: string | null;
+  selfie_profile_consent_version?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +151,9 @@ export interface SignDocumentDTO {
   // Aceite dos Termos de Uso (LGPD)
   terms_accepted?: boolean;
   terms_version?: string | null;
+  // Consentimento opcional p/ usar a selfie como foto cadastral
+  allow_signature_selfie_for_profile?: boolean;
+  selfie_profile_consent_version?: string | null;
 }
 
 export interface SignatureRequestWithSigners extends SignatureRequest {

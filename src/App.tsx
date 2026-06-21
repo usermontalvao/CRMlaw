@@ -80,6 +80,7 @@ const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
 const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFillPage'));
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
+const PublicSignatureTermsPage = lazy(() => import('./components/PublicSignatureTermsPage'));
 const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
 const PublicCloudSharePage = lazy(() => import('./components/PublicCloudSharePage'));
 const PublicDocumentPage = lazy(() => import('./components/PublicDocumentPage'));
@@ -2690,6 +2691,7 @@ const App: React.FC = () => {
   // Verificar rotas tanto no hash quanto no pathname (para links sem #)
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   
+  const isSignatureTermsRoute = hashRoute?.includes('/termos-assinatura') || pathname?.includes('/termos-assinatura');
   const isTermsRoute = hashRoute?.includes('/terms') || pathname?.includes('/terms');
   const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy') || pathname?.includes('/privacidade') || pathname?.includes('/privacy');
   const isDocsRoute = hashRoute?.includes('/docs') || pathname?.includes('/docs');
@@ -2701,6 +2703,18 @@ const App: React.FC = () => {
   const isVerificationRoute   = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
   const isDocumentPublicRoute = hashRoute?.includes('/documento/') || pathname?.includes('/documento/');
   const isPortalRoute = hashRoute?.includes('/portal') || pathname?.startsWith('/portal');
+
+  if (isSignatureTermsRoute) {
+    let version = hashRoute.split('/termos-assinatura/')[1]?.split('?')[0]?.split('#')[0];
+    if (!version && pathname.includes('/termos-assinatura/')) {
+      version = pathname.split('/termos-assinatura/')[1]?.split('?')[0]?.split('#')[0];
+    }
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#f8f7f5] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>}>
+        <PublicSignatureTermsPage version={version || null} />
+      </Suspense>
+    );
+  }
 
   if (isTermsRoute) {
     return <TermsPrivacyPage type="terms" />;

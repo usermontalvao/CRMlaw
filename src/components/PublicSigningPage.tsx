@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
+import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
-import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT } from '../constants/signatureTerms';
+import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
@@ -49,6 +49,24 @@ const formatCpf = (value: string): string => {
   if (part4) formatted += `-${part4}`;
   return formatted;
 };
+
+// Caixa de seleção laranja (etapa de confirmação). O visual é controlado pelo
+// estado React — não depende do pseudo `:checked`, garantindo o fundo laranja +
+// check branco ao marcar (e branco/cinza quando desmarcado).
+const OrangeCheckbox: React.FC<{ checked: boolean }> = ({ checked }) => (
+  <span
+    aria-hidden="true"
+    className="flex items-center justify-center flex-shrink-0 rounded-md border-2 transition-colors"
+    style={{
+      width: 20,
+      height: 20,
+      backgroundColor: checked ? '#f97316' : '#ffffff',
+      borderColor: checked ? '#f97316' : '#d1d5db',
+    }}
+  >
+    {checked && <Check className="w-3 h-3 text-white" strokeWidth={3.5} />}
+  </span>
+);
 
 // Componente que renderiza todas as páginas de um PDF como canvas (sem iframe, sem scroll duplo)
 interface PdfRendererProps {
@@ -622,7 +640,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         background: transparent !important;
         transform-origin: top center !important;
       }
-      /* FORÇAR A4 FIXO para garantir layout idêntico ao da criação */
+      /* FORÇAR A4 FIXO (largura) para layout idêntico ao da criação */
       .docx-responsive .docx-wrapper > section,
       .docx-responsive .docx-wrapper > section > article {
         width: 794px !important; /* A4 @ 96dpi */
@@ -633,6 +651,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         margin-bottom: 20px !important;
         box-sizing: border-box !important;
         padding: 40px !important; /* Mesma padding do SignatureModule */
+      }
+      /* Colapsa a altura: docx-preview força min-height de página A4 inteira
+         (inline), gerando um vão enorme em páginas curtas — tanto no documento
+         principal quanto nos ANEXOS (que podem renderizar como <article> direto).
+         Cobre qualquer nível (section/article). Só afeta o preview on-screen
+         (.docx-responsive); a geração do PDF assinado usa host próprio. */
+      .docx-responsive .docx-wrapper section,
+      .docx-responsive .docx-wrapper article {
+        min-height: 0 !important;
+        height: auto !important;
       }
 
       /* Scrollbar */
@@ -723,6 +751,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // Aceite dos Termos de Uso (LGPD) — obrigatório para enviar a assinatura
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  // Consentimento SEPARADO e OPCIONAL p/ usar a selfie como foto cadastral (default OFF)
+  const [allowSelfieForProfile, setAllowSelfieForProfile] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
   const [zoom, setZoom] = useState(100);
@@ -1170,6 +1200,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   }, [cameraActive, modalStep]);
 
+  // Foto aprovada → avança automaticamente para a etapa de autorização/confirmação.
+  // Mostra "Foto aprovada!" por um instante antes de avançar.
+  useEffect(() => {
+    if (modalStep !== 'facial') return;
+    if (!facialData) return;
+    if (facialValidating) return;
+    if (facialValidation?.valid === false) return;
+    const t = window.setTimeout(() => setModalStep('confirm'), 1000);
+    return () => window.clearTimeout(t);
+  }, [modalStep, facialData, facialValidating, facialValidation]);
+
   
   // Inicializar Google Auth quando modal abre na etapa de autenticação
   useEffect(() => {
@@ -1525,10 +1566,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       signedPdfSha256 = sha256;
     }
 
-    await signatureService.updateSignerSignedDocumentMeta(currentSigner.id, {
-      signed_document_path: signedPdfPath,
-      signed_pdf_sha256: signedPdfSha256,
-    });
+    await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256);
 
     const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
     if (signedUrl) {
@@ -1633,7 +1671,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           } catch {
             // noop
           }
-          void signatureService.markSignerAsViewed(data.signer.id, undefined, navigator.userAgent);
+          void signatureService.markSignerAsViewed(token, undefined, navigator.userAgent);
         }
       }
 
@@ -1725,7 +1763,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             // Não bloquear o fluxo
           }
 
-          await signatureService.markSignerAsViewed(data.signer.id, ipAddress, userAgent);
+          await signatureService.markSignerAsViewed(token, ipAddress, userAgent);
           try {
             window.sessionStorage.setItem(viewedKey, String(Date.now()));
           } catch {
@@ -1768,7 +1806,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     const touch = async () => {
       if (cancelled) return;
-      await signatureService.heartbeatSignerPresence(signer.id);
+      await signatureService.heartbeatSignerPresence(token);
     };
 
     const start = () => {
@@ -2042,6 +2080,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         // Aceite dos Termos de Uso (LGPD)
         terms_accepted: true,
         terms_version: SIGNATURE_TERMS_VERSION,
+        // Consentimento OPCIONAL p/ usar a selfie como foto cadastral (não afeta a assinatura)
+        allow_signature_selfie_for_profile: allowSelfieForProfile,
+        selfie_profile_consent_version: SELFIE_PROFILE_CONSENT_VERSION,
       };
 
       // Usar signDocumentPublic (Edge Function) para evitar erros de RLS em página pública
@@ -2231,7 +2272,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           }
           
           // Atualizar o signer com o path do PDF assinado
-          await signatureService.updateSignerSignedDocumentMeta(result.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 });
+          await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256);
           result.signed_document_path = signedPdfPath;
           (result as any).signed_pdf_sha256 = signedPdfSha256;
           console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
@@ -3349,7 +3390,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             <div className="flex-shrink-0 h-1.5 bg-slate-200">
               <div 
                 className="h-full bg-orange-500 transition-all duration-300"
-                style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp' || modalStep === 'email_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
+                style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp' || modalStep === 'email_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : (modalStep === 'location' || modalStep === 'facial') ? '80%' : '100%' }}
               />
             </div>
 
@@ -3939,65 +3980,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         </div>
                       </div>
                       
+                      {/* Botão discreto p/ refazer; ao aprovar, avança sozinho para a confirmação */}
                       <button
                         onClick={() => {
                           setFacialData(null);
                           setFacialValidation(null);
                           startCamera();
                         }}
-                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
+                        disabled={facialValidating}
+                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <RotateCcw className="w-4 h-4" />
                         Tirar novamente
                       </button>
 
-                      {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
-                      <label className="flex items-start gap-3 rounded-2xl border border-[#e7e5df] bg-slate-50 px-4 py-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={termsAccepted}
-                          onChange={(e) => setTermsAccepted(e.target.checked)}
-                          className="mt-0.5 w-4 h-4 accent-emerald-600 flex-shrink-0"
-                        />
-                        <span className="text-xs text-slate-700 leading-relaxed">
-                          Li e aceito os{' '}
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
-                            className="font-semibold text-orange-600 underline hover:text-orange-700"
-                          >
-                            {SIGNATURE_TERMS_TITLE}
-                          </button>
-                          {' '}<span className="text-slate-400">({SIGNATURE_TERMS_VERSION})</span>.
-                        </span>
-                      </label>
-
-                      <button
-                        onClick={handleSign}
-                        disabled={loading || facialValidating || facialValidation?.valid === false || !termsAccepted}
-                        className={`w-full py-4 text-white rounded-xl font-semibold text-base shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
-                          (loading || facialValidating || facialValidation?.valid === false || !termsAccepted)
-                            ? 'bg-slate-400 shadow-slate-400/20 cursor-not-allowed'
-                            : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30'
-                        }`}
-                      >
-                        {loading ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            Enviando...
-                          </>
-                        ) : facialValidating ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            Validando foto...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="w-5 h-5" />
-                            Enviar Assinatura
-                          </>
-                        )}
-                      </button>
+                      {!facialValidating && facialValidation?.valid !== false && (
+                        <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Avançando…
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -4091,6 +4093,110 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Etapa final: Autorização e confirmação */}
+              {modalStep === 'confirm' && (
+                <div className="space-y-5">
+                  <div className="text-center space-y-1">
+                    <h2 className="text-xl font-bold text-slate-800">Autorização e confirmação</h2>
+                    <p className="text-sm font-medium text-slate-500">Revise e conclua a assinatura</p>
+                  </div>
+
+                  {/* Card de status: selfie aprovada */}
+                  {facialData && (
+                    <div className="bg-white border border-slate-100 rounded-2xl p-3 shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={facialData}
+                          alt="Selfie"
+                          className="w-12 h-12 object-cover rounded-full border-2 border-slate-50 shadow-inner"
+                          style={{ transform: 'scaleX(-1)' }}
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-emerald-700">Foto aprovada</div>
+                          <div className="text-xs text-emerald-600/80">Verificação facial concluída</div>
+                        </div>
+                      </div>
+                      <div className="text-emerald-500 bg-emerald-50 p-1.5 rounded-full flex-shrink-0">
+                        <CheckCircle className="w-5 h-5" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {/* Consentimento OPCIONAL — usar a selfie como foto cadastral (default OFF) */}
+                    <label className="group block bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-orange-200 transition-colors cursor-pointer">
+                      <div className="flex gap-3">
+                        <div className="pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={allowSelfieForProfile}
+                            onChange={(e) => setAllowSelfieForProfile(e.target.checked)}
+                            className="sr-only"
+                          />
+                          <OrangeCheckbox checked={allowSelfieForProfile} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-slate-700 leading-snug">
+                            {SELFIE_PROFILE_CONSENT_LABEL}
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
+                    <label className="group block bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-orange-200 transition-colors cursor-pointer">
+                      <div className="flex gap-3 items-center">
+                        <div className="flex-shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={termsAccepted}
+                            onChange={(e) => setTermsAccepted(e.target.checked)}
+                            className="sr-only"
+                          />
+                          <OrangeCheckbox checked={termsAccepted} />
+                        </div>
+                        <div className="min-w-0 flex-1 text-xs font-semibold text-slate-700">
+                          Li e aceito os{' '}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
+                            className="text-orange-600 hover:underline"
+                          >
+                            {SIGNATURE_TERMS_TITLE}
+                          </button>
+                          {' '}<span className="text-slate-400 font-normal">({SIGNATURE_TERMS_VERSION})</span>.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={handleSign}
+                      disabled={loading || !termsAccepted}
+                      className={`w-full py-3 text-white font-bold rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center gap-3 ${
+                        (loading || !termsAccepted)
+                          ? 'bg-slate-300 shadow-slate-200 cursor-not-allowed'
+                          : 'bg-orange-600 hover:bg-orange-700 active:scale-[0.98] shadow-orange-200'
+                      }`}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-5 h-5" />
+                          Enviar Assinatura
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                 </div>
               )}
             </div>

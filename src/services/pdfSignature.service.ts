@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
 import { SYSTEM_ISSUER_LABEL } from './signature.service';
+import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
 interface SignedPdfOptions {
@@ -964,6 +965,10 @@ class PdfSignatureService {
         : item.auth_provider === 'phone'      ? `SMS (${item.phone || ''})`
         : 'Assinatura direta';
 
+      const termsStrP2 = item.terms_accepted_at
+        ? `Aceitos · versão ${String(item.terms_version || 'v1')}`
+        : '—';
+
       const dataFieldsP2: [string, string][] = [
         ['Nome', item.name],
         ['Papel', item.role && item.role !== 'Assinar' ? item.role : 'Signatário'],
@@ -973,6 +978,7 @@ class PdfSignatureService {
         ['Localização', geoP2.coordinates || '—'],
         ['Dispositivo', deviceStrP2],
         ['Autenticação', authStrP2],
+        ['Termos de Uso', termsStrP2],
         ['Assinado em', signedAtStr],
       ];
 
@@ -1054,12 +1060,14 @@ class PdfSignatureService {
     createReportHeader(historyPage, 'TRILHA DE AUDITORIA');
     const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
     const createdAtStr = this.formatManausDateTime(createdAtDate);
-    type HistoryItem = { label: string; when: string; detail: string; sortAt: number };
+    // `order` = prioridade lógica para desempate quando o horário é idêntico
+    // (ex.: aceite dos Termos e Assinatura no mesmo segundo): Termos antes de Assinado.
+    type HistoryItem = { label: string; when: string; detail: string; sortAt: number; order: number };
     const history: HistoryItem[] = [];
     // Criador: mostra nome sem email pessoal no PDF público — o email interno
     // do escritório não precisa aparecer no certificado do signatário externo.
     const creatorName = creator?.name || SYSTEM_ISSUER_LABEL;
-    history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime() });
+    history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime(), order: 0 });
 
     for (const item of signedRequestSigners) {
       const geo = this.parseGeolocation(item.signer_geolocation);
@@ -1087,6 +1095,7 @@ class PdfSignatureService {
             when: this.formatManausDateTime(ve.created_at),
             detail: `${item.name}${signerContact}${signerCpf} abriu o documento${ipInfo}`,
             sortAt: ts?.getTime() ?? 0,
+            order: 1,
           });
         }
       } else if (item.viewed_at) {
@@ -1097,11 +1106,27 @@ class PdfSignatureService {
           when: this.formatManausDateTime(item.viewed_at),
           detail: `${item.name}${signerContact}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
+          order: 1,
+        });
+      }
+
+      const signedAtMs = item.signed_at ? (this.toDateValue(item.signed_at)?.getTime() ?? 0) : 0;
+
+      // Termos vêm ANTES da assinatura (o aceite é pré-requisito do ato de assinar).
+      if (item.terms_accepted_at) {
+        const termsAtMs = this.toDateValue(item.terms_accepted_at)?.getTime() ?? 0;
+        const termsVersion = String(item.terms_version || 'v1');
+        history.push({
+          label: 'Termos',
+          when: this.formatManausDateTime(item.terms_accepted_at),
+          detail: `${item.name}${signerContact}${signerCpf} declarou ter lido e aceitado os Termos de Uso (versão ${termsVersion})${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}. Consulte em ${buildPublicSignatureTermsUrl(termsVersion)}`,
+          // Trava: nunca depois da assinatura (mesmo se o timestamp gravado for igual/posterior).
+          sortAt: signedAtMs ? Math.min(termsAtMs, signedAtMs) : termsAtMs,
+          order: 2,
         });
       }
 
       if (item.signed_at) {
-        const signedAtDate = this.toDateValue(item.signed_at);
         const authSummary = item.auth_provider === 'phone'
           ? `Autenticação via Telefone (${String(item.phone || '').replace(/\D/g, '') || 'não informado'})`
           : item.auth_provider === 'email_link'
@@ -1113,23 +1138,13 @@ class PdfSignatureService {
           label: 'Assinado',
           when: this.formatManausDateTime(item.signed_at),
           detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
-          sortAt: signedAtDate?.getTime() ?? 0,
-        });
-      }
-
-      if (item.terms_accepted_at) {
-        const termsAtDate = this.toDateValue(item.terms_accepted_at);
-        const termsVersion = String(item.terms_version || 'v1');
-        history.push({
-          label: 'Termos',
-          when: this.formatManausDateTime(item.terms_accepted_at),
-          detail: `${item.name}${signerContact}${signerCpf} declarou ter lido e aceitado os Termos de Uso (versão ${termsVersion})${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}.`,
-          sortAt: termsAtDate?.getTime() ?? 0,
+          sortAt: signedAtMs,
+          order: 3,
         });
       }
     }
 
-    history.sort((a, b) => a.sortAt - b.sortAt);
+    history.sort((a, b) => a.sortAt - b.sortAt || a.order - b.order);
 
     // Section label
     const histSectionY = pageHeight - 128;

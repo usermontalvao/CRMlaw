@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.252': { name: 'Cafe Assinatura Publica Blindada', emoji: '[shield]' },
   '1.10.250': { name: 'Cafe Despedida Cinematica', emoji: '🎬' },
   '1.10.249': { name: 'Cafe Agenda DJEN Vivo', emoji: '📅' },
   '1.10.248': { name: 'Cafe Sessao e Timeline Coerentes', emoji: '🧭' },
@@ -904,6 +905,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.252',
+    date: '20/06/2026',
+    summary: 'Assinaturas: o fluxo publico ganhou termos dedicados, consentimento opcional para reaproveitamento da selfie e endurecimento real do acesso anonimo por token no banco e nos servicos.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'feature' as const, title: 'Termos publicos ganharam pagina dedicada e base centralizada', description: 'O fluxo de assinatura passou a contar com rota propria para leitura dos termos, texto premium centralizado e integracao mais consistente com a experiencia publica.' },
+        { type: 'security' as const, title: 'Acesso anonimo foi reduzido a consultas minimas por token', description: 'Novas migrations e ajustes de servico trocaram leituras amplas por RPCs escopadas, minimizaram PII retornada e endureceram as RLS do fluxo publico de assinatura.' },
+        { type: 'improvement' as const, title: 'Uso da selfie como foto cadastral virou autorizacao separada', description: 'A pagina publica, os tipos e os fallbacks de foto do cliente passaram a respeitar consentimento especifico antes de reaproveitar a selfie fora do contexto de auditoria da assinatura.' },
+        { type: 'improvement' as const, title: 'Verificacao publica, relatorio e PDF foram alinhados ao novo fluxo', description: 'As telas e servicos de assinatura foram revisados para refletir os novos textos, campos e limites de exibicao sem remover a analise facial por IA.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.251',
     date: '20/06/2026',

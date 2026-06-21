@@ -57,3 +57,8 @@ export function buildPublicDocumentUrl(token: string): string {
 export function buildPublicPermalinkUrl(slug: string): string {
   return buildPublicHashUrl(`/p/${slug}`);
 }
+
+/** Página pública dos Termos de Uso da Assinatura (versionada). */
+export function buildPublicSignatureTermsUrl(version?: string | null): string {
+  return buildPublicHashUrl(version ? `/termos-assinatura/${version}` : '/termos-assinatura');
+}

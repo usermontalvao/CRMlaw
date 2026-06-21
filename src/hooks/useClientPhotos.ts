@@ -97,7 +97,14 @@ export function useClientPhotos(clients: ClientLike[]): Map<string, string> {
           );
         for (const req of signed) {
           for (const signer of req.signers ?? []) {
-            if (signer.facial_image_path && signer.status === 'signed' && !excluded.has(signer.facial_image_path)) {
+            // LGPD: só usa a selfie da assinatura como foto de cliente quando o
+            // signatário autorizou explicitamente (consentimento separado).
+            if (
+              signer.facial_image_path &&
+              signer.status === 'signed' &&
+              signer.allow_signature_selfie_for_profile === true &&
+              !excluded.has(signer.facial_image_path)
+            ) {
               const url = await tryUrl(signer.facial_image_path);
               if (url) {
                 cache[c.id] = { url, path: signer.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS };
@@ -105,13 +112,8 @@ export function useClientPhotos(clients: ClientLike[]): Map<string, string> {
               }
             }
           }
-          if (req.facial_image_path && !excluded.has(req.facial_image_path)) {
-            const url = await tryUrl(req.facial_image_path);
-            if (url) {
-              cache[c.id] = { url, path: req.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS };
-              return [c.id, url];
-            }
-          }
+          // Nota: a selfie no nível da request (modelo legado) não possui
+          // consentimento individual e por isso NÃO é usada como foto cadastral.
         }
       } catch {
         /* sem foto */
