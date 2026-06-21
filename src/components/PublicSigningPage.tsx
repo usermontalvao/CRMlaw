@@ -986,6 +986,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
   const [showEmailAnimation, setShowEmailAnimation] = useState(false);
+  const [emailOtpRemaining, setEmailOtpRemaining] = useState<number>(0);
+
+  // Contador regressivo da validade do código de e-mail.
+  useEffect(() => {
+    if (!emailOtpSent || !emailOtpExpiresAt) {
+      setEmailOtpRemaining(0);
+      return;
+    }
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((new Date(emailOtpExpiresAt).getTime() - Date.now()) / 1000));
+      setEmailOtpRemaining(diff);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [emailOtpSent, emailOtpExpiresAt]);
 
   // Persiste o rascunho (formulário + assinatura desenhada + localização) a cada
   // mudança. Só grava após o carregamento inicial, pra não sobrescrever um
@@ -1646,7 +1662,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     let originalPdfUrlToUse = pdfUrl;
     if (!originalPdfUrlToUse && currentRequest.document_path) {
-      originalPdfUrlToUse = await signatureService.getDocumentPreviewUrl(currentRequest.document_path);
+      originalPdfUrlToUse = await signatureService.getPublicFileUrl(token,currentRequest.document_path);
     }
 
     const docPath = currentRequest.document_path?.toLowerCase() || '';
@@ -1665,7 +1681,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     } else if (isDocxFile) {
       const cleanupHosts: HTMLElement[] = [];
       try {
-        const mainDocUrl = originalPdfUrlToUse || await signatureService.getDocumentPreviewUrl(currentRequest.document_path!);
+        const mainDocUrl = originalPdfUrlToUse || await signatureService.getPublicFileUrl(token,currentRequest.document_path!);
         if (!mainDocUrl) throw new Error('Erro ao obter URL do documento principal');
 
         const mainHost = await renderDocxOffscreen(mainDocUrl, 'docx-offscreen-style-public-regenerate');
@@ -1719,7 +1735,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256);
 
-    const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+    const signedUrl = await signatureService.getPublicFileUrl(token,signedPdfPath);
     if (signedUrl) {
       setSignedDocumentUrl(signedUrl);
       setSigner((prev) => (prev && prev.id === currentSigner.id
@@ -1736,7 +1752,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     // Tenta primeiro o que já está em memória.
     if (signer?.signed_document_path) {
-      const directUrl = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
+      const directUrl = signedDocumentUrl || (await signatureService.getPublicFileUrl(token,signer.signed_document_path));
       if (directUrl) {
         if (!signedDocumentUrl) setSignedDocumentUrl(directUrl);
         return directUrl;
@@ -1753,7 +1769,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           setWaitingFor(data.waiting_for ?? null);
 
           if (data.signer.signed_document_path) {
-            const readyUrl = await pdfSignatureService.getSignedPdfUrl(data.signer.signed_document_path);
+            const readyUrl = await signatureService.getPublicFileUrl(token,data.signer.signed_document_path);
             if (readyUrl) {
               setSignedDocumentUrl(readyUrl);
               return readyUrl;
@@ -1844,7 +1860,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
           setIsDocx(isDocxFile);
 
-          const url = await signatureService.getDocumentPreviewUrl(data.request.document_path);
+          const url = await signatureService.getPublicFileUrl(token,data.request.document_path);
 
           if (url) setPdfUrl(url);
         } catch (e) {
@@ -1859,7 +1875,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         const results = await Promise.all(
           attachPaths.map(async (attachPath) => {
             try {
-              const attachUrl = await signatureService.getDocumentPreviewUrl(attachPath);
+              const attachUrl = await signatureService.getPublicFileUrl(token,attachPath);
               if (!attachUrl) return null;
               const fileName = attachPath.split('/').pop() || 'Anexo';
               const lower = fileName.toLowerCase();
@@ -2271,7 +2287,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           let originalPdfUrlToUse = pdfUrl;
           if (!originalPdfUrlToUse && request.document_path) {
             try {
-              originalPdfUrlToUse = await signatureService.getDocumentPreviewUrl(request.document_path);
+              originalPdfUrlToUse = await signatureService.getPublicFileUrl(token,request.document_path);
               console.log('[ASSINATURA] URL do documento obtida:', originalPdfUrlToUse ? 'OK' : 'FALHOU');
             } catch (e) {
               console.warn('[ASSINATURA] Erro ao obter URL do documento:', e);
@@ -2368,7 +2384,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
             const cleanupHosts: HTMLElement[] = [];
             try {
-              const mainDocUrl = originalPdfUrlToUse || await signatureService.getDocumentPreviewUrl(request.document_path!);
+              const mainDocUrl = originalPdfUrlToUse || await signatureService.getPublicFileUrl(token,request.document_path!);
               if (!mainDocUrl) throw new Error('Erro ao obter URL do documento principal');
               console.log('[ASSINATURA] URL do documento principal:', mainDocUrl);
 
@@ -2439,7 +2455,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
 
           try {
-            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+            const signedUrl = await signatureService.getPublicFileUrl(token,signedPdfPath);
             if (signedUrl) {
               setSignedDocumentUrl(signedUrl);
             }
@@ -2808,7 +2824,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           toast.error('Link indisponível no momento.');
           return;
         }
-        const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
+        const url = await signatureService.getPublicFileUrl(token,signer.signed_document_path);
         if (!url) {
           toast.error('Link indisponível no momento.');
           return;
@@ -3737,7 +3753,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <div className="text-center">
                     <h2 className="text-xl font-bold text-slate-800">Verifique seu e-mail</h2>
                     <p className="text-slate-500 text-sm mt-2">
-                      Enviaremos um código por e-mail para confirmar sua identidade.
+                      {emailOtpSent
+                        ? 'Digite o código que enviamos para o seu e-mail.'
+                        : 'Enviaremos um código por e-mail para confirmar sua identidade.'}
                     </p>
                   </div>
 
@@ -3747,109 +3765,146 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail *</label>
-                      <input
-                        type="email"
-                        inputMode="email"
-                        value={emailToVerify}
-                        onChange={(e) => setEmailToVerify(e.target.value)}
-                        placeholder="seuemail@exemplo.com"
-                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                      />
-                    </div>
+                  {/* Etapa 1: enviar e-mail */}
+                  {!emailOtpSent && (
+                    <>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail *</label>
+                          <input
+                            type="email"
+                            inputMode="email"
+                            value={emailToVerify}
+                            onChange={(e) => setEmailToVerify(e.target.value)}
+                            placeholder="seuemail@exemplo.com"
+                            className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                          />
+                        </div>
 
-                    {/* Animação de e-mail sendo enviado */}
-                    {showEmailAnimation && (
-                      <div className="flex justify-center py-4">
-                        <div className="relative">
-                          <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                            <Mail className="w-6 h-6 text-orange-600" />
-                          </div>
-                          <div className="absolute -top-1 -right-1">
-                            <div className="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
-                          </div>
-                          <div className="absolute top-1/2 -translate-y-1/2 left-full ml-2">
-                            <div className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
-                              <div className="w-2 h-2 bg-orange-300 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                              <div className="w-2 h-2 bg-orange-200 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                        {/* Animação de e-mail sendo enviado */}
+                        {showEmailAnimation && (
+                          <div className="flex justify-center py-4">
+                            <div className="relative">
+                              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                <Mail className="w-6 h-6 text-orange-600" />
+                              </div>
+                              <div className="absolute -top-1 -right-1">
+                                <div className="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
+                              </div>
+                              <div className="absolute top-1/2 -translate-y-1/2 left-full ml-2">
+                                <div className="flex items-center gap-1">
+                                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                                  <div className="w-2 h-2 bg-orange-300 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                                  <div className="w-2 h-2 bg-orange-200 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                                </div>
+                              </div>
+                              <div className="text-center mt-2">
+                                <p className="text-xs text-orange-600 font-medium">Enviando...</p>
+                              </div>
                             </div>
                           </div>
-                          <div className="text-center mt-2">
-                            <p className="text-xs text-orange-600 font-medium">Enviando...</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleSendEmailOtp}
-                      disabled={emailOtpLoading}
-                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {emailOtpLoading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Enviando…
-                        </>
-                      ) : (
-                        <>
-                          {emailOtpSent ? 'Reenviar código' : 'Enviar código'}
-                        </>
-                      )}
-                    </button>
-
-                    {emailOtpSent && (
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Código do e-mail *</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={6}
-                          value={emailOtp}
-                          onChange={(e) => setEmailOtp(e.target.value)}
-                          placeholder="000000"
-                          className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
-                        />
-                        {emailOtpExpiresAt && (
-                          <div className="text-xs text-slate-500 mt-2">
-                            Válido até: {formatDate(emailOtpExpiresAt)}
-                          </div>
                         )}
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="space-y-3">
-                    {emailOtpSent && (
+                        <button
+                          type="button"
+                          onClick={handleSendEmailOtp}
+                          disabled={emailOtpLoading}
+                          className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {emailOtpLoading ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Enviando…
+                            </>
+                          ) : (
+                            'Enviar código'
+                          )}
+                        </button>
+                      </div>
+
                       <button
                         type="button"
-                        onClick={handleVerifyEmailOtp}
-                        disabled={emailOtpLoading || emailOtp.replace(/\D/g, '').length < 4}
-                        className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                        onClick={() => setModalStep('google_auth')}
+                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
                       >
-                        {emailOtpLoading ? (
-                          <>
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Validando…
-                          </>
-                        ) : (
-                          'Validar e continuar'
-                        )}
+                        Voltar
                       </button>
-                    )}
+                    </>
+                  )}
 
-                    <button
-                      type="button"
-                      onClick={() => setModalStep('google_auth')}
-                      className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
-                    >
-                      Voltar
-                    </button>
-                  </div>
+                  {/* Etapa 2: inserir código */}
+                  {emailOtpSent && (
+                    <>
+                      <div className="space-y-3">
+                        <div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={emailOtp}
+                            onChange={(e) => setEmailOtp(e.target.value)}
+                            placeholder="CÓDIGO"
+                            autoFocus
+                            className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-[0.4em] text-center placeholder:tracking-[0.2em] placeholder:text-slate-400"
+                          />
+                          {emailOtpExpiresAt && (
+                            <div className="text-xs text-center mt-2">
+                              {emailOtpRemaining > 0 ? (
+                                <span className="text-slate-500">
+                                  Expira em{' '}
+                                  <span className="font-semibold tabular-nums text-slate-700">
+                                    {String(Math.floor(emailOtpRemaining / 60)).padStart(2, '0')}:
+                                    {String(emailOtpRemaining % 60).padStart(2, '0')}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-red-500 font-medium">Código expirado</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Aviso discreto de reenvio */}
+                        <div className="text-center text-xs text-slate-500">
+                          Não recebeu?{' '}
+                          <button
+                            type="button"
+                            onClick={handleSendEmailOtp}
+                            disabled={emailOtpLoading}
+                            className="font-medium text-orange-600 hover:text-orange-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {emailOtpLoading ? 'Reenviando…' : 'Reenviar código'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={handleVerifyEmailOtp}
+                          disabled={emailOtpLoading || emailOtp.replace(/\D/g, '').length < 4}
+                          className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                        >
+                          {emailOtpLoading ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Validando…
+                            </>
+                          ) : (
+                            'Validar e continuar'
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setEmailOtpSent(false)}
+                          className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          Voltar
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

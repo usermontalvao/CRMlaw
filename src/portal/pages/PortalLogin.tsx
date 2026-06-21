@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { supabase } from '../../config/supabase';
-import { clientService } from '../../services/client.service';
 
 type ClientStep = 'cpf' | 'pin';
 type Mode = 'client' | 'staff';
@@ -402,50 +401,27 @@ export const PortalLogin: React.FC = () => {
     setStaffBanned(false);
     try {
       const trimmed = id.trim();
-
-      if (trimmed.includes('@')) {
-        const { data } = await supabase.from('profiles').select('name,avatar_url,email,is_active,role').ilike('email', trimmed);
-        const p = data?.[0] ?? null;
-        if (!p) { setStaffError('Usuário não encontrado. Verifique o e-mail informado.'); return false; }
-        if (p.is_active === false) { setStaffBanned(true); return false; }
-        setProfileName(p.name ?? p.email);
-        setProfileAvatar(p.avatar_url ?? null);
-        setProfileRole(p.role ?? null);
-        setStaffEmail(p.email ?? trimmed);
-        return true;
+      // Identificação pré-login via RPC security definer (não expõe profiles/clients
+      // ao papel anon). Resolve staff por e-mail/CPF e cliente por CPF/CNPJ.
+      const { data, error } = await supabase.rpc('login_identify', { p_identifier: trimmed });
+      const p = (data ?? null) as {
+        found?: boolean;
+        name?: string | null;
+        avatar_url?: string | null;
+        email?: string | null;
+        role?: string | null;
+        is_active?: boolean | null;
+      } | null;
+      if (error || !p?.found) {
+        setStaffError('Usuário não encontrado. Verifique o dado informado.');
+        return false;
       }
-
-      const numeric = trimmed.replace(/\D/g, '');
-      if (!numeric) return false;
-
-      if (numeric.length === 11) {
-        const masked = formatCpfRaw(numeric);
-        const { data: byMasked } = await supabase.from('profiles').select('name,avatar_url,email,is_active,role').eq('cpf', masked).maybeSingle();
-        if (byMasked?.email) {
-          if (byMasked.is_active === false) { setStaffBanned(true); return false; }
-          setProfileName(byMasked.name ?? byMasked.email); setProfileAvatar(byMasked.avatar_url ?? null); setProfileRole(byMasked.role ?? null); setStaffEmail(byMasked.email); return true;
-        }
-
-        const { data: byRaw } = await supabase.from('profiles').select('name,avatar_url,email,is_active,role').eq('cpf', numeric).maybeSingle();
-        if (byRaw?.email) {
-          if (byRaw.is_active === false) { setStaffBanned(true); return false; }
-          setProfileName(byRaw.name ?? byRaw.email); setProfileAvatar(byRaw.avatar_url ?? null); setProfileRole(byRaw.role ?? null); setStaffEmail(byRaw.email); return true;
-        }
-      }
-
-      try {
-        const client = await clientService.getClientByCpfCnpj(numeric);
-        if (!client?.email) { setStaffError('CPF encontrado, mas sem e-mail cadastrado.'); return false; }
-        setProfileName(client.full_name || client.email);
-        setStaffEmail(client.email);
-        const { data: pd } = await supabase.from('profiles').select('avatar_url,role').ilike('email', client.email);
-        setProfileAvatar(pd?.[0]?.avatar_url ?? null);
-        setProfileRole(pd?.[0]?.role ?? null);
-        return true;
-      } catch { /* ignore */ }
-
-      setStaffError('Usuário não encontrado. Verifique o dado informado.');
-      return false;
+      if (p.is_active === false) { setStaffBanned(true); return false; }
+      setProfileName(p.name ?? p.email ?? trimmed);
+      setProfileAvatar(p.avatar_url ?? null);
+      setProfileRole(p.role ?? null);
+      setStaffEmail(p.email ?? trimmed);
+      return true;
     } finally { setIdentifierLoading(false); }
   }, []);
 

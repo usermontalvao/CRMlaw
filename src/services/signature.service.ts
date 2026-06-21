@@ -1182,6 +1182,23 @@ class SignatureService {
 
   // ==================== UTILS ====================
 
+  /**
+   * Fluxo PÚBLICO: obtém uma URL assinada de um arquivo da assinatura validando
+   * o token no servidor (edge function token-scoped), sem expor o storage ao
+   * papel `anon`. Retorna null se não autorizado/inexistente.
+   */
+  async getPublicFileUrl(token: string, path: string, expiresIn = 3600): Promise<string | null> {
+    if (!token || !path) return null;
+    const { data, error } = await supabase.functions.invoke('public-signing-file', {
+      body: { token, path, expiresIn },
+    });
+    if (error || !data?.url) {
+      console.error('[getPublicFileUrl] falha ao obter URL:', error ?? data?.error);
+      return null;
+    }
+    return data.url as string;
+  }
+
   async getSignedImageUrl(path: string, expiresIn = 3600): Promise<string> {
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)

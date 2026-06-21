@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.255': { name: 'Cafe Arquivo Publico Blindado', emoji: '[lock]' },
   '1.10.254': { name: 'Cafe Assinatura e Ficha Alinhadas', emoji: '[sync]' },
   '1.10.253': { name: 'Cafe Fluxo de Assinatura Editorial', emoji: '[signature]' },
   '1.10.252': { name: 'Cafe Assinatura Publica Blindada', emoji: '[shield]' },
@@ -907,6 +908,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.255',
+    date: '21/06/2026',
+    summary: 'Assinaturas e seguranca: o fluxo publico passou a servir arquivos por edge token-scoped, a experiencia publica foi ajustada e o projeto ganhou registro dedicado do contexto de auditoria de seguranca.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'security' as const, title: 'Arquivos do fluxo publico passaram a usar edge token-scoped', description: 'Uma edge function dedicada passou a validar token, solicitacao e caminho antes de emitir URL assinada, reduzindo dependencia de leitura ampla por anon nos buckets do fluxo de assinatura.' },
+        { type: 'improvement' as const, title: 'Fluxo publico e servicos de assinatura foram alinhados ao novo acesso de arquivos', description: 'A pagina publica, o login do portal e o servico de assinatura receberam ajustes complementares para consumir o novo caminho protegido sem perder a experiencia atual da jornada.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Contexto da auditoria de seguranca foi documentado no workspace', description: 'O projeto passou a manter um registro dedicado com o contexto levantado sobre assinatura, acesso publico, storage e superficies sensiveis para apoiar a proxima rodada de blindagem.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.254',
     date: '21/06/2026',
