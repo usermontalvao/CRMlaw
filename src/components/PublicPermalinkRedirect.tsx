@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
+import PublicFlowLoader from './PublicFlowLoader';
 
 /**
  * Página de redirecionamento para links fixos (permalinks).
@@ -80,15 +81,7 @@ const PublicPermalinkRedirect: React.FC = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6 max-w-md w-full text-center">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-4" />
-        <h1 className="text-lg font-semibold text-slate-900 mb-2">Preparando formulário...</h1>
-        <p className="text-sm text-slate-600">Aguarde um momento</p>
-      </div>
-    </div>
-  );
+  return <PublicFlowLoader subtitle="Preparando seu formulário..." />;
 };
 
 export default PublicPermalinkRedirect;

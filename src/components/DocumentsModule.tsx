@@ -1619,6 +1619,119 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   return (
     <div className="space-y-6">
+      {/* Overlay de geração de link — animação da marca */}
+      {creatingTemplateFillLinkId && (
+        <div className="tfl-gen-overlay" role="status" aria-live="polite" aria-label="Gerando link">
+          <style>{`
+            @keyframes tfl-gen-fade { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes tfl-gen-pop {
+              0% { opacity: 0; transform: translateY(14px) scale(.94); }
+              100% { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            @keyframes tfl-gen-ring {
+              0% { transform: scale(.55); opacity: .7; }
+              70% { opacity: .12; }
+              100% { transform: scale(1.55); opacity: 0; }
+            }
+            @keyframes tfl-gen-orb {
+              0%, 100% { transform: translateY(0) rotate(-6deg); }
+              50% { transform: translateY(-8px) rotate(6deg); }
+            }
+            @keyframes tfl-gen-glow {
+              0%, 100% { box-shadow: 0 12px 32px -8px rgba(245,158,11,.55), 0 0 0 0 rgba(251,191,36,.35); }
+              50% { box-shadow: 0 18px 44px -6px rgba(249,115,22,.7), 0 0 0 10px rgba(251,191,36,0); }
+            }
+            @keyframes tfl-gen-spark {
+              0% { transform: translate(0,0) scale(.4); opacity: 0; }
+              30% { opacity: 1; }
+              100% { transform: translate(var(--sx), var(--sy)) scale(1); opacity: 0; }
+            }
+            @keyframes tfl-gen-shimmer {
+              0% { transform: translateX(-120%); }
+              100% { transform: translateX(420%); }
+            }
+            @keyframes tfl-gen-dots {
+              0%, 20% { content: ''; }
+              40% { content: '.'; }
+              60% { content: '..'; }
+              80%, 100% { content: '...'; }
+            }
+            .tfl-gen-overlay {
+              position: fixed; inset: 0; z-index: 120;
+              display: flex; align-items: center; justify-content: center;
+              background: radial-gradient(120% 120% at 50% 38%, rgba(255,251,235,.92), rgba(255,237,213,.9));
+              backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+              animation: tfl-gen-fade .25s ease both;
+            }
+            @media (prefers-color-scheme: dark) {
+              .tfl-gen-overlay { background: radial-gradient(120% 120% at 50% 38%, rgba(28,25,23,.92), rgba(20,18,16,.94)); }
+              .tfl-gen-card { background: rgba(28,25,23,.7); border-color: rgba(245,158,11,.25); }
+              .tfl-gen-title { color: #fef3c7; }
+              .tfl-gen-sub { color: #d6c6a8; }
+            }
+            .tfl-gen-card {
+              display: flex; flex-direction: column; align-items: center;
+              gap: 26px; padding: 40px 48px;
+              border-radius: 28px; border: 1px solid rgba(245,158,11,.18);
+              background: rgba(255,255,255,.55);
+              box-shadow: 0 30px 80px -24px rgba(180,83,9,.35);
+              animation: tfl-gen-pop .45s cubic-bezier(.2,.8,.2,1) both;
+            }
+            .tfl-gen-stage { position: relative; width: 132px; height: 132px; display: flex; align-items: center; justify-content: center; }
+            .tfl-gen-ring {
+              position: absolute; inset: 0; margin: auto; width: 116px; height: 116px;
+              border-radius: 999px; border: 2px solid rgba(245,158,11,.5);
+              animation: tfl-gen-ring 2.4s ease-out infinite;
+            }
+            .tfl-gen-ring-2 { animation-delay: .8s; border-color: rgba(249,115,22,.5); }
+            .tfl-gen-ring-3 { animation-delay: 1.6s; border-color: rgba(251,191,36,.6); }
+            .tfl-gen-orb {
+              position: relative; width: 78px; height: 78px; border-radius: 24px;
+              display: flex; align-items: center; justify-content: center; color: #fff;
+              background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #f97316 100%);
+              animation: tfl-gen-orb 3s ease-in-out infinite, tfl-gen-glow 2.4s ease-in-out infinite;
+            }
+            .tfl-gen-spark { position: absolute; color: #f59e0b; opacity: 0; animation: tfl-gen-spark 1.8s ease-out infinite; }
+            .tfl-gen-spark-a { top: 14px; left: 22px; --sx: -18px; --sy: -16px; animation-delay: .1s; }
+            .tfl-gen-spark-b { top: 16px; right: 18px; --sx: 18px; --sy: -14px; animation-delay: .7s; color: #f97316; }
+            .tfl-gen-spark-c { bottom: 18px; left: 28px; --sx: -16px; --sy: 18px; animation-delay: 1.2s; color: #fbbf24; }
+            .tfl-gen-spark-d { bottom: 14px; right: 24px; --sx: 18px; --sy: 16px; animation-delay: 1.6s; }
+            .tfl-gen-text { text-align: center; }
+            .tfl-gen-title { font-size: 16px; font-weight: 700; color: #92400e; letter-spacing: -.01em; }
+            .tfl-gen-title::after { content: ''; display: inline-block; width: 14px; text-align: left; animation: tfl-gen-dots 1.4s steps(1) infinite; }
+            .tfl-gen-sub { margin-top: 4px; font-size: 12.5px; color: #b45309; }
+            .tfl-gen-bar { position: relative; width: 220px; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(245,158,11,.18); }
+            .tfl-gen-bar > span {
+              position: absolute; top: 0; left: 0; height: 100%; width: 35%;
+              border-radius: 999px; background: linear-gradient(90deg, transparent, #fbbf24, #f97316, transparent);
+              animation: tfl-gen-shimmer 1.3s ease-in-out infinite;
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .tfl-gen-ring, .tfl-gen-orb, .tfl-gen-spark, .tfl-gen-bar > span, .tfl-gen-title::after { animation-duration: .01ms; animation-iteration-count: 1; }
+            }
+          `}</style>
+          <div className="tfl-gen-card">
+            <div className="tfl-gen-stage">
+              <span className="tfl-gen-ring tfl-gen-ring-1" />
+              <span className="tfl-gen-ring tfl-gen-ring-2" />
+              <span className="tfl-gen-ring tfl-gen-ring-3" />
+              <Sparkles className="tfl-gen-spark tfl-gen-spark-a h-4 w-4" />
+              <Sparkles className="tfl-gen-spark tfl-gen-spark-b h-3.5 w-3.5" />
+              <Sparkles className="tfl-gen-spark tfl-gen-spark-c h-3 w-3" />
+              <Sparkles className="tfl-gen-spark tfl-gen-spark-d h-3.5 w-3.5" />
+              <div className="tfl-gen-orb">
+                <Link2 className="h-9 w-9" strokeWidth={2.2} />
+              </div>
+            </div>
+            <div className="tfl-gen-text">
+              <p className="tfl-gen-title">Gerando seu link</p>
+              <p className="tfl-gen-sub">Preparando o documento para preenchimento</p>
+            </div>
+            <div className="tfl-gen-bar"><span /></div>
+          </div>
+        </div>
+      )}
+
       {/* Header com tabs */}
       <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5]">
                 <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 sm:flex-row sm:px-6">

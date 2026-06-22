@@ -4,7 +4,7 @@ import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Down
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
-import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
+import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL, parseSignatureTermsText } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
@@ -3439,9 +3439,32 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               </div>
               <button onClick={() => setShowTermsModal(false)} className="p-2 text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-5 overflow-y-auto">
+            <div className="p-5 sm:p-6 overflow-y-auto">
               {SIGNATURE_TERMS_TEXT.trim() ? (
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{SIGNATURE_TERMS_TEXT}</div>
+                <div>
+                  {parseSignatureTermsText(SIGNATURE_TERMS_TEXT, SIGNATURE_TERMS_TITLE).map((b, i) => {
+                    if (b.type === 'h2') {
+                      return (
+                        <h2 key={i} className="text-[15px] font-bold text-slate-900 tracking-tight mt-7 first:mt-0 mb-2.5">
+                          {b.text}
+                        </h2>
+                      );
+                    }
+                    if (b.type === 'li') {
+                      return (
+                        <div key={i} className="flex gap-2.5 mb-1.5 pl-1">
+                          <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0" />
+                          <span className="text-[13.5px] text-slate-600 leading-relaxed">{b.text}</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <p key={i} className="text-[13.5px] text-slate-600 leading-relaxed mb-3">
+                        {b.text}
+                      </p>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   O texto dos Termos de Uso ainda será publicado.

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.260': { name: 'Cafe Email Operacional Integrado', emoji: '[mail]' },
   '1.10.259': { name: 'Cafe Portal Blindado e DJEN Trancado', emoji: '[shield]' },
   '1.10.258': { name: 'Cafe Sessao Sob Controle do Supabase', emoji: '[lock]' },
   '1.10.257': { name: 'Cafe Assinatura Publica Fortificada', emoji: '[shield]' },
@@ -912,6 +913,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.260',
+    date: '22/06/2026',
+    summary: 'Email, fluxos publicos e navegacao: o CRM recebeu o novo modulo de email, um loader dedicado para rotas publicas e ajustes estruturais em configuracoes, assinatura e navegacao para integrar a nova experiencia.',
+    modules: [
+      { moduleId: 'configuracoes', changes: [
+        { type: 'feature' as const, title: 'Novo modulo de email integrado ao CRM', description: 'A interface principal passou a incluir `EmailModule`, tipagens dedicadas e servicos de comunicacao para suportar listagem, leitura e operacao do modulo de email dentro do produto.' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Fluxos publicos ganharam loader compartilhado', description: 'As paginas publicas de assinatura, termos, preenchimento e permalink passaram a usar um componente de carregamento comum para padronizar transicoes e reduzir estados visuais inconsistentes.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Navegacao e telas auxiliares foram alinhadas ao novo fluxo', description: 'App, contexto de navegacao e modulos relacionados foram ajustados para encaixar o email, manter a navegacao coerente e preparar a nova funcao `email-bridge-send` no backend Supabase.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.259',
     date: '21/06/2026',

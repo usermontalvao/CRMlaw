@@ -4,6 +4,7 @@ import {
   SIGNATURE_TERMS_VERSION,
   SIGNATURE_TERMS_ALL_VERSIONS,
   getSignatureTerms,
+  parseSignatureTermsText,
 } from '../constants/signatureTerms';
 
 interface PublicSignatureTermsPageProps {
@@ -21,24 +22,6 @@ function formatDate(iso: string): string {
   }
 }
 
-type TermsBlock = { type: 'h2' | 'p' | 'li'; text: string };
-
-/** Quebra o texto plano dos termos em blocos para tipografia premium. */
-function parseTermsText(text: string, title: string): TermsBlock[] {
-  const out: TermsBlock[] = [];
-  let skippedTitle = false;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    // O texto começa repetindo o título — não duplicar no corpo.
-    if (!skippedTitle && line === title.trim()) { skippedTitle = true; continue; }
-    if (/^\d+\.\s+/.test(line)) { out.push({ type: 'h2', text: line }); continue; }
-    if (/^[-•]\s+/.test(line)) { out.push({ type: 'li', text: line.replace(/^[-•]\s+/, '') }); continue; }
-    out.push({ type: 'p', text: line });
-  }
-  return out;
-}
-
 /**
  * Página PÚBLICA e versionada dos Termos de Uso da Assinatura Eletrônica.
  * Rota: /#/termos-assinatura  ou  /#/termos-assinatura/<versao>
@@ -49,7 +32,7 @@ const PublicSignatureTermsPage: React.FC<PublicSignatureTermsPageProps> = ({ ver
   const isCurrent = terms.version === SIGNATURE_TERMS_VERSION;
   const requestedUnknown = !!version && !SIGNATURE_TERMS_ALL_VERSIONS.some((v) => v.version === version);
 
-  const blocks = useMemo(() => parseTermsText(terms.text, terms.title), [terms]);
+  const blocks = useMemo(() => parseSignatureTermsText(terms.text, terms.title), [terms]);
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden" style={{ background: '#f6f5f2' }}>

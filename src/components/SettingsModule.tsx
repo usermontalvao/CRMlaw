@@ -353,6 +353,7 @@ const MODULES = [
   { key: 'peticoes', label: 'Petições' },
   { key: 'chat', label: 'Chat' },
   { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'email', label: 'Email' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -2937,6 +2938,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         { key: 'agenda',        label: 'Agenda',        desc: 'Compromissos e audiências',       icon: Calendar },
                         { key: 'chat',          label: 'Chat',          desc: 'Mensagens entre a equipe',        icon: MessageCircle },
                         { key: 'whatsapp',      label: 'WhatsApp',      desc: 'Atendimento via WhatsApp',        icon: MessageSquare },
+                        { key: 'email',         label: 'Email',         desc: 'Caixa de e-mail integrada',       icon: Mail },
                         { key: 'leads',         label: 'Leads',         desc: 'Funil de atendimento',            icon: Target },
                         { key: 'clientes',      label: 'Clientes',      desc: 'Cadastro de clientes',            icon: Users },
                         { key: 'processos',     label: 'Processos',     desc: 'Processos e andamentos',          icon: Scale },

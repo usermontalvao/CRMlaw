@@ -178,7 +178,7 @@ Ao selecionar a opção de aceite e prosseguir com o procedimento, o usuário de
 export const SELFIE_PROFILE_CONSENT_VERSION = 'v1';
 
 export const SELFIE_PROFILE_CONSENT_LABEL =
-  'Autorizo que a foto capturada neste processo de assinatura também seja utilizada como foto cadastral neste sistema.';
+  'Autorizo que a foto capturada neste processo de assinatura também seja utilizada como foto cadastral.';
 
 export const SELFIE_PROFILE_CONSENT_HELP =
   'Opcional. Esta autorização não é necessária para concluir a assinatura.';
@@ -226,4 +226,26 @@ export const SIGNATURE_TERMS_ALL_VERSIONS: SignatureTermsVersion[] =
 export function getSignatureTerms(version?: string | null): SignatureTermsVersion {
   if (version && SIGNATURE_TERMS_VERSIONS[version]) return SIGNATURE_TERMS_VERSIONS[version];
   return SIGNATURE_TERMS_VERSIONS[SIGNATURE_TERMS_VERSION];
+}
+
+export type SignatureTermsBlock = { type: 'h2' | 'p' | 'li'; text: string };
+
+/**
+ * Quebra o texto plano dos termos em blocos (título / parágrafo / item) para
+ * renderização tipográfica. Usado tanto na página pública versionada quanto no
+ * modal de aceite, para que ambos exibam o texto formatado de forma idêntica.
+ */
+export function parseSignatureTermsText(text: string, title: string): SignatureTermsBlock[] {
+  const out: SignatureTermsBlock[] = [];
+  let skippedTitle = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    // O texto começa repetindo o título — não duplicar no corpo.
+    if (!skippedTitle && line === title.trim()) { skippedTitle = true; continue; }
+    if (/^\d+\.\s+/.test(line)) { out.push({ type: 'h2', text: line }); continue; }
+    if (/^[-•]\s+/.test(line)) { out.push({ type: 'li', text: line.replace(/^[-•]\s+/, '') }); continue; }
+    out.push({ type: 'p', text: line });
+  }
+  return out;
 }

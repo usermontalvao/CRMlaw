@@ -42,6 +42,7 @@ import {
   Send,
   Clock,
   MessageSquare,
+  Mail,
   FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
@@ -71,6 +72,7 @@ const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const ChatModule = lazy(() => import('./components/ChatModule'));
 const WhatsAppModule = lazy(() => import('./components/WhatsAppModule'));
+const EmailModule = lazy(() => import('./components/EmailModule'));
 const UserManagementModule = lazy(() => import('./components/UserManagementModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
@@ -2026,6 +2028,12 @@ useEffect(() => {
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
               expiresAt={getOverrideExpiry('whatsapp')} />
           )}
+          {!permissionsLoading && canAccessModule('email') && (
+            <SidebarModuleBtn moduleKey="email" label="Email" Icon={Mail}
+              isActive={activeModule === 'email'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('email'); }}
+              expiresAt={getOverrideExpiry('email')} />
+          )}
 
           {/* ── ATENDIMENTO ── Leads ──────────────────────────────
               O funil de Leads deixou de ser um item de menu próprio: agora vive
@@ -2160,7 +2168,7 @@ useEffect(() => {
       </HiddenMenuModulesContext.Provider>
 
         {/* Main Content Area */}
-      <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' ? 'h-[100dvh] overflow-hidden' : ''}`}>
+      <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'h-[100dvh] overflow-hidden' : ''}`}>
         {/* Cloud Mobile Header - Pill-shaped navigation shell */}
         {activeModule === 'cloud' ? (
           <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
@@ -2437,7 +2445,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm">
               <CheckCheck className="w-4 h-4 flex-shrink-0 text-emerald-500" />
@@ -2588,6 +2596,7 @@ useEffect(() => {
                 />
               </div>
             )}
+            {activeModule === 'email' && <EmailModule />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && (
               <FinancialModule
@@ -2629,7 +2638,7 @@ useEffect(() => {
           onBadgeCountChange={setDocRequestsBadge}
         />
 
-        {activeModule !== 'chat' && activeModule !== 'whatsapp' && (
+        {activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">

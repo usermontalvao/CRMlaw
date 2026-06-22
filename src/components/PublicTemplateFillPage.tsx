@@ -5,6 +5,7 @@ import { templateFillService } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 import { buildPublicSigningUrl } from '../utils/publicAppUrl';
+import PublicFlowLoader from './PublicFlowLoader';
 
 interface PublicTemplateFillPageProps {
   token: string;
@@ -290,6 +291,9 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
   useEffect(() => {
     (async () => {
+      // Tempo mínimo de exibição da animação de carregamento (marca Jurius)
+      const MIN_LOADING_MS = 2200;
+      const startedAt = Date.now();
       try {
         setLoading(true);
         setError(null);
@@ -308,6 +312,11 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
       } catch (e: any) {
         setError(e?.message || 'Erro ao carregar');
       } finally {
+        const elapsed = Date.now() - startedAt;
+        const remaining = MIN_LOADING_MS - elapsed;
+        if (remaining > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, remaining));
+        }
         setLoading(false);
       }
     })();
@@ -871,11 +880,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   }, [activeStep, submitting, result]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-600" />
-      </div>
-    );
+    return <PublicFlowLoader />;
   }
 
   if (!bundle) {
