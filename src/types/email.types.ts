@@ -1,6 +1,6 @@
 export type EmailDirection = 'inbound' | 'outbound';
 
-export type EmailFolder = 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash';
+export type EmailFolder = 'inbox' | 'starred' | 'sent' | 'drafts' | 'spam' | 'trash';
 
 export interface EmailAttachmentMeta {
   filename?: string;
@@ -32,6 +32,7 @@ export interface EmailMessage {
   sender_user_id: string | null;
   assigned_user_id: string | null;
   is_read: boolean;
+  is_starred: boolean;
   is_spam: boolean;
   is_trash: boolean;
   spam_score: number | null;

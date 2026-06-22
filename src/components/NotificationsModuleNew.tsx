@@ -386,7 +386,10 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       onNavigateToModule?.('financeiro');
     } else {
       const un = notification.data as UserNotification;
-      if (un.metadata?.post_id) {
+      if (un.type === 'email_new') {
+        const emailId = un.metadata?.email_id;
+        onNavigateToModule?.('email', emailId ? { emailId: String(emailId) } : undefined);
+      } else if (un.metadata?.post_id) {
         // Notificação de menção/post: abrir feed no post específico
         onNavigateToModule?.('feed', { openPostModal: un.metadata.post_id } as any);
       } else if (un.deadline_id) onNavigateToModule?.('prazos', { entityId: un.deadline_id } as any);

@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   Inbox, Send, FileText, Flame, Trash2, Search, Paperclip, Reply, Forward,
   Mail, MailOpen, RefreshCw, PenSquare, Loader2, AlertOctagon, RotateCcw, ReplyAll,
   Settings, Type, Printer, PenLine, SlidersHorizontal, ShieldCheck, Plus, X,
   Bold, Italic, Underline, List, ListOrdered, Link2,
   Strikethrough, AlignLeft, AlignCenter, AlignRight, Quote, RemoveFormatting, Palette, ChevronDown,
-  AlertCircle, ChevronLeft,
+  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star,
 } from 'lucide-react';
 import { emailService } from '../services/email.service';
+import { userNotificationService } from '../services/userNotification.service';
+import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
 
 const FOLDERS: { key: EmailFolder; label: string; Icon: typeof Inbox }[] = [
   { key: 'inbox', label: 'Caixa de entrada', Icon: Inbox },
+  { key: 'starred', label: 'Com estrela', Icon: Star },
   { key: 'drafts', label: 'Rascunhos', Icon: FileText },
   { key: 'sent', label: 'Enviados', Icon: Send },
   { key: 'spam', label: 'Spam', Icon: Flame },
@@ -31,6 +36,23 @@ const MATCH_LABEL: Record<SpamRuleMatch, string> = {
 const LS_FOLDERS_W = 'email:foldersW';
 const LS_LIST_W = 'email:listW';
 const LS_PREFS = 'email:prefs';
+const LS_SHOWN_IMAGES = 'email:shownImages';
+
+// Memória de "imagens liberadas" por mensagem. Uma vez que o usuário clica em
+// "Exibir imagens" num e-mail, não faz sentido bloquear de novo toda vez que ele
+// reabre — guardamos o id da mensagem (persistido entre sessões, com teto p/ não
+// crescer sem limite).
+const shownImages: Set<string> = (() => {
+  try {
+    const raw = localStorage.getItem(LS_SHOWN_IMAGES);
+    return new Set<string>(raw ? JSON.parse(raw) : []);
+  } catch { return new Set<string>(); }
+})();
+function rememberShownImages(id: string) {
+  if (!id || shownImages.has(id)) return;
+  shownImages.add(id);
+  try { localStorage.setItem(LS_SHOWN_IMAGES, JSON.stringify([...shownImages].slice(-800))); } catch { /* noop */ }
+}
 
 // Conta da caixa (remetente fixo — 1 conta). Usado p/ excluir a si mesmo no "Responder a todos".
 const MAILBOX_ADDRESS = 'pedro@advcuiaba.com';
@@ -206,7 +228,12 @@ function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function EmailModule() {
+interface EmailModuleProps {
+  params?: { emailId?: string } | null;
+}
+
+export default function EmailModule({ params }: EmailModuleProps = {}) {
+  const { user } = useAuth();
   const [folder, setFolder] = useState<EmailFolder>('inbox');
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +241,11 @@ export default function EmailModule() {
   const [thread, setThread] = useState<EmailMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [search, setSearch] = useState('');
+  // Campo da busca (digitação imediata) vs. termo aplicado (debounced) — evita
+  // disparar uma query no banco a cada tecla numa caixa com milhares de e-mails.
+  const [searchInput, setSearchInput] = useState('');
   const [unread, setUnread] = useState(0);
+  const [spamUnread, setSpamUnread] = useState(0);
 
   const [limit, setLimit] = useState(() => loadPrefs().perPage);
   const [hasMore, setHasMore] = useState(false);
@@ -227,6 +258,14 @@ export default function EmailModule() {
 
   const [foldersW, setFoldersW] = useState(() => Number(localStorage.getItem(LS_FOLDERS_W)) || 160);
   const [listW, setListW] = useState(() => Number(localStorage.getItem(LS_LIST_W)) || 320);
+  // Refs das colunas: durante o arraste mudamos a largura direto no DOM (sem
+  // setState) para o gesto ficar fluido; só "commitamos" no estado/banco ao soltar.
+  const foldersColRef = useRef<HTMLDivElement>(null);
+  const listColRef = useRef<HTMLDivElement>(null);
+  // Raiz do módulo — usada p/ achar os iframes da leitura e desligar o
+  // pointer-events deles durante o arraste (senão o iframe "engole" o mouse e
+  // o gesto trava). Sem overlay/veu: nada de re-render nem escurecer a tela.
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Responsivo: < md (768px) vira single-pane (lista OU leitura), pastas viram
   // barra horizontal no topo e as colunas arrastáveis somem.
@@ -240,6 +279,10 @@ export default function EmailModule() {
   }, []);
 
   const [composeOpen, setComposeOpen] = useState(false);
+  // Inline = responder/encaminhar no rodapé da conversa (sem sair da leitura).
+  // Quando false e composeOpen, abre o compose em tela cheia (e-mail novo).
+  const [composeInline, setComposeInline] = useState(false);
+  const inlineReplyRef = useRef<HTMLDivElement>(null);
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -255,6 +298,7 @@ export default function EmailModule() {
 
   const [prefs, setPrefs] = useState<EmailPrefs>(() => loadPrefs());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'geral' | 'assinatura' | 'antispam'>('geral');
   const [prefsDraft, setPrefsDraft] = useState<EmailPrefs>(prefs);
   const [sigDraft, setSigDraft] = useState<EmailSignature>({ user_id: '', name: '', signature_text: '', signature_html: '', use_html: false });
@@ -265,20 +309,38 @@ export default function EmailModule() {
     kind: 'whitelist', match_type: 'address', value: '',
   });
 
+  // Ids que devem PERMANECER na lista mesmo após saírem do filtro atual — ex.: no
+  // filtro "Não lidas", o e-mail que você abre vira lido mas não pode sumir/fechar
+  // embaixo do cursor. Limpo ao trocar pasta/busca/filtro.
+  const keepVisibleRef = useRef<Set<string>>(new Set());
+
   // `silent`: recarrega sem trocar a lista por spinner (fluido). O spinner só
   // aparece no 1º carregamento (lista vazia); refresh/realtime não "piscam".
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [list, count] = await Promise.all([
+      const [list, count, spamCount] = await Promise.all([
         emailService.listMessages(folder, search, limit, onlyUnread),
         emailService.countUnread('inbox'),
+        emailService.countUnread('spam'),
       ]);
-      setMessages(list);
+      setMessages((prev) => {
+        // Reanexa os "fixados" que saíram do filtro (ex.: lido no filtro Não lidas),
+        // preservando a ordem cronológica para não pular embaixo do cursor.
+        const keep = keepVisibleRef.current;
+        if (keep.size === 0) return list;
+        const listIds = new Set(list.map((m) => m.id));
+        const sticky = prev.filter((m) => keep.has(m.id) && !listIds.has(m.id));
+        if (sticky.length === 0) return list;
+        const ts = (m: EmailMessage) => new Date(m.sent_at || m.created_at).getTime();
+        return [...list, ...sticky].sort((a, b) => ts(b) - ts(a));
+      });
       setHasMore(list.length >= limit);
       setUnread(count);
-      setSelected((prev) => (prev && list.some((m) => m.id === prev.id) ? prev : null));
-      setChecked((prev) => new Set([...prev].filter((id) => list.some((m) => m.id === id))));
+      setSpamUnread(spamCount);
+      // Mantém aberto o e-mail selecionado mesmo que tenha saído do filtro (fixado).
+      setSelected((prev) => (prev && (list.some((m) => m.id === prev.id) || keepVisibleRef.current.has(prev.id)) ? prev : null));
+      setChecked((prev) => new Set([...prev].filter((id) => list.some((m) => m.id === id) || keepVisibleRef.current.has(id))));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -286,8 +348,20 @@ export default function EmailModule() {
 
   useEffect(() => { load(); }, [load]);
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
-  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); }, [folder, search, prefs.perPage, onlyUnread]);
+  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
+  // Debounce da busca: aplica o termo 350ms após parar de digitar.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+  // Ao abrir a resposta inline (agora no topo), rola até ela pelo início.
+  useEffect(() => {
+    if (composeOpen && composeInline) {
+      const t = setTimeout(() => inlineReplyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+      return () => clearTimeout(t);
+    }
+  }, [composeOpen, composeInline]);
 
   // Atualização automática ao vivo: novo email chega -> recarrega (sem piscar).
   const loadRef = useRef(load);
@@ -307,8 +381,17 @@ export default function EmailModule() {
   }, []);
 
   const openMessage = async (m: EmailMessage) => {
+    // Fecha uma resposta inline aberta ao navegar para outra mensagem.
+    if (composeInline) { setComposeOpen(false); setComposeInline(false); }
     setSelected(m);
     setFocusedId(m.id);
+    // Abriu o e-mail: a notificação de "novo e-mail" no sino não deve mais
+    // persistir. Marca no banco e avisa o sino para sumir na hora (sem esperar
+    // o polling). Idempotente — só atinge notificações ainda não lidas.
+    if (m.direction === 'inbound') {
+      userNotificationService.markEmailNotificationsRead(m.id).catch(() => {});
+      window.dispatchEvent(new CustomEvent('email-notif-read', { detail: { emailId: m.id } }));
+    }
     // Carrega a conversa (thread) para a leitura encadeada.
     if (m.thread_key) {
       setThreadLoading(true);
@@ -320,6 +403,8 @@ export default function EmailModule() {
       setThread([m]);
     }
     if (prefs.autoMarkRead && !m.is_read && m.direction === 'inbound') {
+      // No filtro "Não lidas", fixa o e-mail para ele não sumir ao virar lido.
+      if (onlyUnread) keepVisibleRef.current.add(m.id);
       try {
         await emailService.markRead(m.id, true);
         setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_read: true } : x)));
@@ -334,13 +419,101 @@ export default function EmailModule() {
     setChecked((prev) => { const n = new Set(prev); n.delete(id); return n; });
   };
 
+  // Abertura direta via notificação ("Novo e-mail"): busca a mensagem pelo id,
+  // posiciona na pasta coerente e abre a leitura. Roda quando o emailId muda.
+  const openMessageRef = useRef(openMessage);
+  openMessageRef.current = openMessage;
+  useEffect(() => {
+    const id = params?.emailId;
+    if (!id) return;
+    let cancelled = false;
+    emailService.getMessage(id)
+      .then((m) => {
+        if (cancelled || !m) return;
+        setFolder(m.is_trash ? 'trash' : m.is_spam ? 'spam' : m.is_draft ? 'drafts' : m.direction === 'outbound' ? 'sent' : 'inbox');
+        void openMessageRef.current(m);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [params?.emailId]);
+
   // ── Seleção múltipla ────────────────────────────────────────────────────
+  // Âncora do intervalo + "base" da sessão de range (seleção que existia ANTES
+  // de começar a arrastar com Shift). Recalcular sobre a base a cada passo faz o
+  // intervalo ENCOLHER ao reverter (desmarcar), em vez de só crescer.
+  const anchorIdRef = useRef<string | null>(null);
+  const rangeBaseRef = useRef<Set<string> | null>(null);
+  const endRangeSession = () => { rangeBaseRef.current = null; };
+
   const toggleChecked = (id: string) => {
     setChecked((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    anchorIdRef.current = id;
+    endRangeSession();
   };
   const allChecked = messages.length > 0 && checked.size === messages.length;
   const toggleCheckAll = () => {
     setChecked(allChecked ? new Set() : new Set(messages.map((m) => m.id)));
+    endRangeSession();
+  };
+  const clearSelection = () => { setChecked(new Set()); endRangeSession(); };
+
+  // Aplica o intervalo âncora→cursor sobre a base da sessão. Como recalcula tudo
+  // a cada chamada, reverter o sentido (Shift+seta de volta) desmarca os itens
+  // que saíram do intervalo, preservando a seleção pré-existente (base).
+  const applyRange = (cursorId: string) => {
+    const ids = messages.map((m) => m.id);
+    if (!anchorIdRef.current) anchorIdRef.current = selected?.id ?? cursorId;
+    if (!rangeBaseRef.current) rangeBaseRef.current = new Set(checked);
+    const a = ids.indexOf(anchorIdRef.current);
+    const b = ids.indexOf(cursorId);
+    if (a === -1 || b === -1) { toggleChecked(cursorId); return; }
+    const [lo, hi] = a <= b ? [a, b] : [b, a];
+    const next = new Set(rangeBaseRef.current);
+    for (let i = lo; i <= hi; i++) next.add(ids[i]);
+    setChecked(next);
+  };
+
+  // Clique numa linha: Ctrl/⌘ alterna a seleção; Shift seleciona intervalo;
+  // clique simples abre a mensagem.
+  const onRowClick = (m: EmailMessage, e: ReactMouseEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      toggleChecked(m.id);
+      return;
+    }
+    if (e.shiftKey) {
+      e.preventDefault();
+      applyRange(m.id);
+      setFocusedId(m.id);
+      return;
+    }
+    anchorIdRef.current = m.id;
+    endRangeSession();
+    void openMessage(m);
+  };
+
+  // Alterna a seleção do item em foco (tecla Espaço) — estilo webmail.
+  const toggleFocused = () => {
+    const id = focusedId ?? selected?.id;
+    if (id) toggleChecked(id);
+  };
+
+  const bulkRestore = async () => {
+    if (checked.size === 0) return;
+    const ids = [...checked];
+    await emailService.bulkRestore(ids);
+    setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
+    setSelected((prev) => (prev && checked.has(prev.id) ? null : prev));
+    setChecked(new Set());
+  };
+
+  const bulkNotSpam = async () => {
+    if (checked.size === 0) return;
+    const ids = [...checked];
+    await emailService.bulkSetSpam(ids, false);
+    setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
+    setSelected((prev) => (prev && checked.has(prev.id) ? null : prev));
+    setChecked(new Set());
   };
 
   const bulkTrash = async () => {
@@ -375,8 +548,9 @@ export default function EmailModule() {
   };
 
   // ── Atalhos de teclado ────────────────────────────────────────────────────
-  // ↑/↓ navega · Enter abre · Del exclui · Ctrl/Cmd+A seleciona tudo · Esc limpa
-  // r responder · f encaminhar · e alterna lido
+  // ↑/↓ ou j/k navega · Shift/Ctrl+↑/↓ estende e ENCOLHE seleção · Espaço marca
+  // Enter abre · Del exclui · Ctrl/Cmd+A tudo · Esc limpa · r responder · a todos
+  // f encaminhar · e alterna lido · s estrela · ! spam · ? ajuda
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (settingsOpen) return;
@@ -385,7 +559,7 @@ export default function EmailModule() {
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable;
 
       if (composeOpen) {
-        if (e.key === 'Escape' && !typing) { e.preventDefault(); setComposeOpen(false); }
+        if (e.key === 'Escape' && !typing) { e.preventDefault(); setComposeOpen(false); setComposeInline(false); }
         return;
       }
       if (typing) return;
@@ -396,6 +570,7 @@ export default function EmailModule() {
         setChecked((prev) => (prev.size === messages.length ? new Set() : new Set(messages.map((m) => m.id))));
         return;
       }
+      if (helpOpen) { if (e.key === 'Escape') setHelpOpen(false); return; }
       if (e.key === 'Escape') {
         if (checked.size > 0) { setChecked(new Set()); return; }
         if (selected) setSelected(null);
@@ -406,14 +581,33 @@ export default function EmailModule() {
       // Navegação parte do item ATUALMENTE selecionado (ou em foco).
       const idx = messages.findIndex((m) => m.id === (selected?.id ?? focusedId));
       const focusedMsg = selected ?? messages.find((x) => x.id === focusedId);
-      if (e.key === 'ArrowDown') {
+      const lower = e.key.toLowerCase();
+      const isDown = e.key === 'ArrowDown' || lower === 'j';
+      const isUp = e.key === 'ArrowUp' || lower === 'k';
+      if (isDown || isUp) {
         e.preventDefault();
-        const next = messages[idx < 0 ? 0 : Math.min(messages.length - 1, idx + 1)];
-        if (next) void openMessage(next); // muda seleção + atualiza preview
-      } else if (e.key === 'ArrowUp') {
+        const dir = isDown ? 1 : -1;
+        const baseIdx = idx < 0 ? (dir === 1 ? -1 : 0) : idx;
+        const nextIdx = Math.max(0, Math.min(messages.length - 1, baseIdx + dir));
+        const next = messages[nextIdx];
+        if (!next) return;
+        if (e.shiftKey || mod) {
+          // Estende a seleção pelo teclado (sem abrir cada e-mail).
+          if (!anchorIdRef.current) anchorIdRef.current = messages[idx < 0 ? 0 : idx]?.id ?? next.id;
+          setSelected(null);
+          setFocusedId(next.id);
+          applyRange(next.id);
+        } else {
+          anchorIdRef.current = next.id;
+          endRangeSession();
+          void openMessage(next); // muda seleção + atualiza preview
+        }
+        // Mantém a linha em foco visível na rolagem.
+        listScrollRef.current?.querySelector(`[data-email-id="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === ' ') {
+        // Espaço: alterna a seleção do item em foco (sem abrir).
         e.preventDefault();
-        const prev = messages[idx < 0 ? 0 : Math.max(0, idx - 1)];
-        if (prev) void openMessage(prev);
+        toggleFocused();
       } else if (e.key === 'Enter') {
         const m = messages.find((x) => x.id === focusedId) ?? selected;
         if (m) { e.preventDefault(); void openMessage(m); }
@@ -423,21 +617,31 @@ export default function EmailModule() {
         if (checked.size > 0) { void bulkTrash(); return; }
         const id = focusedId ?? selected?.id;
         if (id) { void emailService.moveToTrash(id).then(() => dropFromList(id)); }
-      } else if (e.key.toLowerCase() === 'r' && selected) {
+      } else if (lower === 'r' && selected) {
         e.preventDefault(); onReply();
-      } else if (e.key.toLowerCase() === 'f' && selected) {
+      } else if (lower === 'a' && selected && !mod) {
+        e.preventDefault(); onReplyAll();
+      } else if (lower === 'f' && selected) {
         e.preventDefault(); onForward();
-      } else if (e.key.toLowerCase() === 'e' && focusedMsg) {
+      } else if (lower === 'e' && focusedMsg) {
         e.preventDefault();
         void emailService.markRead(focusedMsg.id, !focusedMsg.is_read).then(() => {
           setMessages((prev) => prev.map((x) => (x.id === focusedMsg.id ? { ...x, is_read: !focusedMsg.is_read } : x)));
           if (selected?.id === focusedMsg.id) setSelected({ ...focusedMsg, is_read: !focusedMsg.is_read });
         });
+      } else if (lower === 's' && focusedMsg) {
+        e.preventDefault(); void toggleStar(focusedMsg);
+      } else if (e.key === '!' && folder !== 'trash') {
+        // ! marca como spam (ou tira do spam, se estiver na pasta Spam).
+        e.preventDefault();
+        void toggleSpamScope();
+      } else if (e.key === '?') {
+        e.preventDefault(); setHelpOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [messages, focusedId, checked, selected, composeOpen, settingsOpen, folder]);
+  }, [messages, focusedId, checked, selected, composeOpen, settingsOpen, folder, helpOpen]);
 
   const onMarkAllRead = async () => {
     const n = await emailService.markAllRead(folder);
@@ -460,6 +664,23 @@ export default function EmailModule() {
     setUnread((u) => (next ? Math.max(0, u - 1) : u + 1));
   };
 
+  // Alterna estrela de uma mensagem (otimista). Na pasta "Com estrela",
+  // desmarcar remove a linha da lista.
+  const toggleStar = async (m: EmailMessage, e?: ReactMouseEvent) => {
+    e?.stopPropagation();
+    const next = !m.is_starred;
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_starred: next } : x)));
+    if (selected?.id === m.id) setSelected((s) => (s ? { ...s, is_starred: next } : s));
+    try {
+      await emailService.toggleStar(m.id, next);
+      if (!next && folder === 'starred') dropFromList(m.id);
+    } catch {
+      // reverte em caso de falha
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_starred: !next } : x)));
+      if (selected?.id === m.id) setSelected((s) => (s ? { ...s, is_starred: !next } : s));
+    }
+  };
+
   const onSpam = async () => {
     if (!selected) return;
     await emailService.markSpam(selected, true);
@@ -474,6 +695,25 @@ export default function EmailModule() {
     if (!selected) return;
     await emailService.moveToTrash(selected.id);
     dropFromList(selected.id);
+  };
+
+  // Atalho "!" — alterna spam no escopo certo: se há seleção múltipla age nela,
+  // senão no item em foco/aberto. Na pasta Spam, tira do spam; fora dela, marca.
+  const toggleSpamScope = async () => {
+    const toSpam = folder !== 'spam';
+    if (checked.size > 0) {
+      const ids = [...checked];
+      await emailService.bulkSetSpam(ids, toSpam);
+      setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
+      setSelected((prev) => (prev && checked.has(prev.id) ? null : prev));
+      setChecked(new Set());
+      return;
+    }
+    const m = selected ?? messages.find((x) => x.id === focusedId);
+    if (!m) return;
+    if (toSpam) await emailService.markSpam(m, true);
+    else await emailService.unmarkSpam(m, true);
+    dropFromList(m.id);
   };
   const onRestore = async () => {
     if (!selected) return;
@@ -492,7 +732,7 @@ export default function EmailModule() {
     return `<p><br></p><p><br></p>${sigBlock}${quoteHtml}`;
   };
 
-  const startCompose = (preset?: Partial<ComposeState>) => {
+  const startCompose = (preset?: Partial<ComposeState>, inline = false) => {
     const next = { ...emptyCompose, bodyHtml: buildInitialBody(), ...preset };
     // Novo compose: zera o rastreio de rascunho. Não há rascunho até o usuário digitar.
     draftIdRef.current = undefined;
@@ -501,6 +741,7 @@ export default function EmailModule() {
     setDraftStatus('');
     setCompose(next);
     setSendError(null);
+    setComposeInline(inline);
     setComposeOpen(true);
   };
 
@@ -565,7 +806,7 @@ export default function EmailModule() {
       threadKey: selected.thread_key ?? selected.message_id,
       clientId: selected.client_id ?? undefined,
       bodyHtml: buildInitialBody(quote),
-    });
+    }, true);
   };
 
   const onReplyAll = () => {
@@ -589,7 +830,7 @@ export default function EmailModule() {
       threadKey: selected.thread_key ?? selected.message_id,
       clientId: selected.client_id ?? undefined,
       bodyHtml: buildInitialBody(quote),
-    });
+    }, true);
   };
 
   const onForward = () => {
@@ -603,7 +844,7 @@ export default function EmailModule() {
     startCompose({
       subject: selected.subject?.startsWith('Fwd:') ? selected.subject : `Fwd: ${selected.subject ?? ''}`,
       bodyHtml: buildInitialBody(fwd),
-    });
+    }, true);
   };
 
   const addAttachments = async (files: FileList | null) => {
@@ -654,8 +895,19 @@ export default function EmailModule() {
     setSendError(null);
     try {
       await emailService.sendEmail(dto);
+      // Enviou: remove o rascunho associado (se houver) para não ficar fantasma.
+      if (draftIdRef.current) {
+        try { await emailService.deleteDraft(draftIdRef.current); } catch { /* noop */ }
+        draftIdRef.current = undefined;
+      }
+      const wasInline = composeInline;
       setComposeOpen(false);
-      await load();
+      setComposeInline(false);
+      // Resposta inline: recarrega a thread para mostrar a mensagem enviada.
+      if (wasInline && selected?.thread_key) {
+        emailService.listThread(selected.thread_key).then((msgs) => { if (msgs.length) setThread(msgs); }).catch(() => {});
+      }
+      void load(true); // recarga silenciosa (sem flash de spinner)
     } catch (e) {
       setSendError(e instanceof Error ? e.message : 'Falha ao enviar.');
     } finally {
@@ -702,7 +954,11 @@ export default function EmailModule() {
       await emailService.unmarkSpam(selected, true);
       dropFromList(selected.id);
     } else {
-      setSelected({ ...selected, is_spam: false, spam_reason: 'Remetente na whitelist' });
+      // Confiou: zera os sinais p/ o aviso sumir (e não voltar ao recarregar).
+      await emailService.clearSpamSignals(selected.id);
+      const cleared = { is_spam: false, spam_score: 0, spam_reason: null };
+      setSelected({ ...selected, ...cleared });
+      setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, ...cleared } : m)));
     }
   };
 
@@ -749,37 +1005,75 @@ export default function EmailModule() {
   };
 
   // ── Redimensionamento das colunas (arrastar) ───────────────────────────
-  const dragging = useRef<{ which: 'folders' | 'list'; startX: number; startW: number } | null>(null);
+  // Larguras atuais num ref para os listeners lerem o valor fresco sem recriar.
+  const widthsRef = useRef({ foldersW, listW });
+  widthsRef.current = { foldersW, listW };
+
+  // Carrega as larguras salvas no banco (seguem o usuário entre dispositivos).
+  // O localStorage serve só de cache p/ não piscar no 1º render.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    dashboardPreferencesService.getEmailLayoutPrefs(user.id).then((p) => {
+      if (cancelled || !p) return;
+      if (typeof p.foldersW === 'number') { setFoldersW(clamp(p.foldersW, 120, 280)); localStorage.setItem(LS_FOLDERS_W, String(p.foldersW)); }
+      if (typeof p.listW === 'number') { setListW(clamp(p.listW, 220, 540)); localStorage.setItem(LS_LIST_W, String(p.listW)); }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  // Durante o arraste só mexemos no DOM (style.width) — zero re-render, gesto
+  // fluido mesmo com o iframe pesado da leitura aberto.
+  const dragging = useRef<{ which: 'folders' | 'list'; startX: number; startW: number; lastW: number } | null>(null);
+  const setIframesInteractive = (interactive: boolean) => {
+    rootRef.current?.querySelectorAll('iframe').forEach((f) => {
+      (f as HTMLElement).style.pointerEvents = interactive ? '' : 'none';
+    });
+  };
   const onGutterDown = (which: 'folders' | 'list') => (e: React.MouseEvent) => {
     e.preventDefault();
-    dragging.current = { which, startX: e.clientX, startW: which === 'folders' ? foldersW : listW };
+    const startW = which === 'folders' ? foldersW : listW;
+    dragging.current = { which, startX: e.clientX, startW, lastW: startW };
     document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    setIframesInteractive(false); // iframe não captura mais o mouse durante o arraste
   };
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const d = dragging.current;
       if (!d) return;
-      const w = d.startW + (e.clientX - d.startX);
-      if (d.which === 'folders') setFoldersW(clamp(w, 120, 280));
-      else setListW(clamp(w, 220, 540));
+      const raw = d.startW + (e.clientX - d.startX);
+      const w = d.which === 'folders' ? clamp(raw, 120, 280) : clamp(raw, 220, 540);
+      d.lastW = w;
+      const el = d.which === 'folders' ? foldersColRef.current : listColRef.current;
+      if (el) el.style.width = `${w}px`;
     };
     const onUp = () => {
-      if (dragging.current) {
-        localStorage.setItem(LS_FOLDERS_W, String(foldersW));
-        localStorage.setItem(LS_LIST_W, String(listW));
-      }
+      const d = dragging.current;
       dragging.current = null;
       document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      setIframesInteractive(true);
+      if (!d) return;
+      // Commit no estado React (1 render) + cache local + banco.
+      if (d.which === 'folders') setFoldersW(d.lastW); else setListW(d.lastW);
+      const next = {
+        foldersW: d.which === 'folders' ? d.lastW : widthsRef.current.foldersW,
+        listW: d.which === 'list' ? d.lastW : widthsRef.current.listW,
+      };
+      localStorage.setItem(LS_FOLDERS_W, String(next.foldersW));
+      localStorage.setItem(LS_LIST_W, String(next.listW));
+      if (user?.id) dashboardPreferencesService.saveEmailLayoutPrefs(user.id, next).catch(() => {});
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [foldersW, listW]);
+  }, [user?.id]);
 
   const folderInfo = useMemo(() => FOLDERS.find((f) => f.key === folder), [folder]);
 
   return (
-    <div className="relative flex h-full flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4">
+    <div ref={rootRef} className="relative flex h-full flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4">
       {/* Pastas no mobile — barra horizontal (a coluna de pastas fica oculta < md) */}
       <div className="mb-2 flex gap-1 overflow-x-auto pb-1 md:hidden">
         {FOLDERS.map(({ key, label, Icon }) => {
@@ -792,6 +1086,9 @@ export default function EmailModule() {
               {key === 'inbox' && unread > 0 && (
                 <span className="rounded-full bg-amber-600 px-1.5 text-[10px] font-medium text-white">{unread}</span>
               )}
+              {key === 'spam' && spamUnread > 0 && (
+                <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white">{spamUnread}</span>
+              )}
             </button>
           );
         })}
@@ -803,7 +1100,7 @@ export default function EmailModule() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         {/* Pastas (desktop) */}
-        <div style={{ width: foldersW }} className="hidden flex-none border-r border-[#e7e5df] p-2 dark:border-zinc-800 md:block">
+        <div ref={foldersColRef} style={{ width: foldersW }} className="hidden flex-none border-r border-[#e7e5df] p-2 dark:border-zinc-800 md:block">
           {FOLDERS.map(({ key, label, Icon }) => {
             const active = folder === key;
             return (
@@ -813,6 +1110,9 @@ export default function EmailModule() {
                 <span className="flex-1 truncate text-left">{label}</span>
                 {key === 'inbox' && unread > 0 && (
                   <span className="rounded-full bg-amber-600 px-1.5 text-[11px] font-medium text-white">{unread}</span>
+                )}
+                {key === 'spam' && spamUnread > 0 && (
+                  <span className="rounded-full bg-red-500 px-1.5 text-[11px] font-medium text-white">{spamUnread}</span>
                 )}
               </button>
             );
@@ -830,17 +1130,26 @@ export default function EmailModule() {
         <div onMouseDown={onGutterDown('folders')} className="hidden w-1.5 flex-none cursor-col-resize bg-transparent transition-colors hover:bg-amber-300 md:block" />
 
         {/* Lista — full-width no mobile; some quando há mensagem aberta (single-pane) */}
-        <div style={isNarrow ? undefined : { width: listW }}
+        <div ref={listColRef} style={isNarrow ? undefined : { width: listW }}
           className={`${selected && isNarrow ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col border-r border-[#e7e5df] dark:border-zinc-800 md:flex md:flex-none`}>
           <div className="flex items-center gap-2 border-b border-[#e7e5df] p-2 dark:border-zinc-800">
             <div className="flex flex-1 items-center gap-2 rounded-lg border border-[#e7e5df] px-2.5 py-1.5">
               <Search className="h-4 w-4 text-zinc-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar…"
+              <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Pesquisar…"
                 className="w-full bg-transparent text-[13px] outline-none placeholder:text-zinc-400" />
+              {searchInput && (
+                <button onClick={() => setSearchInput('')} title="Limpar" className="flex-none text-zinc-400 hover:text-zinc-600">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <button onClick={() => load()} title="Atualizar"
               className="flex-none rounded-lg border border-[#e7e5df] p-1.5 text-zinc-500 hover:bg-zinc-50">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={() => setHelpOpen(true)} title="Atalhos de teclado (?)"
+              className="flex-none rounded-lg border border-[#e7e5df] p-1.5 text-zinc-500 hover:bg-zinc-50">
+              <Keyboard className="h-4 w-4" />
             </button>
           </div>
 
@@ -852,11 +1161,18 @@ export default function EmailModule() {
                 title="Selecionar todos (Ctrl+A)" />
               {checked.size > 0 ? (
                 <>
-                  <span className="text-[12px] text-zinc-500">{checked.size} selecionado(s)</span>
+                  <button onClick={clearSelection} title="Limpar seleção (Esc)" className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-700">
+                    <X className="h-3.5 w-3.5" /> {checked.size} selecionado(s)
+                  </button>
                   <div className="ml-auto flex items-center gap-1">
                     <button onClick={() => bulkMarkRead(true)} title="Marcar como lido" className="rounded p-1 text-zinc-500 hover:bg-zinc-100"><MailOpen className="h-4 w-4" /></button>
                     <button onClick={() => bulkMarkRead(false)} title="Marcar como não lido" className="rounded p-1 text-zinc-500 hover:bg-zinc-100"><Mail className="h-4 w-4" /></button>
-                    {folder !== 'trash' && (
+                    {folder === 'spam' && (
+                      <button onClick={bulkNotSpam} title="Não é spam" className="rounded p-1 text-zinc-500 hover:bg-zinc-100"><Inbox className="h-4 w-4" /></button>
+                    )}
+                    {folder === 'trash' ? (
+                      <button onClick={bulkRestore} title="Restaurar" className="rounded p-1 text-zinc-500 hover:bg-zinc-100"><RotateCcw className="h-4 w-4" /></button>
+                    ) : (
                       <button onClick={bulkTrash} title="Mover para lixeira (Del)" className="rounded p-1 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
@@ -871,6 +1187,13 @@ export default function EmailModule() {
                     <button onClick={onMarkAllRead} title="Marcar todas como lidas"
                       className="rounded-md px-2 py-0.5 text-[12px] text-zinc-500 hover:bg-zinc-100">
                       Marcar todas lidas
+                    </button>
+                  )}
+                  {folder === 'trash' && messages.length > 0 && (
+                    <button onClick={onEmptyTrash} disabled={emptyingTrash} title="Excluir permanentemente todos os itens da lixeira"
+                      className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">
+                      {emptyingTrash ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Esvaziar lixeira
                     </button>
                   )}
                 </div>
@@ -893,7 +1216,7 @@ export default function EmailModule() {
                     : 'Nenhuma mensagem.'}
                 </p>
                 {search && (
-                  <button onClick={() => setSearch('')} className="mt-1.5 text-[12px] text-amber-700 hover:underline">
+                  <button onClick={() => setSearchInput('')} className="mt-1.5 text-[12px] text-amber-700 hover:underline">
                     Limpar busca
                   </button>
                 )}
@@ -917,8 +1240,10 @@ export default function EmailModule() {
                           {bucket.label}
                         </div>
                       )}
-                      <div data-email-id={m.id} role="button" tabIndex={0} onClick={() => openMessage(m)}
-                        className={`group flex w-full items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-50/40' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''}`}>
+                      <div data-email-id={m.id} role="button" tabIndex={0}
+                        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+                        onClick={(e) => onRowClick(m, e)}
+                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''}`}>
                         <div className="relative mt-0.5 flex-none">
                           <input type="checkbox" checked={isChk}
                             onClick={(e) => e.stopPropagation()}
@@ -931,7 +1256,13 @@ export default function EmailModule() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1.5">
                             <span className={`truncate text-[13px] ${isUnread ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>{name}</span>
-                            <span className="flex-none text-[11px] text-zinc-400">{formatTime(m.sent_at || m.created_at)}</span>
+                            <div className="flex flex-none items-center gap-1.5">
+                              <button onClick={(e) => toggleStar(m, e)} title={m.is_starred ? 'Remover estrela' : 'Marcar com estrela'}
+                                className={`rounded p-0.5 ${m.is_starred ? 'text-amber-500' : 'text-zinc-300 opacity-0 hover:text-amber-500 group-hover:opacity-100'}`}>
+                                <Star className="h-3.5 w-3.5" fill={m.is_starred ? 'currentColor' : 'none'} />
+                              </button>
+                              <span className="text-[11px] text-zinc-400">{formatTime(m.sent_at || m.created_at)}</span>
+                            </div>
                           </div>
                           <div className={`mt-0.5 flex items-center gap-1.5 truncate text-[13px] ${isUnread ? 'font-medium text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>
                             {isUnread && <span className="h-1.5 w-1.5 flex-none rounded-full bg-amber-500" />}
@@ -971,29 +1302,28 @@ export default function EmailModule() {
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-1 border-b border-[#e7e5df] p-2 dark:border-zinc-800">
-                <button onClick={() => setSelected(null)}
-                  className="mr-1 flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-100 md:hidden">
-                  <ChevronLeft className="h-4 w-4" /> Voltar
-                </button>
-                <ToolBtn onClick={onReply} Icon={Reply}>Responder</ToolBtn>
-                <ToolBtn onClick={onReplyAll} Icon={ReplyAll}>Responder a todos</ToolBtn>
-                <ToolBtn onClick={onForward} Icon={Forward}>Encaminhar</ToolBtn>
-                <ToolBtn onClick={printSelected} Icon={Printer}>Imprimir</ToolBtn>
-                <ToolBtn onClick={toggleRead} Icon={selected.is_read ? Mail : MailOpen}>
-                  {selected.is_read ? 'Marcar não lido' : 'Marcar lido'}
-                </ToolBtn>
-                {folder === 'spam' ? (
-                  <ToolBtn onClick={onNotSpam} Icon={Inbox}>Não é spam</ToolBtn>
-                ) : (
-                  <ToolBtn onClick={onSpam} Icon={AlertOctagon} danger>Spam</ToolBtn>
+              <ReadingToolbar
+                leading={(
+                  <button onClick={() => setSelected(null)}
+                    className="mr-1 flex flex-none items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-100 md:hidden">
+                    <ChevronLeft className="h-4 w-4" /> Voltar
+                  </button>
                 )}
-                {folder === 'trash' ? (
-                  <ToolBtn onClick={onRestore} Icon={RotateCcw}>Restaurar</ToolBtn>
-                ) : (
-                  <ToolBtn onClick={onTrash} Icon={Trash2} danger>Excluir</ToolBtn>
-                )}
-              </div>
+                actions={[
+                  { key: 'reply', label: 'Responder', Icon: Reply, onClick: onReply },
+                  { key: 'replyAll', label: 'Responder a todos', Icon: ReplyAll, onClick: onReplyAll },
+                  { key: 'forward', label: 'Encaminhar', Icon: Forward, onClick: onForward },
+                  { key: 'star', label: selected.is_starred ? 'Com estrela' : 'Estrela', Icon: Star, onClick: () => toggleStar(selected), active: selected.is_starred, fill: selected.is_starred },
+                  { key: 'print', label: 'Imprimir', Icon: Printer, onClick: printSelected },
+                  { key: 'read', label: selected.is_read ? 'Marcar não lido' : 'Marcar lido', Icon: selected.is_read ? Mail : MailOpen, onClick: toggleRead },
+                  folder === 'spam'
+                    ? { key: 'spam', label: 'Não é spam', Icon: Inbox, onClick: onNotSpam }
+                    : { key: 'spam', label: 'Spam', Icon: AlertOctagon, onClick: onSpam, danger: true },
+                  folder === 'trash'
+                    ? { key: 'del', label: 'Restaurar', Icon: RotateCcw, onClick: onRestore }
+                    : { key: 'del', label: 'Excluir', Icon: Trash2, onClick: onTrash, danger: true },
+                ]}
+              />
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <h3 className="text-[16px] font-medium text-zinc-900 dark:text-zinc-100">{selected.subject || '(sem assunto)'}</h3>
@@ -1018,6 +1348,81 @@ export default function EmailModule() {
                   </div>
                 )}
 
+                {/* Resposta/encaminhamento INLINE — no TOPO da conversa (estilo
+                    Gmail): aparece logo abaixo do assunto, sem precisar rolar até
+                    o fim do histórico. */}
+                {composeOpen && composeInline && (
+                  <div ref={inlineReplyRef} className="mb-4 rounded-xl border border-amber-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                    onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
+                    <div className="flex items-center justify-between gap-2 border-b border-[#f0efe9] px-3 py-2 dark:border-zinc-800">
+                      <div className="flex min-w-0 items-center gap-2 text-[13px] text-zinc-600">
+                        <Reply className="h-4 w-4 flex-none text-amber-600" />
+                        <span className="truncate font-medium">{compose.subject || 'Resposta'}</span>
+                        {draftStatus === 'saving' && <span className="flex-none text-[11px] text-zinc-400">salvando…</span>}
+                        {draftStatus === 'saved' && <span className="flex-none text-[11px] text-zinc-400">rascunho salvo</span>}
+                      </div>
+                      <button onClick={() => { setComposeOpen(false); setComposeInline(false); }} title="Descartar"
+                        className="flex-none rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"><X className="h-4 w-4" /></button>
+                    </div>
+                    <div className="flex flex-col gap-2 p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="w-12 flex-none pt-1.5 text-[12px] text-zinc-500">Para</span>
+                        <div className="flex-1">
+                          <RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))} placeholder="destinatario@exemplo.com" />
+                        </div>
+                        {!compose.showCc && (
+                          <button onClick={() => setCompose({ ...compose, showCc: true })} className="flex-none pt-1.5 text-[12px] text-zinc-500 hover:text-amber-700">Cc/Cco</button>
+                        )}
+                      </div>
+                      {compose.showCc && (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <span className="w-12 flex-none pt-1.5 text-[12px] text-zinc-500">Cc</span>
+                            <div className="flex-1"><RecipientChips value={compose.cc} onChange={(v) => setCompose((c) => ({ ...c, cc: v }))} placeholder="copia@exemplo.com" /></div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="w-12 flex-none pt-1.5 text-[12px] text-zinc-500">Cco</span>
+                            <div className="flex-1"><RecipientChips value={compose.bcc} onChange={(v) => setCompose((c) => ({ ...c, bcc: v }))} placeholder="copia-oculta@exemplo.com" /></div>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="w-12 flex-none text-[12px] text-zinc-500">Assunto</span>
+                        <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })} placeholder="Assunto"
+                          className="flex-1 rounded-lg border border-[#e7e5df] px-2.5 py-1 text-[13px] outline-none focus:border-amber-400" />
+                      </div>
+
+                      <RichEditor key={compose.inReplyTo ?? 'inline'} initialHtml={compose.bodyHtml} autoFocus
+                        onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments} />
+
+                      {compose.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {compose.attachments.map((a, i) => (
+                            <span key={i} className="flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-zinc-50 px-2 py-1 text-[12px] text-zinc-600">
+                              <Paperclip className="h-3.5 w-3.5 text-amber-600" />
+                              <span className="max-w-[160px] truncate">{a.filename}</span>
+                              <span className="text-zinc-400">{humanSize(a.size)}</span>
+                              <button onClick={() => setCompose((c) => ({ ...c, attachments: c.attachments.filter((_, j) => j !== i) }))}
+                                className="text-zinc-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {sendError && <p className="text-[13px] text-red-600">{sendError}</p>}
+
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button onClick={() => { setComposeOpen(false); setComposeInline(false); }}
+                          className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[13px] text-zinc-600 hover:bg-zinc-50">Descartar</button>
+                        <button onClick={doSend} disabled={sending}
+                          className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+                          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {threadLoading && thread.length <= 1 ? (
                   <div className="flex h-20 items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
                 ) : (
@@ -1039,8 +1444,8 @@ export default function EmailModule() {
         </button>
       )}
 
-      {/* Compose em página (não-modal): cobre toda a área do módulo. */}
-      {composeOpen && (
+      {/* Compose em página (não-modal): cobre toda a área do módulo (e-mail novo). */}
+      {composeOpen && !composeInline && (
         <div className="absolute inset-0 z-20 flex flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4"
           onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
           {/* Barra superior */}
@@ -1284,6 +1689,43 @@ export default function EmailModule() {
           </ModalFooter>
         </Modal>
       )}
+
+      {/* Ajuda — atalhos de teclado */}
+      {helpOpen && (
+        <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Atalhos de teclado" size="md">
+          <ModalBody>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2">
+              {([
+                ['↑ / ↓  ou  j / k', 'Navegar pelas mensagens'],
+                ['Shift/Ctrl + ↑/↓', 'Selecionar várias (intervalo)'],
+                ['Espaço', 'Marcar/desmarcar o item em foco'],
+                ['Ctrl/⌘ + clique', 'Alternar seleção de um item'],
+                ['Shift + clique', 'Selecionar intervalo'],
+                ['Ctrl/⌘ + A', 'Selecionar tudo'],
+                ['Esc', 'Limpar seleção / fechar'],
+                ['Enter', 'Abrir mensagem'],
+                ['Del', 'Mover para a lixeira'],
+                ['r', 'Responder'],
+                ['a', 'Responder a todos'],
+                ['f', 'Encaminhar'],
+                ['e', 'Marcar como lido/não lido'],
+                ['s', 'Marcar/tirar estrela'],
+                ['!', 'Marcar/tirar do spam'],
+                ['Ctrl/⌘ + Enter', 'Enviar (ao redigir)'],
+                ['?', 'Mostrar esta ajuda'],
+              ] as [string, string][]).map(([k, desc]) => (
+                <div key={k} className="flex items-center justify-between gap-3 border-b border-[#f4f3ee] py-1.5 last:border-0">
+                  <span className="text-[13px] text-zinc-600">{desc}</span>
+                  <kbd className="flex-none rounded-md border border-[#e7e5df] bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-500">{k}</kbd>
+                </div>
+              ))}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setHelpOpen(false)}>Fechar</Button>
+          </ModalFooter>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1313,7 +1755,7 @@ function MessageView({ m, single, defaultOpen }: { m: EmailMessage; single: bool
   const time = formatTime(m.sent_at || m.created_at);
   const isOut = m.direction === 'outbound';
   const body = m.body_html
-    ? <EmailHtmlFrame html={m.body_html} />
+    ? <EmailHtmlFrame html={m.body_html} msgId={m.id} />
     : <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-zinc-800 dark:text-zinc-200">{m.body_text || '(sem conteúdo)'}</pre>;
 
   if (single) {
@@ -1366,15 +1808,64 @@ function MessageView({ m, single, defaultOpen }: { m: EmailMessage; single: bool
 }
 
 /**
+ * Remove o carregamento automático de imagens REMOTAS (http/https) do HTML —
+ * pixels de rastreio só "disparam" quando o navegador busca a imagem. Mantém
+ * imagens embutidas (cid:/data:). Guarda o src original em data-blk para o
+ * "Exibir imagens" reconstituir. Cobre <img src/srcset>, style inline e <style>.
+ */
+function neutralizeRemoteImages(html: string): { html: string; blocked: number } {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const isRemote = (u: string) => /^\s*https?:\/\//i.test(u);
+    let blocked = 0;
+    doc.querySelectorAll('img').forEach((img) => {
+      const src = img.getAttribute('src') || '';
+      if (isRemote(src)) {
+        img.setAttribute('data-blk', src);
+        img.removeAttribute('src');
+        img.removeAttribute('srcset');
+        blocked++;
+      }
+    });
+    doc.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
+      const st = el.getAttribute('style') || '';
+      if (/url\(\s*['"]?\s*https?:/i.test(st)) {
+        el.setAttribute('style', st.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none'));
+        blocked++;
+      }
+    });
+    doc.querySelectorAll('style').forEach((s) => {
+      const css = s.textContent || '';
+      if (/url\(\s*['"]?\s*https?:/i.test(css)) {
+        s.textContent = css.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none');
+        blocked++;
+      }
+    });
+    return { html: '<!doctype html>' + doc.documentElement.outerHTML, blocked };
+  } catch {
+    return { html, blocked: 0 };
+  }
+}
+
+/**
  * Renderiza o HTML do email num iframe que cresce ate a altura total do
  * conteudo — sem barra de rolagem interna. O scroll fica na coluna de leitura
  * (na pagina), nunca dentro do preview.
  * `sandbox="allow-same-origin"` (sem allow-scripts) permite medir a altura do
- * documento sem deixar o email executar JS.
+ * documento sem deixar o email executar JS. Imagens remotas começam bloqueadas
+ * (anti-rastreio) e só carregam ao clicar em "Exibir imagens".
  */
-function EmailHtmlFrame({ html }: { html: string }) {
+function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(400);
+  // Começa já liberado se o usuário já exibiu as imagens deste e-mail antes.
+  const [showImages, setShowImages] = useState(() => !!msgId && shownImages.has(msgId));
+  const revealImages = useCallback(() => {
+    if (msgId) rememberShownImages(msgId);
+    setShowImages(true);
+  }, [msgId]);
+  const processed = useMemo(() => neutralizeRemoteImages(html), [html]);
+  const effectiveHtml = showImages ? html : processed.html;
 
   const measure = useCallback(() => {
     const doc = ref.current?.contentDocument;
@@ -1400,16 +1891,27 @@ function EmailHtmlFrame({ html }: { html: string }) {
   }, [measure]);
 
   return (
-    <iframe
-      ref={ref}
-      title="email"
-      sandbox="allow-same-origin"
-      srcDoc={html}
-      onLoad={onLoad}
-      style={{ height }}
-      scrolling="no"
-      className="w-full overflow-hidden rounded-lg border border-[#f0efe9]"
-    />
+    <>
+      {!showImages && processed.blocked > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+          <ImageOff className="h-4 w-4 flex-none" />
+          <span>Imagens remotas bloqueadas para proteger sua privacidade.</span>
+          <button onClick={revealImages} className="ml-auto rounded-md border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100">
+            Exibir imagens
+          </button>
+        </div>
+      )}
+      <iframe
+        ref={ref}
+        title="email"
+        sandbox="allow-same-origin"
+        srcDoc={effectiveHtml}
+        onLoad={onLoad}
+        style={{ height }}
+        scrolling="no"
+        className="w-full overflow-hidden rounded-lg border border-[#f0efe9]"
+      />
+    </>
   );
 }
 
@@ -1418,11 +1920,12 @@ function EmailHtmlFrame({ html }: { html: string }) {
  * execCommand. Gera HTML. Barra com negrito/itálico/sublinhado/listas/link
  * e botão de anexar — no estilo do compose do webmail.
  */
-function RichEditor({ initialHtml, onChange, onAttach, fill }: {
+function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
   initialHtml: string;
   onChange: (html: string) => void;
   onAttach: (files: FileList | null) => void;
   fill?: boolean;
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1431,6 +1934,18 @@ function RichEditor({ initialHtml, onChange, onAttach, fill }: {
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== initialHtml) {
       ref.current.innerHTML = initialHtml;
+    }
+    // Foca o corpo ao montar (resposta inline) e leva o cursor para o início.
+    if (autoFocus && ref.current) {
+      ref.current.focus();
+      const sel = window.getSelection();
+      if (sel && ref.current.firstChild) {
+        const r = document.createRange();
+        r.setStart(ref.current, 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
     }
     // só na montagem (key force remonta ao trocar de mensagem)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1616,11 +2131,107 @@ function EmailListSkeleton() {
   );
 }
 
-function ToolBtn({ onClick, Icon, children, danger }: { onClick: () => void; Icon: typeof Reply; children: React.ReactNode; danger?: boolean }) {
+function ToolBtn({ onClick, Icon, children, danger, active, compact, fill, title }: {
+  onClick: () => void; Icon: typeof Reply; children?: React.ReactNode;
+  danger?: boolean; active?: boolean; compact?: boolean; fill?: boolean; title?: string;
+}) {
   return (
-    <button onClick={onClick} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] hover:bg-zinc-100 ${danger ? 'text-red-600 hover:bg-red-50' : 'text-zinc-600'}`}>
-      <Icon className="h-3.5 w-3.5" />{children}
+    <button onClick={onClick} title={compact ? (title ?? (typeof children === 'string' ? children : undefined)) : title}
+      className={`flex flex-none items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-[12px] hover:bg-zinc-100 ${danger ? 'text-red-600 hover:bg-red-50' : active ? 'text-amber-500' : 'text-zinc-600'}`}>
+      <Icon className="h-3.5 w-3.5" fill={fill ? 'currentColor' : 'none'} />{!compact && children}
     </button>
+  );
+}
+
+interface ToolbarAction {
+  key: string;
+  label: string;
+  Icon: typeof Reply;
+  onClick: () => void;
+  danger?: boolean;
+  active?: boolean;
+  fill?: boolean;
+}
+
+/**
+ * Barra de ações da leitura que SEMPRE cabe numa única linha. Quando o espaço
+ * aperta (modal/coluna redimensionada), os botões viram "só ícone" — começando
+ * pelo ÚLTIMO e indo até o primeiro (priority+). Uma cópia oculta mede a largura
+ * natural de cada botão para decidir quantos colapsar, sem oscilar.
+ */
+function ReadingToolbar({ leading, actions }: { leading?: React.ReactNode; actions: ToolbarAction[] }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [compactCount, setCompactCount] = useState(0);
+  const hasLeading = !!leading;
+
+  const compute = useCallback(() => {
+    const row = rowRef.current;
+    const meas = measureRef.current;
+    if (!row || !meas) return;
+    const avail = row.clientWidth;
+    const kids = Array.from(meas.children) as HTMLElement[];
+    if (kids.length < 1) return;
+    const GAP = 2; // gap-0.5
+    const sample = kids[kids.length - 1]; // botão "só ícone" de referência
+    const iconW = sample.offsetWidth;
+    let i = 0;
+    let leadingW = 0;
+    if (hasLeading) { leadingW = kids[0]?.offsetWidth ?? 0; i = 1; }
+    const fulls = kids.slice(i, kids.length - 1).map((el) => el.offsetWidth);
+    const n = fulls.length;
+    const visibleItems = n + (hasLeading ? 1 : 0);
+    const gapsTotal = Math.max(0, visibleItems - 1) * GAP;
+
+    let k = 0; // quantos (do fim) colapsar
+    for (; k <= n; k++) {
+      let used = leadingW + gapsTotal + k * iconW;
+      for (let j = 0; j < n - k; j++) used += fulls[j];
+      if (used <= avail - 2) break; // margem p/ não cortar o último rótulo
+    }
+    k = Math.min(k, n);
+    setCompactCount((prev) => (prev === k ? prev : k));
+  }, [hasLeading]);
+
+  // Recalcula a cada render (rótulos mudam: estrela, lido/não lido…).
+  useLayoutEffect(() => { compute(); });
+
+  // Recalcula ao redimensionar a coluna/modal/janela.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(row);
+    window.addEventListener('resize', compute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
+  }, [compute]);
+
+  const firstCompact = actions.length - compactCount;
+
+  return (
+    <div className="relative overflow-hidden border-b border-[#e7e5df] p-2 dark:border-zinc-800">
+      <div ref={rowRef} className="flex flex-nowrap items-center gap-0.5">
+        {leading}
+        {actions.map((a, idx) => (
+          <ToolBtn key={a.key} onClick={a.onClick} Icon={a.Icon} danger={a.danger}
+            active={a.active} fill={a.fill} compact={idx >= firstCompact} title={a.label}>
+            {a.label}
+          </ToolBtn>
+        ))}
+      </div>
+
+      {/* Cópia oculta para medição: todos expandidos + 1 amostra "só ícone". */}
+      <div ref={measureRef} aria-hidden
+        className="pointer-events-none invisible absolute left-0 top-0 flex items-center gap-0.5 whitespace-nowrap">
+        {leading}
+        {actions.map((a) => (
+          <ToolBtn key={a.key} onClick={a.onClick} Icon={a.Icon} danger={a.danger} active={a.active} fill={a.fill} title={a.label}>
+            {a.label}
+          </ToolBtn>
+        ))}
+        <ToolBtn onClick={() => {}} Icon={Reply} compact title="medida" />
+      </div>
+    </div>
   );
 }
 

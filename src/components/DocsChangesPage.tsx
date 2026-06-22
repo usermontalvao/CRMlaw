@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.261': { name: 'Cafe Inbox Estrela e Sino Integrados', emoji: '[star]' },
   '1.10.260': { name: 'Cafe Email Operacional Integrado', emoji: '[mail]' },
   '1.10.259': { name: 'Cafe Portal Blindado e DJEN Trancado', emoji: '[shield]' },
   '1.10.258': { name: 'Cafe Sessao Sob Controle do Supabase', emoji: '[lock]' },
@@ -913,6 +914,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.261',
+    date: '22/06/2026',
+    summary: 'Email e notificacoes: o CRM ganhou navegacao direta do sino para o email certo, pasta de favoritos, acoes em lote e persistencia de layout para deixar a caixa mais operacional.',
+    modules: [
+      { moduleId: 'email', changes: [
+        { type: 'feature' as const, title: 'Modulo de email passou a abrir mensagens direto por notificacao', description: 'O `EmailModule` agora aceita parametros de navegacao, busca o email por id e abre a pasta correta automaticamente quando o usuario chega pelo sino ou pelo centro de notificacoes.' },
+        { type: 'feature' as const, title: 'Caixa de email ganhou estrela, acoes em lote e selecao avancada', description: 'A lista passou a suportar pasta de favoritos, marcar estrela, restaurar ou tirar de spam em lote, atalhos de teclado ampliados e selecao por intervalo para acelerar triagem operacional.' },
+        { type: 'improvement' as const, title: 'Layout e leitura do email ficaram mais persistentes', description: 'As larguras das colunas agora podem ser salvas nas preferencias do dashboard, a resposta inline foi refinada e a liberacao de imagens externas passou a ser lembrada por mensagem.' },
+      ]},
+      { moduleId: 'notificacoes', changes: [
+        { type: 'improvement' as const, title: 'Sino passou a limpar notificacoes de novo email ao abrir a mensagem', description: 'As notificacoes `email_new` agora navegam para o email correspondente e sao marcadas como lidas assim que a mensagem e aberta, evitando pendencias artificiais no badge.' },
+        { type: 'improvement' as const, title: 'Dropdown de notificacoes recebeu acabamento visual mais claro', description: 'O painel do sino ganhou destaque de nao lidas, badges reorganizados e acoes de hover mais consistentes para leitura rapida.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Tipagens e servicos foram expandidos para o novo fluxo de email', description: 'Os servicos de email, preferencias e notificacoes passaram a expor novos metodos e tipos para favoritos, restauracao, anti-spam e roteamento interno entre modulos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.260',
     date: '22/06/2026',

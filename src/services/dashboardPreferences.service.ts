@@ -11,6 +11,8 @@ export interface DashboardPreferences {
   financial_revealed_until?: string | null;
   /** Tamanho do widget de mensagens flutuante. NULL = padrão. */
   chat_widget_prefs?: ChatWidgetPrefs | null;
+  /** Larguras das colunas do módulo de e-mail. NULL = padrão. */
+  email_layout_prefs?: EmailLayoutPrefs | null;
   updated_at?: string;
   created_at?: string;
 }
@@ -18,6 +20,13 @@ export interface DashboardPreferences {
 export interface ChatWidgetPrefs {
   w: number;
   h: number;
+}
+
+export interface EmailLayoutPrefs {
+  /** Largura da coluna de pastas (px). */
+  foldersW: number;
+  /** Largura da coluna da lista de mensagens (px). */
+  listW: number;
 }
 
 /** Retorna true se o reveal ainda está ativo (dentro do prazo). */
@@ -157,6 +166,44 @@ class DashboardPreferencesService {
 
     if (insErr) {
       console.error('Erro ao salvar prefs do widget de mensagens:', insErr);
+      return false;
+    }
+    return true;
+  }
+
+  /** Lê as larguras salvas das colunas do módulo de e-mail (null se não existir). */
+  async getEmailLayoutPrefs(userId: string): Promise<EmailLayoutPrefs | null> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('email_layout_prefs')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar layout do módulo de e-mail:', error);
+      return null;
+    }
+    return (data?.email_layout_prefs as EmailLayoutPrefs | null) ?? null;
+  }
+
+  /** Salva as larguras das colunas do módulo de e-mail, preservando o resto. */
+  async saveEmailLayoutPrefs(userId: string, prefs: EmailLayoutPrefs | null): Promise<boolean> {
+    const updated_at = new Date().toISOString();
+
+    const { data: updated, error: updErr } = await supabase
+      .from(this.tableName)
+      .update({ email_layout_prefs: prefs, updated_at })
+      .eq('user_id', userId)
+      .select('user_id');
+
+    if (!updErr && updated && updated.length > 0) return true;
+
+    const { error: insErr } = await supabase
+      .from(this.tableName)
+      .insert({ user_id: userId, email_layout_prefs: prefs, left_widgets: [], right_widgets: [], updated_at });
+
+    if (insErr) {
+      console.error('Erro ao salvar layout do módulo de e-mail:', insErr);
       return false;
     }
     return true;

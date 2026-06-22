@@ -19,7 +19,8 @@ export type UserNotificationType =
   | 'chat_message'
   | 'access_request'
   | 'access_request_resolved'
-  | 'profile_update_request';
+  | 'profile_update_request'
+  | 'email_new';
 
 export interface UserNotification {
   id: string;

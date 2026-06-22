@@ -2596,7 +2596,7 @@ useEffect(() => {
                 />
               </div>
             )}
-            {activeModule === 'email' && <EmailModule />}
+            {activeModule === 'email' && <EmailModule params={moduleParams['email'] ? JSON.parse(moduleParams['email']) : undefined} />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && (
               <FinancialModule

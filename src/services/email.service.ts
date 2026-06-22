@@ -7,6 +7,8 @@ function folderFilter(query: any, folder: EmailFolder) {
   switch (folder) {
     case 'inbox':
       return query.eq('direction', 'inbound').eq('is_spam', false).eq('is_trash', false).eq('is_draft', false);
+    case 'starred':
+      return query.eq('is_starred', true).eq('is_trash', false).eq('is_draft', false);
     case 'sent':
       return query.eq('direction', 'outbound').eq('is_trash', false).eq('is_draft', false);
     case 'spam':
@@ -35,6 +37,13 @@ class EmailService {
       .limit(Math.max(1, Math.min(limit, 500)));
     if (error) throw new Error(error.message);
     return (data ?? []) as EmailMessage[];
+  }
+
+  /** Uma mensagem específica por id (usado ao abrir via notificação). */
+  async getMessage(id: string): Promise<EmailMessage | null> {
+    const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as EmailMessage) ?? null;
   }
 
   /** Todas as mensagens de uma conversa (thread), em ordem cronológica. */
@@ -72,6 +81,12 @@ class EmailService {
     if (error) throw new Error(error.message);
   }
 
+  /** Marca/desmarca estrela (importante). */
+  async toggleStar(id: string, isStarred: boolean): Promise<void> {
+    const { error } = await supabase.from(TABLE).update({ is_starred: isStarred }).eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
   /**
    * Marca como spam (move pro Spam) e, se learnSender, registra o remetente
    * para que emails futuros dele caiam direto no spam.
@@ -90,6 +105,15 @@ class EmailService {
     if (forgetSender && msg.from_address) {
       await supabase.from('email_spam_senders').delete().eq('address', msg.from_address.toLowerCase());
     }
+  }
+
+  /** Zera os sinais de spam de uma mensagem (some o aviso na leitura). */
+  async clearSpamSignals(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ is_spam: false, spam_score: 0, spam_reason: null, spam_checked: true })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   }
 
   async moveToTrash(id: string): Promise<void> {
@@ -113,6 +137,20 @@ class EmailService {
   async bulkMarkRead(ids: string[], isRead: boolean): Promise<void> {
     if (!ids.length) return;
     const { error } = await supabase.from(TABLE).update({ is_read: isRead }).in('id', ids);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Restaura vários da lixeira de uma vez. */
+  async bulkRestore(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const { error } = await supabase.from(TABLE).update({ is_trash: false }).in('id', ids);
+    if (error) throw new Error(error.message);
+  }
+
+  /** Marca/desmarca spam em vários de uma vez. */
+  async bulkSetSpam(ids: string[], isSpam: boolean): Promise<void> {
+    if (!ids.length) return;
+    const { error } = await supabase.from(TABLE).update({ is_spam: isSpam, spam_checked: true }).in('id', ids);
     if (error) throw new Error(error.message);
   }
 

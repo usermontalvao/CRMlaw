@@ -159,6 +159,26 @@ class UserNotificationService {
   }
 
   /**
+   * Marca como lidas as notificações de "novo e-mail" referentes a um email.
+   * Usado quando o usuário abre o e-mail no módulo — não faz sentido a
+   * notificação continuar pendente no sino depois da leitura. A RLS já restringe
+   * ao próprio usuário, então basta filtrar por tipo + email_id.
+   */
+  async markEmailNotificationsRead(emailId: string): Promise<void> {
+    if (!emailId) return;
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({ read: true })
+      .eq('type', 'email_new')
+      .eq('read', false)
+      .filter('metadata->>email_id', 'eq', emailId);
+
+    if (error) {
+      console.error('Erro ao marcar notificação de e-mail como lida:', error);
+    }
+  }
+
+  /**
    * Conta notificações não lidas
    */
   async countUnread(userId: string): Promise<number> {

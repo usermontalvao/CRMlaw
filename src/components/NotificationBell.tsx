@@ -17,6 +17,7 @@ import {
   Trash2,
   PenTool,
   UserCheck,
+  Mail,
 } from 'lucide-react';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -49,25 +50,43 @@ const getAudioContext = (): AudioContext | null => {
   }
 };
 
-// Função para tocar som de notificação usando Web Audio API
-const playNotificationSound = () => {
+// Toca um tom único com envelope suave (ataque/descida em rampa) — evita o
+// "clique" de começar/terminar o som no volume cheio.
+const playTone = (
+  ctx: AudioContext,
+  freq: number,
+  startAt: number,
+  dur: number,
+  peak: number,
+  type: OscillatorType = 'sine',
+) => {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.value = freq;
+  const t0 = ctx.currentTime + startAt;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.025); // ataque suave
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); // descida suave
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.03);
+};
+
+// Som de notificação. 'email' = chime macio de dois tons (mais baixo e gentil);
+// 'default' = bipe único, agora com envelope suave (sem clique) e volume menor.
+const playNotificationSound = (kind: 'default' | 'email' = 'default') => {
   try {
-    const audioContext = getAudioContext();
-    if (!audioContext) return; // sem gesto do usuário ainda — silencioso
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
-
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.3);
+    const ctx = getAudioContext();
+    if (!ctx) return; // sem gesto do usuário ainda — silencioso
+    if (kind === 'email') {
+      // dois tons ascendentes, suaves, sobrepondo levemente — tipo "tlim-tlim"
+      playTone(ctx, 660, 0, 0.26, 0.09); // E5
+      playTone(ctx, 880, 0.13, 0.36, 0.08); // A5
+    } else {
+      playTone(ctx, 760, 0, 0.3, 0.16);
+    }
   } catch {}
 };
 
@@ -412,7 +431,9 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const unreadCount = filtered.filter(n => !n.read).length;
       // Só toca som em novas notificações APÓS a carga inicial (evita AudioContext bloqueado)
       if (!isInitialLoadRef.current && unreadCount > prevCountRef.current && soundEnabled) {
-        playSound();
+        // Se a notificação mais recente é e-mail, usa o chime suave.
+        const newest = filtered.find((n) => !n.read);
+        playNotificationSound(newest?.type === 'email_new' ? 'email' : 'default');
       }
       isInitialLoadRef.current = false;
       prevCountRef.current = unreadCount;
@@ -425,17 +446,18 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     }
   }, [user?.id, soundEnabled, dedupeNotifications, canSeeIntimacoes, isIntimationNotification]);
 
-  // Tocar som
-  const playSound = () => {
-    playNotificationSound();
-  };
-
   // Processa toda a fila pendente num único ciclo de setState (evita N re-renders por rajada)
   const flushPending = useCallback(() => {
     const queued = pendingQueue.current.splice(0);
     if (!queued.length) return;
 
-    setNotifications(prev => dedupeNotifications([...queued, ...prev]).slice(0, 50));
+    setNotifications(prev => {
+      const next = dedupeNotifications([...queued, ...prev]).slice(0, 50);
+      // Mantém prevCountRef em dia com o que chegou pelo realtime, senão o polling
+      // de 60s vê "unread subiu" e RE-toca o som (causa de som dobrado atrasado).
+      prevCountRef.current = next.filter(n => !n.read).length;
+      return next;
+    });
 
     setPopupNotifications(prev => {
       let next = [...prev];
@@ -448,11 +470,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       return next.slice(-MAX_POPUPS);
     });
 
-    // Som throttled: 1 beep por rajada, no máximo 1 a cada 3 s
+    // Som throttled: 1 beep por rajada, no máximo 1 a cada 3 s. E-mail toca o
+    // chime suave; só usa o som padrão se a rajada tiver algo que não seja e-mail.
     const now = Date.now();
     if (soundEnabledRef.current && now - lastSoundRef.current >= 3000) {
       lastSoundRef.current = now;
-      playNotificationSound();
+      const allEmail = queued.every((n) => n.type === 'email_new');
+      playNotificationSound(allEmail ? 'email' : 'default');
     }
 
     for (const n of queued) {
@@ -551,6 +575,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       } else {
         onNavigateToModule('clientes');
       }
+    } else if (notification.type === 'email_new') {
+      const emailId = notification.metadata?.email_id;
+      console.log('➡️ Navegando para email, emailId:', emailId);
+      onNavigateToModule('email', emailId ? { emailId: String(emailId) } : undefined);
     } else if (notification.type === 'access_request') {
       // Admin recebeu solicitação de acesso → abre Configurações > Solicitações
       console.log('➡️ Navegando para configuracoes > access_requests');
@@ -583,6 +611,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     console.log('🔔 showBrowserNotification chamado para:', notification.id);
     if (typeof window === 'undefined') {
       console.log('⚠️ window undefined');
+      return;
+    }
+    // Só notifica no SO quando a aba está em SEGUNDO PLANO. Com o app em foco, o
+    // popup interno + o beep já avisam — disparar a notificação do SO (que toca o
+    // som do Windows) faria o usuário ouvir DOIS sons. Em background o beep do
+    // Web Audio nem soa (aba suspensa), então a do SO é a única.
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       return;
     }
     if (!('Notification' in window)) {
@@ -634,6 +669,22 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
+
+  // Ao abrir um e-mail no módulo, o EmailModule dispara 'email-notif-read'.
+  // Removemos imediatamente a notificação de "novo e-mail" correspondente do sino
+  // (e do popup) — não faz sentido seguir pendente depois de lida.
+  useEffect(() => {
+    const onEmailRead = (e: Event) => {
+      const emailId = (e as CustomEvent).detail?.emailId;
+      if (!emailId) return;
+      const matches = (n: UserNotification) =>
+        n.type === 'email_new' && String(n.metadata?.email_id) === String(emailId);
+      setNotifications(prev => prev.map(n => (matches(n) ? { ...n, read: true } : n)));
+      setPopupNotifications(prev => prev.filter(n => !matches(n)));
+    };
+    window.addEventListener('email-notif-read', onEmailRead);
+    return () => window.removeEventListener('email-notif-read', onEmailRead);
+  }, []);
 
   // Carregar ao montar e polling
   useEffect(() => {
@@ -734,6 +785,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
         return <ChevronRight className="w-4 h-4 text-sky-500" />;
       case 'profile_update_request':
         return <UserCheck className="w-4 h-4 text-orange-500" />;
+      case 'email_new':
+        return <Mail className="w-4 h-4 text-amber-600" />;
       default:
         if (isSignatureNotification(notification)) {
           return <PenTool className="w-4 h-4 text-emerald-500" />;
@@ -745,10 +798,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   const getIconBgColor = (notification: UserNotification) => {
     const urgency = notification.metadata?.urgency;
     if (notification.type === 'profile_update_request') return 'bg-orange-100';
+    if (notification.type === 'email_new') return 'bg-amber-100';
     if (isSignatureNotification(notification)) return 'bg-emerald-100';
     if (urgency === 'critica') return 'bg-red-100';
     if (urgency === 'alta') return 'bg-orange-100';
-    if (!notification.read) return 'bg-blue-100';
+    if (!notification.read) return 'bg-amber-100';
     return 'bg-slate-100';
   };
 
@@ -799,7 +853,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllAsRead}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-xs text-amber-600 hover:text-amber-700 font-medium"
                   >
                     Ler todas
                   </button>
@@ -828,8 +882,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                   {unreadNotifications.slice(0, 20).map((notification) => (
                     <div
                       key={notification.id}
-                      className={`group flex items-start gap-3 px-4 py-3 active:bg-slate-50 transition ${
-                        !notification.read ? 'bg-blue-50/50' : ''
+                      className={`group flex items-start gap-3 px-4 py-3 active:bg-amber-50/60 transition ${
+                        !notification.read ? 'bg-amber-50/50' : ''
                       }`}
                       onClick={() => handleClick(notification)}
                     >
@@ -860,7 +914,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                     if (onNavigateToModule) onNavigateToModule('notificacoes');
                     setIsOpen(false);
                   }}
-                  className="w-full text-center text-sm text-blue-600 font-medium py-2 bg-[#f8f7f5] border border-blue-100 rounded-lg shadow-sm active:bg-blue-50"
+                  className="w-full text-center text-sm text-amber-700 font-medium py-2 bg-[#f8f7f5] border border-amber-100 rounded-lg shadow-sm active:bg-amber-50"
                 >
                   Ver todas as notificações
                 </button>
@@ -888,7 +942,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
+                  className="text-xs text-amber-600 hover:text-amber-700 font-medium whitespace-nowrap"
                 >
                   <span className="hidden sm:inline">Marcar todas como lidas</span>
                   <span className="sm:hidden">Ler todas</span>
@@ -919,11 +973,16 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                 {unreadNotifications.slice(0, 10).map((notification) => (
                   <div
                     key={notification.id}
-                    className={`group flex items-start gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer transition ${
-                      !notification.read ? 'bg-blue-50/50' : ''
+                    className={`group relative flex items-start gap-3 px-4 py-3 hover:bg-amber-50/40 cursor-pointer transition ${
+                      !notification.read ? 'bg-amber-50/50' : ''
                     }`}
                     onClick={() => handleClick(notification)}
                   >
+                    {/* Faixa de não lida (à esquerda) */}
+                    {!notification.read && (
+                      <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
+                    )}
+
                     {/* Icon */}
                     <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${getIconBgColor(notification)}`}>
                       {getIcon(notification)}
@@ -931,62 +990,70 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start gap-2">
-                        <p className={`text-sm ${!notification.read ? 'font-semibold text-slate-900' : 'text-slate-700'} line-clamp-2`}>
+                      {/* Título + horário alinhado à direita */}
+                      <div className="flex items-start justify-between gap-2">
+                        <p className={`text-sm leading-snug ${!notification.read ? 'font-semibold text-slate-900' : 'text-slate-700'} line-clamp-2`}>
                           {notification.title}
                         </p>
-                        {notification.metadata?.tribunal && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded flex-shrink-0">
-                            {notification.metadata.tribunal}
-                          </span>
-                        )}
+                        <span className="flex-shrink-0 text-[10.5px] text-slate-400 whitespace-nowrap pt-0.5">
+                          {getRelativeTime(notification.created_at)}
+                        </span>
                       </div>
-                      {notification.metadata?.urgency === 'alta' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded mt-1 w-fit">
-                          ALTA
-                        </span>
-                      )}
-                      {notification.metadata?.urgency === 'critica' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded mt-1 w-fit animate-pulse">
-                          CRÍTICA
-                        </span>
-                      )}
-                      {isSignatureNotification(notification) && (
-                        <span
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded mt-1 w-fit ${
-                            getSignatureAccent(notification) === 'emerald'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-teal-100 text-teal-700'
-                          }`}
-                        >
-                          {getSignatureBadge(notification)}
-                        </span>
-                      )}
-                      <p className="text-xs text-slate-500 line-clamp-2 mt-1">{notification.message}</p>
-                      {isSignatureNotification(notification) && (
-                        <div className="mt-1">
-                          {(() => {
-                            const progress = getSignatureProgress(notification);
-                            if (!progress) return null;
-                            return (
-                              <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${
-                                    getSignatureAccent(notification) === 'emerald' ? 'bg-emerald-500' : 'bg-teal-500'
-                                  }`}
-                                  style={{ width: `${progress.pct}%` }}
-                                />
-                              </div>
-                            );
-                          })()}
+
+                      {/* Badges (tribunal / urgência / assinatura) numa linha só */}
+                      {(notification.metadata?.tribunal ||
+                        notification.metadata?.urgency === 'alta' ||
+                        notification.metadata?.urgency === 'critica' ||
+                        isSignatureNotification(notification)) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {notification.metadata?.tribunal && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded">
+                              {notification.metadata.tribunal}
+                            </span>
+                          )}
+                          {notification.metadata?.urgency === 'alta' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded">
+                              ALTA
+                            </span>
+                          )}
+                          {notification.metadata?.urgency === 'critica' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded animate-pulse">
+                              CRÍTICA
+                            </span>
+                          )}
+                          {isSignatureNotification(notification) && (
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded ${
+                                getSignatureAccent(notification) === 'emerald'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-teal-100 text-teal-700'
+                              }`}
+                            >
+                              {getSignatureBadge(notification)}
+                            </span>
+                          )}
                         </div>
                       )}
-                      <p className={`text-[11px] mt-1 ${!notification.read ? 'text-blue-600 font-medium' : 'text-slate-400'}`}>
-                        {getRelativeTime(notification.created_at)}
-                      </p>
+
+                      <p className="text-xs text-slate-500 line-clamp-2 mt-1">{notification.message}</p>
+
+                      {isSignatureNotification(notification) && (() => {
+                        const progress = getSignatureProgress(notification);
+                        if (!progress) return null;
+                        return (
+                          <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                getSignatureAccent(notification) === 'emerald' ? 'bg-emerald-500' : 'bg-teal-500'
+                              }`}
+                              style={{ width: `${progress.pct}%` }}
+                            />
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions (aparecem no hover) */}
                     <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                       {!notification.read && (
                         <button
@@ -994,7 +1061,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                             e.stopPropagation();
                             markAsRead(notification.id);
                           }}
-                          className="p-1 rounded hover:bg-slate-200"
+                          className="p-1 rounded hover:bg-amber-100"
                           title="Marcar como lida"
                         >
                           <Check className="w-3.5 h-3.5 text-slate-500" />
@@ -1011,11 +1078,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                         <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-500" />
                       </button>
                     </div>
-
-                    {/* Unread indicator */}
-                    {!notification.read && (
-                      <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5" />
-                    )}
                   </div>
                 ))}
               </div>
@@ -1030,7 +1092,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                     if (onNavigateToModule) onNavigateToModule('notificacoes');
                     setIsOpen(false);
                   }}
-                  className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-1 bg-[#f8f7f5] border border-blue-100 rounded-lg shadow-sm"
+                  className="w-full text-center text-sm text-amber-700 hover:text-amber-800 font-medium py-1 bg-[#f8f7f5] border border-amber-100 rounded-lg shadow-sm"
                 >
                   {notifications.length > 10 ? 'Ver todas as notificações' : 'Ver notificações'}
                 </button>
