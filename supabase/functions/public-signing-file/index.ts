@@ -52,10 +52,25 @@ Deno.serve(async (req: Request) => {
 
     const { data: request } = await supabase
       .from('signature_requests')
-      .select('document_path, attachment_paths, signature_image_path, facial_image_path, document_image_path')
+      .select('document_path, attachment_paths, signature_image_path, facial_image_path, document_image_path, status, deleted_at, archived_at, blocked_at, expires_at')
       .eq('id', requestId)
       .maybeSingle();
     if (!request) return jsonResponse({ error: 'Solicitação não encontrada' }, 403);
+
+    // 1b) ciclo de vida do link: o token só serve enquanto a solicitação está
+    // ativa. Fecha a leitura tardia de arquivos de documentos
+    // removidos/arquivados/REVOGADOS(blocked)/cancelados/expirados — note que
+    // blockRequest/cancelRequest/expiração NÃO zeram o public_token, então sem
+    // esta checagem o token continuaria servindo os arquivos.
+    if ((request as any).deleted_at || (request as any).archived_at || (request as any).blocked_at) {
+      return jsonResponse({ error: 'Este documento não está mais disponível.' }, 403);
+    }
+    if ((request as any).status === 'cancelled' || (request as any).status === 'expired') {
+      return jsonResponse({ error: 'Esta solicitação foi cancelada ou expirou.' }, 403);
+    }
+    if ((request as any).expires_at && new Date((request as any).expires_at).getTime() < Date.now()) {
+      return jsonResponse({ error: 'O prazo deste documento expirou.' }, 403);
+    }
 
     const { data: allSigners } = await supabase
       .from('signature_signers')

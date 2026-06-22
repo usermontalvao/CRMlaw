@@ -1,12 +1,12 @@
 /**
  * IMPORTANTE: Esta Edge Function deve ser deployada com verify_jwt=false
- * 
+ *
  * Deploy via CLI:
  * supabase functions deploy run-djen-sync --no-verify-jwt
- * 
+ *
  * Ou via Dashboard:
  * Settings > Edge Functions > run-djen-sync > JWT Verification: OFF
- * 
+ *
  * A autenticação é feita via token customizado na URL (?token=xxx)
  */
 
@@ -20,76 +20,53 @@ const corsHeaders = {
 
 const DJEN_BASE_URL = 'https://comunicaapi.pje.jus.br/api/v1'
 
-// Token simples para proteger o endpoint (pode ser alterado)
 const SYNC_TOKEN = Deno.env.get('DJEN_SYNC_TOKEN') || 'djen-sync-2024'
 
-// OpenAI API Key para análise automática
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     console.log(`📥 DJEN SYNC request: ${req.method} ${req.url}`)
-    // Verificar token de segurança
     const url = new URL(req.url)
     const token = url.searchParams.get('token')
-    // Varredura direcionada: ?processCode=XXX força sync histórico só desse processo
     const onlyProcessCode = (url.searchParams.get('processCode') || '').replace(/[^0-9]/g, '') || null
-
-    const nowIso = new Date().toISOString()
-    const dateRangeStart = getDateDaysAgo(7)
-    const dateRangeEnd = getDateToday()
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // TEMPORÁRIO: Validação desabilitada para testes
-    // TODO: Reabilitar após confirmar que funciona
-    /*
-    if (token !== SYNC_TOKEN) {
-      try {
-        await supabaseClient
-          .from('djen_sync_history')
-          .insert({
-            id: crypto.randomUUID(),
-            synced_at: nowIso,
-            date_range_start: dateRangeStart,
-            date_range_end: dateRangeEnd,
-            items_found: 0,
-            items_saved: 0,
-            success: false,
-            source: 'cron_supabase',
-            origin: 'scheduled_trigger',
-            trigger_type: 'pg_cron',
-            status: 'error',
-            run_started_at: nowIso,
-            run_finished_at: nowIso,
-            error_message: 'Token inválido',
-            message: 'Execução bloqueada: token inválido'
-          })
-      } catch (e) {
-        console.error('Falha ao registrar token inválido em djen_sync_history:', e)
-      }
+    // Autenticação: token compartilhado na URL (?token=). É o único gate
+    // (verify_jwt=false) — sem ele, qualquer um dispara um job privilegiado
+    // (service role) que escreve no banco, chama IA e gera notificações
+    // (DoS/custo/spam). O token esperado vem de service_function_tokens
+    // (rotacionável por SQL, sem redeploy); cai no env DJEN_SYNC_TOKEN/default
+    // só se a tabela não tiver linha. O cron (jobid 5) envia o mesmo token.
+    let expectedToken = SYNC_TOKEN
+    try {
+      const { data: tk } = await supabaseClient
+        .from('service_function_tokens')
+        .select('token')
+        .eq('fn', 'run-djen-sync')
+        .maybeSingle()
+      if (tk?.token) expectedToken = tk.token as string
+    } catch (_) { /* fallback ao env */ }
 
+    if (!token || token !== expectedToken) {
+      console.warn('🚫 Token inválido — execução negada')
       return new Response(
-        JSON.stringify({ error: 'Token inválido' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+        JSON.stringify({ error: 'Não autorizado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    */
-    
-    console.log(`🔑 Token recebido: "${token}"`)
-    console.log(`🔑 Token esperado: "${SYNC_TOKEN}"`)
-    console.log(`✅ Validação de token DESABILITADA (modo teste)`)
+
+    const nowIso = new Date().toISOString()
+    const dateRangeStart = getDateDaysAgo(7)
+    const dateRangeEnd = getDateToday()
 
     const executionId = crypto.randomUUID().substring(0, 8)
     console.log(`\n${'='.repeat(60)}`)
@@ -97,7 +74,6 @@ serve(async (req) => {
     console.log(`📅 Data/Hora: ${new Date().toISOString()}`)
     console.log(`${'='.repeat(60)}\n`)
 
-    // Registrar início da execução
     const syncStartTime = new Date().toISOString()
 
     let cronLogId: string | null = null
@@ -128,7 +104,7 @@ serve(async (req) => {
       })
       .select()
       .single()
-    
+
     console.log(`📝 [${executionId}] Log de sync criado: ${syncLog?.id || 'N/A'}`)
 
     let totalSaved = 0
@@ -136,22 +112,17 @@ serve(async (req) => {
     let errorMessage = null
 
     try {
-      // Buscar perfis com nome DJEN configurado
       const { data: profiles } = await supabaseClient
         .from('profiles')
         .select('lawyer_full_name')
         .not('lawyer_full_name', 'is', null)
         .neq('lawyer_full_name', '')
 
-      // Buscar processos para tentativa de vinculação (não restringir apenas a status "andamento")
-      // Importante: a vinculação por número do processo precisa funcionar também para processos arquivados, em recurso, etc.
       const { data: processes } = await supabaseClient
         .from('processes')
         .select('*')
         .limit(1000)
 
-      // Descobrir quais processos JÁ TÊM publicações DJEN reais (texto integral).
-      // Não confiar na flag djen_has_data — ela é setada também pelo datajud-sync.
       const { data: djenExistentes } = await supabaseClient
         .from('djen_comunicacoes')
         .select('process_id')
@@ -170,9 +141,9 @@ serve(async (req) => {
 
       if (profiles && profiles.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 1: Sincronização por advogado`)
-        // Sincronizar por nome do advogado
         for (const profile of profiles) {
           if (!profile.lawyer_full_name) continue
+          if (timeLeft() < 20_000) { console.log(`   ⏱️  Budget esgotado — parando ETAPA 1`); break }
 
           console.log(`   🔍 Buscando: ${profile.lawyer_full_name}`)
 
@@ -186,24 +157,20 @@ serve(async (req) => {
           })
 
           const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
-          
+
           if (response.ok) {
             const data = await response.json()
             if (data.items && data.items.length > 0) {
               totalFound += data.items.length
-              
-              // Salvar comunicações no banco
               const result = await saveCommunications(supabaseClient, data.items, processes || [])
               totalSaved += result.saved
             }
           }
 
-          // Aguardar entre requisições
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       }
 
-      // Sincronizar por processos cadastrados
       if (processes && processes.length > 0) {
         console.log(`\n🔄 [${executionId}] ETAPA 2: Sincronização por processo`)
 
@@ -221,7 +188,6 @@ serve(async (req) => {
         console.log(`   📋 Processos com histórico DJEN: ${processesComDados.length}`)
         console.log(`   ⏱️  Budget disponível: ${(timeLeft()/1000).toFixed(0)}s`)
 
-        // ── Processos COM dados: janela de 7 dias, até esgotar tempo ──
         for (const proc of processesComDados) {
           if (timeLeft() < 15_000) { console.log(`   ⏱️  Budget esgotado — parando processesComDados`); break }
           const processNumber = proc.process_code.replace(/[^0-9]/g, '')
@@ -243,13 +209,10 @@ serve(async (req) => {
           await new Promise(r => setTimeout(r, 500))
         }
 
-        // ── Processos SEM dados: varredura histórica em batch de 15 por run ──
-        // Rotação: usa hash do dia para garantir cobertura ao longo do tempo
         const BATCH_SIZE = onlyProcessCode ? processesSemDados.length : 15
-        const MAX_DAYS_BACK = onlyProcessCode ? 1460 : 365 // 1 ano para cron, 4 anos para manual
+        const MAX_DAYS_BACK = onlyProcessCode ? 1460 : 365
         const WINDOW = 365
 
-        // Rotação: seleciona batch diferente a cada run usando o dia do mês
         const dayOfMonth = new Date().getDate()
         const batchStart = (dayOfMonth * BATCH_SIZE) % Math.max(processesSemDados.length, 1)
         const batch = [
@@ -307,7 +270,6 @@ serve(async (req) => {
       console.error('❌ Erro durante sincronização:', syncError)
     }
 
-    // Atualizar log de sincronização
     const syncEndTime = new Date().toISOString()
     const finalStatus = errorMessage ? 'error' : 'success'
     const finalSuccess = !errorMessage
@@ -335,9 +297,6 @@ serve(async (req) => {
     console.log(`   💾 Salvas: ${totalSaved}`)
     console.log(`   ⏱️ Status: ${finalStatus}`)
 
-    // ========================================
-    // ANÁLISE AUTOMÁTICA + NOTIFICAÇÕES (quase realtime)
-    // ========================================
     let totalAnalyzed = 0
     let totalNotified = 0
     let analysisError: string | null = null
@@ -346,9 +305,7 @@ serve(async (req) => {
       console.log(`\n🤖 [${executionId}] ETAPA 3: Analisar intimações e gerar notificações (analyze-intimations)`)
       try {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')
-        if (!supabaseUrl) {
-          throw new Error('SUPABASE_URL não configurada')
-        }
+        if (!supabaseUrl) throw new Error('SUPABASE_URL não configurada')
 
         const analyzeUrl = `${supabaseUrl}/functions/v1/analyze-intimations`
         const controller = new AbortController()
@@ -373,10 +330,8 @@ serve(async (req) => {
             totalAnalyzed = Number(payload?.analyzed ?? 0)
             totalNotified = Number(payload?.notified ?? 0)
           } catch {
-            // Se não for JSON, só loga
             console.log(`   ⚠️ [${executionId}] Resposta não-JSON de analyze-intimations: ${rawText}`)
           }
-
           console.log(`   ✅ [${executionId}] analyze-intimations: analisadas=${totalAnalyzed} notificações=${totalNotified}`)
         }
       } catch (aiError: any) {
@@ -387,7 +342,6 @@ serve(async (req) => {
       console.log(`\nℹ️ [${executionId}] Nenhuma intimação nova salva - pulando análise/notificações imediatas`)
     }
 
-    // Log final
     const totalDuration = ((new Date().getTime() - new Date(syncStartTime).getTime()) / 1000).toFixed(1)
     console.log(`\n${'='.repeat(60)}`)
     console.log(`✅ [${executionId}] CRON DJEN SYNC - FINALIZADO`)
@@ -426,21 +380,13 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('❌ Erro no endpoint de sincronização:', error)
-
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Erro interno do servidor'
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
+      JSON.stringify({ success: false, error: error.message || 'Erro interno do servidor' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
 })
 
-// Funções auxiliares
 function getDateToday(): string {
   return new Date().toISOString().split('T')[0]
 }
@@ -449,62 +395,6 @@ function getDateDaysAgo(days: number): string {
   const date = new Date()
   date.setDate(date.getDate() - days)
   return date.toISOString().split('T')[0]
-}
-
-// Função para analisar intimação com IA
-async function analyzeIntimation(texto: string, tipoComunicacao: string): Promise<any> {
-  if (!OPENAI_API_KEY || !texto) return null
-
-  const prompt = `Analise esta intimação judicial e retorne um JSON com:
-- summary: resumo em 1-2 frases
-- urgency: "alta", "media" ou "baixa"
-- deadline_days: número de dias para prazo (se mencionado, senão null)
-- action_required: true/false se requer ação imediata
-- key_points: array com até 3 pontos principais
-
-Tipo: ${tipoComunicacao || 'Intimação'}
-Texto: ${texto.substring(0, 2000)}
-
-Responda APENAS com o JSON, sem markdown.`
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Você é um assistente jurídico especializado em análise de intimações. Responda sempre em JSON válido.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
-      }),
-    })
-
-    if (!response.ok) {
-      console.error('Erro OpenAI:', await response.text())
-      return null
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-
-    if (!content) return null
-
-    // Tentar parsear JSON
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0])
-    }
-
-    return null
-  } catch (error) {
-    console.error('Erro ao analisar com IA:', error)
-    return null
-  }
 }
 
 async function saveCommunications(supabase: any, communications: any[], processes: any[]): Promise<{ saved: number, processesUpdated: string[] }> {
@@ -519,34 +409,22 @@ async function saveCommunications(supabase: any, communications: any[], processe
       const dataDisponibilizacao = comm.dataDisponibilizacao ?? comm.data_disponibilizacao
 
       if (!djenId || !hash || !dataDisponibilizacao) {
-        console.error('❌ Comunicação inválida (campos obrigatórios ausentes):', {
-          djenId,
-          hash,
-          numeroComunicacao,
-          dataDisponibilizacao,
-        })
+        console.error('❌ Comunicação inválida (campos obrigatórios ausentes):', { djenId, hash, numeroComunicacao, dataDisponibilizacao })
         continue
       }
 
-      // Verificar se já existe (hash é UNIQUE na tabela)
       const { data: existing, error: existingError } = await supabase
         .from('djen_comunicacoes')
         .select('id')
         .eq('hash', hash)
         .maybeSingle()
 
-      if (existingError) {
-        console.error('⚠️ Erro ao verificar duplicidade por hash:', existingError)
-      }
+      if (existingError) console.error('⚠️ Erro ao verificar duplicidade por hash:', existingError)
+      if (existing) continue
 
-      if (existing) continue // Já existe
-
-      // Extrair número do processo (da API ou do texto)
       let numeroProcesso = comm.numeroProcesso ?? comm.numero_processo ?? null
-      
-      // Se não veio da API, tentar extrair do texto
+
       if (!numeroProcesso && comm.texto) {
-        // Padrão CNJ: 1234567-12.1234.1.12.1234 ou variações
         const processMatch = comm.texto.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i)
         if (processMatch) {
           numeroProcesso = processMatch[1]
@@ -554,17 +432,15 @@ async function saveCommunications(supabase: any, communications: any[], processe
         }
       }
 
-      // Tentar vincular com processo cadastrado
       let processId = null
       let clientId = null
       let linkedProcess = null
 
       if (numeroProcesso) {
         const processNumber = numeroProcesso.replace(/[^0-9]/g, '')
-        linkedProcess = processes.find((p: any) => 
+        linkedProcess = processes.find((p: any) =>
           p.process_code?.replace(/[^0-9]/g, '') === processNumber
         )
-        
         if (linkedProcess) {
           processId = linkedProcess.id
           clientId = linkedProcess.client_id
@@ -572,7 +448,6 @@ async function saveCommunications(supabase: any, communications: any[], processe
         }
       }
 
-      // Salvar comunicação
       const { error } = await supabase
         .from('djen_comunicacoes')
         .insert({
@@ -597,23 +472,14 @@ async function saveCommunications(supabase: any, communications: any[], processe
         })
 
       if (error) {
-        console.error('❌ Erro ao inserir comunicação DJEN:', {
-          djenId,
-          hash,
-          numeroComunicacao,
-          numeroProcesso: comm.numeroProcesso,
-          dataDisponibilizacao,
-          error,
-        })
+        console.error('❌ Erro ao inserir comunicação DJEN:', { djenId, hash, numeroComunicacao, numeroProcesso: comm.numeroProcesso, dataDisponibilizacao, error })
       }
 
       if (!error) {
         savedCount++
 
-        // Se vinculou a um processo, atualizar APENAS os flags de sincronização.
-        // O status é responsabilidade exclusiva da fonte única no banco
-        // (trigger trg_recompute_process_status + _infer_process_stage sobre os
-        // movimentos DataJud). NÃO classificamos status a partir do texto livre do DJEN.
+        // Atualiza APENAS flags de sincronização — status é responsabilidade exclusiva
+        // do trigger trg_recompute_process_status + _infer_process_stage (movimentos DataJud).
         if (linkedProcess && processId) {
           try {
             const updatePayload: any = {
@@ -625,15 +491,8 @@ async function saveCommunications(supabase: any, communications: any[], processe
             if (comm.nomeOrgao && !linkedProcess.court) {
               updatePayload.court = comm.nomeOrgao
             }
-
-            await supabase
-              .from('processes')
-              .update(updatePayload)
-              .eq('id', processId)
-
-            if (!processesUpdated.includes(processId)) {
-              processesUpdated.push(processId)
-            }
+            await supabase.from('processes').update(updatePayload).eq('id', processId)
+            if (!processesUpdated.includes(processId)) processesUpdated.push(processId)
           } catch (updateError) {
             console.error(`Erro ao atualizar processo ${processId}:`, updateError)
           }
@@ -647,4 +506,3 @@ async function saveCommunications(supabase: any, communications: any[], processe
 
   return { saved: savedCount, processesUpdated }
 }
-

@@ -321,6 +321,7 @@ export const PortalLogin: React.FC = () => {
   const [staffEmail, setStaffEmail]           = useState('');
   const [staffPw, setStaffPw]                 = useState('');
   const [showPw, setShowPw]                   = useState(false);
+  const [capsOn, setCapsOn]                   = useState(false);
   const [profileName, setProfileName]         = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar]     = useState<string | null>(null);
   const [profileRole, setProfileRole]         = useState<string | null>(null);
@@ -993,6 +994,9 @@ export const PortalLogin: React.FC = () => {
                       <div className="relative">
                         <input ref={pwRef} type={showPw ? 'text' : 'password'} value={staffPw}
                           onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
+                          onKeyDown={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+                          onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+                          onBlur={() => setCapsOn(false)}
                           placeholder="••••••••" autoComplete="current-password" disabled={staffLoading}
                           className="w-full px-4 py-3.5 bg-white border border-slate-300 rounded-lg focus:ring-4 focus:ring-orange-500/15 focus:border-orange-400 outline-none transition-all pr-12 text-base font-medium text-slate-900"
                         />
@@ -1001,6 +1005,11 @@ export const PortalLogin: React.FC = () => {
                           {showPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
+                      {capsOn && (
+                        <p className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-600">
+                          <AlertCircle className="h-3.5 w-3.5" /> Caps Lock está ativado
+                        </p>
+                      )}
                     </div>
                     {staffBanned && <BannedMsg />}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}

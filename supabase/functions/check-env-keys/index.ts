@@ -27,10 +27,10 @@ const ALLOWED_KEYS = new Set([
   "VAPID_PRIVATE_KEY",
   // SMS
   "SMSDEV_API_KEY",
-  // Supabase (sempre presentes nas edges, mas podem estar no registro)
-  "SUPABASE_URL",
-  "SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
+  // NOTA: SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY foram REMOVIDOS desta allowlist
+  // de propósito — a presença deles é trivial (sempre injetados no runtime) e não
+  // há motivo p/ permitir sondar a presença da service role key. Diagnóstico de
+  // secrets se limita a chaves de integrações de terceiros.
 ]);
 
 Deno.serve(async (req: Request) => {

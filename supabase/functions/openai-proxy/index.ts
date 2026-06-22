@@ -25,7 +25,13 @@ function mapModelToGroq(model: string): string {
   return 'llama-3.1-8b-instant';
 }
 
-type Provider = 'groq' | 'openai';
+// DeepSeek é OpenAI-compatível. Todas as tarefas de texto deste proxy usam o
+// modelo de chat geral (deepseek-chat / V3). Visão NÃO passa por aqui.
+function mapModelToDeepSeek(_model: string): string {
+  return 'deepseek-chat';
+}
+
+type Provider = 'deepseek' | 'groq' | 'openai';
 
 interface CallArgs {
   messages: unknown;
@@ -33,20 +39,29 @@ interface CallArgs {
   max_tokens?: number;
 }
 
-async function callProvider(provider: Provider, apiKey: string, args: CallArgs) {
-  const endpoint = provider === 'groq'
-    ? 'https://api.groq.com/openai/v1/chat/completions'
-    : 'https://api.openai.com/v1/chat/completions';
-  const resolvedModel = provider === 'groq' ? mapModelToGroq(args.model) : args.model;
+function endpointFor(provider: Provider): string {
+  switch (provider) {
+    case 'deepseek': return 'https://api.deepseek.com/chat/completions';
+    case 'groq':     return 'https://api.groq.com/openai/v1/chat/completions';
+    case 'openai':   return 'https://api.openai.com/v1/chat/completions';
+  }
+}
 
+function resolveModel(provider: Provider, model: string): string {
+  if (provider === 'deepseek') return mapModelToDeepSeek(model);
+  if (provider === 'groq')     return mapModelToGroq(model);
+  return model;
+}
+
+async function callProvider(provider: Provider, apiKey: string, args: CallArgs) {
   const body: Record<string, unknown> = {
-    model:       resolvedModel,
+    model:       resolveModel(provider, args.model),
     messages:    args.messages,
     temperature: 0.7,
   };
   if (args.max_tokens) body.max_tokens = args.max_tokens;
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(endpointFor(provider), {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -72,16 +87,19 @@ Deno.serve(async (req: Request) => {
   try {
     const { messages, model = 'gpt-4o-mini', max_tokens } = await req.json();
 
-    const groqApiKey   = Deno.env.get('GROQ_API_KEY')   || Deno.env.get('VITE_GROQ_API_KEY');
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('VITE_OPENAI_API_KEY');
+    const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
+    const groqApiKey   = Deno.env.get('GROQ_API_KEY');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-    // Cadeia de failover: Groq (rápido/barato) → OpenAI (qualidade/rede de segurança).
+    // Cadeia de failover para tarefas de TEXTO:
+    // DeepSeek (barato/primário) -> Groq (rápido) -> OpenAI (rede de seguranca).
     const chain: { provider: Provider; key: string }[] = [];
-    if (groqApiKey)   chain.push({ provider: 'groq',   key: groqApiKey });
-    if (openaiApiKey) chain.push({ provider: 'openai', key: openaiApiKey });
+    if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
+    if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
+    if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
 
     if (chain.length === 0) {
-      throw new Error('Nenhuma chave de API configurada (GROQ_API_KEY ou OPENAI_API_KEY)');
+      throw new Error('Nenhuma chave de API configurada (DEEPSEEK_API_KEY, GROQ_API_KEY ou OPENAI_API_KEY)');
     }
 
     let lastError: unknown = null;
@@ -98,14 +116,14 @@ Deno.serve(async (req: Request) => {
         });
       } catch (err) {
         lastError = err;
-        console.warn(`[openai-proxy] ${link.provider} falhou, tentando próximo:`, err instanceof Error ? err.message : String(err));
+        console.warn(`[openai-proxy] ${link.provider} falhou, tentando proximo:`, err instanceof Error ? err.message : String(err));
         // continua para o próximo provedor da cadeia
       }
     }
 
     // Todos os provedores da cadeia falharam.
     const message = lastError instanceof Error ? lastError.message : String(lastError);
-    throw new Error(`Todos os provedores de IA falharam. Último erro: ${message}`);
+    throw new Error(`Todos os provedores de IA falharam. Ultimo erro: ${message}`);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return new Response(

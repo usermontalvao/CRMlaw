@@ -13,6 +13,11 @@
  *     token para o front concluir com supabase.auth.verifyOtp() — assim a sessão
  *     é emitida pelo próprio GoTrue (assinatura correta + refresh token).
  *
+ * Anti-brute-force: a senha é fraca (4 dígitos), então este endpoint é o ÚNICO
+ * caminho de login (a RPC portal_login foi revogada de anon/authenticated) e
+ * aplica lockout: 10 tentativas falhas por CPF → bloqueio de 24h. A contagem
+ * usa RPCs em transações próprias (portal_login faz RAISE, que rola back tudo).
+ *
  * verify_jwt = false: este endpoint é o ponto de entrada pré-autenticação.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -53,6 +58,20 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // Portão global: se o acesso ao portal estiver desativado nas Configurações
+    // (system_settings.portal_login_enabled === false), recusa todo login.
+    const { data: gate } = await admin
+      .from("system_settings")
+      .select("value")
+      .eq("key", "portal_login_enabled")
+      .maybeSingle();
+    if (gate && gate.value === false) {
+      return jsonResponse(
+        { success: false, error: "O acesso ao Portal do Cliente está desativado no momento. Entre em contato com o escritório." },
+        403,
+      );
+    }
+
     const body = await req.json().catch(() => null);
     const cpf = onlyDigits(String(body?.cpf ?? ""));
     const password = onlyDigits(String(body?.password ?? ""));
@@ -64,12 +83,23 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, error: "Senha inválida. Digite os 4 últimos dígitos do seu telefone." }, 400);
     }
 
+    // Anti-brute-force: bloqueia o CPF após 10 tentativas falhas, por 24h.
+    const { data: lock } = await admin.rpc("portal_login_is_locked", { p_cpf: cpf });
+    if (lock?.locked === true) {
+      return jsonResponse(
+        { success: false, error: "Muitas tentativas de acesso. Por segurança, o login deste CPF foi bloqueado por 24 horas. Entre em contato com o escritório se precisar de ajuda." },
+        429,
+      );
+    }
+
     // 1. Valida credenciais reusando a RPC já existente (SECURITY DEFINER).
     const { data: loginData, error: loginError } = await admin.rpc("portal_login", {
       p_cpf: cpf,
       p_password: password,
     });
     if (loginError) {
+      // Conta a falha numa transação própria (o RAISE acima rola back a RPC).
+      await admin.rpc("portal_login_record_failure", { p_cpf: cpf });
       const clean = (loginError.message || "Erro ao validar acesso.").replace(/^[A-Z0-9]+:\s*/, "");
       return jsonResponse({ success: false, error: clean }, 401);
     }
@@ -82,6 +112,9 @@ Deno.serve(async (req: Request) => {
     if (!portalUserId || !clientId) {
       return jsonResponse({ success: false, error: "Resposta inválida do servidor." }, 500);
     }
+
+    // Credenciais corretas → limpa o contador de tentativas deste CPF.
+    await admin.rpc("portal_login_record_success", { p_cpf: cpf });
 
     const email = portalEmail(clientId);
     const appMetadata = { portal: true, client_id: clientId, portal_user_id: portalUserId };
@@ -144,13 +177,7 @@ Deno.serve(async (req: Request) => {
       success: true,
       email,
       token: linkData.properties.email_otp,
-      user: {
-        ...(payload?.user ?? {}),
-        id: portalUserId,
-        client_id: clientId,
-        is_active: true,
-        auth_user_id: authUserId,
-      },
+      user: { id: portalUserId, client_id: clientId, is_active: true, auth_user_id: authUserId },
       client: payload?.client ?? null,
     });
   } catch (error) {

@@ -46,13 +46,39 @@ Deno.serve(async (req: Request) => {
     // 1) valida o token → signatário → solicitação
     const { data: signer } = await supabase
       .from('signature_signers')
-      .select('id, signature_request_id')
+      .select('id, signature_request_id, signed_document_path')
       .eq('public_token', token)
       .maybeSingle();
     if (!signer) return jsonResponse({ error: 'Token inválido' }, 403);
 
     const requestId = signer.signature_request_id as string;
     const signerId = signer.id as string;
+
+    // 1b) one-shot: depois que o PDF assinado foi finalizado (ponteiro gravado),
+    // o artefato legal não pode mais ser regravado por este token. Bloqueia a
+    // adulteração pós-assinatura via chamada direta ao backend.
+    if (signer.signed_document_path) {
+      return jsonResponse({ error: 'Documento já finalizado' }, 409);
+    }
+
+    // 1c) ciclo de vida da solicitação: não aceitar gravação se a solicitação
+    // foi removida/arquivada/bloqueada/cancelada/expirada (mesmas regras do
+    // public-sign-document). Defesa em profundidade contra gravação tardia.
+    const { data: request0 } = await supabase
+      .from('signature_requests')
+      .select('status, deleted_at, archived_at, blocked_at, expires_at')
+      .eq('id', requestId)
+      .maybeSingle();
+    if (!request0) return jsonResponse({ error: 'Solicitação não encontrada' }, 404);
+    if (request0.deleted_at || request0.archived_at || request0.blocked_at) {
+      return jsonResponse({ error: 'Este documento não está mais disponível.' }, 403);
+    }
+    if (request0.status === 'cancelled' || request0.status === 'expired') {
+      return jsonResponse({ error: 'Esta solicitação foi cancelada ou expirou.' }, 403);
+    }
+    if (request0.expires_at && new Date(request0.expires_at).getTime() < Date.now()) {
+      return jsonResponse({ error: 'O prazo para assinatura deste documento expirou.' }, 403);
+    }
 
     // 2) o path destino tem que estar na pasta do request E referenciar o
     // próprio signatário (impede sobrescrever o artefato de um co-signatário).
@@ -78,7 +104,9 @@ Deno.serve(async (req: Request) => {
       .from(TARGET_BUCKET)
       .upload(path, bytes, {
         contentType: typeof contentType === 'string' && contentType ? contentType : 'application/pdf',
-        upsert: true,
+        // upsert:false — o bucket `assinados` nunca sobrescreve um objeto
+        // existente. Defesa em profundidade junto do gate one-shot acima.
+        upsert: false,
       });
     if (error) {
       console.error('[public-signing-upload] erro no upload:', error);

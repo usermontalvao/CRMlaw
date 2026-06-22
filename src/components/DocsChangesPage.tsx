@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.259': { name: 'Cafe Portal Blindado e DJEN Trancado', emoji: '[shield]' },
   '1.10.258': { name: 'Cafe Sessao Sob Controle do Supabase', emoji: '[lock]' },
   '1.10.257': { name: 'Cafe Assinatura Publica Fortificada', emoji: '[shield]' },
   '1.10.256': { name: 'Cafe Verificacao e Blindagem Final', emoji: '[shield]' },
@@ -911,6 +912,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.259',
+    date: '21/06/2026',
+    summary: 'Portal, assinatura publica e automacoes privilegiadas: o login do portal ganhou lockout real e gate operacional, a finalizacao do PDF assinado virou one-shot e o sync DJEN passou a exigir token rotacionavel antes de rodar fluxos de IA e notificacao.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'security' as const, title: 'Login do portal ganhou lockout por CPF e gate global de acesso', description: 'A edge `portal-login` passou a respeitar o toggle operacional do portal, bloquear CPFs por 24 horas apos 10 falhas e limpar o contador quando o login conclui com sucesso.' },
+        { type: 'improvement' as const, title: 'Tela de acesso passou a avisar sobre Caps Lock', description: 'O campo de senha do staff agora sinaliza Caps Lock ativo para reduzir erro operacional durante o acesso ao portal e area restrita.' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'security' as const, title: 'PDF final assinado passou a aceitar anexacao one-shot', description: 'A RPC `public_attach_signed_pdf` agora so finaliza o artefato uma unica vez depois da assinatura, impedindo repontamento ou substituicao do arquivo assinado por chamada posterior.' },
+        { type: 'security' as const, title: 'Rotas publicas do fluxo de assinatura foram reconhecidas tambem por pathname', description: 'O bootstrap principal passou a tratar corretamente caminhos publicos como `/verificar`, `/termos-assinatura`, `/p/` e `/preencher/` mesmo fora do hash router.' },
+      ]},
+      { moduleId: 'intimacoes', changes: [
+        { type: 'security' as const, title: 'run-djen-sync deixou de aceitar execucao aberta', description: 'A edge de sync voltou a validar token e passou a buscar o segredo em `service_function_tokens`, permitindo rotacao sem redeploy e fechando a superficie publica do job privilegiado.' },
+        { type: 'improvement' as const, title: 'Analise automatica de intimacoes foi simplificada sem regravar status de processo', description: 'As edges de DJEN e analise removeram a reclassificacao direta de `processes.status`, preservando a inferencia oficial do banco e reduzindo regressao de estagio por texto livre.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.258',
     date: '21/06/2026',

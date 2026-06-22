@@ -40,6 +40,8 @@ function isPublicSignatureRoute(hash: string, path: string): boolean {
     path.includes('/assinar/') ||
     hash.includes('/verificar') ||
     path.includes('/verificar') ||
+    hash.includes('/termos-assinatura') ||
+    path.includes('/termos-assinatura') ||
     hash.startsWith('#/documento/') ||
     path.includes('/documento/')
   );
@@ -98,14 +100,25 @@ const isCronRoute = currentHash.includes('/cron/djen');
 // Rotas p�blicas que s�o renderizadas pelo App (n�o pelo PortalApp)
 const isPublicCrmRoute =
   currentHash.includes('/assinar/') ||
+  currentPath.includes('/assinar/') ||
   currentHash.includes('/p/') ||
+  currentPath.includes('/p/') ||
   currentHash.includes('/preencher/') ||
+  currentPath.includes('/preencher/') ||
   currentHash.includes('/cloud/share/') ||
+  currentPath.includes('/cloud/share/') ||
   currentHash.includes('/verificar') ||
+  currentPath.includes('/verificar') ||
+  currentHash.includes('/termos-assinatura') ||
+  currentPath.includes('/termos-assinatura') ||
   currentHash.includes('/terms') ||
+  currentPath.includes('/terms') ||
   currentHash.includes('/privacidade') ||
+  currentPath.includes('/privacidade') ||
   currentHash.includes('/privacy') ||
-  currentHash.includes('/docs');
+  currentPath.includes('/privacy') ||
+  currentHash.includes('/docs') ||
+  currentPath.includes('/docs');
 
 const isStaff = hasSupabaseSession() || isDocRoute || isCronRoute || isPublicCrmRoute;
 
