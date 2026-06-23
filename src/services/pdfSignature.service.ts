@@ -13,6 +13,13 @@ interface SignedPdfOptions {
   originalPdfUrl: string;
   creator?: { name: string } | null;
   attachmentPdfItems?: { documentId: string; url: string }[]; // anexos PDF para compilar
+  /**
+   * Campos de assinatura já resolvidos (fluxo público: vêm do bundle
+   * token-scoped `get_public_signing_bundle`). Quando presente, evita a leitura
+   * direta de `signature_fields`, que retorna 401 para o anon com o RLS fechado
+   * e fazia a assinatura cair no fallback (posição padrão na última página).
+   */
+  fieldsOverride?: SignatureField[];
 }
 
 type EmbeddedImage = any;
@@ -458,37 +465,18 @@ class PdfSignatureService {
     }
   }
 
-  // Caixa visível da página. A UI de marcação (pdf.js/react-pdf) posiciona os
-  // campos relativos ao CropBox (a área que o leitor exibe), enquanto pdf-lib
-  // desenha relativo à origem da página. Usar o CropBox (origem + tamanho)
-  // evita que a assinatura caia deslocada em PDFs enviados cujo CropBox difere
-  // da MediaBox. Para PDFs normais (CropBox = MediaBox em 0,0) o resultado é
-  // idêntico ao comportamento anterior.
-  private getPageBox(page: PDFPage): { x: number; y: number; width: number; height: number } {
-    try {
-      const cb = (page as any).getCropBox?.();
-      if (cb && cb.width > 0 && cb.height > 0) {
-        return { x: cb.x ?? 0, y: cb.y ?? 0, width: cb.width, height: cb.height };
-      }
-    } catch {
-      // ignore — fallback para getSize (MediaBox)
-    }
-    const { width, height } = page.getSize();
-    return { x: 0, y: 0, width, height };
-  }
-
   private percentToPdfRect(
-    page: PDFPage,
+    pageWidth: number,
+    pageHeight: number,
     field: Pick<SignatureField, 'x_percent' | 'y_percent' | 'w_percent' | 'h_percent'>
   ) {
     // UI trabalha com origem no topo-esquerdo; pdf-lib usa origem no bottom-esquerdo.
-    const box = this.getPageBox(page);
-    const w = (box.width * field.w_percent) / 100;
-    const h = (box.height * field.h_percent) / 100;
-    const x = box.x + (box.width * field.x_percent) / 100;
-    const yTop = (box.height * field.y_percent) / 100;
-    const y = box.y + box.height - yTop - h;
-    return { x, y, w, h, box };
+    const w = (pageWidth * field.w_percent) / 100;
+    const h = (pageHeight * field.h_percent) / 100;
+    const x = (pageWidth * field.x_percent) / 100;
+    const yTop = (pageHeight * field.y_percent) / 100;
+    const y = pageHeight - yTop - h;
+    return { x, y, w, h };
   }
 
   private drawFooterStamp(params: {
@@ -1481,19 +1469,41 @@ class PdfSignatureService {
     // Hash de integridade (do(s) arquivo(s) original(is), antes de assinar)
     const integritySha256 = await this.sha256Hex(this.concatBytes(integrityChunks));
 
-    // Load fields and place signature on marked location(s)
+    // Load fields and place signature on marked location(s).
+    // No fluxo público os campos vêm do bundle token-scoped (fieldsOverride);
+    // a leitura direta de `signature_fields` retorna 401 com o anon revogado e
+    // fazia a assinatura cair no fallback (posição padrão na última página).
     let fields: SignatureField[] = [];
-    try {
-      fields = await signatureFieldsService.listByRequest(request.id);
-    } catch {
-      fields = [];
+    if (Array.isArray(options.fieldsOverride)) {
+      fields = options.fieldsOverride;
+    } else {
+      try {
+        fields = await signatureFieldsService.listByRequest(request.id);
+      } catch {
+        fields = [];
+      }
     }
-    const { data: requestSignersData } = await supabase
-      .from('signature_signers')
-      .select('*')
-      .eq('signature_request_id', request.id)
-      .order('order', { ascending: true });
-    const signedRequestSigners = ((requestSignersData as Signer[] | null) ?? []).filter((item) => item.status === 'signed');
+
+    // Signatários: no fluxo público usar o provider token-scoped (a leitura
+    // direta de `signature_signers` também é 401 para o anon). No interno, ler
+    // direto da tabela como antes.
+    let requestSignersData: Signer[] | null = null;
+    if (this.publicReportData?.signers) {
+      try {
+        requestSignersData = await this.publicReportData.signers(request.id);
+      } catch {
+        requestSignersData = null;
+      }
+    }
+    if (!requestSignersData) {
+      const { data } = await supabase
+        .from('signature_signers')
+        .select('*')
+        .eq('signature_request_id', request.id)
+        .order('order', { ascending: true });
+      requestSignersData = (data as Signer[] | null) ?? null;
+    }
+    const signedRequestSigners = (requestSignersData ?? []).filter((item) => item.status === 'signed');
 
     console.log('[PDF] Campos encontrados:', fields.length, 'Signatários assinados:', signedRequestSigners.length);
     console.log('[PDF] Campos:', fields);
@@ -1541,11 +1551,12 @@ class PdfSignatureService {
       const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
       const page = pages[pageIndex];
       if (!page) continue;
-      const { x, y, w, h, box } = this.percentToPdfRect(page, f);
-      const drawX = Math.max(box.x, Math.min(box.x + box.width, x));
-      const drawY = Math.max(box.y, Math.min(box.y + box.height, y));
-      const drawW = Math.max(1, Math.min(w, box.x + box.width - drawX));
-      const drawH = Math.max(1, Math.min(h, box.y + box.height - drawY));
+      const { width, height } = page.getSize();
+      const { x, y, w, h } = this.percentToPdfRect(width, height, f);
+      const drawX = Math.max(0, Math.min(width, x));
+      const drawY = Math.max(0, Math.min(height, y));
+      const drawW = Math.max(1, Math.min(w, width - drawX));
+      const drawH = Math.max(1, Math.min(h, height - drawY));
       page.drawImage(img, { x: drawX, y: drawY, width: drawW, height: drawH });
       drewAnySignature = true;
     }
@@ -2422,17 +2433,18 @@ class PdfSignatureService {
           const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
           const page = pdfDoc.getPages()[pageIndex];
           if (!page) continue;
-          const rect = this.percentToPdfRect(page, f);
+          const { width, height } = page.getSize();
+          const rect = this.percentToPdfRect(width, height, f);
           drawSignatureField({
             pdfPage: page,
-            pageW: rect.box.x + rect.box.width,
-            pageH: rect.box.y + rect.box.height,
+            pageW: width,
+            pageH: height,
             x: rect.x,
             y: rect.y,
             w: rect.w,
             h: rect.h,
-            minY: rect.box.y,
-            maxY: rect.box.y + rect.box.height,
+            minY: 0,
+            maxY: height,
             signatureImage: asset.signature,
           });
         }

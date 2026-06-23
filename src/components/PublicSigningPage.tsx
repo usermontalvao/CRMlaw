@@ -1702,6 +1702,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         originalPdfUrl: originalPdfUrlToUse,
         creator,
         attachmentPdfItems,
+        fieldsOverride: signatureFields,
       });
       signedPdfPath = filePath;
       signedPdfSha256 = sha256;
@@ -2401,6 +2402,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               originalPdfUrl: originalPdfUrlToUse,
               creator,
               attachmentPdfItems,
+              fieldsOverride: signatureFields,
             });
             signedPdfPath = filePath;
             signedPdfSha256 = sha256;

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.267': { name: 'Cafe Assinatura Token Scoped', emoji: '[lock]' },
   '1.10.266': { name: 'Cafe Templates Editaveis', emoji: '[edit]' },
   '1.10.265': { name: 'Cafe Assinatura Mobile Blindada', emoji: '[shield]' },
   '1.10.264': { name: 'Cafe Workspace Persistente', emoji: '[window]' },
@@ -919,6 +920,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.267',
+    date: '23/06/2026',
+    summary: 'Assinatura publica ajustada: o fluxo token-scoped passou a reutilizar os campos e signatarios do bundle publico para evitar queda no fallback quando o acesso anonimo direto as tabelas estiver fechado.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Fluxo publico passou a injetar os campos de assinatura resolvidos', description: 'A tela publica agora repassa `signatureFields` para a geracao do PDF assinado, evitando reposicionamento padrao quando o anon nao pode ler `signature_fields` diretamente.' },
+        { type: 'improvement' as const, title: 'Servico de assinatura ganhou fallback token-scoped para signatarios e campos', description: 'O `pdfSignatureService` passou a priorizar dados vindos do bundle publico e manteve a leitura direta apenas para o fluxo interno, reduzindo 401 e preservando a posicao configurada da assinatura.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.266',
     date: '23/06/2026',
