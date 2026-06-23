@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.262': { name: 'Cafe Threads e Centro Operacional Polidos', emoji: '[sparkles]' },
   '1.10.261': { name: 'Cafe Inbox Estrela e Sino Integrados', emoji: '[star]' },
   '1.10.260': { name: 'Cafe Email Operacional Integrado', emoji: '[mail]' },
   '1.10.259': { name: 'Cafe Portal Blindado e DJEN Trancado', emoji: '[shield]' },
@@ -914,6 +915,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.262',
+    date: '22/06/2026',
+    summary: 'Email e central de notificacoes: o CRM refinou a leitura por thread, o compose embutido, o menu contextual e a apresentacao do centro operacional para acelerar triagem e envio.',
+    modules: [
+      { moduleId: 'email', changes: [
+        { type: 'improvement' as const, title: 'Leitura por thread passou a abrir pelo email mais recente', description: 'A conversa agora e carregada em ordem decrescente e a leitura abre diretamente a mensagem mais nova, deixando o contexto atual no topo da thread.' },
+        { type: 'feature' as const, title: 'Lista de emails ganhou drag-and-drop e menu de contexto', description: 'As mensagens agora podem ser arrastadas para inbox, spam ou lixeira pelas pastas laterais e tambem ganharam menu contextual para operacoes mais rapidas.' },
+        { type: 'improvement' as const, title: 'Compose de novo email ficou embutido e expansivel', description: 'A composicao fora da thread passou a ocupar a terceira coluna do modulo com opcao de expandir para tela cheia, preservando o fluxo do usuario sem abrir modal separado.' },
+        { type: 'improvement' as const, title: 'Limpeza de rascunhos orfaos foi adicionada apos envio', description: 'O servico de email agora remove rascunhos remanescentes com o mesmo assunto como fallback depois do envio para evitar fantasmas operacionais.' },
+      ]},
+      { moduleId: 'notificacoes', changes: [
+        { type: 'improvement' as const, title: 'Central de notificacoes recebeu reorganizacao visual', description: 'Filtros, lista, badges de prioridade e paginação foram simplificados para uma leitura mais direta e consistente com o restante da interface.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.261',
     date: '22/06/2026',

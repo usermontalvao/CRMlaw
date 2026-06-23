@@ -53,8 +53,8 @@ class EmailService {
       .select('*')
       .eq('thread_key', threadKey)
       .eq('is_trash', false)
-      .order('sent_at', { ascending: true, nullsFirst: true })
-      .order('created_at', { ascending: true });
+      .order('sent_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
     return (data ?? []) as EmailMessage[];
   }
@@ -276,6 +276,19 @@ class EmailService {
   async deleteDraft(id: string): Promise<void> {
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw new Error(error.message);
+  }
+
+  /** Remove rascunhos órfãos do usuário logado com o mesmo subject após um envio. */
+  async purgeOrphanDrafts(subject: string): Promise<void> {
+    const { data: u } = await supabase.auth.getUser();
+    if (!u?.user?.id) return;
+    await supabase
+      .from(TABLE)
+      .delete()
+      .eq('is_draft', true)
+      .eq('direction', 'outbound')
+      .eq('sender_user_id', u.user.id)
+      .eq('subject', subject.trim() || '');
   }
 
   /**

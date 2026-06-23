@@ -279,9 +279,18 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   }, []);
 
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeExpanded, setComposeExpanded] = useState(false);
   // Inline = responder/encaminhar no rodapé da conversa (sem sair da leitura).
   // Quando false e composeOpen, abre o compose em tela cheia (e-mail novo).
   const [composeInline, setComposeInline] = useState(false);
+
+  // Menu de contexto (botão direito na lista)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; m: EmailMessage } | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+
+  // Drag-and-drop de emails para pastas
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<EmailFolder | null>(null);
   const inlineReplyRef = useRef<HTMLDivElement>(null);
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
   const [sending, setSending] = useState(false);
@@ -350,6 +359,16 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
   useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
+
+  // Fecha menu de contexto ao clicar fora ou pressionar Escape
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey); };
+  }, [ctxMenu]);
   // Debounce da busca: aplica o termo 350ms após parar de digitar.
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 350);
@@ -396,7 +415,12 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     if (m.thread_key) {
       setThreadLoading(true);
       emailService.listThread(m.thread_key)
-        .then((msgs) => setThread(msgs.length ? msgs : [m]))
+        .then((msgs) => {
+          const resolved = msgs.length ? msgs : [m];
+          setThread(resolved);
+          // Abre a mensagem mais recente da thread por padrão (índice 0 = mais novo).
+          setSelected(resolved[0]);
+        })
         .catch(() => setThread([m]))
         .finally(() => setThreadLoading(false));
     } else {
@@ -417,6 +441,19 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setMessages((prev) => prev.filter((x) => x.id !== id));
     setSelected((prev) => (prev?.id === id ? null : prev));
     setChecked((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  };
+
+  const moveEmailToFolder = async (m: EmailMessage, dest: EmailFolder) => {
+    if (dest === folder) return;
+    try {
+      if (dest === 'trash') await emailService.moveToTrash(m.id);
+      else if (dest === 'spam') await emailService.markSpam(m, true);
+      else if (dest === 'inbox') {
+        if (m.is_spam) await emailService.unmarkSpam(m, true);
+        else await emailService.restoreFromTrash(m.id);
+      }
+      dropFromList(m.id);
+    } catch { /* noop */ }
   };
 
   // Abertura direta via notificação ("Novo e-mail"): busca a mensagem pelo id,
@@ -895,11 +932,12 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setSendError(null);
     try {
       await emailService.sendEmail(dto);
-      // Enviou: remove o rascunho associado (se houver) para não ficar fantasma.
+      // Enviou: remove o rascunho pelo id (se houver) e faz limpeza por subject como fallback.
       if (draftIdRef.current) {
         try { await emailService.deleteDraft(draftIdRef.current); } catch { /* noop */ }
         draftIdRef.current = undefined;
       }
+      try { await emailService.purgeOrphanDrafts(dto.subject ?? ''); } catch { /* noop */ }
       const wasInline = composeInline;
       setComposeOpen(false);
       setComposeInline(false);
@@ -1105,8 +1143,21 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             const active = folder === key;
             return (
               <button key={key} onClick={() => setFolder(key)}
-                className={`mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] ${active ? 'bg-amber-50 font-medium text-amber-800' : 'text-zinc-600 hover:bg-zinc-50'}`}>
-                <Icon className={`h-4 w-4 flex-none ${active ? 'text-amber-600' : 'text-zinc-400'}`} />
+                onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropTarget(key); } }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData('text/plain');
+                  const msg = messages.find((x) => x.id === id);
+                  if (msg) void moveEmailToFolder(msg, key);
+                  setDragId(null); setDropTarget(null);
+                }}
+                className={`mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
+                  dropTarget === key && dragId
+                    ? 'bg-amber-100 ring-2 ring-amber-400 ring-inset'
+                    : active ? 'bg-amber-50 font-medium text-amber-800' : 'text-zinc-600 hover:bg-zinc-50'
+                }`}>
+                <Icon className={`h-4 w-4 flex-none ${active || (dropTarget === key && dragId) ? 'text-amber-600' : 'text-zinc-400'}`} />
                 <span className="flex-1 truncate text-left">{label}</span>
                 {key === 'inbox' && unread > 0 && (
                   <span className="rounded-full bg-amber-600 px-1.5 text-[11px] font-medium text-white">{unread}</span>
@@ -1241,9 +1292,13 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                         </div>
                       )}
                       <div data-email-id={m.id} role="button" tabIndex={0}
+                        draggable
+                        onDragStart={(e) => { setDragId(m.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', m.id); }}
+                        onDragEnd={() => { setDragId(null); setDropTarget(null); }}
                         onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
                         onClick={(e) => onRowClick(m, e)}
-                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''}`}>
+                        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, m }); }}
+                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''} ${dragId === m.id ? 'opacity-40' : ''}`}>
                         <div className="relative mt-0.5 flex-none">
                           <input type="checkbox" checked={isChk}
                             onClick={(e) => e.stopPropagation()}
@@ -1294,8 +1349,103 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
         <div onMouseDown={onGutterDown('list')} className="hidden w-1.5 flex-none cursor-col-resize bg-transparent transition-colors hover:bg-amber-300 md:block" />
 
         {/* Leitura — full-width no mobile; oculta quando nenhuma mensagem aberta */}
-        <div className={`${!selected && isNarrow ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
-          {!selected ? (
+        <div className={`${!selected && !composeOpen && isNarrow ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
+          {composeOpen && !composeInline ? (
+            /* Compose de novo e-mail embutido como 3ª coluna */
+            <div className="flex min-h-0 flex-1 flex-col"
+              onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
+              <div className="flex flex-none items-center justify-between border-b border-[#e7e5df] px-4 py-2.5 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <PenSquare className="h-4 w-4 text-amber-600" />
+                  <span className="text-[14px] font-medium text-zinc-800 dark:text-zinc-100">
+                    {compose.subject || 'Nova mensagem'}
+                  </span>
+                  {draftStatus === 'saving' && <span className="text-[11px] text-zinc-400">salvando…</span>}
+                  {draftStatus === 'saved' && <span className="text-[11px] text-zinc-400">rascunho salvo</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setComposeExpanded((v) => !v)} title={composeExpanded ? 'Recolher' : 'Expandir'}
+                    className="rounded-lg border border-[#e7e5df] bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300">
+                    {composeExpanded
+                      ? <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                      : <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>}
+                  </button>
+                  <button onClick={() => { setComposeOpen(false); setComposeExpanded(false); }}
+                    className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300">
+                    Cancelar
+                  </button>
+                  <button onClick={doSend} disabled={sending}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-[12px] font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Enviar
+                  </button>
+                </div>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
+                  <span className="w-14 text-[12px] text-zinc-400">De</span>
+                  <span className="text-[13px] text-zinc-700 dark:text-zinc-300">Pedro Montalvão &lt;pedro@advcuiaba.com&gt;</span>
+                </div>
+                <div className="flex items-start gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
+                  <span className="w-14 pt-1.5 text-[12px] text-zinc-400">Para</span>
+                  <div className="flex-1">
+                    <RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))}
+                      placeholder="destinatario@exemplo.com" autoFocus />
+                  </div>
+                  {!compose.showCc && (
+                    <button onClick={() => setCompose({ ...compose, showCc: true })}
+                      className="pt-1.5 text-[11px] text-zinc-400 hover:text-amber-700">Cc/Cco</button>
+                  )}
+                </div>
+                {compose.showCc && (
+                  <>
+                    <div className="flex items-start gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
+                      <span className="w-14 pt-1.5 text-[12px] text-zinc-400">Cc</span>
+                      <div className="flex-1">
+                        <RecipientChips value={compose.cc} onChange={(v) => setCompose((c) => ({ ...c, cc: v }))}
+                          placeholder="copia@exemplo.com" />
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
+                      <span className="w-14 pt-1.5 text-[12px] text-zinc-400">Cco</span>
+                      <div className="flex-1">
+                        <RecipientChips value={compose.bcc} onChange={(v) => setCompose((c) => ({ ...c, bcc: v }))}
+                          placeholder="copia-oculta@exemplo.com" />
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
+                  <span className="w-14 text-[12px] text-zinc-400">Assunto</span>
+                  <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })}
+                    placeholder="Assunto"
+                    className="flex-1 bg-transparent py-1 text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <RichEditor
+                    key={compose.inReplyTo ?? 'new'}
+                    fill
+                    initialHtml={compose.bodyHtml}
+                    onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))}
+                    onAttach={addAttachments}
+                  />
+                </div>
+                {compose.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 border-t border-[#f0efe9] px-4 py-2">
+                    {compose.attachments.map((a, i) => (
+                      <span key={i} className="flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-zinc-50 px-2 py-1 text-[12px] text-zinc-600">
+                        <Paperclip className="h-3.5 w-3.5 text-amber-600" />
+                        <span className="max-w-[160px] truncate">{a.filename}</span>
+                        <span className="text-zinc-400">{humanSize(a.size)}</span>
+                        <button onClick={() => setCompose((c) => ({ ...c, attachments: c.attachments.filter((_, j) => j !== i) }))}
+                          className="text-zinc-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {sendError && <p className="border-t border-[#f0efe9] px-4 py-2 text-[12px] text-red-600">{sendError}</p>}
+              </div>
+            </div>
+          ) : !selected ? (
             <div className="flex flex-1 flex-col items-center justify-center text-zinc-400">
               <Mail className="mb-2 h-8 w-8" />
               <p className="text-[13px]">Selecione uma mensagem em {folderInfo?.label}.</p>
@@ -1427,7 +1577,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   <div className="flex h-20 items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
                 ) : (
                   (thread.length ? thread : [selected]).map((m, idx, arr) => (
-                    <MessageView key={m.id} m={m} single={arr.length === 1} defaultOpen={idx === arr.length - 1} />
+                    <MessageView key={m.id} m={m} single={arr.length === 1} defaultOpen={idx === 0} />
                   ))
                 )}
               </div>
@@ -1444,89 +1594,65 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
         </button>
       )}
 
-      {/* Compose em página (não-modal): cobre toda a área do módulo (e-mail novo). */}
-      {composeOpen && !composeInline && (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4"
+      {/* Compose expandido (tela cheia sobre o módulo) */}
+      {composeOpen && !composeInline && composeExpanded && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-white dark:bg-zinc-950"
           onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
-          {/* Barra superior */}
-          <div className="flex items-center justify-between pb-3">
+          <div className="flex flex-none items-center justify-between border-b border-[#e7e5df] px-5 py-3 dark:border-zinc-800">
             <div className="flex items-center gap-2">
               <PenSquare className="h-5 w-5 text-amber-600" />
-              <span className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
-                {compose.subject || 'Nova mensagem'}
-              </span>
+              <span className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">{compose.subject || 'Nova mensagem'}</span>
+              {draftStatus === 'saving' && <span className="text-[12px] text-zinc-400">salvando…</span>}
+              {draftStatus === 'saved' && <span className="text-[12px] text-zinc-400">rascunho salvo</span>}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setComposeOpen(false)}
-                className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[13px] text-zinc-600 hover:bg-zinc-50">
-                Cancelar
+              <button onClick={() => setComposeExpanded(false)} title="Recolher"
+                className="rounded-lg border border-[#e7e5df] bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-800">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
               </button>
+              <button onClick={() => { setComposeOpen(false); setComposeExpanded(false); }}
+                className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[13px] text-zinc-600 hover:bg-zinc-50">Cancelar</button>
               <button onClick={doSend} disabled={sending}
                 className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-amber-700 disabled:opacity-60">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar
               </button>
             </div>
           </div>
-
-          {/* Corpo do compose */}
-          <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden rounded-xl border border-[#e7e5df] bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 gap-2">
             <div className="flex items-center gap-2 border-b border-[#f0efe9] pb-2">
-              <span className="w-14 text-[13px] text-zinc-500">De</span>
+              <span className="w-14 text-[13px] text-zinc-400">De</span>
               <span className="text-[13px] text-zinc-700">Pedro Montalvão &lt;pedro@advcuiaba.com&gt;</span>
             </div>
-
-            <div className="flex items-start gap-2">
-              <span className="w-14 pt-1.5 text-[13px] text-zinc-500">Para</span>
-              <div className="flex-1">
-                <RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))}
-                  placeholder="destinatario@exemplo.com" autoFocus />
+            <div className="flex items-start gap-2 border-b border-[#f0efe9] pb-2">
+              <span className="w-14 pt-1.5 text-[13px] text-zinc-400">Para</span>
+              <div className="flex-1"><RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))} placeholder="destinatario@exemplo.com" /></div>
+              {!compose.showCc && <button onClick={() => setCompose({ ...compose, showCc: true })} className="pt-1.5 text-[12px] text-zinc-400 hover:text-amber-700">Cc/Cco</button>}
+            </div>
+            {compose.showCc && (<>
+              <div className="flex items-start gap-2 border-b border-[#f0efe9] pb-2">
+                <span className="w-14 pt-1.5 text-[13px] text-zinc-400">Cc</span>
+                <div className="flex-1"><RecipientChips value={compose.cc} onChange={(v) => setCompose((c) => ({ ...c, cc: v }))} placeholder="copia@exemplo.com" /></div>
               </div>
-              {!compose.showCc && (
-                <button onClick={() => setCompose({ ...compose, showCc: true })}
-                  className="pt-1.5 text-[12px] text-zinc-500 hover:text-amber-700">Cc/Cco</button>
-              )}
+              <div className="flex items-start gap-2 border-b border-[#f0efe9] pb-2">
+                <span className="w-14 pt-1.5 text-[13px] text-zinc-400">Cco</span>
+                <div className="flex-1"><RecipientChips value={compose.bcc} onChange={(v) => setCompose((c) => ({ ...c, bcc: v }))} placeholder="copia-oculta@exemplo.com" /></div>
+              </div>
+            </>)}
+            <div className="flex items-center gap-2 border-b border-[#f0efe9] pb-2">
+              <span className="w-14 text-[13px] text-zinc-400">Assunto</span>
+              <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })} placeholder="Assunto"
+                className="flex-1 bg-transparent text-[14px] text-zinc-800 outline-none placeholder:text-zinc-400" />
             </div>
-
-            {compose.showCc && (
-              <>
-                <div className="flex items-start gap-2">
-                  <span className="w-14 pt-1.5 text-[13px] text-zinc-500">Cc</span>
-                  <div className="flex-1">
-                    <RecipientChips value={compose.cc} onChange={(v) => setCompose((c) => ({ ...c, cc: v }))}
-                      placeholder="copia@exemplo.com" />
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="w-14 pt-1.5 text-[13px] text-zinc-500">Cco</span>
-                  <div className="flex-1">
-                    <RecipientChips value={compose.bcc} onChange={(v) => setCompose((c) => ({ ...c, bcc: v }))}
-                      placeholder="copia-oculta@exemplo.com" />
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="flex items-center gap-2">
-              <span className="w-14 text-[13px] text-zinc-500">Assunto</span>
-              <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })}
-                placeholder="Assunto"
-                className="flex-1 rounded-lg border border-[#e7e5df] px-3 py-1.5 text-[14px] outline-none focus:border-amber-400" />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <RichEditor key={(compose.inReplyTo ?? 'new') + '-exp'} fill initialHtml={compose.bodyHtml}
+                onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments} />
             </div>
-
-            <RichEditor
-              key={compose.inReplyTo ?? 'new'}
-              fill
-              initialHtml={compose.bodyHtml}
-              onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))}
-              onAttach={addAttachments}
-            />
-
             {compose.attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-[#f0efe9] pt-2">
                 {compose.attachments.map((a, i) => (
                   <span key={i} className="flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-zinc-50 px-2 py-1 text-[12px] text-zinc-600">
                     <Paperclip className="h-3.5 w-3.5 text-amber-600" />
-                    <span className="max-w-[160px] truncate">{a.filename}</span>
+                    <span className="max-w-[200px] truncate">{a.filename}</span>
                     <span className="text-zinc-400">{humanSize(a.size)}</span>
                     <button onClick={() => setCompose((c) => ({ ...c, attachments: c.attachments.filter((_, j) => j !== i) }))}
                       className="text-zinc-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
@@ -1534,11 +1660,54 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 ))}
               </div>
             )}
-
             {sendError && <p className="text-[13px] text-red-600">{sendError}</p>}
           </div>
         </div>
       )}
+
+      {/* Menu de contexto (botão direito na lista de e-mails) */}
+      {ctxMenu && (
+        <div ref={ctxRef} style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+          className="min-w-[200px] overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+          onMouseDown={(e) => e.stopPropagation()}>
+          {[
+            { icon: <Reply className="h-4 w-4" />, label: 'Responder', action: () => { openMessage(ctxMenu.m); setTimeout(onReply, 100); } },
+            { icon: <ReplyAll className="h-4 w-4" />, label: 'Responder a todos', action: () => { openMessage(ctxMenu.m); setTimeout(onReplyAll, 100); } },
+            { icon: <Forward className="h-4 w-4" />, label: 'Encaminhar', action: () => { openMessage(ctxMenu.m); setTimeout(onForward, 100); } },
+            null,
+            {
+              icon: ctxMenu.m.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />,
+              label: ctxMenu.m.is_read ? 'Marcar como não lido' : 'Marcar como lido',
+              action: () => {
+                emailService.markRead(ctxMenu.m.id, !ctxMenu.m.is_read).catch(() => {});
+                setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_read: !ctxMenu.m.is_read } : x));
+              }
+            },
+            {
+              icon: <Star className="h-4 w-4" />,
+              label: ctxMenu.m.is_starred ? 'Remover estrela' : 'Marcar com estrela',
+              action: () => {
+                emailService.toggleStar(ctxMenu.m.id, !ctxMenu.m.is_starred).catch(() => {});
+                setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_starred: !ctxMenu.m.is_starred } : x));
+              }
+            },
+            null,
+            { icon: <Inbox className="h-4 w-4" />, label: 'Mover para Caixa de entrada', action: () => void moveEmailToFolder(ctxMenu.m, 'inbox') },
+            { icon: <Flame className="h-4 w-4" />, label: 'Mover para Spam', action: () => void moveEmailToFolder(ctxMenu.m, 'spam'), danger: true },
+            { icon: <Trash2 className="h-4 w-4" />, label: 'Excluir', action: () => void moveEmailToFolder(ctxMenu.m, 'trash'), danger: true },
+          ].map((item, i) =>
+            item === null ? (
+              <div key={i} className="my-1 border-t border-[#f0efe9] dark:border-zinc-800" />
+            ) : (
+              <button key={i} onClick={() => { item.action(); setCtxMenu(null); }}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-zinc-50 dark:hover:bg-zinc-800 ${(item as any).danger ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                {item.icon}{item.label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+
 
       {settingsOpen && (
         <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Configurações de Email" size="lg">
