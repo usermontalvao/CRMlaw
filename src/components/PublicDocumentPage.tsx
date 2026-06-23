@@ -5,9 +5,12 @@ import {
   Maximize2, Paperclip, FileSignature, Fingerprint,
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import type { SignatureRequestWithSigners } from '../types/signature.types';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface Props { token: string }
 
@@ -32,6 +35,62 @@ const initials = (name: string) =>
 
 const isPlaceholderEmail = (e?: string | null) =>
   (e || '').toLowerCase().startsWith('public+') && (e || '').toLowerCase().endsWith('@crm.local');
+
+// PDF embutido via <iframe> não renderiza em mobile (Android/iOS mostram só a
+// 1ª página ou forçam download). Renderiza todas as páginas como canvas com
+// react-pdf, escalando à largura do container — responsivo e com scroll único.
+const isPdfUrl = (u?: string | null) => !!u && /\.pdf$/i.test(u.split('?')[0]);
+
+const PdfCanvas: React.FC<{ url: string; dark?: boolean }> = ({ url, dark }) => {
+  const [numPages, setNumPages] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver(es => setW(Math.floor(es[0].contentRect.width)));
+    ro.observe(wrapRef.current);
+    setW(Math.floor(wrapRef.current.offsetWidth));
+    return () => ro.disconnect();
+  }, []);
+
+  const pageW = w > 0 ? Math.min(w - 24, 900) : 0;
+
+  return (
+    <div ref={wrapRef} style={{ flex: 1, minHeight: 0, overflow: 'auto', background: dark ? '#334155' : '#525659', WebkitOverflowScrolling: 'touch' }}>
+      {failed ? (
+        <div style={{ padding: 32, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>
+          <p style={{ margin: '0 0 12px' }}>Não foi possível exibir o documento aqui.</p>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={ST.viewerBtnPrimary as React.CSSProperties}>Abrir em nova aba</a>
+        </div>
+      ) : (
+        <Document
+          file={url}
+          onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+          onLoadError={() => setFailed(true)}
+          loading={<div style={{ padding: 40, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>Carregando documento…</div>}
+          error={null}
+        >
+          {pageW > 0 && Array.from({ length: numPages }, (_, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'center', padding: '12px 12px 0' }}>
+              <div style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.4)', lineHeight: 0 }}>
+                <Page
+                  pageNumber={i + 1}
+                  width={pageW}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                  loading={null}
+                />
+              </div>
+            </div>
+          ))}
+          <div style={{ height: 12 }} />
+        </Document>
+      )}
+    </div>
+  );
+};
 
 /* ─── shared chrome ───────────────────────────────────────────────────────── */
 const Navbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
@@ -72,7 +131,6 @@ export default function PublicDocumentPage({ token }: Props) {
   const [copied,     setCopied]     = useState(false);
   const [expanded,       setExpanded]       = useState<Set<string>>(new Set());
   const [viewerUrl,      setViewerUrl]      = useState<string | null>(null);
-  const inlineIframeRef    = useRef<HTMLIFrameElement>(null);
   const fullscreenIframeRef = useRef<HTMLIFrameElement>(null);
 
   // Roteia as leituras de storage (incl. getSignedPdfUrl) pela edge
@@ -261,7 +319,11 @@ export default function PublicDocumentPage({ token }: Props) {
               <button onClick={() => setViewerUrl(null)} style={ST.viewerIconBtn}><X style={{ width: 16, height: 16, color: '#cbd5e1' }} /></button>
             </div>
           </div>
-          <iframe ref={fullscreenIframeRef} src={viewerUrl + '#toolbar=0&navpanes=0'} style={{ flex: 1, width: '100%', border: 'none' }} title="Documento" />
+          {isPdfUrl(viewerUrl) ? (
+            <PdfCanvas url={viewerUrl} dark />
+          ) : (
+            <iframe ref={fullscreenIframeRef} src={viewerUrl + '#toolbar=0&navpanes=0'} style={{ flex: 1, width: '100%', border: 'none', background: '#525659' }} title="Documento" />
+          )}
         </div>
       )}
 
@@ -330,9 +392,7 @@ export default function PublicDocumentPage({ token }: Props) {
               </div>
               {/* Preview body */}
               {previewUrl ? (
-                <div className="jurius-inline-frame-wrap" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-                  <iframe ref={inlineIframeRef} src={previewUrl + '#toolbar=0&navpanes=0&view=FitH'} style={{ ...ST.previewFrame, flex: 1 }} title="Documento" />
-                </div>
+                <PdfCanvas url={previewUrl} />
               ) : (
                 <div style={ST.previewEmpty}>
                   <FileText style={{ width: 40, height: 40, color: '#cbd5e1' }} />

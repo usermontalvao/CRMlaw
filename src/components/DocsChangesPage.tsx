@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.265': { name: 'Cafe Assinatura Mobile Blindada', emoji: '[shield]' },
   '1.10.264': { name: 'Cafe Workspace Persistente', emoji: '[window]' },
   '1.10.263': { name: 'Cafe Janelas Orquestradas', emoji: '[window]' },
   '1.10.262': { name: 'Cafe Threads e Centro Operacional Polidos', emoji: '[sparkles]' },
@@ -917,6 +918,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.265',
+    date: '23/06/2026',
+    summary: 'Assinatura publica reforcada: o preview PDF passou a renderizar melhor em mobile e o backend passou a exigir selfie quando a biometria facial for obrigatoria no fluxo.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Preview publico de PDF deixou de depender de iframe no mobile', description: 'A visualizacao do documento agora renderiza todas as paginas com react-pdf, evitando downloads forcados e cortes de pagina em Android e iOS.' },
+        { type: 'improvement' as const, title: 'Assinatura facial passou a exigir selfie no servidor', description: 'A edge function publica agora valida o auth_method da solicitacao e bloqueia a assinatura quando a biometria facial obrigatoria nao vier acompanhada da imagem.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.264',
     date: '23/06/2026',

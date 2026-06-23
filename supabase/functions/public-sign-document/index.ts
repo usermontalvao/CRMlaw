@@ -115,7 +115,7 @@ Deno.serve(async (req: Request) => {
     // P0: validar estado de ciclo de vida da solicitacao antes de permitir assinatura
     const { data: request0, error: request0Error } = await supabase
       .from('signature_requests')
-      .select('id, status, deleted_at, archived_at, blocked_at, expires_at, require_cpf, signing_order')
+      .select('id, status, deleted_at, archived_at, blocked_at, expires_at, require_cpf, signing_order, auth_method')
       .eq('id', signer.signature_request_id)
       .maybeSingle();
     if (request0Error || !request0) return jsonResponse({ success: false, error: 'Solicitacao nao encontrada' }, 404);
@@ -163,6 +163,16 @@ Deno.serve(async (req: Request) => {
       if (expectedCpf.length === 11 && submittedCpf !== expectedCpf) {
         return jsonResponse({ success: false, error: 'O CPF informado nao confere com o CPF do cliente cadastrado para esta assinatura.' }, 403);
       }
+    }
+
+    // Verificacao facial (selfie): quando o metodo de autenticacao configurado
+    // exige biometria, a selfie passa a ser OBRIGATORIA no servidor. Antes a
+    // coleta era garantida apenas no front-end, permitindo assinaturas sem foto
+    // quando o cliente nao concluia a etapa (camera negada / bundle em cache /
+    // chamada direta ao endpoint publico). Backstop de seguranca do servidor.
+    const facialRequired = request0.auth_method === 'signature_facial' || request0.auth_method === 'signature_facial_document';
+    if (facialRequired && !facial_image) {
+      return jsonResponse({ success: false, error: 'A verificacao facial (selfie) e obrigatoria para assinar este documento.' }, 400);
     }
 
     const STORAGE_BUCKET = 'document-templates';
