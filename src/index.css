@@ -3464,3 +3464,55 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   .wa-conv::before { transition: none !important; }
   .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }
 }
+
+/* =====================================================================
+   FLOATING WINDOW — responsive overrides (.fw-content)
+   Aplica regras que permitem módulos de tela cheia funcionarem em
+   janelas de tamanho variável, sem modificar cada módulo individualmente.
+   ===================================================================== */
+
+/* ── Tabelas: a div que envolve a tabela faz scroll horizontal ── */
+/* Qualquer elemento que tente overflow-hidden e contenha tabela
+   passa a ser overflow-x-auto para o scroll funcionar            */
+.fw-content .overflow-hidden:has(table),
+.fw-content .overflow-hidden:has(.overflow-x-auto) {
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+/* Garante que wrappers de tabela façam scroll  */
+.fw-content .overflow-x-auto {
+  overflow-x: auto !important;
+}
+
+/* Linhas de filtros / pills: quebra em múltiplas linhas */
+.fw-content .flex.gap-1:not(.flex-col),
+.fw-content .flex.gap-2:not(.flex-col) {
+  flex-wrap: wrap;
+}
+
+/* Grid de cards: menos colunas em janelas estreitas */
+@container fw (max-width: 700px) {
+  .fw-content .grid-cols-3,
+  .fw-content .grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@container fw (max-width: 480px) {
+  .fw-content .grid-cols-2,
+  .fw-content .grid-cols-3,
+  .fw-content .grid-cols-4 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Cells da tabela não quebram texto */
+.fw-content th,
+.fw-content td {
+  white-space: nowrap;
+}
+
+/* Evita que bloco-filhos diretos estufem além do container */
+.fw-content > * {
+  max-width: 100%;
+}

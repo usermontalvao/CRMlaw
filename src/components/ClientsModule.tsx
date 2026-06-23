@@ -20,6 +20,7 @@ import { buildDuplicateGroups, buildDuplicateSummaryMap, pickPrimaryClient, type
 import { useSelectionState } from '../hooks/useSelectionState';
 import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
 import { settingsService, CLIENT_MODULE_DEFAULTS } from '../services/settings.service';
+import { useSyncRefresh } from '../lib/syncBus';
 
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
@@ -308,6 +309,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   useEffect(() => {
     loadClients();
   }, [filters, showIncompleteOnly, showOutdatedOnly]);
+
+  useSyncRefresh('clients', loadClients);
 
   // Escutar eventos globais de mudança de clientes
   useEffect(() => {

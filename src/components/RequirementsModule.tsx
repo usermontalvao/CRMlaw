@@ -82,6 +82,7 @@ import type { RequirementDocument } from '../types/requirementDocument.types';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
 import { Modal, ModalBody, ModalFooter, ModuleSkeleton } from './ui';
 import { useFormLayout } from '../hooks/useFormLayout';
+import { useSyncTick } from '../lib/syncBus';
 
 const STATUS_OPTIONS: {
   key: RequirementStatus;
@@ -1894,6 +1895,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     return counts;
   }, [activeRequirements]);
 
+  const requirementsSyncTick = useSyncTick('requirements');
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -1911,7 +1914,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     };
 
     loadData();
-  }, []);
+  }, [requirementsSyncTick]);
 
   useEffect(() => {
     const check = () => {

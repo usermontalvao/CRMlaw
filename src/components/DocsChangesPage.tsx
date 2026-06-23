@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.263': { name: 'Cafe Janelas Orquestradas', emoji: '[window]' },
   '1.10.262': { name: 'Cafe Threads e Centro Operacional Polidos', emoji: '[sparkles]' },
   '1.10.261': { name: 'Cafe Inbox Estrela e Sino Integrados', emoji: '[star]' },
   '1.10.260': { name: 'Cafe Email Operacional Integrado', emoji: '[mail]' },
@@ -915,6 +916,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.263',
+    date: '23/06/2026',
+    summary: 'Workspace e modulos sincronizados: o CRM ganhou janelas flutuantes por modulo, controles nas configuracoes e invalidacao cruzada de dados para manter varias visoes abertas sem desencontro operacional.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'feature' as const, title: 'Sidebar passou a abrir modulos como janelas flutuantes', description: 'O app agora permite abrir modulos suportados em janelas independentes, com barra propria, foco, minimizar, maximizar e organizacao lado a lado.' },
+        { type: 'feature' as const, title: 'Sistema ganhou barramento leve de sincronizacao entre modulos', description: 'Clientes, processos, agenda, prazos, financeiro e requerimentos passaram a invalidar dados entre telas abertas para reduzir divergencias quando o usuario trabalha em paralelo.' },
+      ]},
+      { moduleId: 'configuracoes', changes: [
+        { type: 'improvement' as const, title: 'Configuracoes passaram a controlar quais modulos podem flutuar', description: 'A governanca do workspace agora permite habilitar ou bloquear a abertura por janela diretamente nas preferencias do sistema.' },
+      ]},
+      { moduleId: 'dashboard', changes: [
+        { type: 'improvement' as const, title: 'Feed e widgets foram ajustados para o novo workspace', description: 'Partes do dashboard e do editor passaram a conviver melhor com o fluxo multi-janela, reduzindo atritos de foco e navegacao no uso diario.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.262',
     date: '22/06/2026',

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { syncBus } from '../lib/syncBus';
 import type {
   Process,
   CreateProcessDTO,
@@ -173,7 +174,7 @@ class ProcessService {
 
     // Invalidate cache on create
     this.invalidateCache();
-
+    syncBus.emit('processes');
     return data;
   }
 
@@ -195,7 +196,7 @@ class ProcessService {
 
     // Invalidate cache on update
     this.invalidateCache();
-
+    syncBus.emit('processes');
     return data;
   }
 
@@ -214,7 +215,7 @@ class ProcessService {
 
     // Invalidate cache on status update
     this.invalidateCache();
-
+    syncBus.emit('processes');
     return data;
   }
 
@@ -231,6 +232,7 @@ class ProcessService {
 
     // Invalidate cache on delete
     this.invalidateCache();
+    syncBus.emit('processes');
   }
 }
 

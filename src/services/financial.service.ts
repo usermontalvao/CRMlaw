@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { syncBus } from '../lib/syncBus';
 import type {
   Agreement,
   Installment,
@@ -77,6 +78,7 @@ class FinancialService {
       },
     });
 
+    syncBus.emit('financial');
     return created;
   }
 
@@ -180,6 +182,7 @@ class FinancialService {
       },
     });
 
+    syncBus.emit('financial');
     return updated;
   }
 
@@ -199,6 +202,7 @@ class FinancialService {
       .single();
 
     if (error) throw error;
+    syncBus.emit('financial');
     return data;
   }
 
@@ -324,7 +328,7 @@ class FinancialService {
 
     // Verificar se todas as parcelas foram pagas para atualizar status do acordo
     await this.checkAndUpdateAgreementStatus(updated.agreement_id);
-
+    syncBus.emit('financial');
     return updated;
   }
 
@@ -389,6 +393,7 @@ class FinancialService {
     });
 
     await this.checkAndUpdateAgreementStatus(agreementId);
+    syncBus.emit('financial');
     return inserted;
   }
 

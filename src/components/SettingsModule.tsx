@@ -149,6 +149,9 @@ import {
   type NotifAudience,
   type NotifChannelStatus,
   type NotificationEventDef,
+  type PetitionEditorModuleConfig,
+  PETITION_EDITOR_MODULE_DEFAULTS,
+  FLOATING_WINDOW_MODULE_DEFAULTS,
 } from '../services/settings.service';
 
 interface UserWithProfile extends Profile {
@@ -192,6 +195,7 @@ type SettingsSection =
   | 'apps'
   | 'responsibility'
   | 'menu_modules'
+  | 'modules_petition_editor'
   | 'form_builder';
 
 type SettingsGroupKey = 'geral' | 'modulos' | 'notificacoes' | 'integracoes' | 'administracao';
@@ -233,8 +237,9 @@ const SETTINGS_GROUPS: {
       { key: 'modules_whatsapp',      label: 'WhatsApp',      icon: MessageSquare,  description: 'Central de configurações do atendimento' },
       { key: 'modules_financial',     label: 'Financeiro',    icon: PiggyBank,      description: 'Defaults e métodos de pagamento' },
       { key: 'modules_requirements',  label: 'Requerimentos', icon: FileText,       description: 'Status e tipos de benefício INSS' },
-      { key: 'modules_signature',     label: 'Assinaturas',   icon: PenTool,        description: 'Papéis de signatário e autenticação' },
-      { key: 'form_builder',          label: 'Campos',        icon: FileText,       description: 'Renomear e reordenar campos por módulo' },
+      { key: 'modules_signature',       label: 'Assinaturas',       icon: PenTool,        description: 'Papéis de signatário e autenticação' },
+      { key: 'modules_petition_editor', label: 'Editor de Petições', icon: FileText,       description: 'Modo bloco e funcionalidades do editor' },
+      { key: 'form_builder',            label: 'Campos',             icon: FileText,       description: 'Renomear e reordenar campos por módulo' },
       { key: 'responsibility',        label: 'Responsáveis',  icon: Users,          description: 'Quem pode ser responsável por módulo' },
     ],
   },
@@ -524,6 +529,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   // Módulo Processos
   const [processConfig, setProcessConfig] = useState<ProcessModuleConfig>({ ...PROCESS_MODULE_DEFAULTS });
+
+  // Editor de Petições
+  const [petitionEditorConfig, setPetitionEditorConfig] = useState<PetitionEditorModuleConfig>({ ...PETITION_EDITOR_MODULE_DEFAULTS });
+  const [petitionEditorSaving, setPetitionEditorSaving] = useState(false);
 
   // Módulo Prazos
   const [deadlineConfig, setDeadlineConfig] = useState<DeadlineModuleConfig>({ ...DEADLINE_MODULE_DEFAULTS });
@@ -826,7 +835,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -853,6 +862,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getSetting<boolean>('public_signature_auth_phone'),
         settingsService.getModulesConfig(),
         settingsService.getSetting<boolean>('portal_login_enabled'),
+        settingsService.getPetitionEditorModuleConfig(),
       ]);
       setPortalModules(portalData);
       setPortalLoginEnabled(portalLoginData ?? true);
@@ -878,6 +888,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setResponsibilityConfig(respData);
       setFormLayouts(formLayoutData);
       setModulesConfig(modulesConfigData);
+      setPetitionEditorConfig(petitionEditorData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -3008,6 +3019,80 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           </button>
                         );
                       })}
+                    </div>
+
+                    {/* ── Janelas Flutuantes ── */}
+                    <div className="settings-card">
+                      <p className="settings-card-title">Janelas Flutuantes</p>
+                      <p style={{ fontSize: '12px', color: '#747878', marginBottom: '16px' }}>
+                        Defina quais módulos podem ser abertos como janela flutuante ao clicar com o botão direito na sidebar.
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {([
+                          { key: 'dashboard',     label: 'Dashboard',     desc: 'Painel principal',                  icon: Layers },
+                          { key: 'feed',          label: 'Feed',          desc: 'Mural e colaboração interna',       icon: Newspaper },
+                          { key: 'agenda',        label: 'Agenda',        desc: 'Compromissos e audiências',         icon: Calendar },
+                          { key: 'chat',          label: 'Chat',          desc: 'Mensagens entre a equipe',          icon: MessageCircle },
+                          { key: 'whatsapp',      label: 'WhatsApp',      desc: 'Atendimento via WhatsApp',          icon: MessageSquare },
+                          { key: 'email',         label: 'Email',         desc: 'Caixa de e-mail integrada',         icon: Mail },
+                          { key: 'clientes',      label: 'Clientes',      desc: 'Cadastro de clientes',              icon: Users },
+                          { key: 'processos',     label: 'Processos',     desc: 'Processos e andamentos',            icon: Scale },
+                          { key: 'requerimentos', label: 'Requerimentos', desc: 'Requerimentos INSS',                icon: Briefcase },
+                          { key: 'financeiro',    label: 'Financeiro',    desc: 'Contratos, parcelas e pagamentos',  icon: PiggyBank },
+                          { key: 'prazos',        label: 'Prazos',        desc: 'Prazos processuais',                icon: AlarmClock },
+                          { key: 'intimacoes',    label: 'Intimações',    desc: 'Intimações DJEN',                   icon: Bell },
+                          { key: 'documentos',    label: 'Documentos',    desc: 'Biblioteca de documentos',          icon: FolderOpen },
+                          { key: 'assinaturas',   label: 'Assinaturas',   desc: 'Assinatura eletrônica',             icon: PenTool },
+                          { key: 'cloud',         label: 'Cloud',         desc: 'Arquivos na nuvem',                 icon: Cloud },
+                        ] as { key: string; label: string; desc: string; icon: React.ComponentType<any> }[]).map(({ key, label, desc, icon: Icon }) => {
+                          const currentFloat = modulesConfig?.floating_window_modules ?? [...FLOATING_WINDOW_MODULE_DEFAULTS];
+                          const enabled = currentFloat.includes(key);
+                          const toggleFloat = async () => {
+                            if (menuModulesSaving) return;
+                            const base: ModulesConfig = modulesConfig ?? {
+                              leads_enabled: true, financial_enabled: true, requirements_enabled: true,
+                              documents_enabled: true, calendar_enabled: true, tasks_enabled: true,
+                              hidden_menu_modules: [],
+                              floating_window_modules: [...FLOATING_WINDOW_MODULE_DEFAULTS],
+                            };
+                            const current = new Set(base.floating_window_modules ?? [...FLOATING_WINDOW_MODULE_DEFAULTS]);
+                            if (current.has(key)) current.delete(key); else current.add(key);
+                            const next: ModulesConfig = { ...base, floating_window_modules: Array.from(current) };
+                            setModulesConfig(next);
+                            setMenuModulesSaving(true);
+                            try {
+                              await settingsService.updateModulesConfig(next, currentProfile?.name);
+                              events.emit(SYSTEM_EVENTS.MODULES_CONFIG_UPDATED);
+                            } catch (err: any) {
+                              setModulesConfig(base);
+                              setFeedback('error', err?.message || 'Erro ao salvar.');
+                            } finally {
+                              setMenuModulesSaving(false);
+                            }
+                          };
+                          return (
+                            <button
+                              key={key}
+                              onClick={toggleFloat}
+                              disabled={menuModulesSaving}
+                              className={`flex items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm disabled:cursor-wait ${
+                                enabled ? 'border-orange-200 bg-orange-50/50' : 'border-[#e7e5df] bg-[#f8f7f5] opacity-60'
+                              }`}
+                            >
+                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <Icon className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{label}</p>
+                                <p className="text-xs text-slate-500 truncate">{desc}</p>
+                              </div>
+                              <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -5335,6 +5420,74 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       </div>
                   );
                 })()}
+
+                {/* ── Editor de Petições ── */}
+                {activeSection === 'modules_petition_editor' && (
+                  <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div className="settings-card">
+                      <p className="settings-card-title">Funcionalidades</p>
+                      <p style={{ fontSize: '12px', color: '#747878', marginBottom: '16px' }}>
+                        Controle quais recursos ficam disponíveis no editor de petições.
+                      </p>
+
+                      {/* Toggle Modo Bloco */}
+                      <button
+                        type="button"
+                        onClick={() => setPetitionEditorConfig(prev => ({ ...prev, blocks_enabled: !prev.blocks_enabled }))}
+                        className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${
+                          petitionEditorConfig.blocks_enabled
+                            ? 'border-orange-200 bg-orange-50/50'
+                            : 'border-[#e7e5df] bg-[#f8f7f5]'
+                        }`}
+                      >
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${petitionEditorConfig.blocks_enabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                          <Layers className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900">Modo Bloco</p>
+                          <p className="text-xs text-slate-500">
+                            {petitionEditorConfig.blocks_enabled
+                              ? 'Biblioteca de blocos reutilizáveis ativada no editor.'
+                              : 'Modo bloco desativado — aba de blocos oculta no editor.'}
+                          </p>
+                        </div>
+                        <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${petitionEditorConfig.blocks_enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${petitionEditorConfig.blocks_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="settings-save-bar" style={{ marginTop: '8px' }}>
+                      <button
+                        className="settings-btn-primary"
+                        disabled={petitionEditorSaving}
+                        onClick={async () => {
+                          setPetitionEditorSaving(true);
+                          try {
+                            const persisted = await runWithSettingsPin(
+                              {
+                                action: 'save_petition_editor_config',
+                                title: 'Salvar configurações do Editor de Petições',
+                                description: 'Confirme com seu PIN para salvar.',
+                                resourceType: 'petition_editor_module',
+                              },
+                              () => settingsService.updatePetitionEditorModuleConfig(petitionEditorConfig, currentProfile?.name),
+                            );
+                            if (!persisted) return;
+                            setFeedback('success', 'Configurações do Editor de Petições salvas!');
+                          } catch (err: any) {
+                            setFeedback('error', err.message || 'Erro ao salvar.');
+                          } finally {
+                            setPetitionEditorSaving(false);
+                          }
+                        }}
+                      >
+                        {petitionEditorSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* ── Construtor de Formulários ── */}
                 {activeSection === 'form_builder' && (() => {

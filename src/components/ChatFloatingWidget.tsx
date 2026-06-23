@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileText, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { buildPortalFarewellMessage, chatService } from '../services/chat.service';
 import { profileService, type Profile } from '../services/profile.service';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
@@ -530,6 +531,8 @@ interface ChatFloatingWidgetProps {
 const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false }) => {
   const { user } = useAuth();
   const { currentModule, navigateTo } = useNavigation();
+  const { canView, isAdmin, loading: permLoading } = usePermissions();
+  const hasWhatsAppAccess = isAdmin || (!permLoading && canView('whatsapp'));
 
   const [open, setOpen] = useState(false);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
@@ -599,7 +602,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     void dashboardPreferencesService.saveChatWidgetPrefs(user.id, { w, h });
   }, [user?.id]);
 
-  const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('whatsapp');
+  const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('equipe');
   // Aba WhatsApp (modo lite): o WhatsAppModule embutido é dono da seleção; aqui
   // só guardamos o total de não-lidas (badge) e a conversa ativa (deep-link ao maximizar).
   const [waUnread, setWaUnread] = useState(0);
@@ -2187,7 +2190,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               )}
             </div>
             {/* Abas EQUIPE | WHATSAPP — embutidas na própria linha do título (topo enxuto) */}
-            {!selectedRoomId && !showNewChatModal && (
+            {!selectedRoomId && !showNewChatModal && hasWhatsAppAccess && (
               <nav className="flex-1 flex items-stretch self-stretch min-w-0 mx-2">
                 {(['whatsapp', 'equipe'] as const).map(tab => (
                   <button
@@ -2370,7 +2373,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               </>
             ) : (
               <>
-              {chatTab === 'whatsapp' ? (
+              {chatTab === 'whatsapp' && hasWhatsAppAccess ? (
                 // Modo lite: o WhatsAppModule real, embutido — herda todos os
                 // recursos (reply, áudio, mídia/preview, transferência, lightbox…).
                 <div className="flex-1 min-h-0 overflow-hidden">

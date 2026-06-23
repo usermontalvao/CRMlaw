@@ -69,6 +69,7 @@ import type {
 } from '../types/financial.types';
 import type { Client } from '../types/client.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { useSyncRefresh } from '../lib/syncBus';
 import { Modal, ModalBody, FinancialSkeleton } from './ui';
 import { formatCurrency, formatDate as fmtDateShared } from '../utils/formatters';
 
@@ -344,6 +345,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       setLoading(false);
     }
   }, [toast]);
+
+  useSyncRefresh(['financial', 'clients'], () => loadData(activeMonth));
 
   useEffect(() => {
     loadData(activeMonth);

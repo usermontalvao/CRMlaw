@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { syncBus } from '../lib/syncBus';
 import type {
   CalendarEvent,
   CreateCalendarEventDTO,
@@ -84,6 +85,7 @@ class CalendarService {
       throw new Error(error.message);
     }
 
+    syncBus.emit('calendar');
     return data;
   }
 
@@ -110,6 +112,7 @@ class CalendarService {
       throw new Error(error.message);
     }
 
+    syncBus.emit('calendar');
     return data;
   }
 
@@ -147,6 +150,7 @@ class CalendarService {
       console.error('Erro ao excluir evento do calendário:', error);
       throw new Error(error.message);
     }
+    syncBus.emit('calendar');
   }
 
   async deleteEventsByRequirementId(requirementId: string, eventType?: string): Promise<void> {

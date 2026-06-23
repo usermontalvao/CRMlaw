@@ -321,6 +321,7 @@ const isDueSoon = (dueDate: string): boolean => {
 };
 
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { useSyncTick } from '../lib/syncBus';
 
 interface DeadlinesModuleProps {
   forceCreate?: boolean;
@@ -1215,6 +1216,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     };
   }, [deadlines, reportPeriod, reportStartDate, reportEndDate, memberMap, clientMap, statusOptions, priorityOptions, typeOptions]);
 
+  const deadlinesSyncTick = useSyncTick('deadlines');
+
   useEffect(() => {
     const fetchDeadlines = async () => {
       try {
@@ -1230,7 +1233,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     };
 
     fetchDeadlines();
-  }, []);
+  }, [deadlinesSyncTick]);
 
   useEffect(() => {
     let active = true;

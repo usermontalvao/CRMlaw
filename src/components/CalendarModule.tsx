@@ -31,6 +31,7 @@ import type { CalendarEvent } from '../types/calendar.types';
 import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
+import { useSyncTick } from '../lib/syncBus';
 
 declare global {
   interface Window {
@@ -894,11 +895,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  const calendarSyncTick = useSyncTick('calendar');
+
   useEffect(() => {
     loadData();
     loadClients();
     profileService.listMembers().then(setMembers).catch(() => {});
-  }, []);
+  }, [calendarSyncTick]);
 
   useEffect(() => {
     if (defaultFilterSet.current || !user?.id || members.length === 0) return;

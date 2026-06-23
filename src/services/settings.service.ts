@@ -75,12 +75,17 @@ export interface ModulesConfig {
   documents_enabled: boolean;
   calendar_enabled: boolean;
   tasks_enabled: boolean;
-  /**
-   * Módulos ocultados do menu lateral pelo administrador, independente da
-   * permissão de função. Lista de chaves de ModuleName (ex.: 'feed').
-   */
+  /** Módulos ocultados do menu lateral pelo administrador. */
   hidden_menu_modules?: string[];
+  /** Módulos que podem ser abertos como janela flutuante (clique direito na sidebar). */
+  floating_window_modules?: string[];
 }
+
+export const FLOATING_WINDOW_MODULE_DEFAULTS: string[] = [
+  'dashboard', 'feed', 'agenda', 'chat', 'whatsapp', 'email',
+  'clientes', 'processos', 'requerimentos', 'financeiro',
+  'prazos', 'intimacoes', 'documentos', 'assinaturas', 'cloud',
+];
 
 export interface PortalModulesConfig {
   processos:    boolean;
@@ -877,6 +882,16 @@ export const PROCESS_MODULE_DEFAULTS: ProcessModuleConfig = {
   ai_summary_max_tokens: 1000,
 };
 
+// ── Configuração do Editor de Petições ───────────────────────────────────
+
+export interface PetitionEditorModuleConfig {
+  blocks_enabled: boolean;
+}
+
+export const PETITION_EDITOR_MODULE_DEFAULTS: PetitionEditorModuleConfig = {
+  blocks_enabled: true,
+};
+
 // ── Configuração do módulo Prazos ─────────────────────────────────────────
 
 export interface DeadlineStatusConfig   { key: string; label: string; badge: string; active?: boolean; isDefault?: boolean }
@@ -1419,6 +1434,7 @@ class SettingsService {
       calendar_enabled: true,
       tasks_enabled: true,
       hidden_menu_modules: [],
+      floating_window_modules: [...FLOATING_WINDOW_MODULE_DEFAULTS],
       ...(value || {}),
     };
   }
@@ -1501,6 +1517,15 @@ class SettingsService {
 
   async updateProcessModuleConfig(config: ProcessModuleConfig, userName?: string): Promise<void> {
     await this.updateSetting('process_module_config', config, userName);
+  }
+
+  async getPetitionEditorModuleConfig(): Promise<PetitionEditorModuleConfig> {
+    const stored = await this.getSetting<PetitionEditorModuleConfig>('petition_editor_module_config');
+    return { ...PETITION_EDITOR_MODULE_DEFAULTS, ...stored };
+  }
+
+  async updatePetitionEditorModuleConfig(config: PetitionEditorModuleConfig, userName?: string): Promise<void> {
+    await this.updateSetting('petition_editor_module_config', config, userName);
   }
 
   async getDeadlineModuleConfig(): Promise<DeadlineModuleConfig> {

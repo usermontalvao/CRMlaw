@@ -53,6 +53,7 @@ import {
 import { saveAs } from 'file-saver';
 import { ModuleSkeleton } from './ui';
 import { petitionEditorService } from '../services/petitionEditor.service';
+import { settingsService } from '../services/settings.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
 import type {
@@ -625,6 +626,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'blocks' | 'clients'>('blocks');
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
+  const [blocksEnabled, setBlocksEnabled] = useState(true);
   const [bmExpandedBlocks, setBmExpandedBlocks] = useState<Set<string>>(new Set());
   const [bmDocxPreviews, setBmDocxPreviews] = useState<Map<string, 'loading' | 'done' | 'error'>>(new Map());
   const bmPreviewContainersRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -776,6 +778,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const [relativeTimeTick, setRelativeTimeTick] = useState(0);
   const [nextAutoSaveIn, setNextAutoSaveIn] = useState<number | null>(null);
+
+  useEffect(() => {
+    settingsService.getPetitionEditorModuleConfig().then(cfg => {
+      setBlocksEnabled(cfg.blocks_enabled);
+      if (!cfg.blocks_enabled) setActiveWorkspace('editor');
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => setRelativeTimeTick((t) => t + 1), 15000);
@@ -4114,17 +4123,19 @@ Regras:
           >
             Editor
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveWorkspace('blocks')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              activeWorkspace === 'blocks'
-                ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            Blocos
-          </button>
+          {blocksEnabled && (
+            <button
+              type="button"
+              onClick={() => setActiveWorkspace('blocks')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                activeWorkspace === 'blocks'
+                  ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Blocos
+            </button>
+          )}
         </div>
 
         {/* Voltar para a tela inicial */}

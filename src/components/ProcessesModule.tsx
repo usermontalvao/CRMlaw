@@ -66,6 +66,7 @@ import { ClientAvatar } from './shared/ClientAvatar';
 import { useClientPhotos } from '../hooks/useClientPhotos';
 import { useMinLoading } from '../hooks/useMinLoading';
 import { useFormLayout } from '../hooks/useFormLayout';
+import { useSyncTick } from '../lib/syncBus';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -655,6 +656,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     onParamConsumed?.();
   }, [initialSearchQuery, onParamConsumed]);
 
+  const processesSyncTick = useSyncTick('processes');
+
   useEffect(() => {
     const fetchProcesses = async () => {
       try {
@@ -670,7 +673,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     };
 
     fetchProcesses();
-  }, []);
+  }, [processesSyncTick]);
 
   // Realtime — atualiza processos automaticamente quando o cron DJEN/DataJud grava no banco
   useEffect(() => {

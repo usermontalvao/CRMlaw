@@ -67,6 +67,13 @@ import {
   BarChart3,
   Trophy,
   Paperclip,
+  MessageSquare,
+  Target,
+  PiggyBank,
+  AlarmClock,
+  FolderOpen,
+  PenTool,
+  Cloud,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -3725,51 +3732,32 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       );
     }
     if (widgetId === 'navegacao') {
+      const navItems: { key: string; label: string; icon: React.ReactNode; permKey?: string; highlight?: boolean }[] = [
+        { key: 'feed',          label: 'Feed de Notícias', icon: <Sparkles className="w-5 h-5" />,     highlight: true },
+        { key: 'processos',     label: 'Meus Processos',   icon: <Briefcase className="w-5 h-5" />,    permKey: 'processos' },
+        { key: 'agenda',        label: 'Agenda',            icon: <Calendar className="w-5 h-5" />,     permKey: 'agenda' },
+        { key: 'clientes',      label: 'Clientes',          icon: <Users className="w-5 h-5" />,        permKey: 'clientes' },
+        { key: 'documentos',    label: 'Documentos',        icon: <FolderOpen className="w-5 h-5" />,   permKey: 'documentos' },
+      ];
       return (
         <nav className="flex flex-col gap-2">
-          <button
-            onClick={() => handleNavigate('dashboard')}
-            className="flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl font-medium transition-all shadow-sm"
-          >
-            <Sparkles className="w-5 h-5" />
-            Feed de Notícias
-          </button>
-          {(isAdmin || canView('processos')) && (
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-            >
-              <Briefcase className="w-5 h-5" />
-              Meus Processos
-            </button>
-          )}
-          {(isAdmin || canView('agenda')) && (
-            <button
-              onClick={() => handleNavigate('agenda')}
-              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-            >
-              <Calendar className="w-5 h-5" />
-              Agenda
-            </button>
-          )}
-          {(isAdmin || canView('clientes')) && (
-            <button
-              onClick={() => handleNavigate('clientes')}
-              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-            >
-              <Users className="w-5 h-5" />
-              Clientes
-            </button>
-          )}
-          {(isAdmin || canView('documentos')) && (
-            <button
-              onClick={() => handleNavigate('documentos')}
-              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-            >
-              <Bookmark className="w-5 h-5" />
-              Documentos
-            </button>
-          )}
+          {navItems.map(({ key, label, icon, permKey, highlight }) => {
+            if (permKey && !isAdmin && !canView(permKey)) return null;
+            return (
+              <button
+                key={key}
+                onClick={() => handleNavigate(key)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
+                  highlight
+                    ? 'bg-blue-50 text-blue-600 border border-blue-100 shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                {icon}
+                {label}
+              </button>
+            );
+          })}
         </nav>
       );
     }

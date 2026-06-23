@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { syncBus } from '../lib/syncBus';
 import type {
   Deadline,
   CreateDeadlineDTO,
@@ -156,6 +157,7 @@ class DeadlineService {
     }
 
     this.invalidateCache();
+    syncBus.emit('deadlines');
     return data;
   }
 
@@ -178,6 +180,7 @@ class DeadlineService {
     }
 
     this.invalidateCache();
+    syncBus.emit('deadlines');
     return data;
   }
 
@@ -204,6 +207,7 @@ class DeadlineService {
     }
 
     this.invalidateCache();
+    syncBus.emit('deadlines');
     return data;
   }
 
@@ -219,6 +223,7 @@ class DeadlineService {
     }
 
     this.invalidateCache();
+    syncBus.emit('deadlines');
   }
 
   async getUpcomingDeadlines(daysAhead: number = 7): Promise<Deadline[]> {

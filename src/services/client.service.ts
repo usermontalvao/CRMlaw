@@ -7,6 +7,7 @@ import { supabase } from '../config/supabase.js';
 import type { Client, CreateClientDTO } from '../types/client.types.js';
 import type { ClientFilters } from '../types/client.types.js';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { syncBus } from '../lib/syncBus';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -376,6 +377,7 @@ export class ClientService {
       this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'create', client: data });
+      syncBus.emit('clients');
 
       return data;
     } catch (error) {
@@ -420,6 +422,7 @@ export class ClientService {
       this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', client: data });
+      syncBus.emit('clients');
 
       return data;
     } catch (error) {
@@ -446,6 +449,7 @@ export class ClientService {
       this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
+      syncBus.emit('clients');
     } catch (error) {
       console.error('Erro ao deletar cliente:', error);
       throw error;

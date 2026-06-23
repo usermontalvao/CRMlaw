@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { syncBus } from '../lib/syncBus';
 import type {
   Requirement,
   CreateRequirementDTO,
@@ -194,6 +195,7 @@ class RequirementService {
     }
 
     this.invalidateCache();
+    syncBus.emit('requirements');
     return data;
   }
 
@@ -220,6 +222,7 @@ class RequirementService {
     }
 
     this.invalidateCache();
+    syncBus.emit('requirements');
     return data;
   }
 
@@ -242,6 +245,7 @@ class RequirementService {
     }
 
     this.invalidateCache();
+    syncBus.emit('requirements');
     return data;
   }
 
@@ -259,6 +263,7 @@ class RequirementService {
     }
 
     this.invalidateCache();
+    syncBus.emit('requirements');
     return data;
   }
 
@@ -274,6 +279,7 @@ class RequirementService {
     }
 
     this.invalidateCache();
+    syncBus.emit('requirements');
   }
 
   async listStatusHistory(requirementId: string): Promise<RequirementStatusHistoryEntry[]> {

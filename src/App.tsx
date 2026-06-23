@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext } from 'react';
+﻿﻿import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
 import {
@@ -48,6 +48,8 @@ import {
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
+import { FloatingWindowSystem, useFloatingWindows } from './components/FloatingWindowSystem';
+import type { FloatingModuleKey } from './components/FloatingWindowSystem';
 import { NotificationBell } from './components/NotificationBell';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import SessionWarning from './components/SessionWarning';
@@ -114,7 +116,7 @@ import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
-import { settingsService, type ModulesConfig } from './services/settings.service';
+import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -199,7 +201,7 @@ const CloudModuleFallback = () => (
   </div>
 );
 
-// ── AccessDeniedScreen ────────────────────────────────────────────────────────
+// â”€â”€ AccessDeniedScreen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MODULE_META: Record<string, { label: string; desc: string; Icon: LucideIcon }> = {
   leads:         { label: 'Leads',                desc: 'captação e gestão de leads',            Icon: Target },
   clientes:      { label: 'Clientes',             desc: 'cadastro e histórico de clientes',       Icon: Users },
@@ -301,7 +303,7 @@ const AccessDeniedScreen: React.FC<{
     return `${d} dia${d !== 1 ? 's' : ''}`;
   };
 
-  // ── Right-panel content by state ──────────────────────────────────────
+  // â”€â”€ Right-panel content by state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const renderRightPanel = () => {
     // DENIED
     if (reqState === 'denied') return (
@@ -459,7 +461,7 @@ const AccessDeniedScreen: React.FC<{
       </div>
     );
 
-    // NONE / CHECKING — default
+    // NONE / CHECKING "” default
     return (
       <div className="flex-1 flex flex-col justify-center bg-[#f8f7f5] px-10 py-12">
         <div className="flex items-center gap-2 mb-5">
@@ -474,7 +476,7 @@ const AccessDeniedScreen: React.FC<{
         </h1>
 
         <p className="sm:hidden text-sm text-slate-500 mb-2">
-          Módulo: <span className="font-semibold text-slate-700">{meta.label}</span> — {meta.desc}
+          Módulo: <span className="font-semibold text-slate-700">{meta.label}</span> "” {meta.desc}
         </p>
 
         <div className="flex items-center gap-3 mb-6">
@@ -484,7 +486,7 @@ const AccessDeniedScreen: React.FC<{
 
         <p className="text-sm text-slate-500 leading-relaxed mb-8 max-w-sm">
           O seu cargo de <span className="font-semibold text-slate-700">{userRole}</span> não inclui acesso ao módulo de{' '}
-          <span className="font-medium text-slate-700">{meta.desc}</span>. Para exercer atividades aqui, solicite ao administrador — você pode enviar uma justificativa pelo botão abaixo.
+          <span className="font-medium text-slate-700">{meta.desc}</span>. Para exercer atividades aqui, solicite ao administrador "” você pode enviar uma justificativa pelo botão abaixo.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -512,10 +514,10 @@ const AccessDeniedScreen: React.FC<{
 
   return (
     <>
-    {/* ── Tela principal: split full-height ──────────────────────────── */}
+    {/* â”€â”€ Tela principal: split full-height â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     <div className="flex min-h-[72vh] select-none overflow-hidden rounded-2xl border border-[#e7e5df] shadow-sm">
 
-      {/* ══ Painel esquerdo — visual (45%) ═══════════════════════════════ */}
+      {/* â•â• Painel esquerdo "” visual (45%) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <div className="relative hidden sm:flex flex-col items-center justify-center w-[45%] flex-shrink-0 overflow-hidden bg-[#0f172a]">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0f172a] to-[#020617]" />
         <div className="absolute inset-0 opacity-[0.07]"
@@ -577,18 +579,18 @@ const AccessDeniedScreen: React.FC<{
             : 'bg-[#f8f7f5]/5 border-white/10 text-white/30'
           }`}>
             {reqState === 'denied' ? '✕ Negado'
-            : reqState === 'pending' ? '⏳ Em análise'
+            : reqState === 'pending' ? 'â³ Em análise'
             : reqState === 'approved_expired' ? '⌛ Expirado'
-            : '🔒 Sem permissão'}
+            : 'ðŸ”’ Sem permissão'}
           </div>
         </div>
       </div>
 
-      {/* ══ Painel direito — conteúdo dinâmico ═══════════════════════════ */}
+      {/* â•â• Painel direito "” conteúdo dinâmico â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {renderRightPanel()}
     </div>
 
-    {/* ── Modal de solicitação ─────────────────────────────────────────── */}
+    {/* â”€â”€ Modal de solicitação â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     {showModal && (
       <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
         <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" />
@@ -675,7 +677,7 @@ const AccessDeniedScreen: React.FC<{
   );
 };
 
-// ── SearchBarTypewriter ────────────────────────────────────────────────────────
+// â”€â”€ SearchBarTypewriter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TYPEWRITER_PHRASES = [
   'Maria das Graças Oliveira',
   'Requerimento 37363535',
@@ -703,7 +705,7 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
           setDisplay(phrase.slice(0, st.charIdx));
           timerRef.current = setTimeout(tick, 62);
         } else {
-          // Full phrase shown — pause then erase
+          // Full phrase shown "” pause then erase
           timerRef.current = setTimeout(() => {
             st.erasing = true;
             tick();
@@ -715,7 +717,7 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
           setDisplay(phrase.slice(0, st.charIdx));
           timerRef.current = setTimeout(tick, 28);
         } else {
-          // All erased — next phrase
+          // All erased "” next phrase
           st.phraseIdx = (st.phraseIdx + 1) % TYPEWRITER_PHRASES.length;
           st.erasing = false;
           timerRef.current = setTimeout(tick, 320);
@@ -752,11 +754,11 @@ const SearchBarTypewriter: React.FC<{ onClick: () => void }> = ({ onClick }) => 
   );
 };
 
-// ── Sidebar module button with optional temporary-access countdown ────────────
+// â”€â”€ Sidebar module button with optional temporary-access countdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Conjunto de módulos ocultados do menu pelo admin (config independente da permissão).
 const HiddenMenuModulesContext = createContext<Set<string>>(new Set());
 
-// Ordem dos itens no menu — usada para escalonar a animação de entrada (um por vez).
+// Ordem dos itens no menu "” usada para escalonar a animação de entrada (um por vez).
 const MENU_ORDER: Record<string, number> = {
   dashboard: 0, feed: 1, agenda: 2, chat: 3,
   leads: 4, clientes: 5, processos: 6, requerimentos: 7, peticoes: 8, financeiro: 9,
@@ -797,7 +799,8 @@ const SidebarModuleBtn: React.FC<{
   onClick: () => void;
   expiresAt?: string | null;
   badgeCount?: number;
-}> = ({ moduleKey, label, Icon, isActive, onClick, expiresAt, badgeCount }) => {
+  onOpenWindow?: (x: number, y: number) => void;
+}> = ({ moduleKey, label, Icon, isActive, onClick, expiresAt, badgeCount, onOpenWindow }) => {
   const hiddenMenuModules = useContext(HiddenMenuModulesContext);
   const { sidebarMode } = useSidebarMode();
   const { theme } = useTheme();
@@ -822,13 +825,13 @@ const SidebarModuleBtn: React.FC<{
     return () => clearInterval(id);
   }, [expiresAt]);
 
-  // Admin pode ocultar o módulo do menu — exceto Perfil/Configurações (evita lockout).
+  // Admin pode ocultar o módulo do menu "” exceto Perfil/Configurações (evita lockout).
   if (hiddenMenuModules.has(moduleKey) && moduleKey !== 'perfil' && moduleKey !== 'configuracoes') {
     return null;
   }
 
   // Entrada escalonada: cada item surge depois do anterior.
-  // Perfil monta sempre (fora do ciclo de permissões), então não anima — evita quebrar a cascata.
+  // Perfil monta sempre (fora do ciclo de permissões), então não anima "” evita quebrar a cascata.
   const animatesEntry = moduleKey !== 'perfil';
   const enterClass = animatesEntry ? 'sidebar-enter' : '';
   const iconEnterClass = animatesEntry ? 'sidebar-icon-enter' : '';
@@ -840,6 +843,7 @@ const SidebarModuleBtn: React.FC<{
     return (
       <button
         onClick={onClick}
+        onContextMenu={onOpenWindow ? (e) => { e.preventDefault(); onOpenWindow(e.clientX, e.clientY); } : undefined}
         style={enterStyle}
         className={`${enterClass} group relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] px-2.5 py-[6px] transition-all duration-150 ${
           isActive
@@ -896,6 +900,7 @@ const SidebarModuleBtn: React.FC<{
   return (
     <button
       onClick={onClick}
+      onContextMenu={onOpenWindow ? (e) => { e.preventDefault(); onOpenWindow(e.clientX, e.clientY); } : undefined}
       style={enterStyle}
       className={`${enterClass} relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
         isActive
@@ -943,6 +948,17 @@ const MainApp: React.FC = () => {
   const { sidebarMode, setSidebarMode } = useSidebarMode();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
+  // Floating windows
+  const { windows: floatWins, openWindow, updateWindow, closeWindow, focusWindow } = useFloatingWindows();
+  const [sidebarCtx, setSidebarCtx] = useState<{ x: number; y: number; module: FloatingModuleKey; label: string } | null>(null);
+  useEffect(() => {
+    if (!sidebarCtx) return;
+    const close = () => setSidebarCtx(null);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', close);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); };
+  }, [sidebarCtx]);
+
   // Seção inicial das Configurações (deep-link via moduleParams.section)
   const settingsInitialSection = useMemo(() => {
     const params = moduleParams['configuracoes'];
@@ -988,6 +1004,11 @@ const MainApp: React.FC = () => {
   const hiddenMenuModules = useMemo(
     () => new Set(modulesConfig.hidden_menu_modules ?? []),
     [modulesConfig.hidden_menu_modules],
+  );
+
+  const floatingWindowModules = useMemo(
+    () => new Set(modulesConfig.floating_window_modules ?? FLOATING_WINDOW_MODULE_DEFAULTS),
+    [modulesConfig.floating_window_modules],
   );
 
   const isModuleEnabled = useCallback((moduleKey: ModuleName): boolean => {
@@ -1155,7 +1176,7 @@ const MainApp: React.FC = () => {
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  // Nome capturado no início do logout — o handler SIGNED_OUT reseta o profile
+  // Nome capturado no início do logout "” o handler SIGNED_OUT reseta o profile
   // para "Usuário", então congelamos o nome real para a despedida.
   const [logoutName, setLogoutName] = useState('');
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1203,7 +1224,7 @@ const MainApp: React.FC = () => {
   }, [permissionGuardedModules, canAccessModule]);
 
   const safeNavigateTo = useCallback((moduleKey: ModuleName, params?: Record<string, string>) => {
-    // Navega normalmente — o módulo renderizará AccessDeniedScreen se não houver permissão
+    // Navega normalmente "” o módulo renderizará AccessDeniedScreen se não houver permissão
     navigateTo(moduleKey, params);
   }, [navigateTo]);
 
@@ -1211,7 +1232,7 @@ const MainApp: React.FC = () => {
     safeNavigateTo(moduleKey as ModuleName, params);
   };
 
-  // Guard de permissões — sem redirecionamento; AccessDeniedScreen é renderizado no slot do módulo
+  // Guard de permissões "” sem redirecionamento; AccessDeniedScreen é renderizado no slot do módulo
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1237,7 +1258,7 @@ const MainApp: React.FC = () => {
     };
   }, [profileMenuOpen]);
 
-  // #9 — Busca global ⌘K
+  // #9 "” Busca global ⌘K
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
   // Atalho de teclado ⌘K / Ctrl+K
@@ -1255,7 +1276,7 @@ const MainApp: React.FC = () => {
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   // Keep-alive do WhatsApp: uma vez aberto, o módulo fica montado e só é ocultado
-  // via CSS ao trocar de aba — evita o "recarregamento" (refetch de conversas,
+  // via CSS ao trocar de aba "” evita o "recarregamento" (refetch de conversas,
   // reassinatura de URLs, perda de scroll/rascunho) a cada volta para a inbox.
   const [whatsappEverOpened, setWhatsappEverOpened] = useState(false);
   useEffect(() => { if (activeModule === 'whatsapp') setWhatsappEverOpened(true); }, [activeModule]);
@@ -1483,7 +1504,7 @@ const MainApp: React.FC = () => {
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_OUT') {
-        console.log('🔒 Logout detectado');
+        console.log('ðŸ”’ Logout detectado');
         sessionStorage.removeItem(PROFILE_CACHE_KEY);
         sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
 
@@ -1662,6 +1683,34 @@ useEffect(() => {
     setClientPrefill(null);
   };
 
+  const renderFloatModule = useCallback((module: FloatingModuleKey): React.ReactNode => {
+    const wrap = (node: React.ReactNode) => (
+      <Suspense fallback={<div className="flex h-full items-center justify-center text-zinc-400 text-sm">Carregando...</div>}>
+        {node}
+      </Suspense>
+    );
+    switch (module) {
+      case 'agenda':        return wrap(<CalendarModule />);
+      case 'prazos':        return wrap(<DeadlinesModule />);
+      case 'dashboard':     return wrap(<Dashboard onNavigateToModule={handleNavigateToModule} />);
+      case 'feed':          return wrap(<Feed onNavigateToModule={handleNavigateToModule} />);
+      case 'clientes':      return wrap(<ClientsModule onClientSaved={() => {}} onClientCancelled={() => {}} />);
+      case 'processos':     return wrap(<ProcessesModule />);
+      case 'requerimentos': return wrap(<RequirementsModule />);
+      case 'financeiro':    return wrap(<FinancialModule />);
+      case 'intimacoes':    return wrap(<IntimationsModule onNavigateToModule={(k, p) => navigateTo(k as any, p)} />);
+      case 'documentos':    return wrap(<DocumentsModule onNavigateToModule={(k, p) => navigateTo(k as any, p)} />);
+      case 'assinaturas':   return wrap(<SignatureModule />);
+      case 'cloud':         return wrap(<CloudModule onNavigateToModule={handleNavigateToModule} />);
+      case 'chat':          return wrap(<ChatModule />);
+      case 'whatsapp':      return wrap(<WhatsAppModule variant="embedded" />);
+      case 'email':         return wrap(<EmailModule />);
+      case 'leads':         return wrap(<LeadsModule onConvertLead={handleConvertLead} />);
+      case 'configuracoes': return wrap(<SettingsModule variant="page" />);
+      default:              return null;
+    }
+  }, [handleNavigateToModule, handleConvertLead, navigateTo]);
+
   const handleClientSearchSelect = (clientId: string) => {
     setSearchOpen(false);
     setSearchTerm('');
@@ -1759,7 +1808,7 @@ useEffect(() => {
     setLoggingOut(true);
 
     try {
-      // Encerra a sessão SEM redirecionar agora — senão a página navega embora
+      // Encerra a sessão SEM redirecionar agora "” senão a página navega embora
       // e a animação de saída nem chega a aparecer.
       await signOut({ redirect: false });
     } catch {
@@ -1783,7 +1832,7 @@ useEffect(() => {
     );
   }
 
-  // ── Rotas públicas — renderizadas SEM autenticação de staff ──────────────
+  // â”€â”€ Rotas públicas "” renderizadas SEM autenticação de staff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Devem ser verificadas ANTES do guard de login para que usuários externos
   // (signatários, convidados) acessem sem ter conta no sistema.
   if (!user) {
@@ -1849,7 +1898,7 @@ useEffect(() => {
     <CacheProvider>
       {isAccountBlocked && <BlockedAccountOverlay onLogout={signOut} />}
       <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-black transition-colors duration-300">
-        {/* Overlay de LOGIN — Epic Animation (o logout tem o seu próprio, abaixo) */}
+        {/* Overlay de LOGIN "” Epic Animation (o logout tem o seu próprio, abaixo) */}
         {loggingIn && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black">
             {/* Animated gradient background */}
@@ -1928,7 +1977,7 @@ useEffect(() => {
           </div>
         )}
 
-        {/* Overlay de LOGOUT — despedida cinematográfica dedicada */}
+        {/* Overlay de LOGOUT "” despedida cinematográfica dedicada */}
         {loggingOut && <LogoutOverlay userName={logoutName} />}
 
         {/* Aviso de sessão */}
@@ -1940,7 +1989,7 @@ useEffect(() => {
           onClick={() => setIsMobileNavOpen(false)}
         />
       )}
-      {/* ── App shell flex: spacer + main ──────────────── */}
+      {/* â”€â”€ App shell flex: spacer + main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex min-h-screen">
       {/* Spacer invisible que reserva a largura da sidebar no layout */}
       <div
@@ -1988,7 +2037,7 @@ useEffect(() => {
         <nav className={`flex-1 overflow-y-auto scrollbar-hide flex flex-col ${
           sidebarMode === 'normal' ? 'pl-0 pr-2.5 py-2 gap-0' : 'px-2.5 py-3 gap-0.5'
         }`}>
-          {/* ── PRINCIPAL ──────────────────────────────────────── */}
+          {/* â”€â”€ PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {sidebarMode === 'normal' && (
             <div className="flex items-center gap-2 pl-3 pr-0 pt-2 pb-1 select-none">
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/[0.28]">Principal</span>
@@ -1997,10 +2046,12 @@ useEffect(() => {
           )}
           <SidebarModuleBtn moduleKey="dashboard" label="Dashboard" Icon={Layers}
             isActive={activeModule === 'dashboard'}
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }} />
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }}
+            onOpenWindow={floatingWindowModules.has('dashboard') ? (x,y) => setSidebarCtx({x,y,module:'dashboard',label:'Dashboard'}) : undefined} />
           <SidebarModuleBtn moduleKey="feed" label="Feed" Icon={Newspaper}
             isActive={activeModule === 'feed'}
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }} />
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }}
+            onOpenWindow={floatingWindowModules.has('feed') ? (x,y) => setSidebarCtx({x,y,module:'feed',label:'Feed'}) : undefined} />
 
           {/* Skeleton enquanto as permissões carregam */}
           {permissionsLoading && (
@@ -2014,34 +2065,38 @@ useEffect(() => {
             <SidebarModuleBtn moduleKey="agenda" label="Agenda" Icon={Calendar}
               isActive={activeModule === 'agenda'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
-              expiresAt={getOverrideExpiry('agenda')} />
+              expiresAt={getOverrideExpiry('agenda')}
+              onOpenWindow={floatingWindowModules.has('agenda') ? (x,y) => setSidebarCtx({x,y,module:'agenda',label:'Agenda'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('chat') && (
             <SidebarModuleBtn moduleKey="chat" label="Chat" Icon={MessageCircle}
               isActive={activeModule === 'chat'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
-              expiresAt={getOverrideExpiry('chat')} />
+              expiresAt={getOverrideExpiry('chat')}
+              onOpenWindow={floatingWindowModules.has('chat') ? (x,y) => setSidebarCtx({x,y,module:'chat',label:'Chat'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('whatsapp') && (
             <SidebarModuleBtn moduleKey="whatsapp" label="WhatsApp" Icon={MessageSquare}
               isActive={activeModule === 'whatsapp'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
-              expiresAt={getOverrideExpiry('whatsapp')} />
+              expiresAt={getOverrideExpiry('whatsapp')}
+              onOpenWindow={floatingWindowModules.has('whatsapp') ? (x,y) => setSidebarCtx({x,y,module:'whatsapp',label:'WhatsApp'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('email') && (
             <SidebarModuleBtn moduleKey="email" label="Email" Icon={Mail}
               isActive={activeModule === 'email'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('email'); }}
-              expiresAt={getOverrideExpiry('email')} />
+              expiresAt={getOverrideExpiry('email')}
+              onOpenWindow={floatingWindowModules.has('email') ? (x,y) => setSidebarCtx({x,y,module:'email',label:'Email'}) : undefined} />
           )}
 
-          {/* ── ATENDIMENTO ── Leads ──────────────────────────────
+          {/* â”€â”€ ATENDIMENTO â”€â”€ Leads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               O funil de Leads deixou de ser um item de menu próprio: agora vive
               embutido no módulo WhatsApp (gaveta no topo do atendimento). A rota
               interna 'leads' permanece válida para deep-links/compatibilidade,
               mas não é mais exposta no sidebar. */}
 
-          {/* ── GESTÃO ── Clientes, Processos, Req., Petições, Fin. */}
+          {/* â”€â”€ GESTÃO â”€â”€ Clientes, Processos, Req., Petições, Fin. */}
           {sidebarMode === 'normal' && !permissionsLoading && (
             (canAccessModule('clientes') && !hiddenMenuModules.has('clientes')) ||
             (canAccessModule('processos') && !hiddenMenuModules.has('processos')) ||
@@ -2058,19 +2113,22 @@ useEffect(() => {
             <SidebarModuleBtn moduleKey="clientes" label="Clientes" Icon={Users}
               isActive={activeModule === 'clientes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
-              expiresAt={getOverrideExpiry('clientes')} />
+              expiresAt={getOverrideExpiry('clientes')}
+              onOpenWindow={floatingWindowModules.has('clientes') ? (x,y) => setSidebarCtx({x,y,module:'clientes',label:'Clientes'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('processos') && (
             <SidebarModuleBtn moduleKey="processos" label="Processos" Icon={Scale}
               isActive={activeModule === 'processos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
-              expiresAt={getOverrideExpiry('processos')} />
+              expiresAt={getOverrideExpiry('processos')}
+              onOpenWindow={floatingWindowModules.has('processos') ? (x,y) => setSidebarCtx({x,y,module:'processos',label:'Processos'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('requerimentos') && isModuleEnabled('requerimentos') && (
             <SidebarModuleBtn moduleKey="requerimentos" label="Requerimentos" Icon={Briefcase}
               isActive={activeModule === 'requerimentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
-              expiresAt={getOverrideExpiry('requerimentos')} />
+              expiresAt={getOverrideExpiry('requerimentos')}
+              onOpenWindow={floatingWindowModules.has('requerimentos') ? (x,y) => setSidebarCtx({x,y,module:'requerimentos',label:'Requerimentos'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('peticoes') && (
             <SidebarModuleBtn moduleKey="peticoes" label="Petições" Icon={FileText}
@@ -2081,10 +2139,11 @@ useEffect(() => {
             <SidebarModuleBtn moduleKey="financeiro" label="Financeiro" Icon={PiggyBank}
               isActive={activeModule === 'financeiro'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
-              expiresAt={getOverrideExpiry('financeiro')} />
+              expiresAt={getOverrideExpiry('financeiro')}
+              onOpenWindow={floatingWindowModules.has('financeiro') ? (x,y) => setSidebarCtx({x,y,module:'financeiro',label:'Financeiro'}) : undefined} />
           )}
 
-          {/* ── OPERACIONAL ── Prazos, Intimações ──────────────── */}
+          {/* â”€â”€ OPERACIONAL â”€â”€ Prazos, Intimações â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {sidebarMode === 'normal' && !permissionsLoading && (
             (canAccessModule('prazos') && !hiddenMenuModules.has('prazos')) ||
             (canAccessModule('intimacoes') && !hiddenMenuModules.has('intimacoes'))
@@ -2098,16 +2157,18 @@ useEffect(() => {
             <SidebarModuleBtn moduleKey="prazos" label="Prazos" Icon={AlarmClock}
               isActive={activeModule === 'prazos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
-              expiresAt={getOverrideExpiry('prazos')} />
+              expiresAt={getOverrideExpiry('prazos')}
+              onOpenWindow={floatingWindowModules.has('prazos') ? (x,y) => setSidebarCtx({x,y,module:'prazos',label:'Prazos'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('intimacoes') && (
             <SidebarModuleBtn moduleKey="intimacoes" label="Intimações" Icon={Bell}
               isActive={activeModule === 'intimacoes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
-              expiresAt={getOverrideExpiry('intimacoes')} />
+              expiresAt={getOverrideExpiry('intimacoes')}
+              onOpenWindow={floatingWindowModules.has('intimacoes') ? (x,y) => setSidebarCtx({x,y,module:'intimacoes',label:'Intimações'}) : undefined} />
           )}
 
-          {/* ── DOCS ── Documentos, Assinaturas, Cloud ─────────── */}
+          {/* â”€â”€ DOCS â”€â”€ Documentos, Assinaturas, Cloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {sidebarMode === 'normal' && !permissionsLoading && (
             (canAccessModule('documentos') && isModuleEnabled('documentos') && !hiddenMenuModules.has('documentos')) ||
             (canAccessModule('assinaturas') && !hiddenMenuModules.has('assinaturas')) ||
@@ -2122,19 +2183,22 @@ useEffect(() => {
             <SidebarModuleBtn moduleKey="documentos" label="Documentos" Icon={Library}
               isActive={activeModule === 'documentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
-              expiresAt={getOverrideExpiry('documentos')} />
+              expiresAt={getOverrideExpiry('documentos')}
+              onOpenWindow={floatingWindowModules.has('documentos') ? (x,y) => setSidebarCtx({x,y,module:'documentos',label:'Documentos'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('assinaturas') && (
             <SidebarModuleBtn moduleKey="assinaturas" label="Assinaturas" Icon={PenTool}
               isActive={activeModule === 'assinaturas'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
-              expiresAt={getOverrideExpiry('assinaturas')} />
+              expiresAt={getOverrideExpiry('assinaturas')}
+              onOpenWindow={floatingWindowModules.has('assinaturas') ? (x,y) => setSidebarCtx({x,y,module:'assinaturas',label:'Assinaturas'}) : undefined} />
           )}
           {!permissionsLoading && canAccessModule('cloud') && (
             <SidebarModuleBtn moduleKey="cloud" label="Cloud" Icon={Cloud}
               isActive={activeModule === 'cloud'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
-              expiresAt={getOverrideExpiry('cloud')} />
+              expiresAt={getOverrideExpiry('cloud')}
+              onOpenWindow={floatingWindowModules.has('cloud') ? (x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'}) : undefined} />
           )}
 
           {/* Separador + Perfil */}
@@ -2335,7 +2399,7 @@ useEffect(() => {
                   }}
                 />
 
-                {/* Tema — junto das demais ações, antes do divisor de identidade */}
+                {/* Tema "” junto das demais ações, antes do divisor de identidade */}
                 {activeModule !== 'cloud' && (
                   <button
                     onClick={toggleTheme}
@@ -2467,7 +2531,7 @@ useEffect(() => {
 
           {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
           <Suspense fallback={activeModule === 'cloud' ? <CloudModuleFallback /> : <div className="min-h-[200px]" />}>
-            {/* Tela de acesso restrito — exibida quando o usuário não tem permissão para o módulo ativo */}
+            {/* Tela de acesso restrito "” exibida quando o usuário não tem permissão para o módulo ativo */}
             {!permissionsLoading && !hasModuleAccess(activeModule) && activeModule !== 'dashboard' && activeModule !== 'perfil' ? (
               <AccessDeniedScreen
                 moduleKey={activeModule}
@@ -2617,7 +2681,7 @@ useEffect(() => {
                 onParamConsumed={() => clearModuleParams('assinaturas')}
               />
             )}
-            {/* settings aberto como modal — não como módulo de página */}
+            {/* settings aberto como modal "” não como módulo de página */}
             {activeModule === 'cron' && <CronEndpoint />}
             {activeModule === 'perfil' && (
               <UserProfilePage
@@ -2642,7 +2706,7 @@ useEffect(() => {
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">
-                <span>© {new Date().getFullYear()} jurius.com.br</span>
+                <span>Â© {new Date().getFullYear()} jurius.com.br</span>
               </div>
               <span>{DISPLAY_APP_VERSION_LABEL}</span>
               <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
@@ -2673,12 +2737,41 @@ useEffect(() => {
         <ChatFloatingWidget />
       </Suspense>
 
-      {/* #9 — Modal de busca global ⌘K */}
+      {/* #9 "” Modal de busca global ⌘K */}
       <GlobalSearchModal
         open={globalSearchOpen}
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={(module, params) => safeNavigateTo(module as any, params as any)}
       />
+
+      {/* Context menu — Abrir como janela */}
+      {sidebarCtx && (
+        <div
+          style={{ position: 'fixed', top: sidebarCtx.y, left: sidebarCtx.x, zIndex: 99999 }}
+          className="min-w-[180px] overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-400 select-none">{sidebarCtx.label}</div>
+          <button
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            onClick={() => { openWindow(sidebarCtx.module, sidebarCtx.label); setSidebarCtx(null); }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            Abrir como janela
+          </button>
+        </div>
+      )}
+
+      {/* Floating Windows */}
+      {floatWins.length > 0 && (
+        <FloatingWindowSystem
+          windows={floatWins}
+          onUpdate={updateWindow}
+          onClose={closeWindow}
+          onFocus={focusWindow}
+          renderModule={renderFloatModule}
+        />
+      )}
 
     </div>
     </CacheProvider>
@@ -2845,3 +2938,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
