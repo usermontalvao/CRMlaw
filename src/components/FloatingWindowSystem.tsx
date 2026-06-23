@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar, Clock, Layers, Newspaper, Users, Scale, Briefcase,
   FileText, PiggyBank, Bell, Library, PenTool, Cloud, MessageCircle,
@@ -38,12 +38,40 @@ interface FloatingWindowSystemProps {
 const MIN_W = 400;
 const MIN_H = 300;
 const TASKBAR_H = 44;
+export const MAX_WINDOWS = 5;
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 // Janelas ficam entre z-45 e z-65 — abaixo dos popovers/modais internos (z-70+)
 const Z_MIN = 45;
 const Z_MAX = 65;
+
+const STORAGE_KEY = 'fw:windows';
+
+type PersistedWin = Pick<FloatingWin, 'module' | 'title' | 'x' | 'y' | 'width' | 'height' | 'minimized' | 'maximized' | 'restore'>;
+
+function loadPersistedWindows(): FloatingWin[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const list: PersistedWin[] = JSON.parse(raw);
+    return list.map((w, i) => ({
+      ...w,
+      id: `${w.module}-restored-${i}`,
+      zIndex: Z_MIN + i,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function persistWindows(windows: FloatingWin[]) {
+  try {
+    const list: PersistedWin[] = windows.map(({ module, title, x, y, width, height, minimized, maximized, restore }) =>
+      ({ module, title, x, y, width, height, minimized, maximized, restore }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch { /* quota exceeded — ignore */ }
+}
 
 // ── Metadados dos módulos ─────────────────────────────────────────────────────
 
@@ -314,6 +342,16 @@ function Taskbar({ windows, onRestore, onClose, onFocus, onUpdate, maxZ }: {
           <rect x="8" y="7.5" width="5.5" height="6" rx="1" stroke="currentColor" strokeWidth="1"/>
         </svg>
       </button>
+      <button
+        onClick={() => windows.forEach(w => onClose(w.id))}
+        title="Fechar todas as janelas"
+        className="flex h-8 w-8 flex-none items-center justify-center rounded text-white/40 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        </svg>
+      </button>
       <div className="w-px h-5 bg-white/10 mr-1 flex-none" />
 
       {windows.map((w) => {
@@ -384,9 +422,14 @@ export function FloatingWindowSystem({ windows, onUpdate, onClose, onFocus, rend
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useFloatingWindows() {
-  const [windows, setWindows] = useState<FloatingWin[]>([]);
+  const [windows, setWindows] = useState<FloatingWin[]>(() => loadPersistedWindows());
 
-  const openWindow = useCallback((module: FloatingModuleKey, title: string) => {
+  // Persiste sempre que a lista muda
+  useEffect(() => { persistWindows(windows); }, [windows]);
+
+  // Retorna false se atingiu o limite (usado pelo chamador para mostrar aviso)
+  const openWindow = useCallback((module: FloatingModuleKey, title: string): boolean => {
+    let blocked = false;
     setWindows((prev) => {
       const existing = prev.find((w) => w.module === module);
       if (existing) {
@@ -394,6 +437,7 @@ export function useFloatingWindows() {
           ? { ...w, minimized: false, zIndex: Z_MAX }
           : { ...w, zIndex: w.zIndex > Z_MIN ? w.zIndex - 1 : Z_MIN });
       }
+      if (prev.length >= MAX_WINDOWS) { blocked = true; return prev; }
       const offset = (prev.length % 8) * 30;
       const newWin: FloatingWin = {
         id: `${module}-${Date.now()}`, module, title,
@@ -403,6 +447,7 @@ export function useFloatingWindows() {
       };
       return [...prev.map((w) => ({ ...w, zIndex: w.zIndex > Z_MIN ? w.zIndex - 1 : Z_MIN })), newWin];
     });
+    return !blocked;
   }, []);
 
   const updateWindow = useCallback((id: string, patch: Partial<FloatingWin>) => {

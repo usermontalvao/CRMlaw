@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
-import { FloatingWindowSystem, useFloatingWindows } from './components/FloatingWindowSystem';
+import { FloatingWindowSystem, useFloatingWindows, MAX_WINDOWS } from './components/FloatingWindowSystem';
 import type { FloatingModuleKey } from './components/FloatingWindowSystem';
 import { NotificationBell } from './components/NotificationBell';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
@@ -117,6 +117,7 @@ import type { CreateClientDTO } from './types/client.types';
 import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
+import { useToastContext } from './contexts/ToastContext';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -800,7 +801,8 @@ const SidebarModuleBtn: React.FC<{
   expiresAt?: string | null;
   badgeCount?: number;
   onOpenWindow?: (x: number, y: number) => void;
-}> = ({ moduleKey, label, Icon, isActive, onClick, expiresAt, badgeCount, onOpenWindow }) => {
+  onOpenWindowDirect?: () => void;
+}> = ({ moduleKey, label, Icon, isActive, onClick, expiresAt, badgeCount, onOpenWindow, onOpenWindowDirect }) => {
   const hiddenMenuModules = useContext(HiddenMenuModulesContext);
   const { sidebarMode } = useSidebarMode();
   const { theme } = useTheme();
@@ -843,6 +845,7 @@ const SidebarModuleBtn: React.FC<{
     return (
       <button
         onClick={onClick}
+        onDoubleClick={onOpenWindowDirect ? (e) => { e.preventDefault(); onOpenWindowDirect(); } : undefined}
         onContextMenu={onOpenWindow ? (e) => { e.preventDefault(); onOpenWindow(e.clientX, e.clientY); } : undefined}
         style={enterStyle}
         className={`${enterClass} group relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] px-2.5 py-[6px] transition-all duration-150 ${
@@ -893,6 +896,21 @@ const SidebarModuleBtn: React.FC<{
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
         )}
+        {onOpenWindowDirect && (
+          <span
+            title="Abrir como janela"
+            role="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onOpenWindowDirect(); }}
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex h-5 w-5 items-center justify-center rounded text-[#8b8b80] hover:text-white hover:bg-white/10"
+          >
+            <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+          </span>
+        )}
       </button>
     );
   }
@@ -900,9 +918,10 @@ const SidebarModuleBtn: React.FC<{
   return (
     <button
       onClick={onClick}
+      onDoubleClick={onOpenWindowDirect ? (e) => { e.preventDefault(); onOpenWindowDirect(); } : undefined}
       onContextMenu={onOpenWindow ? (e) => { e.preventDefault(); onOpenWindow(e.clientX, e.clientY); } : undefined}
       style={enterStyle}
-      className={`${enterClass} relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
+      className={`${enterClass} group relative flex w-full flex-col items-center gap-1 rounded-[10px] px-1 py-2.5 transition-colors ${
         isActive
           ? 'text-[#f27a23]'
           : isTemporary
@@ -938,6 +957,21 @@ const SidebarModuleBtn: React.FC<{
           {badgeCount > 9 ? '9+' : badgeCount}
         </span>
       )}
+      {onOpenWindowDirect && (
+        <span
+          title="Abrir como janela"
+          role="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onOpenWindowDirect(); }}
+          className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex h-3.5 w-3.5 items-center justify-center rounded text-white/40 hover:text-white/80"
+        >
+          <svg width="8" height="8" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+            <path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            <path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </span>
+      )}
     </button>
   );
 };
@@ -951,6 +985,14 @@ const MainApp: React.FC = () => {
   // Floating windows
   const { windows: floatWins, openWindow, updateWindow, closeWindow, focusWindow } = useFloatingWindows();
   const [sidebarCtx, setSidebarCtx] = useState<{ x: number; y: number; module: FloatingModuleKey; label: string } | null>(null);
+  const toast = useToastContext();
+
+  const handleOpenWindow = useCallback((module: FloatingModuleKey, label: string) => {
+    const ok = openWindow(module, label);
+    if (!ok) {
+      toast.warning(`Limite de ${MAX_WINDOWS} janelas atingido. Feche uma para abrir outra.`);
+    }
+  }, [openWindow, toast]);
   useEffect(() => {
     if (!sidebarCtx) return;
     const close = () => setSidebarCtx(null);
@@ -2047,11 +2089,13 @@ useEffect(() => {
           <SidebarModuleBtn moduleKey="dashboard" label="Dashboard" Icon={Layers}
             isActive={activeModule === 'dashboard'}
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }}
-            onOpenWindow={floatingWindowModules.has('dashboard') ? (x,y) => setSidebarCtx({x,y,module:'dashboard',label:'Dashboard'}) : undefined} />
+            onOpenWindow={floatingWindowModules.has('dashboard') ? (x,y) => setSidebarCtx({x,y,module:'dashboard',label:'Dashboard'}) : undefined}
+            onOpenWindowDirect={floatingWindowModules.has('dashboard') ? () => handleOpenWindow('dashboard','Dashboard') : undefined} />
           <SidebarModuleBtn moduleKey="feed" label="Feed" Icon={Newspaper}
             isActive={activeModule === 'feed'}
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }}
-            onOpenWindow={floatingWindowModules.has('feed') ? (x,y) => setSidebarCtx({x,y,module:'feed',label:'Feed'}) : undefined} />
+            onOpenWindow={floatingWindowModules.has('feed') ? (x,y) => setSidebarCtx({x,y,module:'feed',label:'Feed'}) : undefined}
+            onOpenWindowDirect={floatingWindowModules.has('feed') ? () => handleOpenWindow('feed','Feed') : undefined} />
 
           {/* Skeleton enquanto as permissões carregam */}
           {permissionsLoading && (
@@ -2066,28 +2110,32 @@ useEffect(() => {
               isActive={activeModule === 'agenda'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
               expiresAt={getOverrideExpiry('agenda')}
-              onOpenWindow={floatingWindowModules.has('agenda') ? (x,y) => setSidebarCtx({x,y,module:'agenda',label:'Agenda'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('agenda') ? (x,y) => setSidebarCtx({x,y,module:'agenda',label:'Agenda'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('agenda') ? () => handleOpenWindow('agenda','Agenda') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('chat') && (
             <SidebarModuleBtn moduleKey="chat" label="Chat" Icon={MessageCircle}
               isActive={activeModule === 'chat'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
               expiresAt={getOverrideExpiry('chat')}
-              onOpenWindow={floatingWindowModules.has('chat') ? (x,y) => setSidebarCtx({x,y,module:'chat',label:'Chat'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('chat') ? (x,y) => setSidebarCtx({x,y,module:'chat',label:'Chat'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('chat') ? () => handleOpenWindow('chat','Chat') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('whatsapp') && (
             <SidebarModuleBtn moduleKey="whatsapp" label="WhatsApp" Icon={MessageSquare}
               isActive={activeModule === 'whatsapp'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
               expiresAt={getOverrideExpiry('whatsapp')}
-              onOpenWindow={floatingWindowModules.has('whatsapp') ? (x,y) => setSidebarCtx({x,y,module:'whatsapp',label:'WhatsApp'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('whatsapp') ? (x,y) => setSidebarCtx({x,y,module:'whatsapp',label:'WhatsApp'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('whatsapp') ? () => handleOpenWindow('whatsapp','WhatsApp') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('email') && (
             <SidebarModuleBtn moduleKey="email" label="Email" Icon={Mail}
               isActive={activeModule === 'email'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('email'); }}
               expiresAt={getOverrideExpiry('email')}
-              onOpenWindow={floatingWindowModules.has('email') ? (x,y) => setSidebarCtx({x,y,module:'email',label:'Email'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('email') ? (x,y) => setSidebarCtx({x,y,module:'email',label:'Email'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('email') ? () => handleOpenWindow('email','Email') : undefined} />
           )}
 
           {/* â”€â”€ ATENDIMENTO â”€â”€ Leads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2114,21 +2162,24 @@ useEffect(() => {
               isActive={activeModule === 'clientes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
               expiresAt={getOverrideExpiry('clientes')}
-              onOpenWindow={floatingWindowModules.has('clientes') ? (x,y) => setSidebarCtx({x,y,module:'clientes',label:'Clientes'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('clientes') ? (x,y) => setSidebarCtx({x,y,module:'clientes',label:'Clientes'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('clientes') ? () => handleOpenWindow('clientes','Clientes') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('processos') && (
             <SidebarModuleBtn moduleKey="processos" label="Processos" Icon={Scale}
               isActive={activeModule === 'processos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
               expiresAt={getOverrideExpiry('processos')}
-              onOpenWindow={floatingWindowModules.has('processos') ? (x,y) => setSidebarCtx({x,y,module:'processos',label:'Processos'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('processos') ? (x,y) => setSidebarCtx({x,y,module:'processos',label:'Processos'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('processos') ? () => handleOpenWindow('processos','Processos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('requerimentos') && isModuleEnabled('requerimentos') && (
             <SidebarModuleBtn moduleKey="requerimentos" label="Requerimentos" Icon={Briefcase}
               isActive={activeModule === 'requerimentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
               expiresAt={getOverrideExpiry('requerimentos')}
-              onOpenWindow={floatingWindowModules.has('requerimentos') ? (x,y) => setSidebarCtx({x,y,module:'requerimentos',label:'Requerimentos'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('requerimentos') ? (x,y) => setSidebarCtx({x,y,module:'requerimentos',label:'Requerimentos'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('requerimentos') ? () => handleOpenWindow('requerimentos','Requerimentos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('peticoes') && (
             <SidebarModuleBtn moduleKey="peticoes" label="Petições" Icon={FileText}
@@ -2140,7 +2191,8 @@ useEffect(() => {
               isActive={activeModule === 'financeiro'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
               expiresAt={getOverrideExpiry('financeiro')}
-              onOpenWindow={floatingWindowModules.has('financeiro') ? (x,y) => setSidebarCtx({x,y,module:'financeiro',label:'Financeiro'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('financeiro') ? (x,y) => setSidebarCtx({x,y,module:'financeiro',label:'Financeiro'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('financeiro') ? () => handleOpenWindow('financeiro','Financeiro') : undefined} />
           )}
 
           {/* â”€â”€ OPERACIONAL â”€â”€ Prazos, Intimações â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -2158,14 +2210,16 @@ useEffect(() => {
               isActive={activeModule === 'prazos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
               expiresAt={getOverrideExpiry('prazos')}
-              onOpenWindow={floatingWindowModules.has('prazos') ? (x,y) => setSidebarCtx({x,y,module:'prazos',label:'Prazos'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('prazos') ? (x,y) => setSidebarCtx({x,y,module:'prazos',label:'Prazos'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('prazos') ? () => handleOpenWindow('prazos','Prazos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('intimacoes') && (
             <SidebarModuleBtn moduleKey="intimacoes" label="Intimações" Icon={Bell}
               isActive={activeModule === 'intimacoes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
               expiresAt={getOverrideExpiry('intimacoes')}
-              onOpenWindow={floatingWindowModules.has('intimacoes') ? (x,y) => setSidebarCtx({x,y,module:'intimacoes',label:'Intimações'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('intimacoes') ? (x,y) => setSidebarCtx({x,y,module:'intimacoes',label:'Intimações'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('intimacoes') ? () => handleOpenWindow('intimacoes','Intimações') : undefined} />
           )}
 
           {/* â”€â”€ DOCS â”€â”€ Documentos, Assinaturas, Cloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -2184,21 +2238,24 @@ useEffect(() => {
               isActive={activeModule === 'documentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
               expiresAt={getOverrideExpiry('documentos')}
-              onOpenWindow={floatingWindowModules.has('documentos') ? (x,y) => setSidebarCtx({x,y,module:'documentos',label:'Documentos'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('documentos') ? (x,y) => setSidebarCtx({x,y,module:'documentos',label:'Documentos'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('documentos') ? () => handleOpenWindow('documentos','Documentos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('assinaturas') && (
             <SidebarModuleBtn moduleKey="assinaturas" label="Assinaturas" Icon={PenTool}
               isActive={activeModule === 'assinaturas'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
               expiresAt={getOverrideExpiry('assinaturas')}
-              onOpenWindow={floatingWindowModules.has('assinaturas') ? (x,y) => setSidebarCtx({x,y,module:'assinaturas',label:'Assinaturas'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('assinaturas') ? (x,y) => setSidebarCtx({x,y,module:'assinaturas',label:'Assinaturas'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('assinaturas') ? () => handleOpenWindow('assinaturas','Assinaturas') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('cloud') && (
             <SidebarModuleBtn moduleKey="cloud" label="Cloud" Icon={Cloud}
               isActive={activeModule === 'cloud'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
               expiresAt={getOverrideExpiry('cloud')}
-              onOpenWindow={floatingWindowModules.has('cloud') ? (x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'}) : undefined} />
+              onOpenWindow={floatingWindowModules.has('cloud') ? (x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'}) : undefined}
+              onOpenWindowDirect={floatingWindowModules.has('cloud') ? () => handleOpenWindow('cloud','Cloud') : undefined} />
           )}
 
           {/* Separador + Perfil */}
@@ -2754,7 +2811,7 @@ useEffect(() => {
           <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-400 select-none">{sidebarCtx.label}</div>
           <button
             className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            onClick={() => { openWindow(sidebarCtx.module, sidebarCtx.label); setSidebarCtx(null); }}
+            onClick={() => { handleOpenWindow(sidebarCtx.module, sidebarCtx.label); setSidebarCtx(null); }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
             Abrir como janela

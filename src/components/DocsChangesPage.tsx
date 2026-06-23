@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.264': { name: 'Cafe Workspace Persistente', emoji: '[window]' },
   '1.10.263': { name: 'Cafe Janelas Orquestradas', emoji: '[window]' },
   '1.10.262': { name: 'Cafe Threads e Centro Operacional Polidos', emoji: '[sparkles]' },
   '1.10.261': { name: 'Cafe Inbox Estrela e Sino Integrados', emoji: '[star]' },
@@ -916,6 +917,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.264',
+    date: '23/06/2026',
+    summary: 'Workspace flutuante refinado: o CRM passou a abrir modulos direto pela sidebar, lembrar janelas abertas e aplicar limite com aviso claro para manter o uso multipainel sob controle.',
+    modules: [
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Sidebar ganhou atalho direto para abrir modulo como janela', description: 'Os botoes agora aceitam duplo clique e atalho visual no hover para abrir a janela sem depender do menu de contexto.' },
+        { type: 'improvement' as const, title: 'Workspace passou a restaurar janelas e limitar excesso de aberturas', description: 'As janelas flutuantes agora persistem no navegador, podem ser fechadas em lote pela taskbar e respeitam um teto operacional com feedback via toast ao usuario.' },
+      ]},
+      { moduleId: 'dashboard', changes: [
+        { type: 'improvement' as const, title: 'Abertura direta foi integrada ao fluxo principal do app', description: 'O App centralizou o controle de abertura para reutilizar foco, restauracao e alertas de limite sem quebrar a navegacao normal dos modulos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.263',
     date: '23/06/2026',
