@@ -221,6 +221,34 @@ class StandardPetitionService {
     return data;
   }
 
+  // Sobrescrever o conteúdo do .docx da petição (edição no editor Syncfusion).
+  // Mantém o mesmo file_path/registro — apenas substitui o binário e o tamanho.
+  async replacePetitionContent(petition: StandardPetition, blob: Blob): Promise<StandardPetition> {
+    if (!petition.file_path) {
+      throw new Error('Petição não possui arquivo.');
+    }
+
+    const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(petition.file_path, blob, { contentType, upsert: true });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ file_size: blob.size, mime_type: contentType })
+      .eq('id', petition.id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   // ==================== CAMPOS PERSONALIZADOS ====================
 
   async listFields(petitionId: string): Promise<StandardPetitionField[]> {

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.266': { name: 'Cafe Templates Editaveis', emoji: '[edit]' },
   '1.10.265': { name: 'Cafe Assinatura Mobile Blindada', emoji: '[shield]' },
   '1.10.264': { name: 'Cafe Workspace Persistente', emoji: '[window]' },
   '1.10.263': { name: 'Cafe Janelas Orquestradas', emoji: '[window]' },
@@ -918,6 +919,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.266',
+    date: '23/06/2026',
+    summary: 'Documentos e assinaturas refinados: o CRM passou a editar modelos .docx diretamente nas telas operacionais e corrigiu o posicionamento da assinatura em PDFs cujo recorte visivel difere da pagina base.',
+    modules: [
+      { moduleId: 'documentos', changes: [
+        { type: 'feature' as const, title: 'Gerenciador de arquivos passou a editar documento principal e anexos', description: 'Templates agora podem abrir o .docx principal e os anexos em editor dedicado, com persistencia no mesmo arquivo do storage.' },
+        { type: 'feature' as const, title: 'Modelos de MS e peticoes padrao ganharam edicao direta do .docx', description: 'Os modulos de requerimentos e peticoes passaram a abrir o arquivo vinculado em modal de edicao para ajustes operacionais sem reupload manual.' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Posicionamento da assinatura passou a respeitar o CropBox do PDF', description: 'O calculo das coordenadas agora usa a area visivel da pagina, evitando deslocamentos em documentos cujo recorte exibido difere da MediaBox original.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.265',
     date: '23/06/2026',

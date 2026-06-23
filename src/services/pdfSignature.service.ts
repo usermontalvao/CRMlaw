@@ -458,18 +458,37 @@ class PdfSignatureService {
     }
   }
 
+  // Caixa visível da página. A UI de marcação (pdf.js/react-pdf) posiciona os
+  // campos relativos ao CropBox (a área que o leitor exibe), enquanto pdf-lib
+  // desenha relativo à origem da página. Usar o CropBox (origem + tamanho)
+  // evita que a assinatura caia deslocada em PDFs enviados cujo CropBox difere
+  // da MediaBox. Para PDFs normais (CropBox = MediaBox em 0,0) o resultado é
+  // idêntico ao comportamento anterior.
+  private getPageBox(page: PDFPage): { x: number; y: number; width: number; height: number } {
+    try {
+      const cb = (page as any).getCropBox?.();
+      if (cb && cb.width > 0 && cb.height > 0) {
+        return { x: cb.x ?? 0, y: cb.y ?? 0, width: cb.width, height: cb.height };
+      }
+    } catch {
+      // ignore — fallback para getSize (MediaBox)
+    }
+    const { width, height } = page.getSize();
+    return { x: 0, y: 0, width, height };
+  }
+
   private percentToPdfRect(
-    pageWidth: number,
-    pageHeight: number,
+    page: PDFPage,
     field: Pick<SignatureField, 'x_percent' | 'y_percent' | 'w_percent' | 'h_percent'>
   ) {
     // UI trabalha com origem no topo-esquerdo; pdf-lib usa origem no bottom-esquerdo.
-    const w = (pageWidth * field.w_percent) / 100;
-    const h = (pageHeight * field.h_percent) / 100;
-    const x = (pageWidth * field.x_percent) / 100;
-    const yTop = (pageHeight * field.y_percent) / 100;
-    const y = pageHeight - yTop - h;
-    return { x, y, w, h };
+    const box = this.getPageBox(page);
+    const w = (box.width * field.w_percent) / 100;
+    const h = (box.height * field.h_percent) / 100;
+    const x = box.x + (box.width * field.x_percent) / 100;
+    const yTop = (box.height * field.y_percent) / 100;
+    const y = box.y + box.height - yTop - h;
+    return { x, y, w, h, box };
   }
 
   private drawFooterStamp(params: {
@@ -1522,12 +1541,11 @@ class PdfSignatureService {
       const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
       const page = pages[pageIndex];
       if (!page) continue;
-      const { width, height } = page.getSize();
-      const { x, y, w, h } = this.percentToPdfRect(width, height, f);
-      const drawX = Math.max(0, Math.min(width, x));
-      const drawY = Math.max(0, Math.min(height, y));
-      const drawW = Math.max(1, Math.min(w, width - drawX));
-      const drawH = Math.max(1, Math.min(h, height - drawY));
+      const { x, y, w, h, box } = this.percentToPdfRect(page, f);
+      const drawX = Math.max(box.x, Math.min(box.x + box.width, x));
+      const drawY = Math.max(box.y, Math.min(box.y + box.height, y));
+      const drawW = Math.max(1, Math.min(w, box.x + box.width - drawX));
+      const drawH = Math.max(1, Math.min(h, box.y + box.height - drawY));
       page.drawImage(img, { x: drawX, y: drawY, width: drawW, height: drawH });
       drewAnySignature = true;
     }
@@ -2404,18 +2422,17 @@ class PdfSignatureService {
           const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
           const page = pdfDoc.getPages()[pageIndex];
           if (!page) continue;
-          const { width, height } = page.getSize();
-          const rect = this.percentToPdfRect(width, height, f);
+          const rect = this.percentToPdfRect(page, f);
           drawSignatureField({
             pdfPage: page,
-            pageW: width,
-            pageH: height,
+            pageW: rect.box.x + rect.box.width,
+            pageH: rect.box.y + rect.box.height,
             x: rect.x,
             y: rect.y,
             w: rect.w,
             h: rect.h,
-            minY: 0,
-            maxY: height,
+            minY: rect.box.y,
+            maxY: rect.box.y + rect.box.height,
             signatureImage: asset.signature,
           });
         }

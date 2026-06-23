@@ -447,6 +447,74 @@ class DocumentTemplateService {
     return data;
   }
 
+  // Sobrescrever o conteúdo do arquivo principal de um template (document_templates.file_path).
+  // Usado pela edição no editor Syncfusion (ex.: modelos MS do módulo Requerimentos).
+  async replaceTemplateContent(template: DocumentTemplate, blob: Blob): Promise<DocumentTemplate> {
+    if (!template.file_path) {
+      throw new Error('Template não possui arquivo associado.');
+    }
+
+    const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(template.file_path, blob, { contentType, upsert: true });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ file_size: blob.size, mime_type: contentType })
+      .eq('id', template.id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Sobrescrever o conteúdo de um arquivo de template (edição no editor Syncfusion).
+  // Mantém o mesmo file_path/registro — apenas substitui o binário e o tamanho.
+  async replaceTemplateFileContent(fileId: string, blob: Blob, fileName?: string): Promise<TemplateFile> {
+    const { data: file, error: fetchError } = await supabase
+      .from('template_files')
+      .select('file_path, file_name')
+      .eq('id', fileId)
+      .single();
+
+    if (fetchError || !file?.file_path) {
+      throw new Error('Arquivo não encontrado.');
+    }
+
+    const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(file.file_path, blob, { contentType, upsert: true });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const updates: Record<string, unknown> = {
+      file_size: blob.size,
+      mime_type: contentType,
+    };
+    if (fileName) updates.file_name = fileName;
+
+    const { data, error } = await supabase
+      .from('template_files')
+      .update(updates)
+      .eq('id', fileId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   // Obter template com todos os arquivos
   async getTemplateWithFiles(templateId: string): Promise<DocumentTemplate & { files: TemplateFile[] }> {
     const template = await this.getTemplate(templateId);

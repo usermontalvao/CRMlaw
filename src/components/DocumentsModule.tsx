@@ -2225,10 +2225,10 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           setFilesManagerOpen(true);
                         }}
                         className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
-                        title="Gerenciar documentos anexos"
+                        title="Documento principal e anexos"
                       >
                         <FileText className="h-3 w-3" />
-                        Anexos
+                        Documentos
                       </button>
                       <button
                         onClick={() => {

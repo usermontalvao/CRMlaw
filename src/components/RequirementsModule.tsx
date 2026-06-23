@@ -60,6 +60,7 @@ import { clientService } from '../services/client.service';
 import { signatureService } from '../services/signature.service';
 import { requirementDocumentService } from '../services/requirementDocument.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
+import TemplateDocxEditorModal from './TemplateDocxEditorModal';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useToastContext } from '../contexts/ToastContext';
@@ -689,6 +690,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [msTemplate, setMsTemplate] = useState<DocumentTemplate | null>(null);
   const [msTemplates, setMsTemplates] = useState<DocumentTemplate[]>([]);
   const [msTemplateUploadFile, setMsTemplateUploadFile] = useState<File | null>(null);
+  const [msTemplateEditing, setMsTemplateEditing] = useState<DocumentTemplate | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [schedulePromptId, setSchedulePromptId] = useState<string | null>(null);
   const [exigencyModal, setExigencyModal] = useState<ExigencyModalState | null>(null);
@@ -1525,6 +1527,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       console.error(e);
       toast.error(e?.message || 'Erro ao baixar modelo.');
     }
+  };
+
+  const handleEditMsTemplate = () => {
+    const targetId = (msTemplateId || msTemplate?.id || '').trim();
+    if (!targetId) {
+      toast.error('Selecione um modelo para editar.');
+      return;
+    }
+    const templateToEdit = msTemplates.find((item) => item.id === targetId) || msTemplate;
+    if (!templateToEdit) {
+      toast.error('Modelo não encontrado.');
+      return;
+    }
+    if (!templateToEdit.file_path) {
+      toast.error('Este modelo não possui arquivo .docx para editar.');
+      return;
+    }
+    setMsTemplateEditing(templateToEdit);
   };
 
   const buildMsPlaceholders = (requirement: Requirement, client: Client) => {
@@ -5566,6 +5586,15 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </button>
                   <button
                     type="button"
+                    onClick={handleEditMsTemplate}
+                    disabled={!(msTemplateId || msTemplate?.id)}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition disabled:opacity-60"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Editar
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleRemoveMsTemplate}
                     disabled={msTemplateSaving || !(msTemplateId || msTemplate?.id)}
                     className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition disabled:opacity-60"
@@ -5659,6 +5688,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </div>
           </div>
         </div>
+      )}
+
+      {msTemplateEditing && (
+        <TemplateDocxEditorModal
+          isOpen={!!msTemplateEditing}
+          onClose={() => setMsTemplateEditing(null)}
+          fileName={msTemplateEditing.file_name || `${msTemplateEditing.name}.docx`}
+          badge="Modelo MS"
+          load={() => documentTemplateService.downloadTemplateFile(msTemplateEditing)}
+          save={(blob) => documentTemplateService.replaceTemplateContent(msTemplateEditing, blob).then(() => undefined)}
+          onSaved={() => { loadMsTemplates(); }}
+        />
       )}
 
       {msSelectTemplateModalOpen && (

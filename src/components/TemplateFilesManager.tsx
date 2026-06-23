@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown } from 'lucide-react';
+import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown, Pencil } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
+import TemplateDocxEditorModal from './TemplateDocxEditorModal';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
 
 interface TemplateFilesManagerProps {
@@ -27,6 +28,9 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [designerFileId, setDesignerFileId] = useState<string | null>(null);
+  const [editingFile, setEditingFile] = useState<TemplateFile | null>(null);
+  const [editingMain, setEditingMain] = useState(false);
+  const [downloadingMain, setDownloadingMain] = useState(false);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -66,6 +70,19 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
       setError(err instanceof Error ? err.message : 'Erro ao baixar arquivo');
     } finally {
       setDownloadingFileId(null);
+    }
+  };
+
+  const handleDownloadMain = async () => {
+    try {
+      setDownloadingMain(true);
+      setError(null);
+      const blob = await documentTemplateService.downloadTemplateFile(template);
+      saveAs(blob, template.file_name || `${template.name}.docx`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao baixar documento principal');
+    } finally {
+      setDownloadingMain(false);
     }
   };
 
@@ -189,6 +206,51 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
             </div>
           )}
 
+          {/* ── Documento principal (contrato) ── */}
+          {template.file_path && (
+            <div className="mb-6">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Principal</p>
+              <div className="flex items-center gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
+                <div className="flex-shrink-0 w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 truncate">
+                    {template.file_name || `${template.name}.docx`}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {typeof template.file_size === 'number' ? formatFileSize(template.file_size) : 'Documento de assinatura'}
+                  </p>
+                </div>
+                <span className="px-2 py-1 text-[11px] font-semibold rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 whitespace-nowrap">
+                  Principal
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleDownloadMain}
+                    disabled={downloadingMain}
+                    className="p-2 hover:bg-slate-200 rounded-lg transition disabled:opacity-50"
+                    title="Baixar documento principal"
+                  >
+                    {downloadingMain ? (
+                      <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4 text-slate-600" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setEditingMain(true)}
+                    className="p-2 hover:bg-amber-100 rounded-lg transition"
+                    title="Editar documento principal"
+                  >
+                    <Pencil className="w-4 h-4 text-amber-600" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Anexos</p>
           <div className="mb-6">
             <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-amber-500 hover:bg-amber-50/50 transition">
               <input
@@ -230,23 +292,20 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           ) : files.length === 0 ? (
             <div className="text-center py-10">
               <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-600">Nenhum documento adicionado</p>
+              <p className="text-slate-600">Nenhum anexo adicionado</p>
               <p className="text-sm text-slate-500 mt-1">
-                Adicione documentos que fazem parte deste template
+                Adicione documentos anexos que acompanham o principal neste template
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-slate-600 mb-3">
-                {files.length} documento(s) - Arraste para reordenar
+                {files.length} anexo(s) - Arraste para reordenar
               </p>
               {files.map((file, index) => (
                 (() => {
-                  const isMain = index === 0;
-                  const label = isMain ? 'Principal' : 'Anexo';
-                  const badgeClass = isMain
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                    : 'bg-slate-50 text-slate-600 border-[#e7e5df]';
+                  const label = 'Anexo';
+                  const badgeClass = 'bg-slate-50 text-slate-600 border-[#e7e5df]';
 
                   return (
                 <div
@@ -293,6 +352,13 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                       )}
                     </button>
                     <button
+                      onClick={() => setEditingFile(file)}
+                      className="p-2 hover:bg-amber-100 rounded-lg transition"
+                      title="Editar documento"
+                    >
+                      <Pencil className="w-4 h-4 text-amber-600" />
+                    </button>
+                    <button
                       onClick={() => setDesignerFileId(file.id)}
                       className="p-2 hover:bg-emerald-100 rounded-lg transition"
                       title="Configurar posição da assinatura"
@@ -335,6 +401,28 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
       initialFileId={designerFileId}
       onSave={() => { loadFiles(); onUpdate(); }}
     />
+    {editingFile && (
+      <TemplateDocxEditorModal
+        isOpen={!!editingFile}
+        onClose={() => setEditingFile(null)}
+        fileName={editingFile.file_name || 'documento.docx'}
+        badge="Anexo"
+        load={() => documentTemplateService.downloadTemplateFileById(editingFile.id)}
+        save={(blob) => documentTemplateService.replaceTemplateFileContent(editingFile.id, blob).then(() => undefined)}
+        onSaved={() => { loadFiles(); onUpdate(); }}
+      />
+    )}
+    {editingMain && (
+      <TemplateDocxEditorModal
+        isOpen={editingMain}
+        onClose={() => setEditingMain(false)}
+        fileName={template.file_name || `${template.name}.docx`}
+        badge="Principal"
+        load={() => documentTemplateService.downloadTemplateFile(template)}
+        save={(blob) => documentTemplateService.replaceTemplateContent(template, blob).then(() => undefined)}
+        onSaved={() => { onUpdate(); }}
+      />
+    )}
     </>,
     document.body
   );
