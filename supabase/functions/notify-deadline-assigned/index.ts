@@ -8,14 +8,12 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 };
 
-// E-mail via Resend (chave em secret RESEND_API_KEY). Remetente no domínio
-// verificado jurius.com.br; nenhuma credencial fica no código.
+// E-mail via Resend (chave em secret RESEND_API_KEY).
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL = 'noreply@jurius.com.br';
-const FROM_NAME  = 'Jurius';
-const REPLY_TO   = 'assinatura@advcuiaba.com';
+const FROM_NAME = 'Jurius';
+const REPLY_TO = 'assinatura@advcuiaba.com';
 
-// Cores do sistema (mesmo padrão do email-send-otp)
 const brandOrange = '#f97316';
 const brandOrangeDark = '#ea580c';
 const s900 = '#0f172a';
@@ -31,19 +29,37 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(dateStr).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
 }
 
-function getPriorityLabel(p: string): string {
-  return ({ urgente: 'Urgente', alta: 'Alta', media: 'Média', baixa: 'Baixa' } as Record<string, string>)[p] || p;
+function getPriorityLabel(priority: string): string {
+  return ({
+    urgente: 'Urgente',
+    alta: 'Alta',
+    media: 'Media',
+    baixa: 'Baixa',
+  } as Record<string, string>)[priority] || priority;
 }
 
-function getPriorityColor(p: string): string {
-  return ({ urgente: '#dc2626', alta: '#ea580c', media: '#d97706', baixa: '#16a34a' } as Record<string, string>)[p] || '#64748b';
+function getPriorityColor(priority: string): string {
+  return ({
+    urgente: '#dc2626',
+    alta: '#ea580c',
+    media: '#d97706',
+    baixa: '#16a34a',
+  } as Record<string, string>)[priority] || '#64748b';
 }
 
-function getTypeLabel(t: string): string {
-  return ({ geral: 'Geral', processo: 'Processo', requerimento: 'Requerimento' } as Record<string, string>)[t] || t;
+function getTypeLabel(type: string): string {
+  return ({
+    geral: 'Geral',
+    processo: 'Processo',
+    requerimento: 'Requerimento',
+  } as Record<string, string>)[type] || type;
 }
 
 function buildDeadlineEmailHtml(data: {
@@ -58,142 +74,146 @@ function buildDeadlineEmailHtml(data: {
   processNumber: string | null;
   mode: 'assigned' | 'reminder' | 'overdue';
 }): string {
-  const pc = getPriorityColor(data.priority);
-  const pl = getPriorityLabel(data.priority);
-  const tl = getTypeLabel(data.type);
-  const df = formatDate(data.dueDate);
-  const dd = Math.ceil((new Date(data.dueDate).getTime() - Date.now()) / 86400000);
+  const priorityColor = getPriorityColor(data.priority);
+  const priorityLabel = getPriorityLabel(data.priority);
+  const typeLabel = getTypeLabel(data.type);
+  const dueDateFormatted = formatDate(data.dueDate);
+  const daysDiff = Math.ceil((new Date(data.dueDate).getTime() - Date.now()) / 86400000);
 
   let daysText = '';
-  let daysColor = '#16a34a';
-  if (dd < 0) { daysText = `Vencido há ${Math.abs(dd)} dia(s)`; daysColor = '#dc2626'; }
-  else if (dd === 0) { daysText = 'Vence hoje!'; daysColor = '#dc2626'; }
-  else if (dd === 1) { daysText = 'Vence amanhã!'; daysColor = '#ea580c'; }
-  else if (dd <= 3) { daysText = `Faltam ${dd} dias`; daysColor = '#ea580c'; }
-  else { daysText = `Faltam ${dd} dias`; daysColor = '#16a34a'; }
+  let daysColor = '#1E8A5B';
+  if (daysDiff < 0) {
+    daysText = `Vencido há ${Math.abs(daysDiff)} dia(s)`;
+    daysColor = '#D8442B';
+  } else if (daysDiff === 0) {
+    daysText = 'Vence hoje!';
+    daysColor = '#D8442B';
+  } else if (daysDiff === 1) {
+    daysText = 'Falta 1 dia';
+    daysColor = '#D98018';
+  } else if (daysDiff <= 3) {
+    daysText = `Faltam ${daysDiff} dias`;
+    daysColor = '#D98018';
+  } else {
+    daysText = `Faltam ${daysDiff} dias`;
+    daysColor = '#1E8A5B';
+  }
 
   const isReminder = data.mode === 'reminder';
   const isOverdue = data.mode === 'overdue';
   const selfAssigned = data.assignedByName === data.responsibleName;
-  const headerTitle = isOverdue ? 'Prazo Vencido' : isReminder ? 'Lembrete de Prazo' : 'Novo Prazo Atribuído';
-  const headerSub = isOverdue ? 'Um prazo sob sua responsabilidade está vencido' : isReminder ? 'Você tem um prazo se aproximando' : 'Você recebeu uma nova responsabilidade';
-  const headerIcon = isOverdue ? '🚨' : isReminder ? '⏰' : '📅';
-  const greeting = isReminder
-    ? `Olá, <b>${data.responsibleName}</b>! Este é um lembrete sobre o prazo:`
-    : selfAssigned
-      ? `Olá, <b>${data.responsibleName}</b>! Um novo prazo foi cadastrado para você:`
-      : `Olá, <b>${data.responsibleName}</b>!<br><b>${data.assignedByName}</b> atribuiu um novo prazo para você:`;
 
-  const descHtml = data.description
-    ? `<tr><td style="padding:0 20px 14px;"><p style="margin:0;font-size:13px;color:${s600};line-height:1.5;border-left:3px solid ${s200};padding-left:10px;">${data.description}</p></td></tr>`
+  const eyebrow = isOverdue ? 'Prazo Vencido' : isReminder ? 'Lembrete de Prazo' : 'Notificação de Prazo';
+  const headerTitle = isOverdue ? 'Prazo vencido' : isReminder ? 'Lembrete de prazo' : 'Novo prazo atribuído';
+
+  const greeting = isReminder
+    ? `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. Este é um lembrete sobre o prazo abaixo. Confira os detalhes.`
+    : selfAssigned
+      ? `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. Um novo prazo foi cadastrado e atribuído a você. Confira os detalhes abaixo.`
+      : `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. <strong style="color:#16213A;">${data.assignedByName}</strong> atribuiu um novo prazo para você. Confira os detalhes abaixo.`;
+
+  const descriptionHtml = data.description
+    ? `<tr><td colspan="2" style="padding-top:16px;padding-bottom:4px;"><p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#54607A;line-height:1.6;border-left:3px solid #F5762B;padding-left:12px;">${data.description}</p></td></tr>`
     : '';
 
-  const procHtml = data.processNumber
-    ? `<tr><td style="padding:6px 0 0;"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">⚖️ Processo</span><br><span style="font-size:13px;color:${s900};font-family:monospace;">${data.processNumber}</span></td></tr>`
+  const processHtml = data.processNumber
+    ? `<tr><td colspan="2" style="padding-top:14px;">
+        <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:6px;">Processo</div>
+        <div style="font-family:'Courier New',Courier,monospace;font-size:13px;font-weight:500;color:#303A52;">${data.processNumber}</div>
+      </td></tr>`
     : '';
 
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="x-apple-disable-message-reformatting">
   <style>
-    @media only screen and (max-width:600px) {
-      .container { width:100%!important; max-width:100%!important; }
-      .padding { padding:16px!important; }
-      .padding-sm { padding:12px!important; }
-      .logo-text { font-size:18px!important; }
-      .logo-subtext { font-size:11px!important; }
+    @media only screen and (max-width:600px){
+      .container{width:100%!important;border-radius:0!important;}
+      .card-pad{padding:24px 20px!important;}
+      .two-col td{display:block!important;width:100%!important;padding-right:0!important;padding-left:0!important;}
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:${s50};">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${s50};">
-    <tr>
-      <td align="center" style="padding:24px 12px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border:1px solid ${s200};border-radius:16px;overflow:hidden;">
+<body style="margin:0;padding:0;background:#EEF0F4;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#EEF0F4;">
+    <tr><td align="center" style="padding:32px 16px 40px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 20px 50px -20px rgba(20,28,52,0.22),0 4px 14px -6px rgba(20,28,52,0.10);">
 
-          <!-- Header Jurius (logo oficial) -->
-          <tr>
-            <td style="padding:24px 28px;background:#ffffff;border-bottom:1px solid #f1ece6;">
-              <img src="https://jurius.com.br/email-header.png" alt="jurius.com.br — Gestão Jurídica Inteligente" width="280" style="display:block;border:0;outline:none;text-decoration:none;height:auto;" />
-            </td>
-          </tr>
+        <tr><td style="height:5px;background:linear-gradient(90deg,#F5762B 0%,#E14E14 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
 
-          <!-- Título + Saudação -->
-          <tr>
-            <td class="padding" style="padding:24px 28px 8px;">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:1.3;font-weight:800;color:${s900};">${headerIcon} ${headerTitle}</div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:${s600};padding-top:6px;">${greeting}</div>
-            </td>
-          </tr>
+        <tr><td class="card-pad" style="padding:28px 36px;border-bottom:1px solid #F0F1F4;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td valign="middle" width="52">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="52" height="52" style="background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);border-radius:14px;text-align:center;">
+                  <tr><td align="center" valign="middle" height="52"><span style="font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:bold;color:#ffffff;">J</span></td></tr>
+                </table>
+              </td>
+              <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
+              <td valign="middle">
+                <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-0.01em;"><span style="color:#2A2E37;font-weight:bold;">jurius</span><span style="color:#EC5A1E;font-weight:bold;">.</span><span style="color:#8A8F9C;">com.br</span></div>
+                <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:8px;font-weight:bold;letter-spacing:0.22em;color:#A2A8B4;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
 
-          <!-- Card do prazo com barra de prioridade -->
-          <tr>
-            <td class="padding" style="padding:16px 28px 20px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff7ed;border:1px solid #fdba74;border-radius:14px;overflow:hidden;">
-                <tr><td style="height:4px;background:${pc};"></td></tr>
+        <tr><td class="card-pad" style="padding:32px 36px 12px;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.16em;color:#EC5A1E;text-transform:uppercase;margin-bottom:12px;">${eyebrow}</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;color:#16213A;letter-spacing:-0.015em;">${headerTitle}</div>
+          <p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#54607A;">${greeting}</p>
+        </td></tr>
+
+        <tr><td style="padding:20px 36px 4px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FFF6EE;border:1px solid #FAD9C0;border-radius:16px;overflow:hidden;">
+            <tr><td style="height:4px;background:linear-gradient(90deg,#F5762B,#E14E14);font-size:0;">&nbsp;</td></tr>
+            <tr><td style="padding:22px 24px 24px;">
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#16213A;font-weight:bold;margin-bottom:20px;">${data.title}</div>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="two-col">
                 <tr>
-                  <td style="padding:18px 20px 6px;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:800;color:${s900};line-height:1.3;">${data.title}</div>
+                  <td width="50%" valign="top" style="padding-right:12px;padding-bottom:16px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Vencimento</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:#16213A;">${dueDateFormatted}</div>
+                    <div style="margin-top:5px;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${daysColor};vertical-align:middle;margin-right:5px;"></span><span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:600;color:${daysColor};vertical-align:middle;">${daysText}</span></div>
+                  </td>
+                  <td width="50%" valign="top" style="padding-left:12px;padding-bottom:16px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Prioridade</div>
+                    <span style="display:inline-block;padding:5px 14px;border-radius:999px;background:${priorityColor};color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;">${priorityLabel}</span>
                   </td>
                 </tr>
-                ${descHtml}
+                <tr><td colspan="2" style="height:1px;background:#F4DCC7;padding:0;font-size:0;line-height:0;">&nbsp;</td></tr>
                 <tr>
-                  <td style="padding:0 20px 16px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                      <tr>
-                        <td width="50%" style="vertical-align:top;padding-right:8px;">
-                          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Vencimento</span><br>
-                          <span style="font-size:15px;font-weight:700;color:${s900};">${df}</span><br>
-                          <span style="font-size:12px;font-weight:600;color:${daysColor};">${daysText}</span>
-                        </td>
-                        <td width="50%" style="vertical-align:top;padding-left:8px;">
-                          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Prioridade</span><br>
-                          <span style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:${pc};">${pl}</span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td width="50%" style="vertical-align:top;padding-right:8px;padding-top:10px;">
-                          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Tipo</span><br>
-                          <span style="font-size:13px;color:${s900};font-weight:500;">${tl}</span>
-                        </td>
-                        <td width="50%" style="vertical-align:top;padding-left:8px;padding-top:10px;">
-                          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Cliente</span><br>
-                          <span style="font-size:13px;color:${s900};font-weight:500;">${data.clientName || 'Não definido'}</span>
-                        </td>
-                      </tr>
-                      ${procHtml}
-                    </table>
+                  <td width="50%" valign="top" style="padding-right:12px;padding-top:16px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Tipo</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:500;color:#303A52;">${typeLabel}</div>
+                  </td>
+                  <td width="50%" valign="top" style="padding-left:12px;padding-top:16px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Cliente</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:500;color:#303A52;">${data.clientName || 'Não definido'}</div>
                   </td>
                 </tr>
+                ${descriptionHtml}
+                ${processHtml}
               </table>
-            </td>
-          </tr>
+            </td></tr>
+          </table>
+        </td></tr>
 
-          <!-- Botão laranja -->
-          <tr>
-            <td class="padding" style="padding:0 28px 24px;" align="center">
-              <a href="https://jurius.com.br" style="display:inline-block;padding:14px 32px;background:${brandOrange};background:linear-gradient(135deg,${brandOrange} 0%,${brandOrangeDark} 100%);color:#ffffff;text-decoration:none;border-radius:10px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.3px;">Acessar Sistema →</a>
-            </td>
-          </tr>
+        <tr><td style="padding:28px 36px 32px;text-align:center;">
+          <a href="https://jurius.com.br" style="display:inline-block;text-decoration:none;background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.01em;padding:14px 36px;border-radius:12px;">Acessar Sistema &rarr;</a>
+          <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#97A0B2;">Acesse o painel para visualizar o processo completo e acompanhar todas as movimentações.</p>
+        </td></tr>
 
-          <!-- Footer -->
-          <tr>
-            <td class="padding" style="padding:18px 28px;border-top:1px solid ${s200};background:${s50};">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;color:${s600};text-align:center;">
-                <b style="color:${s900};">Jurius</b> • Gestão Jurídica
-              </div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.4;color:#94a3b8;text-align:center;padding-top:4px;">
-                Este e-mail foi enviado automaticamente. Não responda.
-              </div>
-            </td>
-          </tr>
+        <tr><td style="padding:18px 24px 16px;border-top:1px solid #F0F1F4;text-align:center;background:#F8F9FB;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#5C667C;font-weight:600;">Jurius &bull; Gestão Jurídica Inteligente</div>
+          <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.6;color:#9AA2B2;">Este e-mail foi enviado automaticamente. Não responda esta mensagem.<br/>© 2026 Jurius. Todos os direitos reservados.</div>
+        </td></tr>
 
-        </table>
-      </td>
-    </tr>
+      </table>
+    </td></tr>
   </table>
 </body>
 </html>`;
@@ -210,18 +230,15 @@ async function loadEmailTemplate(
       .eq('key', 'email_templates')
       .single();
     if (!Array.isArray(data?.value)) return null;
-    const tpl = data.value.find((t: any) => t.trigger === trigger && t.is_custom === true);
-    if (!tpl?.body_html) return null;
-    return { subject: tpl.subject ?? '', bodyHtml: tpl.body_html };
+    const template = data.value.find((item: any) => item.trigger === trigger && item.is_custom === true);
+    if (!template?.body_html) return null;
+    return { subject: template.subject ?? '', bodyHtml: template.body_html };
   } catch {
     return null;
   }
 }
 
-function applyTemplateVars(
-  template: string,
-  vars: Record<string, string>,
-): string {
+function applyTemplateVars(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
@@ -232,9 +249,9 @@ async function loadOfficeName(supabase: any): Promise<string> {
       .select('value')
       .eq('key', 'office_identity')
       .single();
-    return data?.value?.name ?? 'Escritório';
+    return data?.value?.name ?? 'Escritorio';
   } catch {
-    return 'Escritório';
+    return 'Escritorio';
   }
 }
 
@@ -245,88 +262,131 @@ async function sendDeadlineEmail(
   mode: 'assigned' | 'reminder' | 'overdue',
 ) {
   const { data: deadline } = await supabase.from('deadlines').select('*').eq('id', deadlineId).single();
-  if (!deadline?.responsible_id) return { success: false, error: 'Prazo sem responsável' };
+  if (!deadline?.responsible_id) return { success: false, error: 'Prazo sem responsavel' };
 
-  const { data: responsible } = await supabase.from('profiles').select('name, user_id').eq('id', deadline.responsible_id).single();
-  if (!responsible) return { success: false, error: 'Perfil não encontrado' };
+  const { data: responsible } = await supabase
+    .from('profiles')
+    .select('name, user_id')
+    .eq('id', deadline.responsible_id)
+    .single();
+  if (!responsible) return { success: false, error: 'Perfil nao encontrado' };
 
-  const { data: recipientEmail } = await supabase.rpc('get_email_by_profile_id', { p_profile_id: deadline.responsible_id });
-  if (!recipientEmail) return { success: false, error: 'Email não encontrado' };
+  const { data: recipientEmail } = await supabase.rpc('get_email_by_profile_id', {
+    p_profile_id: deadline.responsible_id,
+  });
+  if (!recipientEmail) return { success: false, error: 'Email nao encontrado' };
 
   let assignedByName = 'Sistema';
   if (assignedById) {
-    const { data: a } = await supabase.from('profiles').select('name').eq('user_id', assignedById).single();
-    if (a) assignedByName = a.name;
+    const { data: assignedBy } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('user_id', assignedById)
+      .single();
+    if (assignedBy) assignedByName = assignedBy.name;
   }
 
   let clientName: string | null = null;
   if (deadline.client_id) {
-    const { data: c } = await supabase.from('clients').select('full_name').eq('id', deadline.client_id).single();
-    if (c) clientName = c.full_name;
+    const { data: client } = await supabase
+      .from('clients')
+      .select('full_name')
+      .eq('id', deadline.client_id)
+      .single();
+    if (client) clientName = client.full_name;
   }
 
   let processNumber: string | null = null;
   if (deadline.process_id) {
-    const { data: p } = await supabase.from('processes').select('process_number').eq('id', deadline.process_id).single();
-    if (p) processNumber = p.process_number;
+    const { data: process } = await supabase
+      .from('processes')
+      .select('process_number')
+      .eq('id', deadline.process_id)
+      .single();
+    if (process) processNumber = process.process_number;
   }
 
-  const trigger = mode === 'overdue' ? 'deadline_overdue' : mode === 'reminder' ? 'deadline_due' : 'deadline_assigned';
-  const customTpl = await loadEmailTemplate(supabase, trigger);
+  const trigger = mode === 'overdue'
+    ? 'deadline_overdue'
+    : mode === 'reminder'
+      ? 'deadline_due'
+      : 'deadline_assigned';
+  const customTemplate = await loadEmailTemplate(supabase, trigger);
   const daysUntil = Math.ceil((new Date(deadline.due_date).getTime() - Date.now()) / 86400000);
 
   let emailHtml: string;
   let subjectLine: string;
 
-  if (customTpl) {
+  if (customTemplate) {
     const officeName = await loadOfficeName(supabase);
     const vars: Record<string, string> = {
       responsavel: responsible.name,
       prazo_descricao: deadline.title,
       prazo_data: formatDate(deadline.due_date),
       dias_restantes: String(Math.max(0, daysUntil)),
-      cliente_nome: clientName ?? 'Não definido',
+      cliente_nome: clientName ?? 'Nao definido',
       escritorio_nome: officeName,
     };
-    const raw = applyTemplateVars(customTpl.bodyHtml, vars);
-    emailHtml = raw.split('\n').map((l: string) => l.trimEnd()).join('\n');
-    subjectLine = customTpl.subject
-      ? applyTemplateVars(customTpl.subject, vars)
-      : mode === 'overdue' ? 'Prazo vencido - Jurius' : mode === 'reminder' ? 'Lembrete de prazo - Jurius' : 'Novo prazo cadastrado - Jurius';
+    const rawHtml = applyTemplateVars(customTemplate.bodyHtml, vars);
+    emailHtml = rawHtml.split('\n').map((line: string) => line.trimEnd()).join('\n');
+    subjectLine = customTemplate.subject
+      ? applyTemplateVars(customTemplate.subject, vars)
+      : mode === 'overdue'
+        ? 'Prazo vencido - Jurius'
+        : mode === 'reminder'
+          ? 'Lembrete de prazo - Jurius'
+          : 'Novo prazo cadastrado - Jurius';
   } else {
     const rawHtml = buildDeadlineEmailHtml({
-      responsibleName: responsible.name, assignedByName, title: deadline.title,
-      description: deadline.description || '', dueDate: deadline.due_date,
-      priority: deadline.priority, type: deadline.type, clientName, processNumber, mode,
+      responsibleName: responsible.name,
+      assignedByName,
+      title: deadline.title,
+      description: deadline.description || '',
+      dueDate: deadline.due_date,
+      priority: deadline.priority,
+      type: deadline.type,
+      clientName,
+      processNumber,
+      mode,
     });
-    emailHtml = rawHtml.split('\n').map((l: string) => l.trimEnd()).join('\n');
-    subjectLine = mode === 'overdue' ? 'Prazo vencido - Jurius' : mode === 'reminder'
-      ? 'Lembrete de prazo - Jurius'
-      : 'Novo prazo cadastrado - Jurius';
+    emailHtml = rawHtml.split('\n').map((line: string) => line.trimEnd()).join('\n');
+    subjectLine = mode === 'overdue'
+      ? 'Prazo vencido - Jurius'
+      : mode === 'reminder'
+        ? 'Lembrete de prazo - Jurius'
+        : 'Novo prazo cadastrado - Jurius';
   }
+
   console.log(`Enviando email (${mode}) para ${recipientEmail}`);
 
-  // Remetente configurável: usa o e-mail de Configurações apenas se for do
-  // domínio verificado no Resend (jurius.com.br); senão usa o padrão.
-  const { data: emailCfgRow } = await supabase
-    .from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle();
-  const cfgFromName: string = emailCfgRow?.value?.from_name ?? '';
-  const cfgFromEmail: string = emailCfgRow?.value?.from_email ?? '';
-  const fromSender = (cfgFromName && cfgFromEmail && cfgFromEmail.endsWith('@jurius.com.br'))
-    ? `${cfgFromName} <${cfgFromEmail}>`
+  const { data: emailConfigRow } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'email_integration_config')
+    .maybeSingle();
+  const configuredFromName: string = emailConfigRow?.value?.from_name ?? '';
+  const configuredFromEmail: string = emailConfigRow?.value?.from_email ?? '';
+  const fromSender = (configuredFromName && configuredFromEmail && configuredFromEmail.endsWith('@jurius.com.br'))
+    ? `${configuredFromName} <${configuredFromEmail}>`
     : `${FROM_NAME} <${FROM_EMAIL}>`;
 
-  // Chave do Resend: secret ou fallback em system_settings (igual weekly-digest)
   let resendKey = RESEND_API_KEY;
   if (!resendKey) {
-    const { data: s } = await supabase.from('system_settings').select('value').eq('key', 'notification_config').single();
-    resendKey = s?.value?.weekly_digest_resend_key ?? '';
+    const { data: settings } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'notification_config')
+      .single();
+    resendKey = settings?.value?.weekly_digest_resend_key ?? '';
   }
-  if (!resendKey) return { success: false, error: 'Resend API key não configurada' };
+  if (!resendKey) return { success: false, error: 'Resend API key nao configurada' };
 
-  const res = await fetch('https://api.resend.com/emails', {
+  const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       from: fromSender,
       to: [recipientEmail],
@@ -336,28 +396,46 @@ async function sendDeadlineEmail(
       text: `${mode === 'overdue' ? 'Prazo vencido' : mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo cadastrado'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
     }),
   });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    return { success: false, error: `Resend ${res.status}: ${errText.slice(0, 200)}` };
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    return { success: false, error: `Resend ${response.status}: ${errorText.slice(0, 200)}` };
   }
+
   console.log(`Email (${mode}) enviado para ${recipientEmail}`);
-  return { success: true, message: `Enviado para ${recipientEmail}`, responsible_name: responsible.name };
+  return {
+    success: true,
+    message: `Enviado para ${recipientEmail}`,
+    responsible_name: responsible.name,
+  };
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200, headers: corsHeaders });
+  }
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
     const payload = await req.json();
     const { deadline_id, assigned_by_id, mode } = payload;
 
-    if (!deadline_id) return jsonResponse({ success: false, error: 'deadline_id obrigatório' }, 400);
+    if (!deadline_id) {
+      return jsonResponse({ success: false, error: 'deadline_id obrigatorio' }, 400);
+    }
 
-    const result = await sendDeadlineEmail(supabase, deadline_id, assigned_by_id || null, mode || 'assigned');
+    const result = await sendDeadlineEmail(
+      supabase,
+      deadline_id,
+      assigned_by_id || null,
+      mode || 'assigned',
+    );
     return jsonResponse(result, result.success ? 200 : 500);
-  } catch (err: any) {
-    console.error('❌ Erro:', err?.message || err);
-    return jsonResponse({ success: false, error: err?.message || 'Erro desconhecido' }, 500);
+  } catch (error: any) {
+    console.error('Erro:', error?.message || error);
+    return jsonResponse({ success: false, error: error?.message || 'Erro desconhecido' }, 500);
   }
 });

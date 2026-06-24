@@ -49,82 +49,70 @@ function buildMentionEmailHtml(data: {
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="x-apple-disable-message-reformatting">
   <style>
-    @media only screen and (max-width:600px) {
-      .container { width:100%!important; max-width:100%!important; }
-      .padding { padding:16px!important; }
+    @media only screen and (max-width:600px){
+      .container{width:100%!important;border-radius:0!important;}
+      .card-pad{padding:24px 20px!important;}
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:${s50};">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${s50};">
-    <tr>
-      <td align="center" style="padding:24px 12px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border:1px solid ${s200};border-radius:16px;overflow:hidden;">
+<body style="margin:0;padding:0;background:#EEF0F4;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#EEF0F4;">
+    <tr><td align="center" style="padding:32px 16px 40px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 20px 50px -20px rgba(20,28,52,0.22),0 4px 14px -6px rgba(20,28,52,0.10);">
 
-          <!-- Header Jurius (logo oficial) -->
-          <tr>
-            <td style="padding:24px 28px;background:#ffffff;border-bottom:1px solid #f1ece6;">
-              <img src="https://jurius.com.br/email-header.png" alt="jurius.com.br — Gestão Jurídica Inteligente" width="280" style="display:block;border:0;outline:none;text-decoration:none;height:auto;" />
-            </td>
-          </tr>
+        <tr><td style="height:5px;background:linear-gradient(90deg,#F5762B 0%,#E14E14 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
 
-          <!-- Título + Saudação -->
-          <tr>
-            <td class="padding" style="padding:24px 28px 8px;">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:1.3;font-weight:800;color:${s900};">💬 Você foi mencionado</div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:${s600};padding-top:6px;">
-                Olá, <b>${escapeHtml(data.mentionedName)}</b>!<br>
-                <b>${escapeHtml(data.authorName)}</b> mencionou você em um comentário no prazo:
-              </div>
-            </td>
-          </tr>
+        <tr><td class="card-pad" style="padding:28px 36px;border-bottom:1px solid #F0F1F4;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td valign="middle" width="52">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="52" height="52" style="background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);border-radius:14px;text-align:center;">
+                  <tr><td align="center" valign="middle" height="52"><span style="font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:bold;color:#ffffff;">J</span></td></tr>
+                </table>
+              </td>
+              <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
+              <td valign="middle">
+                <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-0.01em;"><span style="color:#2A2E37;font-weight:bold;">jurius</span><span style="color:#EC5A1E;font-weight:bold;">.</span><span style="color:#8A8F9C;">com.br</span></div>
+                <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:8px;font-weight:bold;letter-spacing:0.22em;color:#A2A8B4;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
 
-          <!-- Card -->
-          <tr>
-            <td class="padding" style="padding:16px 28px 20px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff7ed;border:1px solid #fdba74;border-radius:14px;overflow:hidden;">
-                <tr><td style="height:4px;background:${brandOrange};"></td></tr>
-                <tr>
-                  <td style="padding:18px 20px 8px;">
-                    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Prazo</span><br>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:800;color:${s900};line-height:1.3;padding-top:2px;">${escapeHtml(data.deadlineTitle)}</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:6px 20px 18px;">
-                    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;">Comentário</span>
-                    <p style="margin:6px 0 0;font-size:14px;color:${s600};line-height:1.6;border-left:3px solid ${brandOrange};padding-left:12px;">${safeComment}</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+        <tr><td class="card-pad" style="padding:32px 36px 12px;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.16em;color:#EC5A1E;text-transform:uppercase;margin-bottom:12px;">Nova Menção</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;color:#16213A;letter-spacing:-0.015em;">Você foi mencionado</div>
+          <p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#54607A;">Olá, <strong style="color:#16213A;">${escapeHtml(data.mentionedName)}</strong>. <strong style="color:#16213A;">${escapeHtml(data.authorName)}</strong> mencionou você em um comentário. Veja o contexto abaixo.</p>
+        </td></tr>
 
-          <!-- Botão -->
-          <tr>
-            <td class="padding" style="padding:0 28px 24px;" align="center">
-              <a href="https://jurius.com.br" style="display:inline-block;padding:14px 32px;background:${brandOrange};background:linear-gradient(135deg,${brandOrange} 0%,${brandOrangeDark} 100%);color:#ffffff;text-decoration:none;border-radius:10px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.3px;">Ver no Sistema →</a>
-            </td>
-          </tr>
+        <tr><td style="padding:20px 36px 4px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FFF6EE;border:1px solid #FAD9C0;border-radius:16px;overflow:hidden;">
+            <tr><td style="height:4px;background:linear-gradient(90deg,#F5762B,#E14E14);font-size:0;">&nbsp;</td></tr>
+            <tr><td style="padding:22px 24px 24px;">
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Prazo</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#16213A;font-weight:bold;margin-bottom:20px;">${escapeHtml(data.deadlineTitle)}</div>
+              <div style="height:1px;background:#F4DCC7;margin-bottom:20px;font-size:0;">&nbsp;</div>
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:10px;">Comentário</div>
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#54607A;line-height:1.7;border-left:3px solid #F5762B;padding-left:14px;">${safeComment}</p>
+            </td></tr>
+          </table>
+        </td></tr>
 
-          <!-- Footer -->
-          <tr>
-            <td class="padding" style="padding:18px 28px;border-top:1px solid ${s200};background:${s50};">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;color:${s600};text-align:center;">
-                <b style="color:${s900};">Jurius</b> • Gestão Jurídica
-              </div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.4;color:#94a3b8;text-align:center;padding-top:4px;">
-                Este e-mail foi enviado automaticamente. Não responda.
-              </div>
-            </td>
-          </tr>
+        <tr><td style="padding:28px 36px 32px;text-align:center;">
+          <a href="https://jurius.com.br" style="display:inline-block;text-decoration:none;background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.01em;padding:14px 36px;border-radius:12px;">Ver no Sistema &rarr;</a>
+          <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#97A0B2;">Acesse o painel para visualizar e responder ao comentário.</p>
+        </td></tr>
 
-        </table>
-      </td>
-    </tr>
+        <tr><td style="padding:18px 24px 16px;border-top:1px solid #F0F1F4;text-align:center;background:#F8F9FB;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#5C667C;font-weight:600;">Jurius &bull; Gestão Jurídica Inteligente</div>
+          <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.6;color:#9AA2B2;">Este e-mail foi enviado automaticamente. Não responda esta mensagem.<br/>© 2026 Jurius. Todos os direitos reservados.</div>
+        </td></tr>
+
+      </table>
+    </td></tr>
   </table>
 </body>
 </html>`;

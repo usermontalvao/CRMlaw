@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.271': { name: 'Cafe Emails Alinhados', emoji: '[mail]' },
   '1.10.270': { name: 'Cafe Comunicacao Afinada', emoji: '[mail]' },
   '1.10.269': { name: 'Cafe Marca Viva', emoji: '[palette]' },
   '1.10.267': { name: 'Cafe Assinatura Token Scoped', emoji: '[lock]' },
@@ -922,6 +923,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.271',
+    date: '24/06/2026',
+    summary: 'Os emails operacionais foram alinhados ao header oficial da marca e o fluxo de notificacao de prazos recebeu blindagem contra quebra de encoding no deploy.',
+    modules: [
+      { moduleId: 'branding', changes: [
+        { type: 'improvement' as const, title: 'Todos os templates principais passaram a usar o header oficial de email', description: 'Os envios de OTP, mencoes, prazo, assinatura e digest semanal foram padronizados para usar o asset `email-header.png`, mantendo a comunicacao visual consistente com o site publicado.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'fix' as const, title: 'Notificacao de prazo foi protegida contra texto corrompido em deploy', description: 'A edge function `notify-deadline-assigned` foi reescrita com strings seguras para evitar mojibake em assuntos e corpo do email apos publicacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.270',
     date: '24/06/2026',

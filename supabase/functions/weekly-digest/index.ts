@@ -206,71 +206,83 @@ function buildHtml(opts: {
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${officeName} — Resumo semanal</title>
   <style>
-    @media screen and (max-width:600px) {
-      .outer-pad { padding: 22px 12px 40px !important; }
-      .main-card { width: 100% !important; }
-      .card-pad { padding-left: 22px !important; padding-right: 22px !important; }
-      .greeting { font-size: 26px !important; }
+    @media screen and (max-width:600px){
+      .container{width:100%!important;border-radius:0!important;}
+      .card-pad{padding-left:22px!important;padding-right:22px!important;}
+      .greeting{font-size:26px!important;}
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#fafafa;font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:#EEF0F4;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
 
-  <!-- Pré-header invisível -->
-  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
-    ${intro.replace(/<[^>]+>/g, '')}
-  </div>
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${intro.replace(/<[^>]+>/g, '')}</div>
 
-  <table width="100%" cellpadding="0" cellspacing="0" border="0">
-    <tr><td align="center" class="outer-pad" style="padding:40px 16px 56px;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EEF0F4;">
+    <tr><td align="center" style="padding:32px 16px 48px;">
 
-      <table class="main-card" width="580" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;width:100%;background:#ffffff;border:1px solid #ececec;">
+      <table class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 20px 50px -20px rgba(20,28,52,0.22),0 4px 14px -6px rgba(20,28,52,0.10);">
 
-        <!-- Filete laranja topo -->
-        <tr><td style="height:3px;background:#ea580c;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <!-- Brand bar -->
+        <tr><td style="height:5px;background:linear-gradient(90deg,#F5762B 0%,#E14E14 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
 
-        <!-- Cabeçalho editorial -->
-        <tr><td class="card-pad" style="padding:36px 44px 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <!-- Header / Logo -->
+        <tr><td class="card-pad" style="padding:28px 36px;border-bottom:1px solid #F0F1F4;">
+          <table cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td valign="middle" width="52">
+                <table cellpadding="0" cellspacing="0" border="0" width="52" height="52" style="background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);border-radius:14px;text-align:center;">
+                  <tr><td align="center" valign="middle" height="52"><span style="font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:bold;color:#ffffff;">J</span></td></tr>
+                </table>
+              </td>
+              <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
+              <td valign="middle">
+                <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-0.01em;"><span style="color:#2A2E37;font-weight:bold;">jurius</span><span style="color:#EC5A1E;font-weight:bold;">.</span><span style="color:#8A8F9C;">com.br</span></div>
+                <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:8px;font-weight:bold;letter-spacing:0.22em;color:#A2A8B4;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <!-- Editorial header row (week label) -->
+        <tr><td class="card-pad" style="padding:28px 36px 0;font-family:Arial,Helvetica,sans-serif;">
           <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td>
-              <div style="font-size:10px;font-weight:800;color:#111;letter-spacing:.24em;text-transform:uppercase;">Jurius · Resumo Semanal</div>
-            </td>
-            <td align="right">
-              <div style="font-size:10px;color:#999;letter-spacing:.08em;text-transform:uppercase;font-weight:600;">${weekLabel}</div>
-            </td>
+            <td><div style="font-size:10px;font-weight:800;color:#EC5A1E;letter-spacing:0.22em;text-transform:uppercase;">Resumo Semanal</div></td>
+            <td align="right"><div style="font-size:10px;color:#9AA2B2;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">${weekLabel}</div></td>
           </tr></table>
         </td></tr>
 
-        <!-- Manchete -->
-        <tr><td class="card-pad" style="padding:18px 44px 0;">
-          <div class="greeting" style="font-family:Georgia,serif;font-size:34px;font-weight:700;color:#111;line-height:1.1;letter-spacing:-.02em;">
-            Olá, ${userFirstName}.
-          </div>
-          <div style="margin-top:14px;font-family:Georgia,serif;font-size:15px;color:#555;line-height:1.6;">
-            ${intro}
-          </div>
+        <!-- Greeting -->
+        <tr><td class="card-pad" style="padding:16px 36px 0;">
+          <div class="greeting" style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#16213A;line-height:1.15;letter-spacing:-0.02em;">Olá, ${userFirstName}.</div>
+          <div style="margin-top:14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#54607A;line-height:1.7;">${intro}</div>
         </td></tr>
 
-        <!-- Conteúdo -->
-        <tr><td class="card-pad" style="padding:0 44px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <!-- Editorial sections content -->
+        <tr><td class="card-pad" style="padding:0 36px 32px;font-family:Arial,Helvetica,sans-serif;">
           <table width="100%" cellpadding="0" cellspacing="0" border="0">
             ${sections.map(renderSection).join('')}
           </table>
         </td></tr>
 
-        <!-- Rodapé editorial -->
-        <tr><td class="card-pad" style="padding:0 44px 36px;border-top:1px solid #ececec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;"><tr>
+        <!-- Footer editorial note -->
+        <tr><td class="card-pad" style="padding:0 36px 28px;border-top:1px solid #F0F1F4;font-family:Arial,Helvetica,sans-serif;background:#F8F9FB;">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;"><tr>
             <td>
-              <div style="font-size:11px;color:#999;line-height:1.6;">
-                Você recebeu este resumo por fazer parte da equipe <span style="color:#444;font-weight:600;">${officeName}</span>.<br/>
-                Apenas itens dos módulos que você tem permissão de visualizar foram incluídos.
+              <div style="font-size:11px;color:#9AA2B2;line-height:1.6;">
+                Você recebeu este resumo por fazer parte da equipe <span style="color:#303A52;font-weight:600;">${officeName}</span>.<br/>
+                Apenas itens dos módulos com sua permissão foram incluídos.
               </div>
             </td>
             <td align="right" valign="top" style="padding-left:16px;">
-              <div style="font-size:10px;color:#c2410c;font-weight:800;letter-spacing:.2em;">JURIUS</div>
+              <div style="font-size:10px;color:#EC5A1E;font-weight:800;letter-spacing:0.2em;">JURIUS</div>
             </td>
           </tr></table>
+        </td></tr>
+
+        <!-- Footer brand -->
+        <tr><td style="padding:16px 24px 16px;border-top:1px solid #F0F1F4;text-align:center;background:#F8F9FB;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#5C667C;font-weight:600;">Jurius &bull; Gestão Jurídica Inteligente</div>
+          <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.6;color:#9AA2B2;">Este e-mail foi enviado automaticamente. Não responda esta mensagem.<br/>© 2026 Jurius. Todos os direitos reservados.</div>
         </td></tr>
 
       </table>

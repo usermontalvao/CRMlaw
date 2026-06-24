@@ -26,61 +26,111 @@ function buildHtml(p: { documentName:string; signerName:string; signedAt:string;
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
 <title>Documento assinado</title>
 <style>
-body{margin:0;padding:0;background:${S0};font-family:Arial,Helvetica,sans-serif;}
-@media only screen and (max-width:600px){.wrap{width:100%!important;border-radius:0!important;}.pad{padding:20px 16px!important;}.cta{display:block!important;text-align:center!important;margin-bottom:10px!important;}}
+  @media only screen and (max-width:600px){
+    .container{width:100%!important;border-radius:0!important;}
+    .card-pad{padding:24px 20px!important;}
+    .two-col td{display:block!important;width:100%!important;padding-right:0!important;padding-left:0!important;}
+  }
 </style>
 </head>
-<body style="margin:0;padding:0;background:${S0};">
-<table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${S0};">
-<tr><td align="center" style="padding:28px 12px 48px;">
-<table class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:#fff;border:1px solid ${S2};border-radius:16px;overflow:hidden;">
-<tr><td style="padding:22px 28px;background:#ffffff;border-bottom:1px solid #f1ece6;">
-  <img src="https://jurius.com.br/email-header.png" alt="jurius.com.br — Gestão Jurídica Inteligente" width="280" style="display:block;border:0;outline:none;text-decoration:none;height:auto;" />
-</td></tr>
-<tr><td style="background:#f0fdf4;border-bottom:2px solid #bbf7d0;padding:12px 28px;">
-  <table cellpadding="0" cellspacing="0" border="0"><tr>
-    <td width="24" valign="middle"><div style="width:22px;height:22px;background:#16a34a;border-radius:50%;text-align:center;line-height:22px;color:#fff;font-size:14px;font-weight:700;">&#10003;</div></td>
-    <td valign="middle" style="padding-left:10px;"><span style="font-size:13px;font-weight:700;color:#15803d;">Documento assinado &mdash; ${fmtDate(p.signedAt)}</span></td>
-  </tr></table>
-</td></tr>
-<tr><td class="pad" style="padding:28px 28px 0;">
-  <div style="font-size:21px;font-weight:800;color:${S9};letter-spacing:-0.01em;">Seu documento est&aacute; pronto</div>
-  <div style="font-size:14px;color:${S6};line-height:1.65;padding-top:8px;">Ol&aacute;, <strong style="color:${S7};">${p.signerName}</strong>. Seu documento foi assinado digitalmente e est&aacute; dispon&iacute;vel para acesso e verifica&ccedil;&atilde;o.</div>
-</td></tr>
-<tr><td class="pad" style="padding:18px 28px;">
-  <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${S0};border:1px solid ${S2};border-radius:12px;overflow:hidden;">
-    <tr><td style="background:${S1};border-bottom:1px solid ${S2};padding:10px 14px;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-        <td width="32" valign="middle"><div style="width:30px;height:38px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:6px;text-align:center;line-height:38px;font-size:16px;">&#128196;</div></td>
-        <td valign="middle" style="padding-left:10px;"><div style="font-size:13px;font-weight:800;color:${S9};">${p.documentName}</div><div style="font-size:11px;color:#16a34a;font-weight:600;margin-top:2px;">PDF assinado &middot; certificado${p.hasPdf?' &middot; em anexo':''}</div></td>
-      </tr></table>
-    </td></tr>
-    <tr><td style="padding:10px 14px;"><table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-      <td width="50%" style="padding-right:8px;"><div style="font-size:10px;font-weight:700;color:${S4};text-transform:uppercase;letter-spacing:0.08em;">Signat&aacute;rio</div><div style="font-size:12px;font-weight:600;color:${S7};margin-top:2px;">${p.signerName}</div></td>
-      <td width="50%"><div style="font-size:10px;font-weight:700;color:${S4};text-transform:uppercase;letter-spacing:0.08em;">Assinado em</div><div style="font-size:12px;font-weight:600;color:${S7};margin-top:2px;">${fmtDate(p.signedAt)}</div></td>
-    </tr></table></td></tr>
-  </table>
-</td></tr>
-<tr><td class="pad" style="padding:4px 28px 24px;">
-  <table cellpadding="0" cellspacing="0" border="0" width="100%">
-    <tr><td align="center" style="padding-bottom:10px;"><a href="${p.publicLink}" class="cta" style="display:inline-block;padding:13px 30px;background:linear-gradient(135deg,${O2},${O1});color:#fff;font-size:14px;font-weight:800;text-decoration:none;border-radius:10px;">Ver documento completo &rarr;</a></td></tr>
-    <tr><td align="center"><a href="${p.verifyLink}" style="display:inline-block;padding:9px 22px;background:#fff;color:${O1};font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;border:1.5px solid #fed7aa;">Verificar autenticidade</a></td></tr>
-  </table>
-</td></tr>
-<tr><td class="pad" style="padding:0 28px 24px;">
-  <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff7ed;border:1px dashed #fdba74;border-radius:10px;">
-    <tr><td style="padding:14px 18px;">
-      <div style="font-size:10px;font-weight:700;color:${O1};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:5px;">C&oacute;digo de verifica&ccedil;&atilde;o</div>
-      <div style="font-family:'Courier New',Courier,monospace;font-size:20px;font-weight:900;color:${S9};letter-spacing:0.1em;">${p.verificationCode}</div>
-      <div style="font-size:11px;color:${S6};margin-top:5px;">Acesse <a href="${p.origin}/#/verificar" style="color:${O1};font-weight:700;">${p.origin}/#/verificar</a> e insira este c&oacute;digo.</div>
-    </td></tr>
-  </table>
-</td></tr>
-<tr><td class="pad" style="padding:0 28px 22px;"><table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${S0};border:1px solid ${S2};border-radius:8px;"><tr><td style="padding:10px 14px;"><div style="font-size:11px;color:${S6};line-height:1.6;">&#9989; Validade jur&iacute;dica conforme a <strong>Medida Provis&oacute;ria 2.200-2/2001</strong> e a <strong>Lei 14.063/2020</strong>.</div></td></tr></table></td></tr>
-<tr><td style="padding:14px 28px;border-top:1px solid ${S2};background:${S0};"><div style="font-size:11px;color:${S6};text-align:center;"><strong style="color:${S9};">JURIUS</strong> &middot; Assinatura Digital Certificada</div><div style="font-size:10px;color:${S4};text-align:center;margin-top:3px;">E-mail autom&aacute;tico. N&atilde;o responda.</div></td></tr>
+<body style="margin:0;padding:0;background:#EEF0F4;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#EEF0F4;">
+<tr><td align="center" style="padding:32px 16px 40px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 20px 50px -20px rgba(20,28,52,0.22),0 4px 14px -6px rgba(20,28,52,0.10);">
+
+  <tr><td style="height:5px;background:linear-gradient(90deg,#F5762B 0%,#E14E14 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
+
+  <tr><td class="card-pad" style="padding:28px 36px;border-bottom:1px solid #F0F1F4;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td valign="middle" width="52">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="52" height="52" style="background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);border-radius:14px;text-align:center;">
+            <tr><td align="center" valign="middle" height="52"><span style="font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:bold;color:#ffffff;">J</span></td></tr>
+          </table>
+        </td>
+        <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
+        <td valign="middle">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-0.01em;"><span style="color:#2A2E37;font-weight:bold;">jurius</span><span style="color:#EC5A1E;font-weight:bold;">.</span><span style="color:#8A8F9C;">com.br</span></div>
+          <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:8px;font-weight:bold;letter-spacing:0.22em;color:#A2A8B4;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- Status banner -->
+  <tr><td style="background:#F0FDF4;border-bottom:2px solid #BBF7D0;padding:12px 36px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="24" valign="middle">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="22" height="22" style="background:#16a34a;border-radius:50%;text-align:center;">
+          <tr><td align="center" valign="middle" height="22"><span style="font-family:Arial,sans-serif;font-size:13px;font-weight:700;color:#fff;line-height:22px;">&#10003;</span></td></tr>
+        </table>
+      </td>
+      <td valign="middle" style="padding-left:10px;"><span style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#15803d;">Documento assinado &mdash; ${fmtDate(p.signedAt)}</span></td>
+    </tr></table>
+  </td></tr>
+
+  <tr><td class="card-pad" style="padding:32px 36px 12px;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.16em;color:#EC5A1E;text-transform:uppercase;margin-bottom:12px;">Assinatura Digital</div>
+    <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;color:#16213A;letter-spacing:-0.015em;">Seu documento está pronto</div>
+    <p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#54607A;">Olá, <strong style="color:#16213A;">${p.signerName}</strong>. Seu documento foi assinado digitalmente e está disponível para acesso e verificação de autenticidade.</p>
+  </td></tr>
+
+  <!-- Document card -->
+  <tr><td style="padding:20px 36px 4px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FFF6EE;border:1px solid #FAD9C0;border-radius:16px;overflow:hidden;">
+      <tr><td style="height:4px;background:linear-gradient(90deg,#F5762B,#E14E14);font-size:0;">&nbsp;</td></tr>
+      <tr><td style="padding:22px 24px 24px;">
+        <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#16213A;font-weight:bold;margin-bottom:20px;">&#128196; ${p.documentName}${p.hasPdf ? ' <span style="font-family:Arial,sans-serif;font-size:12px;color:#16a34a;font-weight:600;">&middot; em anexo</span>' : ''}</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="two-col">
+          <tr>
+            <td width="50%" valign="top" style="padding-right:12px;padding-bottom:16px;">
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Signatário</div>
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:500;color:#303A52;">${p.signerName}</div>
+            </td>
+            <td width="50%" valign="top" style="padding-left:12px;padding-bottom:16px;">
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Assinado em</div>
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:500;color:#303A52;">${fmtDate(p.signedAt)}</div>
+            </td>
+          </tr>
+          <tr><td colspan="2" style="height:1px;background:#F4DCC7;padding:0;font-size:0;line-height:0;">&nbsp;</td></tr>
+          <tr><td colspan="2" style="padding-top:16px;">
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">Código de verificação</div>
+            <div style="font-family:'Courier New',Courier,monospace;font-size:18px;font-weight:900;color:#16213A;letter-spacing:0.1em;">${p.verificationCode}</div>
+            <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#54607A;">Acesse <a href="${p.origin}/#/verificar" style="color:#EC5A1E;font-weight:600;">${p.origin}/#/verificar</a> para verificar a autenticidade.</div>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Legal note -->
+  <tr><td style="padding:12px 36px 4px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8F9FB;border:1px solid #E8EAF0;border-radius:12px;">
+      <tr><td style="padding:12px 16px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#54607A;line-height:1.6;">&#9989; Validade jurídica conforme a <strong>MP 2.200-2/2001</strong> e a <strong>Lei 14.063/2020</strong>.</div></td></tr>
+    </table>
+  </td></tr>
+
+  <!-- CTAs -->
+  <tr><td style="padding:24px 36px 32px;text-align:center;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+      <tr><td align="center" style="padding-bottom:10px;">
+        <a href="${p.publicLink}" style="display:inline-block;text-decoration:none;background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;padding:14px 36px;border-radius:12px;">Ver documento completo &rarr;</a>
+      </td></tr>
+      <tr><td align="center">
+        <a href="${p.verifyLink}" style="display:inline-block;text-decoration:none;background:#ffffff;color:#EC5A1E;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;padding:10px 24px;border-radius:10px;border:1.5px solid #FAD9C0;">Verificar autenticidade</a>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <tr><td style="padding:18px 24px 16px;border-top:1px solid #F0F1F4;text-align:center;background:#F8F9FB;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#5C667C;font-weight:600;">Jurius &bull; Gestão Jurídica Inteligente</div>
+    <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.6;color:#9AA2B2;">Este e-mail foi enviado automaticamente. Não responda esta mensagem.<br/>© 2026 Jurius. Todos os direitos reservados.</div>
+  </td></tr>
+
 </table>
 </td></tr></table>
 </body></html>`
