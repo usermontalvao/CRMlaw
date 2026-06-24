@@ -4,6 +4,7 @@ import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Down
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
+import { buildWhatsappUrl } from '../utils/whatsapp';
 import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL, parseSignatureTermsText } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
@@ -867,6 +868,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   );
   const [signingStatusIndex, setSigningStatusIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Telefone/WhatsApp do escritório (fonte central office_identity via RPC anon).
+  // null = não configurado → botões de WhatsApp ficam ocultos.
+  const [officeWhatsapp, setOfficeWhatsapp] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isDocx, setIsDocx] = useState(false);
   const [docxLoading, setDocxLoading] = useState(false);
@@ -874,6 +878,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [docxRendered, setDocxRendered] = useState(false);
 
   const [authConfig, setAuthConfig] = useState<PublicAuthConfig>({ google: true, email: true, phone: true });
+
+  // Carrega o telefone do escritório (fonte central) para os botões de ajuda no WhatsApp.
+  useEffect(() => {
+    let mounted = true;
+    signatureService.getOfficeWhatsapp()
+      .then((phone) => { if (mounted) setOfficeWhatsapp(phone); })
+      .catch(() => { if (mounted) setOfficeWhatsapp(null); });
+    return () => { mounted = false; };
+  }, []);
+
   const docxContainerRef = useRef<HTMLDivElement>(null);
   const [queuedOpenSignModal, setQueuedOpenSignModal] = useState(false);
   
@@ -2835,19 +2849,20 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <Copy className="w-4 h-4" />
                   Copiar token
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const phone = '5565984046375';
-                    const msg = `Olá! Preciso de um novo link para assinatura. Token: ${token}`;
-                    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-                    window.open(url, '_blank');
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Pedir ajuda no WhatsApp
-                </button>
+                {(() => {
+                  const waUrl = buildWhatsappUrl(officeWhatsapp, `Olá! Preciso de um novo link para assinatura. Token: ${token}`);
+                  if (!waUrl) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => window.open(waUrl, '_blank')}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Pedir ajuda no WhatsApp
+                    </button>
+                  );
+                })()}
                 <button
                   type="button"
                   onClick={() => window.location.assign('/')}
@@ -3639,21 +3654,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           </button>
                         )}
 
-                        <div className="pt-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const phone = '5565984046375';
-                              const docName = (request?.document_name || 'documento').trim();
-                              const msg = `Olá! Preciso de ajuda para assinar o documento: ${docName}. Token: ${token}`;
-                              const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-                              window.open(url, '_blank');
-                            }}
-                            className="text-orange-600 hover:text-orange-700 text-sm font-semibold transition-colors"
-                          >
-                            Precisa de ajuda?
-                          </button>
-                        </div>
+                        {(() => {
+                          const docName = (request?.document_name || 'documento').trim();
+                          const waUrl = buildWhatsappUrl(officeWhatsapp, `Olá! Preciso de ajuda para assinar o documento: ${docName}. Token: ${token}`);
+                          if (!waUrl) return null;
+                          return (
+                            <div className="pt-4 text-center">
+                              <button
+                                type="button"
+                                onClick={() => window.open(waUrl, '_blank')}
+                                className="text-orange-600 hover:text-orange-700 text-sm font-semibold transition-colors"
+                              >
+                                Precisa de ajuda?
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

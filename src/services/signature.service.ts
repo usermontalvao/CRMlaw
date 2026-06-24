@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { toWhatsappNumber } from '../utils/whatsapp';
 import type {
   SignatureRequest,
   SignatureRequestWithSigners,
@@ -1233,6 +1234,20 @@ class SignatureService {
       return null;
     }
     return (data ?? []) as Signer[];
+  }
+
+  /**
+   * Fluxo PÚBLICO: telefone/WhatsApp do escritório (fonte central `office_identity`)
+   * via RPC SECURITY DEFINER `portal_office_contact`, liberada ao anon. Retorna o
+   * número já normalizado para `wa.me` (ou null quando não configurado).
+   */
+  async getOfficeWhatsapp(): Promise<string | null> {
+    const { data, error } = await supabase.rpc('portal_office_contact');
+    if (error) {
+      console.warn('[getOfficeWhatsapp] falha:', error);
+      return null;
+    }
+    return toWhatsappNumber((data as { phone?: string } | null)?.phone);
   }
 
   /**

@@ -921,6 +921,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.268',
+    date: '23/06/2026',
+    summary: 'Tela publica de assinatura passou a usar o telefone do escritorio da configuracao central em vez de um numero fixo no codigo.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Botoes de ajuda no WhatsApp usam o telefone central do escritorio', description: 'O numero do WhatsApp na tela publica de assinatura passou a vir de `office_identity` (RPC `portal_office_contact`), eliminando o valor fixo no codigo. Quando nao ha telefone configurado, os botoes de ajuda sao ocultados em vez de gerar um link quebrado.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.267',
     date: '23/06/2026',
     summary: 'Assinatura publica ajustada: o fluxo token-scoped passou a reutilizar os campos e signatarios do bundle publico para evitar queda no fallback quando o acesso anonimo direto as tabelas estiver fechado.',
