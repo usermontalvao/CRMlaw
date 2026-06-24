@@ -1257,8 +1257,8 @@ class PdfSignatureService {
       page.drawText(`Signatário: ${item.name}  ·  Documento: ${request.id}`, { x: vtx, y: verBlockY + 5, size: 5, font: helvetica, color: cbMuted });
     }
 
-    const historyPage = pdfDoc.addPage([pageWidth, pageHeight]);
-    createReportHeader(historyPage, 'TRILHA DE AUDITORIA');
+    let currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
+    createReportHeader(currentHistPage, 'TRILHA DE AUDITORIA');
     const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
     const createdAtStr = this.formatManausDateTime(createdAtDate);
     // `order` = prioridade lógica para desempate quando o horário é idêntico
@@ -1347,26 +1347,38 @@ class PdfSignatureService {
 
     history.sort((a, b) => a.sortAt - b.sortAt || a.order - b.order);
 
-    // Section label
-    const histSectionY = pageHeight - 128;
-    historyPage.drawRectangle({ x: lm, y: histSectionY - 1, width: 3, height: 12, color: orange });
-    historyPage.drawText('REGISTRO DE EVENTOS', { x: lm + 10, y: histSectionY, size: 8.5, font: helveticaBold, color: txtDark });
-    {
-      const lw = helveticaBold.widthOfTextAtSize('REGISTRO DE EVENTOS', 8.5);
-      historyPage.drawLine({ start: { x: lm + 20 + lw, y: histSectionY + 3 }, end: { x: pageWidth - lm, y: histSectionY + 3 }, thickness: 0.5, color: borderSoft });
-    }
+    const drawHistPageSetup = (page: PDFPage, isFirst: boolean) => {
+      const sectionY = pageHeight - 128;
+      page.drawRectangle({ x: lm, y: sectionY - 1, width: 3, height: 12, color: orange });
+      const sectionLabel = isFirst ? 'REGISTRO DE EVENTOS' : 'REGISTRO DE EVENTOS (continuação)';
+      page.drawText(sectionLabel, { x: lm + 10, y: sectionY, size: 8.5, font: helveticaBold, color: txtDark });
+      const lw = helveticaBold.widthOfTextAtSize(sectionLabel, 8.5);
+      page.drawLine({ start: { x: lm + 20 + lw, y: sectionY + 3 }, end: { x: pageWidth - lm, y: sectionY + 3 }, thickness: 0.5, color: borderSoft });
+    };
+
+    drawHistPageSetup(currentHistPage, true);
 
     let y = pageHeight - 158;
     const timelineX = lm + 15; // vertical line x
     const eventGap = 11;
 
-    // Vertical timeline line
-    historyPage.drawLine({ start: { x: timelineX, y: y + 6 }, end: { x: timelineX, y: 102 }, thickness: 1.2, color: border });
+    // Vertical timeline line for first page
+    currentHistPage.drawLine({ start: { x: timelineX, y: y + 6 }, end: { x: timelineX, y: 102 }, thickness: 1.2, color: border });
 
     for (const histItem of history) {
       const detailLines = wrapText(histItem.detail, helvetica, 7.5, pageWidth - lm * 2 - 52);
       const blockHeight = 38 + detailLines.length * 12;
-      if (y - blockHeight < 92) break;
+
+      if (y - blockHeight < 92) {
+        // Page full — start a new continuation page
+        currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        createReportHeader(currentHistPage, 'TRILHA DE AUDITORIA');
+        drawHistPageSetup(currentHistPage, false);
+        y = pageHeight - 158;
+        currentHistPage.drawLine({ start: { x: timelineX, y: y + 6 }, end: { x: timelineX, y: 102 }, thickness: 1.2, color: border });
+        // Safety: skip oversized blocks that won't fit even on a blank page
+        if (y - blockHeight < 92) continue;
+      }
 
       const isCreated = histItem.label === 'Criado';
       const isViewed  = histItem.label === 'Visualizado';
@@ -1379,39 +1391,39 @@ class PdfSignatureService {
       const badgeBg  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : isTerms ? termsColor : navyMid;
 
       // Timeline node: real circle with white ring + small inner dot
-      circleDot(historyPage, timelineX, y - 4, 6, white);
-      circleDot(historyPage, timelineX, y - 4, 5, dotColor);
-      circleDot(historyPage, timelineX, y - 4, 1.8, white);
+      circleDot(currentHistPage, timelineX, y - 4, 6, white);
+      circleDot(currentHistPage, timelineX, y - 4, 5, dotColor);
+      circleDot(currentHistPage, timelineX, y - 4, 1.8, white);
 
       // Event card (rounded) with left accent
       const cardX = timelineX + 18;
       const cardW = pageWidth - lm - cardX;
       const cardTop = y;
-      roundRect(historyPage, cardX, cardTop, cardW, blockHeight, 7, { fill: bgLight, stroke: border, strokeW: 0.6 });
-      roundRect(historyPage, cardX, cardTop, 3.5, blockHeight, 1.5, { fill: dotColor });
+      roundRect(currentHistPage, cardX, cardTop, cardW, blockHeight, 7, { fill: bgLight, stroke: border, strokeW: 0.6 });
+      roundRect(currentHistPage, cardX, cardTop, 3.5, blockHeight, 1.5, { fill: dotColor });
 
       // Badge (rounded) + timestamp
       const badgeW = 66;
-      roundRect(historyPage, cardX + 10, cardTop - 8, badgeW, 14, 7, { fill: badgeBg });
+      roundRect(currentHistPage, cardX + 10, cardTop - 8, badgeW, 14, 7, { fill: badgeBg });
       const blbl = histItem.label.toUpperCase();
       const blblW = helveticaBold.widthOfTextAtSize(blbl, 6.5);
-      historyPage.drawText(blbl, { x: cardX + 10 + (badgeW - blblW) / 2, y: cardTop - 17, size: 6.5, font: helveticaBold, color: white });
-      historyPage.drawText(histItem.when, { x: cardX + 10 + badgeW + 10, y: cardTop - 17, size: 7.5, font: helvetica, color: txtMid });
+      currentHistPage.drawText(blbl, { x: cardX + 10 + (badgeW - blblW) / 2, y: cardTop - 17, size: 6.5, font: helveticaBold, color: white });
+      currentHistPage.drawText(histItem.when, { x: cardX + 10 + badgeW + 10, y: cardTop - 17, size: 7.5, font: helvetica, color: txtMid });
 
       // Detail lines
       let detailY = cardTop - 33;
       for (const line of detailLines.slice(0, 5)) {
-        historyPage.drawText(line, { x: cardX + 12, y: detailY, size: 7.5, font: helvetica, color: txtDark });
+        currentHistPage.drawText(line, { x: cardX + 12, y: detailY, size: 7.5, font: helvetica, color: txtDark });
         detailY -= 12;
       }
 
       y -= blockHeight + eventGap;
     }
 
-    // Footer note
-    historyPage.drawLine({ start: { x: lm, y: 90 }, end: { x: pageWidth - lm, y: 90 }, thickness: 0.5, color: borderSoft });
-    historyPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Manaus (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
-    historyPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
+    // Footer note on last page
+    currentHistPage.drawLine({ start: { x: lm, y: 90 }, end: { x: pageWidth - lm, y: 90 }, thickness: 0.5, color: borderSoft });
+    currentHistPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Manaus (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
+    currentHistPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 
   async generateSignedPdf(options: SignedPdfOptions): Promise<{ bytes: Uint8Array; integritySha256: string }> {

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.272': { name: 'Cafe Auditoria Continua', emoji: '[signature]' },
   '1.10.271': { name: 'Cafe Emails Alinhados', emoji: '[mail]' },
   '1.10.270': { name: 'Cafe Comunicacao Afinada', emoji: '[mail]' },
   '1.10.269': { name: 'Cafe Marca Viva', emoji: '[palette]' },
@@ -923,6 +924,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.272',
+    date: '24/06/2026',
+    summary: 'O certificado de assinatura passou a suportar trilha de auditoria com continuacao em varias paginas, e os templates de email foram consolidados com pequenos ajustes finais de padronizacao.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Trilha de auditoria agora continua em paginas adicionais do PDF', description: 'O `pdfSignature.service` deixou de truncar eventos quando a trilha excede uma pagina e passou a abrir paginas de continuacao, preservando o historico completo no certificado.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Templates de email receberam consolidacao final', description: 'Os envios operacionais tiveram pequenos ajustes finais de padronizacao para manter header, copy e estrutura visual consistentes entre os fluxos publicados.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.271',
     date: '24/06/2026',

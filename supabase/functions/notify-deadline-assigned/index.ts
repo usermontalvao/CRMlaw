@@ -130,6 +130,7 @@ function buildDeadlineEmailHtml(data: {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="x-apple-disable-message-reformatting">
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Spectral:wght@400;700&family=Space+Grotesk:wght@600&display=swap');
     @media only screen and (max-width:600px){
       .container{width:100%!important;border-radius:0!important;}
       .card-pad{padding:24px 20px!important;}
@@ -148,14 +149,12 @@ function buildDeadlineEmailHtml(data: {
           <table role="presentation" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td valign="middle" width="52">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="52" height="52" style="background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);border-radius:14px;text-align:center;">
-                  <tr><td align="center" valign="middle" height="52"><span style="font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:bold;color:#ffffff;">J</span></td></tr>
-                </table>
+                <img src="https://jurius.com.br/logo.png" width="52" height="52" alt="Jurius" style="display:block;border:0;border-radius:14px;">
               </td>
               <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
               <td valign="middle">
-                <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-0.01em;"><span style="color:#2A2E37;font-weight:bold;">jurius</span><span style="color:#EC5A1E;font-weight:bold;">.</span><span style="color:#8A8F9C;">com.br</span></div>
-                <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:8px;font-weight:bold;letter-spacing:0.22em;color:#A2A8B4;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
+                <div style="font-family:'Spectral',Georgia,'Times New Roman',serif;font-size:26px;line-height:1;letter-spacing:-.012em;"><span style="color:#211C18;font-weight:700;">jurius</span><span style="color:#E45C12;font-weight:700;">.</span><span style="font-weight:400;color:#A0958C;">com.br</span></div>
+                <div style="margin-top:6px;font-family:'Space Grotesk',Arial,Helvetica,sans-serif;font-size:8px;font-weight:600;letter-spacing:0.28em;color:#A0958C;text-transform:uppercase;">GESTÃO JURÍDICA INTELIGENTE</div>
               </td>
             </tr>
           </table>
