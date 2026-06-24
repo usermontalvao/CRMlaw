@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket, User, Lock, ArrowRight, Ban } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
+import { BrandLogo } from './ui';
 
 const BrazilFlag: React.FC<{ className?: string }> = ({ className }) => (
   <svg
@@ -705,19 +706,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         }`}
       >
         {/* Header - Logo */}
-        <div className="flex items-center gap-3 select-none">
-          <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-orange-500/20">
-            J
-          </div>
-          <div className="flex flex-col">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">
-              jurius<span className="text-orange-500">.com.br</span>
-            </h1>
-            <span className="text-[11px] font-medium text-slate-400 tracking-wide uppercase mt-1">
-              Gestão Jurídica Inteligente
-            </span>
-          </div>
-        </div>
+        <BrandLogo variant="light" size="sm" divider={false} className="select-none" />
 
         {/* Centro - Formulário */}
         <div className="flex flex-col justify-center flex-grow py-8 max-w-md mx-auto w-full">

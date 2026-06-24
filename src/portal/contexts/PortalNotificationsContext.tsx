@@ -182,7 +182,7 @@ export const PortalNotificationsProvider: React.FC<{ children: React.ReactNode }
       try {
         new Notification(toast.title, {
           body: toast.message || '',
-          icon: '/favicon.ico',
+          icon: '/icon-192.png',
           tag: `portal:${n.type || 'notification'}:${n.id}`,
         });
       } catch {}

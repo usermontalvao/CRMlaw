@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { supabase } from '../../config/supabase';
+import { BrandLogo } from '../../components/ui';
+import { BRAND_SERIF } from '../../constants/brand';
 
 type ClientStep = 'cpf' | 'pin';
 type Mode = 'client' | 'staff';
@@ -249,6 +251,19 @@ export const PortalLogin: React.FC = () => {
   // Contas lembradas localmente (leitura na montagem) — lista com TTL
   const remembered = useRef(loadRememberedStaff()).current;
   const [accounts, setAccounts] = useState<RememberedStaff[]>(remembered);
+
+  // Mobile usa um layout dedicado (tela cheia) para o fluxo da Área Restrita.
+  // Via matchMedia (não só CSS) para montar apenas uma árvore — assim os refs de
+  // foco (identRef/pwRef) apontam para o input ativo, sem conflito desktop/mobile.
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // ── Client portal state
   const [mode, setMode]             = useState<Mode>(remembered.length ? 'staff' : 'client');
@@ -502,6 +517,262 @@ export const PortalLogin: React.FC = () => {
 
   const avatarInitial = (profileName || identifier || staffEmail).trim().charAt(0).toUpperCase() || '?';
 
+  // ── Layout dedicado MOBILE para a Área Restrita (mockup Manrope) ─────────────
+  // Reutiliza exatamente o mesmo estado/handlers/refs do fluxo desktop; só muda a
+  // apresentação. A transição "procurar conta" (identifierLoading + passo account)
+  // é preservada.
+  if (isMobile && mode === 'staff') {
+    const fontStack = "'Manrope', system-ui, sans-serif";
+
+    const Brand = <BrandLogo variant="light" size="md" divider={false} />;
+
+    const Footer = (
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, paddingTop: 28 }}>
+        {portalEnabled !== false && (
+          <button type="button" onClick={() => switchMode('client')} className="jlink"
+            style={{ fontSize: 13, fontWeight: 700, color: '#EC5614', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 4 }}>
+            Sou cliente do escritório
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#A8A399' }}>
+          <Lock className="h-3 w-3" strokeWidth={1.6} />
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Conexão segura e criptografada</span>
+        </div>
+        <div style={{ fontSize: 11.5, fontWeight: 500, color: '#C2BDB3' }}>© {new Date().getFullYear()} Jurius</div>
+      </div>
+    );
+
+    const inputStyle: React.CSSProperties = { width: '100%', height: 58, boxSizing: 'border-box', border: '1.5px solid #E8E2D8', borderRadius: 15, background: '#FFFFFF', padding: '0 18px', fontFamily: fontStack, fontSize: 15, fontWeight: 600, color: '#1C1A17', outline: 'none' };
+    const primaryBtnStyle: React.CSSProperties = { marginTop: 18, width: '100%', height: 58, border: 'none', borderRadius: 15, background: 'linear-gradient(140deg,#F89A2B,#EC5614)', color: '#fff', fontFamily: fontStack, fontSize: 16, fontWeight: 700, letterSpacing: '.2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', boxShadow: '0 14px 28px -10px rgba(236,86,20,.6)' };
+
+    return (
+      <div className="staff-mobile" style={{ minHeight: '100vh', background: '#FBFAF7', fontFamily: fontStack, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <style>{`
+          .staff-mobile .jfield::placeholder { color:#B7B2A8; font-weight:500; }
+          .staff-mobile .jfield:focus { border-color:#EC5614 !important; box-shadow:0 0 0 4px rgba(236,86,20,.13); }
+          .staff-mobile .jlink { transition:opacity .15s ease; }
+          .staff-mobile .jlink:hover { opacity:.7; }
+          .staff-mobile .jbtn { transition:transform .15s ease, filter .15s ease; }
+          .staff-mobile .jbtn:hover { filter:brightness(1.05); transform:translateY(-1px); }
+          .staff-mobile .jbtn:disabled { opacity:.5; cursor:not-allowed; filter:none; transform:none; }
+          @keyframes smIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+          @keyframes smScan { 0%{top:0%;opacity:1} 80%{top:100%;opacity:1} 100%{top:100%;opacity:0} }
+          @keyframes smRing { 0%{transform:scale(.8);opacity:.6} 100%{transform:scale(2.2);opacity:0} }
+          @keyframes smDot { 0%,80%,100%{transform:translateY(0);opacity:.4} 40%{transform:translateY(-8px);opacity:1} }
+          .staff-mobile .sm-step { animation: smIn .4s cubic-bezier(.22,.61,.36,1) both; }
+        `}</style>
+
+        {/* barra superior + brilhos */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: 'linear-gradient(90deg,#F89A2B,#EE5A18)', zIndex: 3 }} />
+        <div style={{ position: 'absolute', top: -130, right: -90, width: 380, height: 380, background: 'radial-gradient(circle, rgba(242,106,33,.18), rgba(242,106,33,0) 68%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: -160, left: -120, width: 360, height: 360, background: 'radial-gradient(circle, rgba(242,106,33,.07), rgba(242,106,33,0) 70%)', pointerEvents: 'none' }} />
+
+        <div style={{ position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column', padding: '24px 30px 30px', width: '100%', maxWidth: 460, margin: '0 auto' }}>
+          {/* header: voltar + logo lado a lado */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {!identifierLoading && !askSaveQuick && staffStep === 'password' && (
+              <button type="button" onClick={accounts.length ? () => setStaffStep('account') : goBackStaff}
+                className="jlink" aria-label="Voltar"
+                style={{ flexShrink: 0, width: 40, height: 40, borderRadius: 13, background: '#FFFFFF', border: '1px solid #ECE6DC', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px -6px rgba(70,45,20,.2)', cursor: 'pointer' }}>
+                <ArrowLeft className="h-4 w-4" style={{ color: '#3A352E' }} strokeWidth={2} />
+              </button>
+            )}
+            {Brand}
+          </div>
+
+          {sessionEnded && (
+            <div className="sm-step" style={{ marginTop: 22, display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 14, border: '1px solid #FCD9B6', background: '#FFF6EC', padding: '12px 14px' }}>
+              <AlertCircle className="h-4 w-4 shrink-0" style={{ color: '#C2603F', marginTop: 1 }} />
+              <p style={{ fontSize: 12.5, lineHeight: 1.4, color: '#9A5A3A' }}>Sua sessão foi encerrada por segurança. Entre novamente para continuar.</p>
+            </div>
+          )}
+
+          {/* ── procurar conta (transição preservada) ── */}
+          {identifierLoading && (
+            <div className="sm-step" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 26 }}>
+                <div style={{ position: 'absolute', height: 64, width: 64, borderRadius: '50%', background: '#FDE7D3', animation: 'smRing 1.6s ease-out infinite' }} />
+                <div style={{ position: 'absolute', height: 64, width: 64, borderRadius: '50%', background: '#FDE7D3', animation: 'smRing 1.6s ease-out .5s infinite' }} />
+                <div style={{ position: 'relative', height: 64, width: 64, borderRadius: 19, background: 'linear-gradient(140deg,#2A2017,#171210)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 12px 28px -10px rgba(70,45,20,.5)' }}>
+                  <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'linear-gradient(90deg,transparent,#F89A2B,transparent)', animation: 'smScan 2s ease-in-out infinite' }} />
+                  <Shield className="h-7 w-7" style={{ color: '#F89A2B' }} />
+                </div>
+              </div>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#2A241D' }}>Procurando sua conta…</p>
+              <div style={{ marginTop: 12, display: 'flex', gap: 6 }}>
+                {[0, 0.2, 0.4].map((d, i) => (
+                  <div key={i} style={{ height: 6, width: 6, borderRadius: '50%', background: '#EC5614', animation: `smDot 1.2s ease ${d}s infinite` }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── passo 1: identificação ── */}
+          {!identifierLoading && !askSaveQuick && staffStep === 'identifier' && (
+            <form onSubmit={handleIdentifierSubmit} className="sm-step" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div style={{ marginTop: 58 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color: '#EC5614', marginBottom: 14 }}>ACESSO DO COLABORADOR</div>
+                <h1 style={{ margin: 0, fontSize: 31, fontWeight: 800, lineHeight: 1.08, letterSpacing: '-.7px', color: '#1C1A17' }}>Bem-vindo<br />de volta</h1>
+                <p style={{ margin: '12px 0 0', fontSize: 15, fontWeight: 500, lineHeight: 1.5, color: '#847F76' }}>Entre para acessar o painel jurídico do seu escritório.</p>
+              </div>
+
+              <div style={{ marginTop: 36 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#3A352E', marginBottom: 9 }}>CPF ou e-mail</label>
+                <input ref={identRef} className="jfield" type="text" value={identifier} disabled={identifierLoading}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const isNumeric = /^[\d.\-]*$/.test(raw) && !raw.includes('@');
+                    setIdentifier(isNumeric ? formatCpfRaw(raw.replace(/\D/g, '').slice(0, 11)) : raw);
+                    setStaffError(null); setStaffBanned(false);
+                  }}
+                  inputMode="text" autoComplete="username" placeholder="" style={inputStyle} />
+
+                {staffBanned && <div style={{ marginTop: 16 }}><BannedMsg /></div>}
+                {staffError && !staffBanned && <div style={{ marginTop: 16 }}><ErrorMsg msg={staffError} /></div>}
+
+                <button type="submit" className="jbtn" disabled={!identifier.trim()} style={primaryBtnStyle}>
+                  Continuar
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+              {Footer}
+            </form>
+          )}
+
+          {/* ── procurar conta: contas salvas (transição preservada) ── */}
+          {!identifierLoading && !askSaveQuick && staffStep === 'account' && (
+            <div className="sm-step" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div style={{ marginTop: 50 }}>
+                <h1 style={{ margin: 0, fontSize: 27, fontWeight: 800, lineHeight: 1.1, letterSpacing: '-.6px', color: '#1C1A17' }}>Bem-vindo de volta</h1>
+                <p style={{ margin: '11px 0 0', fontSize: 14.5, fontWeight: 500, color: '#847F76' }}>
+                  {accounts.length > 1 ? 'Escolha uma conta para continuar.' : 'Continue com sua conta para acessar o sistema.'}
+                </p>
+              </div>
+              <div style={{ marginTop: 26, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {accounts.map((acc) => (
+                  <div key={acc.email} style={{ position: 'relative' }}>
+                    <button type="button" onClick={() => pickAccount(acc)} className="jlink"
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 13, borderRadius: 16, border: '1px solid #ECE6DC', background: '#FFFFFF', padding: '12px 42px 12px 13px', textAlign: 'left', cursor: 'pointer', boxShadow: '0 4px 14px -10px rgba(70,45,20,.18)' }}>
+                      <Avatar url={acc.avatar} name={acc.name} email={acc.email} size={46} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1C1A17', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.name || acc.email}</p>
+                        {acc.role && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 600, color: '#EC5614' }}>{acc.role}</p>}
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#A8A399', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.email}</p>
+                      </div>
+                      <ChevronRight className="h-5 w-5 shrink-0" style={{ color: '#D8CFC0' }} />
+                    </button>
+                    <button type="button" onClick={() => removeAccount(acc.email)} title="Esquecer este acesso" className="jlink"
+                      style={{ position: 'absolute', right: 10, top: 10, height: 24, width: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#C2BDB3', cursor: 'pointer' }}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={switchStaffAccount} className="jlink"
+                style={{ marginTop: 16, width: '100%', borderRadius: 15, border: '1px solid #ECE6DC', background: '#fff', padding: '13px 0', fontSize: 13.5, fontWeight: 700, color: '#6B665E', cursor: 'pointer' }}>
+                Acessar outra conta
+              </button>
+              {Footer}
+            </div>
+          )}
+
+          {/* ── consentimento: salvar acesso rápido ── */}
+          {!identifierLoading && askSaveQuick && (
+            <div className="sm-step" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+                {profileAvatar && !avatarError ? (
+                  <img src={profileAvatar} alt={profileName || ''} onError={() => setAvatarError(true)} style={{ height: 70, width: 70, borderRadius: '50%', objectFit: 'cover', outline: '2px solid #fff', boxShadow: '0 0 0 2px #EC5614' }} />
+                ) : (
+                  <div style={{ height: 70, width: 70, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#F89A2B,#A04100)', outline: '2px solid #fff', boxShadow: '0 0 0 2px #EC5614' }}>{avatarInitial}</div>
+                )}
+                <div>
+                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-.4px', color: '#1C1A17' }}>Salvar acesso rápido?</h1>
+                  <p style={{ margin: '8px 0 0', fontSize: 14, fontWeight: 500, lineHeight: 1.5, color: '#847F76' }}>Da próxima vez, {(profileName || '').trim().split(' ')[0] || 'você'} entra neste dispositivo só com a senha.</p>
+                </div>
+              </div>
+              <div style={{ marginTop: 22, display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 14, border: '1px solid #ECE6DC', background: '#FFFFFF', padding: '12px 14px' }}>
+                <Lock className="h-4 w-4 shrink-0" style={{ color: '#A8A399', marginTop: 1 }} />
+                <span style={{ fontSize: 12, lineHeight: 1.45, color: '#847F76' }}>Guardamos apenas seu <strong style={{ color: '#3A352E' }}>nome, foto e e-mail</strong> neste navegador. Sua senha nunca é salva.</span>
+              </div>
+              <button type="button" onClick={confirmSaveQuick} className="jbtn" style={primaryBtnStyle}>
+                <CheckCircle className="h-5 w-5" /> Salvar e continuar
+              </button>
+              <button type="button" onClick={declineSaveQuick} className="jlink"
+                style={{ marginTop: 11, width: '100%', borderRadius: 15, border: '1px solid #ECE6DC', background: '#fff', padding: '13px 0', fontSize: 14, fontWeight: 700, color: '#6B665E', cursor: 'pointer' }}>
+                Agora não
+              </button>
+              {Footer}
+            </div>
+          )}
+
+          {/* ── passo 2: senha ── */}
+          {!identifierLoading && !askSaveQuick && staffStep === 'password' && (
+            <form onSubmit={handleStaffLogin} className="sm-step" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              {/* chip de identidade */}
+              <div style={{ marginTop: 42, display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: '#FFFFFF', border: '1px solid #ECE6DC', borderRadius: 16, boxShadow: '0 4px 14px -8px rgba(70,45,20,.16)' }}>
+                <div style={{ flexShrink: 0 }}>
+                  {profileAvatar && !avatarError ? (
+                    <img src={profileAvatar} alt={profileName || ''} onError={() => setAvatarError(true)} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#FDEEE3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#EC5614', fontWeight: 800, fontSize: 14 }}>{avatarInitial}</div>
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1C1A17', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileName || staffEmail}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 500, color: '#A8A399', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffEmail}</div>
+                </div>
+                <button type="button" onClick={accounts.length ? () => setStaffStep('account') : switchStaffAccount} className="jlink"
+                  style={{ fontSize: 13, fontWeight: 700, color: '#EC5614', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}>Trocar</button>
+              </div>
+
+              <div style={{ marginTop: 30 }}>
+                <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, lineHeight: 1.1, letterSpacing: '-.6px', color: '#1C1A17' }}>Digite sua senha</h1>
+                <p style={{ margin: '11px 0 0', fontSize: 15, fontWeight: 500, lineHeight: 1.5, color: '#847F76' }}>Use a senha do seu acesso corporativo para continuar.</p>
+              </div>
+
+              <div style={{ marginTop: 30 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#3A352E', marginBottom: 9 }}>Senha</label>
+                <div style={{ position: 'relative' }}>
+                  <input ref={pwRef} className="jfield" type={showPw ? 'text' : 'password'} value={staffPw} disabled={staffLoading}
+                    onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
+                    onKeyDown={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+                    onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+                    onBlur={() => setCapsOn(false)}
+                    placeholder="Digite sua senha" autoComplete="current-password" style={{ ...inputStyle, letterSpacing: '.5px', paddingRight: 52 }} />
+                  <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
+                    aria-label={showPw ? 'Ocultar senha' : 'Mostrar senha'} title={showPw ? 'Ocultar senha' : 'Mostrar senha'}
+                    className="jlink"
+                    style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, lineHeight: 0 }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9E988C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                      {/* risco que "tampa" o olho quando a senha está oculta; anima ao alternar */}
+                      <line x1="3.5" y1="3.5" x2="20.5" y2="20.5" stroke="#EC5614"
+                        style={{ strokeDasharray: 25, strokeDashoffset: showPw ? 25 : 0, transition: 'stroke-dashoffset .32s ease' }} />
+                    </svg>
+                  </button>
+                </div>
+
+                {capsOn && (
+                  <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '10px 0 0', fontSize: 12, fontWeight: 600, color: '#C2872B' }}>
+                    <AlertCircle className="h-3.5 w-3.5" /> Caps Lock está ativado
+                  </p>
+                )}
+                {staffBanned && <div style={{ marginTop: 14 }}><BannedMsg /></div>}
+                {staffError && !staffBanned && <div style={{ marginTop: 14 }}><ErrorMsg msg={staffError} /></div>}
+
+                <button type="submit" className="jbtn" disabled={staffLoading || !staffPw} style={primaryBtnStyle}>
+                  {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Entrando…</> : <>Entrar <ArrowRight className="h-4 w-4" /></>}
+                </button>
+              </div>
+              {Footer}
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#FCFAF6', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="flex-col md:flex-row">
@@ -589,15 +860,11 @@ export const PortalLogin: React.FC = () => {
           animation: 'loginPanelIn 0.7s ease both',
         }}>
         {/* watermark monogram */}
-        <div style={{ position: 'absolute', right: -60, bottom: -90, fontFamily: "'Newsreader', serif", fontSize: 460, lineHeight: 1, fontWeight: 400, color: 'rgba(255,255,255,0.018)', zIndex: 1, userSelect: 'none' }}>J</div>
+        <div style={{ position: 'absolute', right: -60, bottom: -90, fontFamily: BRAND_SERIF, fontSize: 460, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.018)', zIndex: 1, userSelect: 'none' }}>J</div>
 
         {/* logo */}
-        <div className="login-anim" style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative', zIndex: 2, animationDelay: '0.12s' }}>
-          <div className="logo-shine" style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(150deg,#FF7A33,#EA5310)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 23, color: '#fff', boxShadow: '0 10px 24px -8px rgba(242,99,26,0.65)' }}>J</div>
-          <div style={{ lineHeight: 1.2 }}>
-            <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}><span style={{ color: '#fff' }}>jurius</span><span style={{ color: '#8893a8', fontWeight: 500 }}>.com.br</span></div>
-            <div style={{ fontSize: 10, letterSpacing: '0.22em', color: '#5e6a82', fontWeight: 600, marginTop: 1 }}>GESTÃO JURÍDICA</div>
-          </div>
+        <div className="login-anim" style={{ position: 'relative', zIndex: 2, animationDelay: '0.12s' }}>
+          <BrandLogo variant="reversed" size="md" divider={false} shine />
         </div>
 
         {/* headline editorial */}

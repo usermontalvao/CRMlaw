@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ShieldCheck } from 'lucide-react';
+import { BrandLogo } from './ui';
 
 /**
  * LogoutOverlay — despedida cinematográfica, sóbria e premium.
@@ -118,13 +119,7 @@ export const LogoutOverlay: React.FC<LogoutOverlayProps> = ({ userName }) => {
               style={{ background: '#FFB37A', boxShadow: '0 0 10px 2px rgba(242,99,26,0.85)' }} />
           </div>
 
-          <div className="relative flex h-[88px] w-[88px] items-center justify-center rounded-[1.6rem]"
-            style={{
-              background: 'linear-gradient(150deg,#FF8A3D,#E8500F)',
-              boxShadow: '0 22px 55px -12px rgba(234,83,16,0.65), inset 0 1px 0 rgba(255,255,255,0.35)',
-            }}>
-            <span className="select-none text-[42px] font-black tracking-tight text-white">J</span>
-          </div>
+          <BrandLogo iconOnly size="lg" shine className="relative" />
         </div>
 
         {/* texto */}

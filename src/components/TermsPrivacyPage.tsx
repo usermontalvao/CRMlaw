@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Printer, FileText, Bookmark, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
+import { BrandLogo } from './ui';
 
 type PageType = 'terms' | 'privacy';
 
@@ -164,15 +165,7 @@ const DocumentCard: React.FC<{
 }> = ({ config, currentYear }) => (
   <article className="relative rounded-3xl border border-[#e7e5df] bg-[#f8f7f5] shadow-[0_30px_90px_rgba(15,23,42,0.09)] overflow-hidden print:shadow-none print:border-0">
     <header className="px-10 pt-12 pb-10 border-b border-slate-100 space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="h-12 w-12 rounded-xl border border-[#e7e5df] bg-slate-900 text-white font-semibold flex items-center justify-center tracking-tight">
-          J
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-slate-900">jurius.com.br</span>
-          <span className="text-xs text-slate-500">Gestão Jurídica Inteligente</span>
-        </div>
-      </div>
+      <BrandLogo variant="light" size="sm" divider={false} />
       <div className="flex items-center gap-3">
         <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-[11px] font-semibold tracking-[0.3em] text-slate-600">
           {config.badge}

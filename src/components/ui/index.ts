@@ -17,6 +17,9 @@ export { EmptyState } from './EmptyState';
 
 export { ShimmerSweep } from './ShimmerSweep';
 
+export { BrandLogo } from './BrandLogo';
+export type { BrandLogoProps, BrandVariant, BrandSize } from './BrandLogo';
+
 export { ModuleSkeleton } from './ModuleSkeleton';
 
 export {

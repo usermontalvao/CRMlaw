@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Clock, Check, ShieldCheck } from 'lucide-react';
+import { BrandLogo } from './ui';
 import {
   SIGNATURE_TERMS_VERSION,
   SIGNATURE_TERMS_ALL_VERSIONS,
@@ -71,12 +72,7 @@ const PublicSignatureTermsPage: React.FC<PublicSignatureTermsPageProps> = ({ ver
 
               {/* Marca */}
               <div className="flex items-center gap-3">
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-extrabold text-xl flex-shrink-0"
-                  style={{ background: 'linear-gradient(150deg,#FF7A33,#EA5310)', boxShadow: '0 10px 24px -8px rgba(242,99,26,0.5)' }}
-                >
-                  J
-                </div>
+                <BrandLogo iconOnly size="sm" />
                 <div className="min-w-0">
                   <div className="font-bold text-slate-900 text-[15px] leading-tight">
                     jurius<span className="text-orange-500">.com.br</span>

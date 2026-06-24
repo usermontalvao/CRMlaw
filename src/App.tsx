@@ -104,7 +104,7 @@ import { useTheme } from './contexts/ThemeContext';
 import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { profileService } from './services/profile.service';
-import { ShimmerSweep } from './components/ui';
+import { ShimmerSweep, BrandLogo } from './components/ui';
 import { leadService } from './services/lead.service';
 import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
@@ -1978,20 +1978,12 @@ useEffect(() => {
                 <div className="absolute inset-[-30px] rounded-full border border-orange-400/25 animate-ping-slower" />
                 <div className="absolute inset-[-70px] rounded-full bg-gradient-to-r from-orange-500/20 via-amber-500/10 to-orange-500/20 blur-3xl animate-pulse" />
 
-                <div className="relative w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-orange-500/40">
-                  <span className="text-white font-black text-5xl tracking-tight select-none">J</span>
-                  <div className="absolute inset-0 rounded-[1.75rem] bg-gradient-to-t from-white/0 to-white/25" />
-                </div>
+                <BrandLogo iconOnly size="xl" shine />
               </div>
 
               {/* Brand */}
-              <div className="text-center mb-10">
-                <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-3 tracking-tight">
-                  jurius<span className="text-orange-400">.com.br</span>
-                </h1>
-                <p className="text-xs text-white/40 tracking-[0.4em] uppercase font-medium">
-                  Gestão Jurídica Inteligente
-                </p>
+              <div className="text-center mb-10 flex flex-col items-center">
+                <BrandLogo wordmarkOnly variant="reversed" size="xl" />
                 <div className="mt-6 h-px w-64 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               </div>
 
@@ -2051,20 +2043,12 @@ useEffect(() => {
       >
         {/* Logo */}
         {sidebarMode === 'normal' ? (
-          <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[11px] bg-[#f27a23] text-[15px] font-bold text-white shadow-[0_0_20px_rgba(242,122,35,0.35)]">
-              J
-            </div>
-            <div className="min-w-0 flex flex-col gap-0.5">
-              <span className="select-none text-[15px] font-bold tracking-[-0.03em] text-white leading-none">Jurius</span>
-              <span className="text-[10.5px] font-medium text-white/45 tracking-[0.06em] uppercase leading-none">Plataforma Jurídica</span>
-            </div>
+          <div className="flex items-center px-4 py-4 border-b border-white/[0.06]">
+            <BrandLogo variant="reversed" size="sm" showTagline={false} divider={false} />
           </div>
         ) : (
           <div className="flex items-center justify-center py-[17px] border-b border-white/[0.06]">
-            <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#f27a23] text-[14px] font-bold text-white shadow-[0_0_20px_rgba(242,122,35,0.35)]">
-              J
-            </div>
+            <BrandLogo iconOnly variant="reversed" size="sm" />
           </div>
         )}
 

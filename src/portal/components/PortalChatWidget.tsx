@@ -397,7 +397,7 @@ export const PortalChatWidget: React.FC = () => {
     }, 6000);
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       try {
-        new Notification(sender, { body, icon: '/favicon.ico', tag: `portal-chat:${m.id}` });
+        new Notification(sender, { body, icon: '/icon-192.png', tag: `portal-chat:${m.id}` });
       } catch {}
     }
   }, []);

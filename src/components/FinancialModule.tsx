@@ -2059,7 +2059,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Relatório IRPF ${year} — ${lawyerName}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Serif+4:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Serif+4:wght@400;500;600;700&family=Spectral:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
     @page{size:A4 portrait;margin:0;}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -2069,17 +2069,17 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
     .eyebrow{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:#64748b;}
 
-    /* JURIUS Brand Bars */
-    .jurius-top{background:#0a1828;color:#fff;padding:14px 32px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #d4a857;}
+    /* JURIUS Brand Bars (identidade âmbar — alinhada ao BrandLogo) */
+    .jurius-top{background:#1A1613;color:#fff;padding:14px 32px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #EC6A1E;}
     .jurius-logo{display:flex;align-items:center;gap:14px;}
-    .jurius-mark{width:34px;height:34px;background:#d4a857;display:flex;align-items:center;justify-content:center;font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:18px;color:#0a1828;letter-spacing:-.02em;}
-    .jurius-wordmark{font-family:'Source Serif 4',Georgia,serif;font-size:18px;font-weight:600;letter-spacing:.18em;color:#fff;}
-    .jurius-tagline{font-size:9px;letter-spacing:.25em;color:#d4a857;text-transform:uppercase;margin-top:1px;}
+    .jurius-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(152deg,#F6A356 0%,#EC6A1E 48%,#CB4A0A 100%);box-shadow:0 6px 14px -6px rgba(207,78,12,.6),inset 0 1px 0 rgba(255,255,255,.45);display:flex;align-items:center;justify-content:center;font-family:'Spectral',Georgia,serif;font-weight:600;font-size:20px;color:#fff;text-shadow:0 1px 4px rgba(120,40,0,.4);}
+    .jurius-wordmark{font-family:'Spectral',Georgia,serif;font-size:19px;font-weight:700;letter-spacing:-.012em;color:#FBF6F1;}
+    .jurius-tagline{font-size:9px;letter-spacing:.25em;color:#F2843E;text-transform:uppercase;margin-top:1px;}
     .jurius-meta{text-align:right;font-size:10px;color:#94a3b8;letter-spacing:.05em;line-height:1.5;}
     .jurius-meta strong{color:#fff;font-weight:600;}
 
-    .jurius-bottom{background:#0a1828;color:#94a3b8;padding:16px 32px;display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.04em;border-top:3px solid #d4a857;}
-    .jurius-bottom strong{color:#d4a857;letter-spacing:.18em;}
+    .jurius-bottom{background:#1A1613;color:#94a3b8;padding:16px 32px;display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.04em;border-top:3px solid #EC6A1E;}
+    .jurius-bottom strong{color:#F2843E;letter-spacing:.18em;}
 
     /* Filter bar */
     .filter-bar{display:flex;flex-wrap:wrap;gap:6px;padding:14px 32px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
@@ -2115,8 +2115,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     <div class="jurius-logo">
       <div class="jurius-mark">J</div>
       <div>
-        <div class="jurius-wordmark">JURIUS</div>
-        <div class="jurius-tagline">Sistema Jurídico</div>
+        <div class="jurius-wordmark">jurius<span style="color:#F2843E;">.</span><span style="font-weight:400;color:#8C7E72;">com.br</span></div>
+        <div class="jurius-tagline">Gestão Jurídica Inteligente</div>
       </div>
     </div>
     <div class="jurius-meta">
@@ -2337,7 +2337,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   <!-- ════════ JURIUS FOOTER BAR ════════ -->
   <div class="jurius-bottom">
     <div>
-      <strong>JURIUS</strong> &nbsp;·&nbsp; Sistema Jurídico &nbsp;·&nbsp; © ${new Date().getFullYear()}
+      <strong>jurius.com.br</strong> &nbsp;·&nbsp; Gestão Jurídica Inteligente &nbsp;·&nbsp; © ${new Date().getFullYear()}
     </div>
     <div style="text-align:right;">
       <div>Documento confidencial · Sigilo profissional (Lei 8.906/94, art. 7º, II)</div>

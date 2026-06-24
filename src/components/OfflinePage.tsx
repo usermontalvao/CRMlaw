@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { WifiOff, RefreshCw, Wifi, Shield } from 'lucide-react';
+import { BrandLogo } from './ui';
 
 const OfflinePage: React.FC = () => {
   const [checking, setChecking] = useState(false);
@@ -46,9 +47,7 @@ const OfflinePage: React.FC = () => {
           <div className="flex items-center justify-center gap-4 mb-6">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl blur opacity-30" />
-              <div className="relative h-20 w-20 rounded-xl shadow-lg bg-amber-500 flex items-center justify-center">
-                <span className="text-white font-bold text-4xl">J</span>
-              </div>
+              <BrandLogo iconOnly size="lg" />
               {/* Badge offline */}
               <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 shadow-lg">
                 <WifiOff className="w-4 h-4 text-white" />

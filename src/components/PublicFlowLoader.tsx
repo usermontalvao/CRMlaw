@@ -1,4 +1,5 @@
 import React from 'react';
+import { BRAND_GRADIENT, BRAND_SERIF } from '../constants/brand';
 
 /**
  * Animação de carregamento compartilhada do fluxo público (kit / preenchimento).
@@ -53,16 +54,17 @@ const PublicFlowLoader: React.FC<{ subtitle?: string }> = ({
           box-shadow: 0 2px 8px rgba(249,115,22,.5);
         }
         .tfl-load-mark {
-          position: relative; width: 84px; height: 84px; border-radius: 24px;
+          position: relative; width: 84px; height: 84px; border-radius: 21px;
           display: flex; align-items: center; justify-content: center;
-          font-weight: 900; font-size: 40px; line-height: 1; color: #fff; letter-spacing: -.02em;
-          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #f97316 100%);
+          font-family: ${BRAND_SERIF}; font-weight: 600; font-size: 51px; line-height: 1; color: #fff;
+          text-shadow: 0 2px 7px rgba(120,40,0,.4);
+          background: ${BRAND_GRADIENT};
           animation: tfl-load-float 3.2s ease-in-out infinite, tfl-load-glow 2.6s ease-in-out infinite;
         }
-        .tfl-load-mark::after { content: ''; position: absolute; inset: 0; border-radius: 24px; border: 1px solid rgba(255,255,255,.35); opacity: .6; }
+        .tfl-load-mark::after { content: ''; position: absolute; inset: 0; border-radius: 21px; border: 1px solid rgba(255,255,255,.35); opacity: .6; }
         .tfl-load-word { text-align: center; }
-        .tfl-load-word b { display: block; font-size: 19px; font-weight: 600; color: #0f172a; letter-spacing: -.01em; }
-        .tfl-load-word small { display: block; margin-top: 5px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .34em; color: #b45309; }
+        .tfl-load-word b { display: block; font-family: ${BRAND_SERIF}; font-size: 22px; font-weight: 700; color: #211C18; letter-spacing: -.012em; }
+        .tfl-load-word small { display: block; margin-top: 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .44em; color: #b45309; }
         .tfl-load-bar { position: relative; width: 200px; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(245,158,11,.2); }
         .tfl-load-bar > span {
           position: absolute; top: 0; left: 0; height: 100%; width: 35%; border-radius: 999px;

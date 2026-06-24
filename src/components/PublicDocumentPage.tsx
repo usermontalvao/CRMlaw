@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BrandLogo } from './ui';
 import {
   CheckCircle, Clock, Lock, Download, Eye, FileText, ShieldCheck,
   Copy, X, MapPin, Monitor, Wifi, ChevronDown, ExternalLink, Printer,
@@ -97,7 +98,7 @@ const Navbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
   <nav className="no-print" style={ST.nav}>
     <div style={ST.navInner}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <div style={ST.logoMark}><FileSignature style={{ width: 17, height: 17, color: '#fff' }} /></div>
+        <BrandLogo iconOnly size="sm" />
         <div style={{ lineHeight: 1.1 }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>JURIUS</div>
           <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', letterSpacing: '0.06em' }}>ASSINATURA DIGITAL</div>
@@ -112,7 +113,7 @@ const Footer = () => (
   <footer style={{ borderTop: '1px solid #e8eef3', background: '#fff', padding: '20px 16px', marginTop: 40 }}>
     <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={ST.logoMarkSm}><FileSignature style={{ width: 12, height: 12, color: '#fff' }} /></div>
+        <BrandLogo iconOnly size="xs" />
         <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>JURIUS · Assinatura Digital Certificada</span>
       </div>
       <span style={{ fontSize: 11, color: '#94a3b8' }}>Plataforma jurídica · MP 2.200-2/2001 · Lei 14.063/2020</span>

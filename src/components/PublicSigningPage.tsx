@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BrandLogo } from './ui';
+import { BRAND_SERIF } from '../constants/brand';
 import { createPortal } from 'react-dom';
 import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, Eye, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
@@ -2942,7 +2944,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   {/* Topo: marca + selo */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-extrabold text-[13px]" style={{ background: 'linear-gradient(150deg,#FF7A33,#EA5310)' }}>J</div>
+                      <BrandLogo iconOnly size="xs" />
                       <span className="text-[15px] font-black tracking-tight text-slate-900">JURIUS</span>
                     </div>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200">
@@ -3180,11 +3182,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               }}
             >
               {/* Monograma "J" ao fundo */}
-              <div aria-hidden="true" className="pointer-events-none select-none absolute" style={{ right: -42, bottom: -78, fontFamily: "'Newsreader', Georgia, 'Times New Roman', serif", fontSize: 340, lineHeight: 1, fontWeight: 400, color: 'rgba(255,255,255,0.04)', zIndex: 0 }}>J</div>
+              <div aria-hidden="true" className="pointer-events-none select-none absolute" style={{ right: -42, bottom: -78, fontFamily: BRAND_SERIF, fontSize: 340, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.04)', zIndex: 0 }}>J</div>
 
               {/* Logo */}
               <div className="relative z-10 flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-base flex-shrink-0" style={{ background: 'linear-gradient(150deg,#FF7A33,#EA5310)', boxShadow: '0 8px 20px -6px rgba(242,99,26,0.6)' }}>J</div>
+                <BrandLogo iconOnly size="sm" />
                 <div className="leading-none">
                   <div className="font-bold text-[14px]">jurius<span style={{ color: '#8893a8' }}>.com.br</span></div>
                   <div className="text-[9px] tracking-[0.22em] uppercase font-semibold mt-1" style={{ color: '#5e6a82' }}>Assinatura</div>

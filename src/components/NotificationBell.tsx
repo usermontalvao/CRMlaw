@@ -652,8 +652,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       tag: `user-notification-${dedupeKey}`,
       data,
       requireInteraction: signature || isUrgent,
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
     });
   };
 

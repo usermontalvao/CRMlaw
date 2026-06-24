@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BrandLogo } from './ui';
 import QRCode from 'qrcode';
 import { Shield, CheckCircle, XCircle, Loader2, FileText, User, Calendar, Hash, AlertCircle, Download, Eye, Lock } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
@@ -197,12 +198,7 @@ const PublicVerificationPage: React.FC = () => {
       <header className="bg-white border-b border-gray-100 py-4 px-6 sm:px-8 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-lg flex-shrink-0"
-              style={{ background: 'linear-gradient(150deg,#FF7A33,#EA5310)', boxShadow: '0 8px 20px -8px rgba(242,99,26,0.5)' }}
-            >
-              J
-            </div>
+            <BrandLogo iconOnly size="sm" />
             <span className="text-xl font-black tracking-tight text-slate-900">JURIUS</span>
             <div className="h-4 w-px bg-gray-300 mx-1 hidden sm:block" />
             <span className="text-[11px] uppercase tracking-widest text-gray-400 font-semibold hidden sm:block">Validação de Documento</span>

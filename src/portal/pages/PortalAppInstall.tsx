@@ -9,6 +9,7 @@ import {
   isIosDevice,
   isStandaloneDisplay,
 } from '../lib/pwa';
+import { BrandLogo } from '../../components/ui';
 
 // Ilustrações removidas a pedido do usuário
 
@@ -231,9 +232,7 @@ export const PortalAppInstall: React.FC = () => {
       <div className="overflow-hidden rounded-[24px] bg-[#f8f7f5] shadow-[0_8px_28px_rgba(15,23,42,0.07)] ring-1 ring-slate-100">
         <div className="bg-[radial-gradient(circle_at_top_left,_rgba(249,115,22,0.16),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_35%),linear-gradient(180deg,_#ffffff_0%,_#fffaf6_100%)] p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-orange-500 shadow-[0_10px_24px_rgba(249,115,22,0.30)]">
-              <span className="text-xl font-extrabold text-white">J</span>
-            </div>
+            <BrandLogo iconOnly size="md" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="text-[16px] font-bold tracking-tight text-slate-900">Jurius Portal</p>

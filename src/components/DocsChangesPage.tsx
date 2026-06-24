@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.269': { name: 'Cafe Marca Viva', emoji: '[palette]' },
   '1.10.267': { name: 'Cafe Assinatura Token Scoped', emoji: '[lock]' },
   '1.10.266': { name: 'Cafe Templates Editaveis', emoji: '[edit]' },
   '1.10.265': { name: 'Cafe Assinatura Mobile Blindada', emoji: '[shield]' },
@@ -920,6 +921,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.269',
+    date: '24/06/2026',
+    summary: 'Branding e experiencia institucional refinados: o CRM consolidou a nova identidade visual da Jurius, atualizou ativos PWA/SEO e poliu telas publicas, login e portal para manter a comunicacao mais consistente.',
+    modules: [
+      { moduleId: 'branding', changes: [
+        { type: 'feature' as const, title: 'Identidade visual centralizada em constantes e componente reutilizavel', description: 'A marca passou a ter configuracao unica em `src/constants/brand.ts` e `BrandLogo`, reduzindo duplicacao e alinhando tipografia, simbolo e variacoes de uso em todo o app.' },
+        { type: 'improvement' as const, title: 'Ativos de favicon, icones PWA e compartilhamento foram regenerados', description: 'Foram adicionados novos favicons, icones de instalacao, logo institucional e script dedicado para produzir os assets de marca com consistencia entre web app, SEO e compartilhamento.' },
+      ]},
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Login, instalacao e notificacoes do portal receberam acabamento visual', description: 'As telas do portal e pontos de contato publicos foram ajustados para usar a nova linguagem visual e melhorar a leitura da experiencia institucional em desktop e mobile.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Telas publicas e modulos centrais foram alinhados com a nova marca', description: 'Fluxos como login, offline, verificacao publica, assinatura, financeiro e chat receberam retoques de UI e integracao para refletir a identidade atualizada sem quebrar a navegacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.268',
     date: '23/06/2026',

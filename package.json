@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.10.268",
+  "version": "1.10.269",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "prepare": "node scripts/setup-githooks.cjs",
     "cleanup:pedro-r-storage": "node scripts/delete-pedro-r-signed-pdfs.mjs",
+    "brand:icons": "node scripts/render-brand-icons.mjs",
     "version:patch": "node scripts/bump-version.cjs patch",
     "version:minor": "node scripts/bump-version.cjs minor",
     "version:major": "node scripts/bump-version.cjs major"
@@ -24,6 +25,7 @@
     "@types/node": "^24.6.2",
     "@types/qrcode": "^1.5.6",
     "esbuild": "^0.25.9",
+    "sharp": "^0.35.2",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"

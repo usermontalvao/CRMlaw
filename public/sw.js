@@ -127,7 +127,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     icon: data.icon || '/icon-192.png',
-    badge: data.badge || '/favicon.ico',
+    badge: data.badge || '/favicon.svg',
     vibrate: [200, 100, 200],
     tag: data.tag || (data.data && data.data.tag) || undefined,
     data: data.data || {},

@@ -1025,7 +1025,7 @@ const ChatModule: React.FC = () => {
             const preview = getMessagePreview(msg.content);
             new Notification('Nova mensagem', {
               body: `${author?.name || 'Cliente'}: ${preview}`,
-              icon: '/favicon.ico',
+              icon: '/icon-192.png',
             });
           }
         }
