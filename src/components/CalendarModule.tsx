@@ -8,6 +8,7 @@ import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
 import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle, UserCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { brandMarkHTML, BRAND_SERIF } from '../constants/brand';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -1423,10 +1424,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         <button onclick="window.print()" style="background:#0e2a47;color:#fff;border:none;padding:9px 22px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;">Imprimir / PDF</button>
       </div>
       <div style="max-width:860px;margin:16px auto;">
-        <div style="background:#0a1828;color:#fff;padding:20px 24px 16px;border-bottom:3px solid #d4a857;margin-bottom:0;">
+        <div style="background:#1A1613;color:#fff;padding:20px 24px 16px;border-bottom:3px solid #EC6A1E;margin-bottom:0;">
           <div style="display:flex;justify-content:space-between;align-items:flex-end;">
             <div>
-              <div style="font-size:10px;letter-spacing:.25em;color:#d4a857;text-transform:uppercase;margin-bottom:4px;">JURIUS · Sistema Jurídico</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                ${brandMarkHTML({ px: 26, variant: 'reversed' })}
+                <span style="font-family:${BRAND_SERIF};font-size:17px;font-weight:700;letter-spacing:-.012em;color:#FBF6F1;">jurius<span style="color:#F2843E;">.</span><span style="font-weight:400;color:#8C7E72;">com.br</span></span>
+              </div>
               <div style="font-size:22px;font-weight:700;letter-spacing:-.01em;">Cronograma de Compromissos</div>
               <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${periodLabel}${cronogramaOnlyMine ? ' · Apenas os meus' : ' · Escritório'}</div>
             </div>

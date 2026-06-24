@@ -64,24 +64,10 @@ function buildMentionEmailHtml(data: {
       <td align="center" style="padding:24px 12px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:#ffffff;border:1px solid ${s200};border-radius:16px;overflow:hidden;">
 
-          <!-- Header laranja Jurius -->
+          <!-- Header Jurius (logo oficial) -->
           <tr>
-            <td style="background:${brandOrange};background:linear-gradient(135deg,${brandOrange} 0%,${brandOrangeDark} 100%);padding:28px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr>
-                  <td valign="middle" style="width:52px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="44" height="44" style="width:44px;height:44px;background:#ffffff;border-radius:12px;">
-                      <tr>
-                        <td align="center" valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:800;color:${brandOrangeDark};">J</td>
-                      </tr>
-                    </table>
-                  </td>
-                  <td valign="middle" style="padding-left:12px;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1.2;font-weight:800;color:#ffffff;">Jurius</div>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.2;font-weight:600;color:#fff7ed;">Gestão Jurídica</div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:24px 28px;background:#ffffff;border-bottom:1px solid #f1ece6;">
+              <img src="https://jurius.com.br/email-header.png" alt="jurius.com.br — Gestão Jurídica Inteligente" width="280" style="display:block;border:0;outline:none;text-decoration:none;height:auto;" />
             </td>
           </tr>
 

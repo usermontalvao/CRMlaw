@@ -37,11 +37,8 @@ body{margin:0;padding:0;background:${S0};font-family:Arial,Helvetica,sans-serif;
 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${S0};">
 <tr><td align="center" style="padding:28px 12px 48px;">
 <table class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:#fff;border:1px solid ${S2};border-radius:16px;overflow:hidden;">
-<tr><td style="background:linear-gradient(135deg,${O2} 0%,${O1} 100%);padding:24px 28px;">
-  <table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-    <td width="44" valign="middle"><table cellpadding="0" cellspacing="0" border="0" style="width:42px;height:42px;background:#fff;border-radius:10px;"><tr><td align="center" valign="middle" style="font-size:19px;font-weight:900;color:${O1};">J</td></tr></table></td>
-    <td valign="middle" style="padding-left:12px;"><div style="font-size:19px;font-weight:900;color:#fff;letter-spacing:-0.02em;">JURIUS</div><div style="font-size:10px;font-weight:600;color:#fff7ed;text-transform:uppercase;letter-spacing:0.08em;">Assinatura Digital</div></td>
-  </tr></table>
+<tr><td style="padding:22px 28px;background:#ffffff;border-bottom:1px solid #f1ece6;">
+  <img src="https://jurius.com.br/email-header.png" alt="jurius.com.br — Gestão Jurídica Inteligente" width="280" style="display:block;border:0;outline:none;text-decoration:none;height:auto;" />
 </td></tr>
 <tr><td style="background:#f0fdf4;border-bottom:2px solid #bbf7d0;padding:12px 28px;">
   <table cellpadding="0" cellspacing="0" border="0"><tr>

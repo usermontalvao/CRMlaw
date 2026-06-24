@@ -76,7 +76,7 @@ Deno.serve(async (req: Request) => {
       title: body.title,
       body: body.body,
       icon: '/icon-192.png',
-      badge: '/favicon.ico',
+      badge: '/favicon.svg',
       tag: body.conversation_id ? `wa:${body.conversation_id}` : undefined,
       // data.url → cold-open (service worker openWindow);
       // data.action/module/params → App.tsx navega ao focar (postMessage);

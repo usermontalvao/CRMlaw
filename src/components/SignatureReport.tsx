@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { BrandLogo } from './ui';
 import { CheckCircle, Download, FileText, Shield, User, Clock, Hash, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import type { Signer, SignatureRequest } from '../types/signature.types';
@@ -148,9 +149,9 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
           <div className="h-[4px]" style={{ background: 'linear-gradient(90deg, #9a3412, #ea580c, #f97316)' }} />
           <div className="px-6 sm:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-[4px] h-[40px] rounded-full flex-shrink-0" style={{ background: '#ea580c' }} />
+              <BrandLogo iconOnly size="sm" variant="reversed" />
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] mb-0.5" style={{ color: '#ea580c' }}>JURIUS CRM</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] mb-0.5" style={{ color: '#ea580c' }}>jurius.com.br</p>
                 <h1 className="text-[17px] font-bold leading-tight" style={{ color: 'white' }}>
                   Certificado de Assinatura Eletrônica
                 </h1>

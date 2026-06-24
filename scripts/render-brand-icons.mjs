@@ -19,11 +19,11 @@ const LOGO = pub('logo.png');
 
 // Cores/texto do lockup do og — espelham src/constants/brand.ts
 const BRAND = {
-  divider: '#473C33',
-  wordLead: '#FBF6F1',
-  wordDot: '#F2843E',
-  wordTld: '#8C7E72',
-  tagline: '#9A8B7D',
+  divider: '#E7DDD4',
+  wordLead: '#211C18',
+  wordDot: '#E45C12',
+  wordTld: '#A0958C',
+  tagline: '#A89C92',
 };
 
 const spectralB64 = readFileSync(asset('Spectral-SemiBold.ttf')).toString('base64');
@@ -76,20 +76,14 @@ const tagY = wordY + 56;
 const ogBaseSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
     <style>${fontFace}</style>
-    <linearGradient id="ogbg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#231d18"/>
-      <stop offset="100%" stop-color="#140f0c"/>
-    </linearGradient>
-    <radialGradient id="ogglow" cx="0.2" cy="0.28" r="0.9">
-      <stop offset="0%" stop-color="#f6a356" stop-opacity="0.20"/>
-      <stop offset="45%" stop-color="#f6a356" stop-opacity="0.07"/>
-      <stop offset="100%" stop-color="#f6a356" stop-opacity="0"/>
+    <radialGradient id="ogglow" cx="0.22" cy="0.26" r="1.0">
+      <stop offset="0%" stop-color="#FBEFE3" stop-opacity="0.9"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="${W}" height="${H}" fill="url(#ogbg)"/>
+  <rect width="${W}" height="${H}" fill="#FFFFFF"/>
   <rect width="${W}" height="${H}" fill="url(#ogglow)"/>
-  <rect x="44" y="44" width="${W - 88}" height="${H - 88}" rx="24" fill="none" stroke="#ffffff" stroke-opacity="0.05"/>
-  <rect x="${dividerX}" y="${tileCy - 66}" width="1" height="132" fill="${BRAND.divider}" opacity="0.9"/>
+  <rect x="${dividerX}" y="${tileCy - 60}" width="1" height="120" fill="${BRAND.divider}"/>
   <text x="${textX}" y="${wordY}" dominant-baseline="middle" font-family="${SERIF}" font-size="74" font-weight="700" letter-spacing="-0.012em">
     <tspan fill="${BRAND.wordLead}">jurius</tspan><tspan fill="${BRAND.wordDot}">.</tspan><tspan fill="${BRAND.wordTld}" font-weight="400">com.br</tspan>
   </text>
@@ -125,4 +119,29 @@ for (const s of [16, 32, 48]) {
   await sharp(favTile).resize(s, s).png().toFile(pub(`favicon-${s}.png`));
 }
 console.log('wrote favicon.svg + favicon-16/32/48.png');
+
+// ───── email-header.png: lockup CLARO para o cabeçalho dos e-mails ─────
+// (renderizado como imagem para ser idêntico ao site em qualquer cliente de e-mail)
+{
+  const EW = 740, EH = 230;
+  const tile = 168;
+  const tileX = 44, tileY = Math.round((EH - tile) / 2);
+  const dividerX = tileX + tile + 26;
+  const textX = dividerX + 34;
+  const wordY = EH / 2 - 12;
+  const tagY = wordY + 46;
+  const ehBase = `<svg xmlns="http://www.w3.org/2000/svg" width="${EW}" height="${EH}" viewBox="0 0 ${EW} ${EH}">
+    <defs><style>${fontFace}</style></defs>
+    <rect width="${EW}" height="${EH}" fill="#FFFFFF"/>
+    <rect x="${dividerX}" y="${EH / 2 - 48}" width="1" height="96" fill="#E7DDD4"/>
+    <text x="${textX}" y="${wordY}" dominant-baseline="middle" font-family="${SERIF}" font-size="58" font-weight="700" letter-spacing="-0.012em"><tspan fill="#211C18">jurius</tspan><tspan fill="#E45C12">.</tspan><tspan fill="#A0958C" font-weight="400">com.br</tspan></text>
+    <text x="${textX}" y="${tagY}" dominant-baseline="middle" font-family="${SANS}" font-size="16" font-weight="500" letter-spacing="0.34em" fill="#A89C92">GESTÃO JURÍDICA INTELIGENTE</text>
+  </svg>`;
+  const ehTile = await tileFromLogo(tile, 0.04);
+  await sharp(Buffer.from(ehBase))
+    .composite([{ input: ehTile, left: tileX, top: tileY }])
+    .png()
+    .toFile(pub('email-header.png'));
+  console.log('wrote email-header.png', EW + 'x' + EH);
+}
 console.log('done');

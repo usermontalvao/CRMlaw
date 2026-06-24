@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.270': { name: 'Cafe Comunicacao Afinada', emoji: '[mail]' },
   '1.10.269': { name: 'Cafe Marca Viva', emoji: '[palette]' },
   '1.10.267': { name: 'Cafe Assinatura Token Scoped', emoji: '[lock]' },
   '1.10.266': { name: 'Cafe Templates Editaveis', emoji: '[edit]' },
@@ -921,6 +922,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.270',
+    date: '24/06/2026',
+    summary: 'Comunicacao e acabamento operacional refinados: o CRM atualizou os ativos de email/compartilhamento, ajustou pontos de calendario e relatorio de assinatura e simplificou funcoes de notificacao no Supabase.',
+    modules: [
+      { moduleId: 'branding', changes: [
+        { type: 'improvement' as const, title: 'Assets de email e compartilhamento foram atualizados', description: 'O projeto ganhou `email-header.png` e ajustes nos geradores/artefatos de OG image para manter a comunicacao visual mais consistente entre email, web e compartilhamento.' },
+      ]},
+      { moduleId: 'agenda', changes: [
+        { type: 'improvement' as const, title: 'Calendario e relatorio de assinatura receberam ajustes pontuais', description: 'O frontend refinou detalhes no `CalendarModule` e no `SignatureReport` para alinhar melhor a experiencia operacional e a apresentacao das informacoes.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Edge functions de notificacao e envio foram simplificadas', description: 'Funcoes de OTP, mencoes, prazos, portal, assinatura e WhatsApp foram enxugadas para reduzir ruido, manter consistencia e facilitar manutencao dos fluxos de comunicacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.269',
     date: '24/06/2026',

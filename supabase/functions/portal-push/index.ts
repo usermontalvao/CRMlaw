@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
       title: body.title,
       body: body.body,
       icon: '/icon-192.png',
-      badge: '/favicon.ico',
+      badge: '/favicon.svg',
       // data.portalRoute/portalParam → o PortalLayout navega ao focar a janela;
       // data.url → fallback usado pelo service worker no cold-open (openWindow).
       data: {
