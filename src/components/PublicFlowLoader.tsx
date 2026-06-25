@@ -1,93 +1,147 @@
 import React from 'react';
-import { BRAND_GRADIENT, BRAND_SERIF } from '../constants/brand';
+import { BRAND_SANS } from '../constants/brand';
+import { BrandLogo } from './ui';
 
 /**
- * Animação de carregamento compartilhada do fluxo público (kit / preenchimento).
- *
- * Usada tanto no landing de permalink (/#/p/:slug) quanto na página de
- * preenchimento (/#/preencher/:token) para que o link do kit e o link gerado
- * exibam exatamente a mesma animação da marca "jurius".
+ * Loader público com linguagem institucional e foco em mobile.
  */
 const PublicFlowLoader: React.FC<{ subtitle?: string }> = ({
   subtitle = 'Gestão Jurídica Inteligente',
 }) => {
   return (
-    <div className="tfl-load-screen">
+    <div className="pfl-screen">
       <style>{`
-        @keyframes tfl-load-fade { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes tfl-load-up {
-          0% { opacity: 0; transform: translateY(12px) scale(.96); }
-          100% { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes pfl-fade {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
-        @keyframes tfl-load-float {
-          0%, 100% { transform: translateY(0) rotate(-3deg); }
-          50% { transform: translateY(-10px) rotate(3deg); }
+        @keyframes pfl-rise {
+          0% { opacity: 0; transform: translateY(10px); }
+          100% { opacity: 1; transform: translateY(0); }
         }
-        @keyframes tfl-load-glow {
-          0%, 100% { box-shadow: 0 16px 40px -10px rgba(245,158,11,.55), 0 0 0 0 rgba(251,191,36,.4); }
-          50% { box-shadow: 0 24px 56px -8px rgba(249,115,22,.7), 0 0 0 14px rgba(251,191,36,0); }
+        @keyframes pfl-progress {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(320%); }
         }
-        @keyframes tfl-load-ring {
-          0% { transform: scale(.5); opacity: .65; }
-          70% { opacity: .1; }
-          100% { transform: scale(1.7); opacity: 0; }
+        .pfl-screen {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background:
+            radial-gradient(circle at top, rgba(255,255,255,.98), rgba(248,243,236,.96) 42%, rgba(241,234,225,.94) 100%);
+          animation: pfl-fade .22s ease-out both;
         }
-        @keyframes tfl-load-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes tfl-load-shimmer { 0% { transform: translateX(-120%); } 100% { transform: translateX(420%); } }
-        .tfl-load-screen {
-          position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-          background: radial-gradient(120% 120% at 50% 35%, #fffdf7 0%, #fff4e0 55%, #ffedd5 100%);
-          animation: tfl-load-fade .3s ease both;
+        .pfl-frame {
+          width: min(100%, 390px);
+          padding: 32px 28px;
+          animation: pfl-rise .38s ease-out both;
         }
-        .tfl-load-box { display: flex; flex-direction: column; align-items: center; gap: 28px; animation: tfl-load-up .5s cubic-bezier(.2,.8,.2,1) both; }
-        .tfl-load-stage { position: relative; width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
-        .tfl-load-ring {
-          position: absolute; inset: 0; margin: auto; width: 120px; height: 120px;
-          border-radius: 999px; border: 2px solid rgba(245,158,11,.45); animation: tfl-load-ring 2.6s ease-out infinite;
+        .pfl-mark {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 22px;
         }
-        .tfl-load-ring-2 { animation-delay: .85s; border-color: rgba(249,115,22,.45); }
-        .tfl-load-ring-3 { animation-delay: 1.7s; border-color: rgba(251,191,36,.55); }
-        .tfl-load-orbit { position: absolute; inset: 0; margin: auto; width: 150px; height: 150px; animation: tfl-load-orbit 4.5s linear infinite; }
-        .tfl-load-orbit span {
-          position: absolute; top: -3px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px;
-          border-radius: 999px; background: linear-gradient(135deg, #fbbf24, #f97316);
-          box-shadow: 0 2px 8px rgba(249,115,22,.5);
+        .pfl-divider {
+          width: 64px;
+          height: 1px;
+          margin: 0 auto 22px;
+          background: linear-gradient(90deg, transparent, rgba(157,136,117,.9), transparent);
         }
-        .tfl-load-mark {
-          position: relative; width: 84px; height: 84px; border-radius: 21px;
-          display: flex; align-items: center; justify-content: center;
-          font-family: ${BRAND_SERIF}; font-weight: 600; font-size: 51px; line-height: 1; color: #fff;
-          text-shadow: 0 2px 7px rgba(120,40,0,.4);
-          background: ${BRAND_GRADIENT};
-          animation: tfl-load-float 3.2s ease-in-out infinite, tfl-load-glow 2.6s ease-in-out infinite;
+        .pfl-copy {
+          text-align: center;
+          max-width: 320px;
+          margin: 0 auto;
         }
-        .tfl-load-mark::after { content: ''; position: absolute; inset: 0; border-radius: 21px; border: 1px solid rgba(255,255,255,.35); opacity: .6; }
-        .tfl-load-word { text-align: center; }
-        .tfl-load-word b { display: block; font-family: ${BRAND_SERIF}; font-size: 22px; font-weight: 700; color: #211C18; letter-spacing: -.012em; }
-        .tfl-load-word small { display: block; margin-top: 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .44em; color: #b45309; }
-        .tfl-load-bar { position: relative; width: 200px; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(245,158,11,.2); }
-        .tfl-load-bar > span {
-          position: absolute; top: 0; left: 0; height: 100%; width: 35%; border-radius: 999px;
-          background: linear-gradient(90deg, transparent, #fbbf24, #f97316, transparent);
-          animation: tfl-load-shimmer 1.3s ease-in-out infinite;
+        .pfl-kicker {
+          margin: 0 0 12px;
+          font-family: ${BRAND_SANS};
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: .24em;
+          text-transform: uppercase;
+          color: #a16b3f;
+        }
+        .pfl-title {
+          margin: 0;
+          font-family: ${BRAND_SANS};
+          font-size: 24px;
+          line-height: 1.25;
+          font-weight: 500;
+          letter-spacing: -.02em;
+          color: #231f1b;
+        }
+        .pfl-text {
+          margin: 14px 0 0;
+          font-family: ${BRAND_SANS};
+          font-size: 14px;
+          line-height: 1.7;
+          color: #6c5f53;
+        }
+        .pfl-progress {
+          position: relative;
+          width: min(100%, 220px);
+          height: 2px;
+          margin: 28px auto 0;
+          overflow: hidden;
+          background: rgba(184,164,143,.28);
+        }
+        .pfl-progress::after {
+          content: '';
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 34%;
+          background: linear-gradient(90deg, transparent, #d97706, #ea580c, transparent);
+          animation: pfl-progress 1.15s ease-in-out infinite;
+        }
+        .pfl-footer {
+          margin-top: 14px;
+          text-align: center;
+          font-family: ${BRAND_SANS};
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+          color: #9b8a79;
+        }
+        @media (max-width: 420px) {
+          .pfl-frame {
+            padding: 28px 22px;
+          }
+          .pfl-title {
+            font-size: 22px;
+          }
+          .pfl-text {
+            font-size: 13.5px;
+          }
         }
         @media (prefers-reduced-motion: reduce) {
-          .tfl-load-mark, .tfl-load-ring, .tfl-load-orbit, .tfl-load-bar > span { animation-duration: .01ms; animation-iteration-count: 1; }
+          .pfl-progress::after {
+            animation-duration: .01ms;
+            animation-iteration-count: 1;
+          }
         }
       `}</style>
-      <div className="tfl-load-box">
-        <div className="tfl-load-stage">
-          <span className="tfl-load-ring tfl-load-ring-1" />
-          <span className="tfl-load-ring tfl-load-ring-2" />
-          <span className="tfl-load-ring tfl-load-ring-3" />
-          <div className="tfl-load-orbit"><span /></div>
-          <div className="tfl-load-mark">J</div>
+
+      <div className="pfl-frame">
+        <div className="pfl-mark">
+          <BrandLogo stacked size="lg" divider={false} shine={false} className="select-none" />
         </div>
-        <div className="tfl-load-word">
-          <b>jurius.com.br</b>
-          <small>{subtitle}</small>
+
+        <div className="pfl-divider" />
+
+        <div className="pfl-copy">
+          <p className="pfl-kicker">{subtitle}</p>
+          <h1 className="pfl-title">Preparando o documento para preenchimento</h1>
+          <p className="pfl-text">
+            Aguarde alguns instantes enquanto organizamos os dados e validamos
+            o ambiente para uma experiência segura no seu dispositivo.
+          </p>
         </div>
-        <div className="tfl-load-bar"><span /></div>
+
+        <div className="pfl-progress" />
+        <div className="pfl-footer">Carregando ambiente seguro</div>
       </div>
     </div>
   );
