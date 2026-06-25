@@ -53,7 +53,7 @@ import { ClientCloudDocsLink } from './CloudFolderModal';
 import { Modal, ModalBody } from './ui/Modal';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
-import { buildPublicFillUrl } from '../utils/publicAppUrl';
+import { buildPublicFillUrl, buildWaPreviewUrl } from '../utils/publicAppUrl';
 import type { DocumentTemplate } from '../types/document.types';
 import type { Lead } from '../types/lead.types';
 import { settingsService, funnelLabelsFromConfig, type FunnelLabel } from '../services/settings.service';
@@ -969,7 +969,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         }
         guard.lastSlug = item.slug;
         guard.lastAt = Date.now();
-        const url = buildPublicFillUrl(result.token);
+        const url = buildWaPreviewUrl('preencher', result.token);
         setDraft(`Segue o link para preencher e assinar seus documentos:\n\n${url}`);
         setSlashIndex(0);
       } catch (e: any) {

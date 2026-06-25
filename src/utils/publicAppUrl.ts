@@ -1,5 +1,7 @@
 const PUBLIC_APP_FALLBACK_URL = 'https://jurius.com.br';
 
+const SUPABASE_FUNCTIONS_BASE = 'https://uajwkqipbyxzvwjpitxl.supabase.co/functions/v1';
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
 
 function normalizeBaseUrl(value: string | null | undefined): string | null {
@@ -56,6 +58,16 @@ export function buildPublicDocumentUrl(token: string): string {
 
 export function buildPublicPermalinkUrl(slug: string): string {
   return buildPublicHashUrl(`/p/${slug}`);
+}
+
+/**
+ * URL de preview para compartilhamento via WhatsApp.
+ * O bot do WhatsApp scrapes esta URL e recebe OG tags personalizadas com nome
+ * do signatário / documento / template. Browsers reais recebem redirect 302
+ * para a URL do SPA.
+ */
+export function buildWaPreviewUrl(linkType: 'assinar' | 'preencher' | 'p', token: string): string {
+  return `${SUPABASE_FUNCTIONS_BASE}/link-preview/${linkType}/${token}`;
 }
 
 /** Página pública dos Termos de Uso da Assinatura (versionada). */

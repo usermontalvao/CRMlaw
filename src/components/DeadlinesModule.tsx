@@ -1011,6 +1011,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     });
   }, [deadlines, internalCalendarMonth, internalCalendarYear, isPastMonth, matchesSecondaryFilters]);
 
+  // Todos os prazos pendentes (qualquer mês) que passam pelo filtro de responsável/busca
+  const allPending = useMemo(
+    () => deadlines.filter((d) => d.status === 'pendente' && matchesSecondaryFilters(d)),
+    [deadlines, matchesSecondaryFilters],
+  );
+
   const monthlyPending = useMemo(
     () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
     [monthlyDeadlines],
@@ -1044,6 +1050,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       ),
     [monthlyDeadlines],
   );
+
+  // Atenção = todos os pendentes vencidos (qualquer mês) + vence hoje
+  const allAttentionCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return deadlines.filter((d) => {
+      if (d.status !== 'pendente') return false;
+      if (!matchesSecondaryFilters(d)) return false;
+      return getDaysUntilDue(d.due_date) <= 0;
+    }).length;
+  }, [deadlines, matchesSecondaryFilters]);
 
   const monthlyAttentionCount = useMemo(
     () => monthlyDueToday.length + monthlyOverdue.length,
@@ -3157,7 +3174,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           },
           {
             label: 'Pendentes',
-            value: monthlyPending.length,
+            value: allPending.length,
             icon: Clock,
             color: 'amber',
             active: activeStatusTab === 'pendente',
@@ -3168,15 +3185,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           },
           {
             label: 'Atenção',
-            value: monthlyAttentionCount,
+            value: allAttentionCount,
             icon: AlertCircle,
             color: 'red',
             active: activeStatusTab === 'vencido',
             onClick: () => setActiveStatusTab('vencido'),
-            gradient: monthlyAttentionCount > 0 ? 'from-red-500 to-red-600' : 'from-slate-300 to-slate-400',
+            gradient: allAttentionCount > 0 ? 'from-red-500 to-red-600' : 'from-slate-300 to-slate-400',
             ring: 'ring-red-400',
             bg: 'bg-red-50',
-            pulse: monthlyAttentionCount > 0,
+            pulse: allAttentionCount > 0,
           },
           {
             label: 'Concluídos',

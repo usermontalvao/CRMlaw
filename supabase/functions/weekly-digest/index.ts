@@ -231,7 +231,7 @@ function buildHtml(opts: {
           <table cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td valign="middle" width="52">
-                <img src="https://jurius.com.br/logo.png" width="52" height="52" alt="Jurius" style="display:block;border:0;border-radius:14px;">
+                <img src="https://uajwkqipbyxzvwjpitxl.supabase.co/storage/v1/object/public/profile-banners/logo.png" width="52" height="52" alt="Jurius" style="display:block;border:0;border-radius:14px;">
               </td>
               <td width="28" style="padding:0 14px;"><div style="width:1px;height:36px;background:#E7E9EE;"></div></td>
               <td valign="middle">

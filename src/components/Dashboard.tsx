@@ -479,8 +479,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         setUserAuthId(profile?.user_id || '');
         setUserRole(profile?.role || '');
 
-        // Restaura reveal financeiro a partir da sessão PIN (sessionStorage, não DB)
-        const sessionExpiry = getFinancialSessionExpiry();
+        // Restaura reveal financeiro a partir da sessão financeira (sessionStorage, não DB)
+        const sessionExpiry = getFinancialModuleExpiry();
         if (sessionExpiry && sessionExpiry > new Date()) {
           setFinancialRevealedUntil(sessionExpiry);
         }
@@ -529,7 +529,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }, []);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
-  const { requirePin, getFinancialSessionExpiry } = useSecurityPin();
+  const { revealFinancialValues, getFinancialModuleExpiry } = useSecurityPin();
 
   const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;
@@ -1417,16 +1417,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         if (revealed) {
                           setFinancialRevealedUntil(null);
                         } else {
-                          await requirePin({
-                            action: 'view_dashboard_financial_values',
-                            resourceType: 'dashboard',
-                            sensitivity: 'medium',
-                            title: 'Visualizar valores financeiros',
-                            description: 'Informe seu PIN de Segurança para revelar os valores do dashboard.',
-                            onVerified: () => {
-                              const expiry = getFinancialSessionExpiry();
-                              setFinancialRevealedUntil(expiry ?? new Date(Date.now() + 10 * 60 * 1000));
-                            },
+                          await revealFinancialValues((expiry) => {
+                            setFinancialRevealedUntil(expiry);
                           });
                         }
                       }}
