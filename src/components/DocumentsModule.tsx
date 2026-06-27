@@ -1618,7 +1618,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const templatesWithFile = templates.filter((template) => template.file_path).length;
 
   return (
-    <div className="space-y-6">
+    <div className="@container space-y-6">
       {/* Overlay de geração de link — animação da marca */}
       {creatingTemplateFillLinkId && (
         <div className="tfl-gen-overlay" role="status" aria-live="polite" aria-label="Gerando link">
@@ -1734,7 +1734,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Header com tabs */}
       <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5]">
-                <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 sm:flex-row sm:px-6">
+                <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 @sm:flex-row @sm:px-6">
           <button
             onClick={() => setActiveView('new-doc')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
@@ -1773,9 +1773,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Novo documento */}
       {activeView === 'new-doc' && (
-        <div className="grid gap-6 lg:grid-cols-5">
+        <div className="grid gap-6 @lg:grid-cols-5">
           {/* Coluna esquerda: Seleção de template */}
-          <div className="hidden lg:block lg:col-span-2 space-y-4">
+          <div className="hidden @lg:block @lg:col-span-2 space-y-4">
             <div>
               <h4 className="text-sm font-semibold text-slate-900 mb-1">Escolha o template</h4>
               <p className="text-xs text-slate-500">Selecione o modelo para gerar o documento</p>
@@ -2022,7 +2022,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <button
                   onClick={handleGenerateDocx}
                   disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                  className="hidden sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
+                  className="hidden @sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
                   style={{
                     backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
                     backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
@@ -2090,7 +2090,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       {activeView === 'manage' && (
         <div className="space-y-4">
           {/* Header com ações globais */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-between">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Meus Templates</h4>
               <p className="text-sm text-slate-500">{manageTemplates.length} template(s) cadastrado(s)</p>
@@ -2101,8 +2101,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
-                <span className="hidden sm:inline">Campos Personalizados</span>
-                <span className="sm:hidden">Campos</span>
+                <span className="hidden @sm:inline">Campos Personalizados</span>
+                <span className="@sm:hidden">Campos</span>
               </button>
               <button
                 onClick={handleOpenModal}
@@ -2130,7 +2130,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               </button>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 @sm:grid-cols-2 @md:grid-cols-3">
               {manageTemplates.map((template) => {
                 const summary = templateFilesSummary[template.id];
                 const attachmentsCount = summary?.count ?? 0;
@@ -2730,7 +2730,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
         <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">
           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
-          <div className="flex items-center gap-2 flex-col sm:flex-row">
+          <div className="flex items-center gap-2 flex-col @sm:flex-row">
             <input
               type="text"
               readOnly

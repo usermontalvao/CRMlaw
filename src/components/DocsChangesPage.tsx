@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.273': { name: 'Cafe Operacao Afinada', emoji: '[sparkles]' },
   '1.10.272': { name: 'Cafe Auditoria Continua', emoji: '[signature]' },
   '1.10.271': { name: 'Cafe Emails Alinhados', emoji: '[mail]' },
   '1.10.270': { name: 'Cafe Comunicacao Afinada', emoji: '[mail]' },
@@ -924,6 +925,25 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.273',
+    date: '27/06/2026',
+    summary: 'Agenda, email, assinatura e modulos operacionais receberam um checkpoint conjunto de refinamentos para consolidar a navegacao, a auditoria e a camada de apoio visual do CRM.',
+    modules: [
+      { moduleId: 'agenda', changes: [
+        { type: 'improvement' as const, title: 'Agenda e auditoria operacional foram ampliadas', description: 'Calendario, prazos e servicos correlatos receberam ajustes de comportamento e uma migration de auditoria para consolidar melhor o rastreamento dos compromissos.' },
+      ]},
+      { moduleId: 'email', changes: [
+        { type: 'improvement' as const, title: 'Fluxos de email e transicoes auxiliares foram reorganizados', description: 'O modulo de email passou por refinamentos de fluxo e ganhou utilitarios dedicados para deixar o comportamento mais coerente entre composicao, navegacao e integracoes.' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Relatorio e detalhes de assinatura receberam novo polimento', description: 'A camada de assinatura ganhou ajustes complementares no relatorio PDF, detalhes do cliente e modais relacionados para manter a trilha operacional mais consistente.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Workspace, branding utilitario e modulos centrais foram alinhados', description: 'Janelas flutuantes, links de preview, logo utilitaria e modulos operacionais do CRM foram consolidados neste checkpoint para reduzir atrito visual e tecnico entre telas.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.272',
     date: '24/06/2026',

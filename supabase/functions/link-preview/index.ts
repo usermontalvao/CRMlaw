@@ -2,9 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const APP_BASE_URL = 'https://jurius.com.br';
-const OG_IMAGE_BASE = 'https://uajwkqipbyxzvwjpitxl.supabase.co/functions/v1/og-image';
+const PUBLIC_OG_IMAGE = `${APP_BASE_URL}/logo.png?v=public-logo-1`;
 
-// User-agents do WhatsApp e outros scrapers de link preview
+// User-agents de bots que geram preview de links.
 const BOT_PATTERNS = [
   'facebookexternalhit', 'facebot', 'whatsapp', 'twitterbot', 'linkedinbot',
   'slackbot', 'telegrambot', 'googlebot', 'bingbot', 'applebot', 'iframely',
@@ -12,7 +12,7 @@ const BOT_PATTERNS = [
 
 function isBot(ua: string): boolean {
   const lower = ua.toLowerCase();
-  return BOT_PATTERNS.some(b => lower.includes(b));
+  return BOT_PATTERNS.some((bot) => lower.includes(bot));
 }
 
 function esc(str: string): string {
@@ -28,6 +28,7 @@ function ogHtml(title: string, description: string, imageUrl: string, canonicalU
   const d = esc(description);
   const i = esc(imageUrl);
   const u = esc(canonicalUrl);
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -57,22 +58,23 @@ function ogHtml(title: string, description: string, imageUrl: string, canonicalU
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
-      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type' },
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'content-type',
+      },
     });
   }
 
   const url = new URL(req.url);
   const segments = url.pathname.split('/').filter(Boolean);
 
-  // Path: /functions/v1/link-preview/<tipo>/<token>
-  // segments após o deploy: ['link-preview', 'assinar'|'preencher'|'p', token]
-  // Extrair o tipo e token independentemente do prefixo
   let linkType: 'assinar' | 'preencher' | 'p' | null = null;
   let token: string | null = null;
 
   for (let i = 0; i < segments.length; i++) {
-    if (segments[i] === 'assinar' || segments[i] === 'preencher' || segments[i] === 'p') {
-      linkType = segments[i] as 'assinar' | 'preencher' | 'p';
+    const segment = segments[i];
+    if (segment === 'assinar' || segment === 'preencher' || segment === 'p') {
+      linkType = segment;
       token = segments[i + 1] || null;
       break;
     }
@@ -85,7 +87,6 @@ Deno.serve(async (req: Request) => {
   const spaUrl = `${APP_BASE_URL}/#/${linkType}/${token}`;
   const ua = req.headers.get('user-agent') || '';
 
-  // Browser real → redirecionar direto para o SPA
   if (!isBot(ua)) {
     return new Response(null, {
       status: 302,
@@ -93,20 +94,15 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Bot de preview → buscar dados e devolver OG HTML personalizado
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  let ogImage = `${OG_IMAGE_BASE}/assinar`;
-  let title = 'Jurius — Gestão Jurídica';
-  let description = 'Plataforma de gerenciamento jurídico inteligente.';
+  const ogImage = PUBLIC_OG_IMAGE;
+  let title = 'Jurius - Gestao Juridica';
+  let description = 'Plataforma de gerenciamento juridico inteligente.';
 
   try {
-    if (linkType === 'preencher' || linkType === 'p') {
-      ogImage = `${OG_IMAGE_BASE}/preencher`;
-    }
-
     if (linkType === 'assinar') {
       const { data } = await admin
         .from('signature_signers')
@@ -116,14 +112,14 @@ Deno.serve(async (req: Request) => {
 
       if (data) {
         const docName = (data.signature_requests as any)?.document_name || 'Documento';
-        const signerName = (data.name || '').split(' ')[0]; // primeiro nome
+        const signerName = (data.name || '').split(' ')[0];
         title = signerName
           ? `${signerName}, seu documento chegou para assinar`
           : 'Seu documento chegou para assinar';
-        description = `"${docName}" — Assine com segurança em poucos cliques.`;
+        description = `"${docName}" - Assine com seguranca em poucos cliques.`;
       } else {
         title = 'Documento aguardando assinatura';
-        description = 'Acesse o link para assinar o documento com segurança.';
+        description = 'Acesse o link para assinar o documento com seguranca.';
       }
     } else if (linkType === 'preencher') {
       const { data } = await admin
@@ -133,12 +129,12 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (data) {
-        const templateName = (data.document_templates as any)?.name || 'Formulário';
-        title = 'Formulário para preencher';
-        description = `"${templateName}" — Preencha o formulário digital enviado pelo escritório.`;
+        const templateName = (data.document_templates as any)?.name || 'Formulario';
+        title = 'Formulario para preencher';
+        description = `"${templateName}" - Preencha o formulario digital enviado pelo escritorio.`;
       } else {
-        title = 'Formulário digital';
-        description = 'Preencha o formulário enviado pelo escritório.';
+        title = 'Formulario digital';
+        description = 'Preencha o formulario enviado pelo escritorio.';
       }
     } else if (linkType === 'p') {
       const { data } = await admin
@@ -149,16 +145,16 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (data) {
-        const templateName = (data.document_templates as any)?.name || 'Formulário';
-        title = 'Formulário para preencher';
-        description = `"${templateName}" — Preencha o formulário digital enviado pelo escritório.`;
+        const templateName = (data.document_templates as any)?.name || 'Formulario';
+        title = 'Formulario para preencher';
+        description = `"${templateName}" - Preencha o formulario digital enviado pelo escritorio.`;
       } else {
-        title = 'Formulário digital';
-        description = 'Preencha o formulário enviado pelo escritório.';
+        title = 'Formulario digital';
+        description = 'Preencha o formulario enviado pelo escritorio.';
       }
     }
   } catch {
-    // Manter fallback genérico em caso de erro de DB
+    // Mantem fallback generico em caso de erro de banco.
   }
 
   return new Response(ogHtml(title, description, ogImage, spaUrl), {

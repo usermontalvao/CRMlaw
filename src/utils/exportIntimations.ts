@@ -4,6 +4,7 @@
 
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import type { IntimationAnalysis } from '../types/ai.types';
+import { getLogoDataUrl } from './logoBase64';
 
 /**
  * Exporta intimações para CSV
@@ -62,10 +63,11 @@ export function exportToCSV(
 /**
  * Exporta intimações para Excel (formato HTML que Excel pode abrir)
  */
-export function exportToExcel(
+export async function exportToExcel(
   intimations: DjenComunicacaoLocal[],
   analyses: Map<string, IntimationAnalysis>
-): void {
+): Promise<void> {
+  const logo = await getLogoDataUrl();
   const htmlContent = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
     <head>
@@ -78,15 +80,19 @@ export function exportToExcel(
         .urgencia-alta { background-color: #fef2f2; color: #dc2626; font-weight: bold; }
         .urgencia-media { background-color: #fffbeb; color: #d97706; font-weight: bold; }
         .urgencia-baixa { background-color: #ecfdf5; color: #059669; font-weight: bold; }
-        h1 { color: #0f172a; font-size: 20px; }
+        h1 { color: #0f172a; font-size: 20px; margin: 0; }
         p { color: #64748b; font-size: 13px; }
       </style>
     </head>
     <body>
-      <h1>Relatório de Intimações DJEN</h1>
-      <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <img src="${logo}" alt="Jurius" style="height:40px;width:auto;border-radius:8px" />
+        <div>
+          <h1>Relatório de Intimações DJEN</h1>
+          <p style="margin:2px 0 0">Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+      </div>
       <p>Total de intimações: ${intimations.length}</p>
-      <br>
       <table>
         <thead>
           <tr>
@@ -143,10 +149,11 @@ export function exportToExcel(
 /**
  * Gera relatório em PDF (usando impressão do navegador)
  */
-export function exportToPDF(
+export async function exportToPDF(
   intimations: DjenComunicacaoLocal[],
   analyses: Map<string, IntimationAnalysis>
-): void {
+): Promise<void> {
+  const logo = await getLogoDataUrl();
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -196,8 +203,13 @@ export function exportToPDF(
       <div class="header-bar"></div>
       <div class="container">
         <div class="header">
-          <div class="header-label">Relatório</div>
-          <h1>Relatório de Intimações DJEN</h1>
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+            <img src="${logo}" alt="Jurius" style="height:48px;width:auto;border-radius:10px;flex-shrink:0" />
+            <div>
+              <div class="header-label">Relatório</div>
+              <h1 style="margin:0">Relatório de Intimações DJEN</h1>
+            </div>
+          </div>
           <div class="header-info">
             <strong>Gerado em:</strong> ${new Date().toLocaleString('pt-BR')} &nbsp;|&nbsp;
             <strong>Total:</strong> ${intimations.length} intimações

@@ -719,6 +719,23 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [decryptedInssPassword, setDecryptedInssPassword] = useState<string | null>(null);
   const [copiedDetailField, setCopiedDetailField] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const reqRootRef = useRef<HTMLDivElement>(null);
+
+  // Detecta a largura real do bloco flutuante (independente do viewport).
+  // Threshold 860 = min-width da tabela; abaixo mostra cards.
+  const [reqWidth, setReqWidth] = useState<number>(9999);
+  useEffect(() => {
+    const el = reqRootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setReqWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const showTable   = reqWidth >= 860;
+  const tabsInline  = reqWidth >= 860;
+
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [statusHistory, setStatusHistory] = useState<RequirementStatusHistoryEntry[]>([]);
   const [statusHistoryLoading, setStatusHistoryLoading] = useState(false);
@@ -4582,7 +4599,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   })() : null;
 
   return (
-    <div className="space-y-6 overflow-x-hidden">
+    <div ref={reqRootRef} className="@container space-y-6">
       {schedulePromptId && (
         <div className="bg-cyan-50 border border-cyan-200 text-cyan-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -4604,7 +4621,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
         <div className="p-4 sm:p-5">
           {/* Mobile toggle */}
-          <div className="flex items-center justify-between gap-2 mb-3 sm:hidden">
+          <div className="flex items-center justify-between gap-2 mb-3 @sm:hidden">
             <button
               type="button"
               onClick={() => setMobileControlsOpen((prev) => !prev)}
@@ -4622,9 +4639,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </button>
           </div>
 
-          <div className={`${mobileControlsOpen ? 'block' : 'hidden'} sm:block space-y-4`}>
+          <div className={`${mobileControlsOpen ? 'block' : 'hidden'} @sm:block space-y-4`}>
             {/* Linha 1: status tabs + botões de ação */}
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className={`flex gap-3 ${tabsInline ? 'flex-row items-center justify-between' : 'flex-col'}`}>
               {/* Status tabs */}
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <button
@@ -4652,8 +4669,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     }`}
                   >
                     {status.icon && <status.icon className="h-3 w-3" />}
-                    <span className="whitespace-nowrap hidden sm:inline">{status.label.replace('Aguardando ', '')}</span>
-                    <span className="whitespace-nowrap sm:hidden">{status.label.split(' ')[0]}</span>
+                    <span className="whitespace-nowrap hidden @sm:inline">{status.label.replace('Aguardando ', '')}</span>
+                    <span className="whitespace-nowrap @sm:hidden">{status.label.split(' ')[0]}</span>
                     {statusCounts[status.key] > 0 && (
                       <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-black px-1.5 min-w-[1.25rem] h-4 ${
                         activeStatusTab === status.key ? 'bg-[#f8f7f5]/25 text-white' : 'bg-slate-200 text-slate-700'
@@ -4680,12 +4697,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   title="Gerenciar modelo Word (DOCX) para o MS"
                 >
                   <Settings className="h-3 w-3" />
-                  <span className="hidden sm:inline">Gerenciar MS</span>
-                  <span className="sm:hidden">MS</span>
+                  <span className="hidden @sm:inline">Gerenciar MS</span>
+                  <span className="@sm:hidden">MS</span>
                 </button>
                 <button
                   onClick={() => handleOpenModal(undefined)}
-                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-[11px] font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
+                  className="hidden @sm:inline-flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-[11px] font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Novo Requerimento
@@ -4744,7 +4761,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </div>
 
               {showFilters && (
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 animate-in slide-in-from-top-1 duration-150">
+                <div className="mt-3 grid grid-cols-1 gap-2 @sm:grid-cols-2 @[860px]:grid-cols-4 animate-in slide-in-from-top-1 duration-150">
                   {[
                     { value: filterProtocol, onChange: (v: string) => setFilterProtocol(v), placeholder: 'Protocolo' },
                     { value: filterBeneficiary, onChange: (v: string) => setFilterBeneficiary(v), placeholder: 'Beneficiário' },
@@ -4885,7 +4902,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       ) : (
         <React.Fragment>
         {/* ── Desktop: Tabela ─────────────────────────────────────────────── */}
-        <div className="hidden lg:block rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] overflow-hidden">
+        <div className={`${showTable ? 'block' : 'hidden'} rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] overflow-hidden`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] divide-y divide-slate-100">
               <thead>
@@ -5168,7 +5185,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
 
         {/* ── Mobile: Cards ──────────────────────────────────────────────── */}
-        <div className="lg:hidden space-y-2.5">
+        <div className={`${showTable ? 'hidden' : 'block'} space-y-2.5`}>
           {paginatedRequirements.map((requirement) => {
             const isUpdating = statusUpdatingId === requirement.id;
             const statusConfig = getStatusConfig(requirement.status);
@@ -5402,7 +5419,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             disabled={currentPage === 1}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
           >
-            ← <span className="hidden sm:inline">Anterior</span>
+            ← <span className="hidden @sm:inline">Anterior</span>
           </button>
           <div className="flex items-center gap-1.5">
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
@@ -5424,7 +5441,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             disabled={currentPage === totalPages}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
           >
-            <span className="hidden sm:inline">Próxima</span> →
+            <span className="hidden @sm:inline">Próxima</span> →
           </button>
         </div>
       )}

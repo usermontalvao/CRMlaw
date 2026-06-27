@@ -3466,53 +3466,170 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 
 /* =====================================================================
-   FLOATING WINDOW — responsive overrides (.fw-content)
-   Aplica regras que permitem módulos de tela cheia funcionarem em
-   janelas de tamanho variável, sem modificar cada módulo individualmente.
+   FLOATING WINDOW SYSTEM — Base responsiva por container
+   ─────────────────────────────────────────────────────────────────────
+   Faixas (container inline-size, container-name: fw):
+     fw-wide    ≥ 740 px   comportamento desktop
+     fw-mid   480–739 px   layout reordenado, boa densidade
+     fw-narrow  < 480 px   empilhado, ações compactas
+
+   Padrão de uso nos módulos:
+     CSS  → utilitários .fw-toolbar / .fw-grid / .fw-hide-* / .fw-show-*
+     CSS  → .fw-content[data-fw-size="narrow"] .minha-classe { ... }
+     React → import { useFWSize } from './FloatingWindowSystem'
    ===================================================================== */
 
-/* ── Tabelas: a div que envolve a tabela faz scroll horizontal ── */
-/* Qualquer elemento que tente overflow-hidden e contenha tabela
-   passa a ser overflow-x-auto para o scroll funcionar            */
-.fw-content .overflow-hidden:has(table),
-.fw-content .overflow-hidden:has(.overflow-x-auto) {
-  overflow-x: auto !important;
-  overflow-y: visible !important;
+/* ── A. FOUNDATION ─────────────────────────────────────────────────── */
+/* Filhos diretos nunca quebram o container horizontalmente */
+.fw-content > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
-/* Garante que wrappers de tabela façam scroll  */
+/* ── B. OVERFLOW & SCROLL ──────────────────────────────────────────── */
+/* Wrappers de scroll horizontal sempre funcionam */
 .fw-content .overflow-x-auto {
   overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Linhas de filtros / pills: quebra em múltiplas linhas */
-.fw-content .flex.gap-1:not(.flex-col),
-.fw-content .flex.gap-2:not(.flex-col) {
-  flex-wrap: wrap;
+/* overflow-hidden que envolve tabela: libera scroll horizontal.
+   NÃO força overflow-y: visible — mantém sticky headers intactos. */
+.fw-content .overflow-hidden:has(> table),
+.fw-content .overflow-hidden:has(> .overflow-x-auto) {
+  overflow-x: auto !important;
 }
 
-/* Grid de cards: menos colunas em janelas estreitas */
-@container fw (max-width: 700px) {
-  .fw-content .grid-cols-3,
-  .fw-content .grid-cols-4 {
-    grid-template-columns: repeat(2, 1fr) !important;
-  }
-}
-@container fw (max-width: 480px) {
-  .fw-content .grid-cols-2,
-  .fw-content .grid-cols-3,
-  .fw-content .grid-cols-4 {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* Cells da tabela não quebram texto */
+/* Células de tabela não quebram texto (o scroll horizontal trata o excesso) */
 .fw-content th,
 .fw-content td {
   white-space: nowrap;
 }
 
-/* Evita que bloco-filhos diretos estufem além do container */
-.fw-content > * {
+/* ── C. UTILITÁRIOS — adoção gradual nos módulos ───────────────────── */
+
+/* fw-toolbar: linha de ações que quebra e compacta por container */
+.fw-content .fw-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* fw-grid: grid de cards responsivo por container (3→2→1) */
+.fw-content .fw-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* fw-table-wrap: wrapper de tabela com scroll semântico */
+.fw-content .fw-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   max-width: 100%;
+}
+.fw-content .fw-table-wrap table {
+  min-width: max-content;
+}
+
+/* ── D. CONTAINER QUERIES — fw-wide (≥ 740 px) ─────────────────────── */
+@container fw (min-width: 740px) {
+  .fw-content .fw-grid            { grid-template-columns: repeat(3, 1fr); }
+  /* Elementos visíveis só em tela cheia / bloco largo */
+  .fw-content .fw-show-mid        { display: none !important; }
+  .fw-content .fw-show-narrow     { display: none !important; }
+}
+
+/* ── E. CONTAINER QUERIES — fw-mid (480–739 px) ─────────────────────── */
+@container fw (min-width: 480px) and (max-width: 739px) {
+  /* fw-grid fica em 2 colunas */
+  .fw-content .fw-grid            { grid-template-columns: repeat(2, 1fr); }
+
+  /* fw-toolbar ligeiramente mais compacto */
+  .fw-content .fw-toolbar         { gap: 0.375rem; }
+
+  /* Esconde elementos marcados para sumir no mid */
+  .fw-content .fw-hide-mid        { display: none !important; }
+
+  /* Esconde elementos que só aparecem em narrow */
+  .fw-content .fw-show-narrow     { display: none !important; }
+
+  /* Override grids Tailwind ≥ 3 colunas → 2 (viewport é sempre "large" no CRM) */
+  .fw-content .grid-cols-3,
+  .fw-content .grid-cols-4,
+  .fw-content .grid-cols-5,
+  .fw-content .grid-cols-6,
+  .fw-content [class*=":grid-cols-3"],
+  .fw-content [class*=":grid-cols-4"],
+  .fw-content [class*=":grid-cols-5"],
+  .fw-content [class*=":grid-cols-6"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ── F. CONTAINER QUERIES — fw-narrow (< 480 px) ─────────────────────── */
+@container fw (max-width: 479px) {
+  /* fw-grid colapsa para 1 coluna */
+  .fw-content .fw-grid            { grid-template-columns: 1fr; }
+
+  /* fw-toolbar ainda mais compacto */
+  .fw-content .fw-toolbar         { gap: 0.25rem; }
+
+  /* Utilitários de visibilidade */
+  .fw-content .fw-hide-narrow     { display: none !important; }
+  .fw-content .fw-hide-mid        { display: none !important; }
+  .fw-content .fw-actions-secondary { display: none !important; }
+  .fw-content .fw-label           { display: none !important; }
+  .fw-content .fw-show-mid        { display: none !important; }
+
+  /* Override qualquer grid multi-coluna → 1 coluna
+     Captura grid-cols-N estáticos e variantes responsive (md:grid-cols-N) */
+  .fw-content [class*="grid-cols-"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Flexbox em linha → pode quebrar em narrow para evitar overflow */
+  .fw-content .flex.gap-1:not(.flex-col),
+  .fw-content .flex.gap-2:not(.flex-col),
+  .fw-content .flex.gap-3:not(.flex-col) {
+    flex-wrap: wrap;
+  }
+
+  /* Padding generoso → compacto */
+  .fw-content .p-6,  .fw-content .p-8  { padding: 1rem !important; }
+  .fw-content .px-6, .fw-content .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .fw-content .py-6, .fw-content .py-8 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+}
+
+/* ── G. SELETORES data-fw-size (complemento JS para casos não-cobertos por container queries) ── */
+/* Usados quando o módulo precisa de lógica CSS mais cirúrgica,
+   sem depender de container queries (ex: elementos fora do flow normal). */
+.fw-content[data-fw-size="narrow"] .fw-col-narrow {
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+.fw-content[data-fw-size="narrow"] .fw-min-w-0 {
+  min-width: 0 !important;
+}
+.fw-content[data-fw-size="mid"] .fw-min-w-0,
+.fw-content[data-fw-size="narrow"] .fw-min-w-0 {
+  min-width: 0 !important;
+}
+
+/* ── Busca global: pulse no evento encontrado ───────────────────── */
+@keyframes search-event-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.95), 0 0 0 0 rgba(251, 146, 60, 0.6); filter: brightness(1.15); }
+  35%  { box-shadow: 0 0 0 8px rgba(251, 146, 60, 0.5), 0 0 0 18px rgba(251, 146, 60, 0.2); filter: brightness(1.25); }
+  70%  { box-shadow: 0 0 0 14px rgba(251, 146, 60, 0.15), 0 0 0 28px rgba(251, 146, 60, 0.05); filter: brightness(1.1); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0), 0 0 0 0 rgba(251, 146, 60, 0); filter: brightness(1); }
+}
+
+.calendar-event--search-pulse {
+  animation: search-event-pulse 1.1s ease-out 6;
+  outline: 3px solid rgb(251, 146, 60) !important;
+  outline-offset: 2px;
+  border-radius: 4px;
+  z-index: 10 !important;
+  position: relative !important;
 }

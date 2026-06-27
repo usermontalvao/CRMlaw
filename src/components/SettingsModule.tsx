@@ -1487,7 +1487,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   // Corpo compartilhado — sem sidebar duplicado, header unificado no topo
   const settingsBody = (
-    <div className="flex flex-col w-full min-h-0 overflow-hidden bg-slate-50">
+    <div className="@container flex flex-col w-full min-h-0 overflow-hidden bg-slate-50">
 
       {/* ── Header bar ── */}
       <div className="shrink-0 bg-white border-b border-slate-200 px-8 pt-5 pb-4">
@@ -2264,7 +2264,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-slate-700">Tribunal Padrão</label>
                         <select
@@ -2712,7 +2712,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-sm font-medium text-slate-700">Fuso Horário</label>
@@ -2860,7 +2860,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     </button>
 
                     {/* Módulos */}
-                    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 transition-opacity ${portalLoginEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
+                    <div className={`grid grid-cols-1 gap-3 @sm:grid-cols-2 transition-opacity ${portalLoginEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
                       {([
                         { key: 'processos',    label: 'Processos',    desc: 'Listagem e detalhes dos processos',      icon: Briefcase },
                         { key: 'documentos',   label: 'Documentos',   desc: 'Documentos enviados pelo escritório',    icon: FolderOpen },
@@ -2943,7 +2943,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       Controla o que aparece no <strong>menu lateral</strong> para todos os usuários, independente das permissões de função. Cada alteração é salva automaticamente e aplicada na hora. Esconder um módulo aqui não altera permissões nem apaga dados. <strong>Perfil</strong> e <strong>Configurações</strong> não podem ser ocultados.
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
                       {([
                         { key: 'feed',          label: 'Feed',          desc: 'Mural e colaboração interna',     icon: Newspaper },
                         { key: 'agenda',        label: 'Agenda',        desc: 'Compromissos e audiências',       icon: Calendar },
@@ -3027,7 +3027,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <p style={{ fontSize: '12px', color: '#747878', marginBottom: '16px' }}>
                         Defina quais módulos podem ser abertos como janela flutuante ao clicar com o botão direito na sidebar.
                       </p>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
                         {([
                           { key: 'dashboard',     label: 'Dashboard',     desc: 'Painel principal',                  icon: Layers },
                           { key: 'feed',          label: 'Feed',          desc: 'Mural e colaboração interna',       icon: Newspaper },
@@ -3106,7 +3106,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         <p className="text-sm font-semibold text-slate-800">Sessões de PIN</p>
                         <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#dcfce7', color: '#166534' }}>Aplicado</span>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
                         <div>
                           <label className="text-sm font-medium text-slate-700 block mb-1">Duração da sessão PIN (minutos)</label>
                           <p className="text-xs text-slate-400 mb-1">Após verificar o PIN, ações sensíveis não pedem PIN novamente por este período.</p>
@@ -6219,7 +6219,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-semibold text-slate-500">Nome completo *</label>
                   <input

@@ -544,7 +544,8 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const toast = useToastContext();
   const avatarSyncedRef = useRef(false);
-  
+  const feedRootRef = useRef<HTMLDivElement>(null);
+
   // Carregar cache instantaneamente para evitar loading visível
   const instantCache = useMemo(() => getInstantCache(), []);
   const hasInstantCache = !!instantCache;
@@ -945,10 +946,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   ]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [financialRevealedUntil, setFinancialRevealedUntil] = useState<Date | null>(null);
-  const [isXlScreen, setIsXlScreen] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    return window.matchMedia('(min-width: 1280px)').matches;
-  });
+  const [isXlScreen, setIsXlScreen] = useState<boolean>(false);
   const [imageGalleryModal, setImageGalleryModal] = useState<{
     open: boolean;
     images: Array<{ url: string; fileName: string }>;
@@ -1179,12 +1177,12 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   }, [loadDashboardData]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mql = window.matchMedia('(min-width: 1280px)');
-    const handler = (event: MediaQueryListEvent) => setIsXlScreen(event.matches);
-    setIsXlScreen(mql.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    if (!feedRootRef.current) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setIsXlScreen(entry.contentRect.width >= 1280);
+    });
+    obs.observe(feedRootRef.current);
+    return () => obs.disconnect();
   }, []);
 
   useEffect(() => {
@@ -3765,7 +3763,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   };
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div ref={feedRootRef} className="@container space-y-3 sm:space-y-4">
       {/* Main Content */}
       <div className="w-full">
         <DndContext

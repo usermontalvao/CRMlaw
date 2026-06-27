@@ -1,9 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar, Clock, Layers, Newspaper, Users, Scale, Briefcase,
   FileText, PiggyBank, Bell, Library, PenTool, Cloud, MessageCircle,
   MessageSquare, Mail, Settings, UserCog, Target,
 } from 'lucide-react';
+
+// ── Container-size context (usado pelos módulos via useFWSize) ────────────────
+
+export type FWSizeBucket = 'wide' | 'mid' | 'narrow';
+
+// wide   ≥ 740 px  → comportamento desktop
+// mid    480–739 px → layout reordenado, boa densidade
+// narrow < 480 px  → empilhado, ações compactas
+export const FWSizeContext = React.createContext<FWSizeBucket>('wide');
+
+/** Retorna a faixa de largura do bloco flutuante atual.
+ *  Fora de uma janela flutuante retorna 'wide' (valor neutro). */
+export function useFWSize(): FWSizeBucket {
+  return useContext(FWSizeContext);
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -139,7 +154,30 @@ function FloatingWindow({ win, onUpdate, onClose, onFocus, renderModule, isTop }
   const meta = MODULE_META[win.module];
 
   const winRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
+
+  // Faixa de largura atual do bloco — só muda em cruzamentos de threshold
+  const [fwSize, setFwSize] = useState<FWSizeBucket>('wide');
+  const fwSizeRef = useRef<FWSizeBucket>('wide');
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      const bucket: FWSizeBucket = w < 480 ? 'narrow' : w < 740 ? 'mid' : 'wide';
+      // Atualiza atributo CSS imediatamente (sem React) para container queries
+      el.dataset.fwSize = bucket;
+      // Dispara re-render React apenas na troca de faixa (evita lag durante resize suave)
+      if (bucket !== fwSizeRef.current) {
+        fwSizeRef.current = bucket;
+        setFwSize(bucket);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Aplica estilo direto no DOM durante drag/resize — evita re-renders e lag nos modais
   const applyStyle = (patch: { x?: number; y?: number; width?: number; height?: number }) => {
@@ -261,12 +299,15 @@ function FloatingWindow({ win, onUpdate, onClose, onFocus, renderModule, isTop }
       </div>
 
       {/* Content */}
-      <div
-        style={{ containerType: 'inline-size', containerName: 'fw' } as React.CSSProperties}
-        className="fw-content flex-1 min-h-0 overflow-auto bg-[#f5f5f3]"
-      >
-        {moduleContent}
-      </div>
+      <FWSizeContext.Provider value={fwSize}>
+        <div
+          ref={contentRef}
+          style={{ containerType: 'inline-size', containerName: 'fw' } as React.CSSProperties}
+          className="fw-content flex-1 min-h-0 overflow-auto bg-[#f5f5f3]"
+        >
+          {moduleContent}
+        </div>
+      </FWSizeContext.Provider>
 
       {/* Resize handles */}
       {!win.maximized && (

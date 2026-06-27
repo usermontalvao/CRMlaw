@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   Inbox, Send, FileText, Flame, Trash2, Search, Paperclip, Reply, Forward,
@@ -6,7 +6,7 @@ import {
   Settings, Type, Printer, PenLine, SlidersHorizontal, ShieldCheck, Plus, X,
   Bold, Italic, Underline, List, ListOrdered, Link2,
   Strikethrough, AlignLeft, AlignCenter, AlignRight, Quote, RemoveFormatting, Palette, ChevronDown,
-  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star,
+  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban,
 } from 'lucide-react';
 import { emailService } from '../services/email.service';
 import { userNotificationService } from '../services/userNotification.service';
@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
+import { resolveFolder } from '../utils/email.transitions';
 
 const FOLDERS: { key: EmailFolder; label: string; Icon: typeof Inbox }[] = [
   { key: 'inbox', label: 'Caixa de entrada', Icon: Inbox },
@@ -54,8 +55,7 @@ function rememberShownImages(id: string) {
   try { localStorage.setItem(LS_SHOWN_IMAGES, JSON.stringify([...shownImages].slice(-800))); } catch { /* noop */ }
 }
 
-// Conta da caixa (remetente fixo — 1 conta). Usado p/ excluir a si mesmo no "Responder a todos".
-const MAILBOX_ADDRESS = 'pedro@advcuiaba.com';
+// MAILBOX_ADDRESS removido — endereço do usuário vem do AuthContext (user.email)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Extrai o endereço de um item que pode vir como "Nome <email>" ou só "email".
@@ -267,15 +267,16 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // o gesto trava). Sem overlay/veu: nada de re-render nem escurecer a tela.
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Responsivo: < md (768px) vira single-pane (lista OU leitura), pastas viram
-  // barra horizontal no topo e as colunas arrastáveis somem.
-  const [isNarrow, setIsNarrow] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+  // Responsivo: container < 768px vira single-pane (lista OU leitura).
+  // Usa ResizeObserver no rootRef para responder ao tamanho do bloco, não da viewport.
+  const [isNarrow, setIsNarrow] = useState(true);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const on = () => setIsNarrow(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
+    if (!rootRef.current) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setIsNarrow(entry.contentRect.width < 768);
+    });
+    obs.observe(rootRef.current);
+    return () => obs.disconnect();
   }, []);
 
   const [composeOpen, setComposeOpen] = useState(false);
@@ -289,12 +290,13 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const ctxRef = useRef<HTMLDivElement>(null);
 
   // Drag-and-drop de emails para pastas
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragIds, setDragIds] = useState<Set<string>>(new Set());
   const [dropTarget, setDropTarget] = useState<EmailFolder | null>(null);
   const inlineReplyRef = useRef<HTMLDivElement>(null);
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ to?: boolean; subject?: boolean }>({});
   // Rascunho: id da linha sendo editada, último estado salvo e estado inicial
   // (para não criar rascunho só por abrir o compose sem digitar nada).
   const draftIdRef = useRef<string | undefined>(undefined);
@@ -359,6 +361,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
   useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
+  useEffect(() => { emailService.listSpamRules().then(setSpamRules).catch(() => {}); }, []);
 
   // Fecha menu de contexto ao clicar fora ou pressionar Escape
   useEffect(() => {
@@ -446,11 +449,17 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const moveEmailToFolder = async (m: EmailMessage, dest: EmailFolder) => {
     if (dest === folder) return;
     try {
-      if (dest === 'trash') await emailService.moveToTrash(m.id);
-      else if (dest === 'spam') await emailService.markSpam(m, true);
-      else if (dest === 'inbox') {
+      if (dest === 'trash') {
+        // Mantém is_spam como metadado; restore depois devolve ao lugar certo.
+        await emailService.moveToTrash(m.id);
+      } else if (dest === 'spam') {
+        // Limpa is_trash também (sai da lixeira se estava lá).
+        await emailService.markSpam(m, true);
+      } else if (dest === 'inbox') {
+        // Limpa AMBAS as flags independente do estado atual.
+        // unmarkSpam chama moveToInbox internamente (is_spam=false, is_trash=false).
         if (m.is_spam) await emailService.unmarkSpam(m, true);
-        else await emailService.restoreFromTrash(m.id);
+        else await emailService.moveToInbox(m.id);
       }
       dropFromList(m.id);
     } catch { /* noop */ }
@@ -467,7 +476,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     emailService.getMessage(id)
       .then((m) => {
         if (cancelled || !m) return;
-        setFolder(m.is_trash ? 'trash' : m.is_spam ? 'spam' : m.is_draft ? 'drafts' : m.direction === 'outbound' ? 'sent' : 'inbox');
+        setFolder(resolveFolder(m));
         void openMessageRef.current(m);
       })
       .catch(() => {});
@@ -778,6 +787,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setDraftStatus('');
     setCompose(next);
     setSendError(null);
+    setFieldErrors({});
     setComposeInline(inline);
     setComposeOpen(true);
   };
@@ -853,7 +863,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       : `<blockquote style="margin:0 0 0 8px;padding-left:12px;border-left:2px solid #ddd;color:#555">${escapeHtml(selected.body_text ?? '').replace(/\n/g, '<br>')}</blockquote>`;
     const quote = `<br><div style="color:#888;font-size:13px">Em ${escapeHtml(formatTime(selected.sent_at))}, ${escapeHtml(senderName(selected))} escreveu:</div>${original}`;
     // To = remetente original; Cc = demais destinatários (To+Cc) menos a própria conta e o remetente.
-    const me = MAILBOX_ADDRESS.toLowerCase();
+    const me = (user?.email ?? '').toLowerCase();
     const fromAddr = (selected.from_address ?? '').toLowerCase();
     const others = [...extractAddresses(selected.to_text), ...extractAddresses(selected.cc_text)]
       .filter((a) => a !== me && a !== fromAddr);
@@ -905,16 +915,22 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const doSend = async () => {
     const toList = parseRecipients(compose.to);
-    if (!toList.length || !compose.subject || !stripHtml(compose.bodyHtml)) {
+    const missingTo = !toList.length;
+    const missingSubject = !compose.subject;
+    const missingBody = !stripHtml(compose.bodyHtml);
+    if (missingTo || missingSubject || missingBody) {
+      setFieldErrors({ to: missingTo, subject: missingSubject });
       setSendError('Preencha destinatário, assunto e mensagem.');
       return;
     }
     const allRecipients = [...toList, ...parseRecipients(compose.cc), ...parseRecipients(compose.bcc)];
     const invalid = allRecipients.filter((e) => !isValidEmail(e));
     if (invalid.length) {
+      setFieldErrors({ to: true });
       setSendError(`Endereço inválido: ${invalid.map(addressOf).join(', ')}`);
       return;
     }
+    setFieldErrors({});
     const dto: SendEmailDTO = {
       to: compose.to,
       cc: compose.cc.trim() || undefined,
@@ -997,6 +1013,21 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       const cleared = { is_spam: false, spam_score: 0, spam_reason: null };
       setSelected({ ...selected, ...cleared });
       setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, ...cleared } : m)));
+    }
+  };
+
+  const blockDomain = async (m?: EmailMessage) => {
+    const email = (m ?? selected)?.from_address;
+    if (!email) return;
+    const domain = email.split('@')[1];
+    if (!domain) return;
+    if (!window.confirm(`Bloquear todos os emails de @${domain}?\n\nEmails desse domínio irão direto para o Spam.`)) return;
+    await emailService.addSpamRule('blocklist', 'domain', domain);
+    void emailService.listSpamRules().then(setSpamRules).catch(() => {});
+    const target = m ?? selected;
+    if (target && !target.is_spam) {
+      await emailService.markSpam(target, true);
+      dropFromList(target.id);
     }
   };
 
@@ -1143,21 +1174,23 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             const active = folder === key;
             return (
               <button key={key} onClick={() => setFolder(key)}
-                onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropTarget(key); } }}
+                onDragOver={(e) => { if (dragIds.size > 0) { e.preventDefault(); setDropTarget(key); } }}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(e) => {
                   e.preventDefault();
-                  const id = e.dataTransfer.getData('text/plain');
-                  const msg = messages.find((x) => x.id === id);
-                  if (msg) void moveEmailToFolder(msg, key);
-                  setDragId(null); setDropTarget(null);
+                  const raw = e.dataTransfer.getData('text/plain');
+                  let ids: string[];
+                  try { ids = JSON.parse(raw); } catch { ids = [raw]; }
+                  const toMove = messages.filter((x) => ids.includes(x.id));
+                  toMove.forEach((msg) => void moveEmailToFolder(msg, key));
+                  setDragIds(new Set()); setDropTarget(null);
                 }}
                 className={`mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
-                  dropTarget === key && dragId
+                  dropTarget === key && dragIds.size > 0
                     ? 'bg-amber-100 ring-2 ring-amber-400 ring-inset'
                     : active ? 'bg-amber-50 font-medium text-amber-800' : 'text-zinc-600 hover:bg-zinc-50'
                 }`}>
-                <Icon className={`h-4 w-4 flex-none ${active || (dropTarget === key && dragId) ? 'text-amber-600' : 'text-zinc-400'}`} />
+                <Icon className={`h-4 w-4 flex-none ${active || (dropTarget === key && dragIds.size > 0) ? 'text-amber-600' : 'text-zinc-400'}`} />
                 <span className="flex-1 truncate text-left">{label}</span>
                 {key === 'inbox' && unread > 0 && (
                   <span className="rounded-full bg-amber-600 px-1.5 text-[11px] font-medium text-white">{unread}</span>
@@ -1293,12 +1326,17 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       )}
                       <div data-email-id={m.id} role="button" tabIndex={0}
                         draggable
-                        onDragStart={(e) => { setDragId(m.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', m.id); }}
-                        onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+                        onDragStart={(e) => {
+                          const ids = checked.has(m.id) ? [...checked] : [m.id];
+                          setDragIds(new Set(ids));
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', JSON.stringify(ids));
+                        }}
+                        onDragEnd={() => { setDragIds(new Set()); setDropTarget(null); }}
                         onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
                         onClick={(e) => onRowClick(m, e)}
                         onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, m }); }}
-                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''} ${dragId === m.id ? 'opacity-40' : ''}`}>
+                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''} ${dragIds.has(m.id) ? 'opacity-40' : ''}`}>
                         <div className="relative mt-0.5 flex-none">
                           <input type="checkbox" checked={isChk}
                             onClick={(e) => e.stopPropagation()}
@@ -1380,16 +1418,24 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   </button>
                 </div>
               </div>
+              {sendError && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-red-100 bg-red-50 px-4 py-2 text-[12px] text-red-600">
+                  <AlertCircle className="h-3.5 w-3.5 flex-none" />{sendError}
+                </div>
+              )}
               <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
                 <div className="flex items-center gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
                   <span className="w-14 text-[12px] text-zinc-400">De</span>
-                  <span className="text-[13px] text-zinc-700 dark:text-zinc-300">Pedro Montalvão &lt;pedro@advcuiaba.com&gt;</span>
+                  <span className="text-[13px] text-zinc-700 dark:text-zinc-300">
+                    {signature?.name ? `${signature.name} <${user?.email ?? ''}>` : (user?.email ?? '—')}
+                  </span>
                 </div>
                 <div className="flex items-start gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
-                  <span className="w-14 pt-1.5 text-[12px] text-zinc-400">Para</span>
+                  <span className={`w-14 pt-1.5 text-[12px] ${fieldErrors.to ? 'text-red-500' : 'text-zinc-400'}`}>Para</span>
                   <div className="flex-1">
-                    <RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))}
-                      placeholder="destinatario@exemplo.com" autoFocus />
+                    <RecipientChips value={compose.to}
+                      onChange={(v) => { setCompose((c) => ({ ...c, to: v })); setFieldErrors((f) => ({ ...f, to: false })); setSendError(null); }}
+                      placeholder="destinatario@exemplo.com" autoFocus hasError={fieldErrors.to} />
                   </div>
                   {!compose.showCc && (
                     <button onClick={() => setCompose({ ...compose, showCc: true })}
@@ -1414,9 +1460,10 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                     </div>
                   </>
                 )}
-                <div className="flex items-center gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
-                  <span className="w-14 text-[12px] text-zinc-400">Assunto</span>
-                  <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })}
+                <div className={`flex items-center gap-2 border-b px-4 py-2 dark:border-zinc-800 ${fieldErrors.subject ? 'border-red-300 bg-red-50/40' : 'border-[#f0efe9]'}`}>
+                  <span className={`w-14 text-[12px] ${fieldErrors.subject ? 'text-red-500' : 'text-zinc-400'}`}>Assunto</span>
+                  <input value={compose.subject}
+                    onChange={(e) => { setCompose({ ...compose, subject: e.target.value }); setFieldErrors((f) => ({ ...f, subject: false })); setSendError(null); }}
                     placeholder="Assunto"
                     className="flex-1 bg-transparent py-1 text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
                 </div>
@@ -1442,7 +1489,6 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                     ))}
                   </div>
                 )}
-                {sendError && <p className="border-t border-[#f0efe9] px-4 py-2 text-[12px] text-red-600">{sendError}</p>}
               </div>
             </div>
           ) : !selected ? (
@@ -1472,6 +1518,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   folder === 'trash'
                     ? { key: 'del', label: 'Restaurar', Icon: RotateCcw, onClick: onRestore }
                     : { key: 'del', label: 'Excluir', Icon: Trash2, onClick: onTrash, danger: true },
+                  ...(selected.direction === 'inbound' && selected.from_address?.includes('@')
+                    ? [{ key: 'block', label: `Bloquear @${selected.from_address.split('@')[1]}`, Icon: Ban, onClick: () => void blockDomain(), danger: true as const }]
+                    : []),
                 ]}
               />
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1498,6 +1547,30 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   </div>
                 )}
 
+                {(() => {
+                  if (!selected.from_address) return null;
+                  const domain = selected.from_address.split('@')[1];
+                  const blockedRule = spamRules.find(
+                    (r) => r.kind === 'blocklist' && r.enabled &&
+                      ((r.match_type === 'domain' && r.value === domain) ||
+                       (r.match_type === 'address' && r.value === selected.from_address))
+                  );
+                  if (!blockedRule) return null;
+                  return (
+                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                      <Ban className="h-4 w-4 flex-none" />
+                      <span className="font-medium">Domínio bloqueado</span>
+                      <span className="text-red-500">· @{domain}</span>
+                      <span className="text-red-400">· Novos emails desse domínio vão direto para o Spam</span>
+                      <button
+                        onClick={async () => { await removeRule(blockedRule.id); }}
+                        className="ml-auto rounded-md border border-current px-2 py-0.5 hover:bg-white/40">
+                        Desbloquear
+                      </button>
+                    </div>
+                  );
+                })()}
+
                 {/* Resposta/encaminhamento INLINE — no TOPO da conversa (estilo
                     Gmail): aparece logo abaixo do assunto, sem precisar rolar até
                     o fim do histórico. */}
@@ -1516,9 +1589,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                     </div>
                     <div className="flex flex-col gap-2 p-3">
                       <div className="flex items-start gap-2">
-                        <span className="w-12 flex-none pt-1.5 text-[12px] text-zinc-500">Para</span>
+                        <span className={`w-12 flex-none pt-1.5 text-[12px] ${fieldErrors.to ? 'text-red-500' : 'text-zinc-500'}`}>Para</span>
                         <div className="flex-1">
-                          <RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))} placeholder="destinatario@exemplo.com" />
+                          <RecipientChips value={compose.to}
+                            onChange={(v) => { setCompose((c) => ({ ...c, to: v })); setFieldErrors((f) => ({ ...f, to: false })); setSendError(null); }}
+                            placeholder="destinatario@exemplo.com" hasError={fieldErrors.to} />
                         </div>
                         {!compose.showCc && (
                           <button onClick={() => setCompose({ ...compose, showCc: true })} className="flex-none pt-1.5 text-[12px] text-zinc-500 hover:text-amber-700">Cc/Cco</button>
@@ -1537,9 +1612,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                         </>
                       )}
                       <div className="flex items-center gap-2">
-                        <span className="w-12 flex-none text-[12px] text-zinc-500">Assunto</span>
-                        <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })} placeholder="Assunto"
-                          className="flex-1 rounded-lg border border-[#e7e5df] px-2.5 py-1 text-[13px] outline-none focus:border-amber-400" />
+                        <span className={`w-12 flex-none text-[12px] ${fieldErrors.subject ? 'text-red-500' : 'text-zinc-500'}`}>Assunto</span>
+                        <input value={compose.subject}
+                          onChange={(e) => { setCompose({ ...compose, subject: e.target.value }); setFieldErrors((f) => ({ ...f, subject: false })); setSendError(null); }}
+                          placeholder="Assunto"
+                          className={`flex-1 rounded-lg border px-2.5 py-1 text-[13px] outline-none focus:border-amber-400 ${fieldErrors.subject ? 'border-red-400 bg-red-50/40' : 'border-[#e7e5df]'}`} />
                       </div>
 
                       <RichEditor key={compose.inReplyTo ?? 'inline'} initialHtml={compose.bodyHtml} autoFocus
@@ -1618,14 +1695,23 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
               </button>
             </div>
           </div>
+          {sendError && (
+            <div className="flex flex-none items-center gap-1.5 border-b border-red-100 bg-red-50 px-5 py-2 text-[12px] text-red-600">
+              <AlertCircle className="h-3.5 w-3.5 flex-none" />{sendError}
+            </div>
+          )}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 gap-2">
             <div className="flex items-center gap-2 border-b border-[#f0efe9] pb-2">
               <span className="w-14 text-[13px] text-zinc-400">De</span>
-              <span className="text-[13px] text-zinc-700">Pedro Montalvão &lt;pedro@advcuiaba.com&gt;</span>
+              <span className="text-[13px] text-zinc-700">
+                {signature?.name ? `${signature.name} <${user?.email ?? ''}>` : (user?.email ?? '—')}
+              </span>
             </div>
             <div className="flex items-start gap-2 border-b border-[#f0efe9] pb-2">
-              <span className="w-14 pt-1.5 text-[13px] text-zinc-400">Para</span>
-              <div className="flex-1"><RecipientChips value={compose.to} onChange={(v) => setCompose((c) => ({ ...c, to: v }))} placeholder="destinatario@exemplo.com" /></div>
+              <span className={`w-14 pt-1.5 text-[13px] ${fieldErrors.to ? 'text-red-500' : 'text-zinc-400'}`}>Para</span>
+              <div className="flex-1"><RecipientChips value={compose.to}
+                onChange={(v) => { setCompose((c) => ({ ...c, to: v })); setFieldErrors((f) => ({ ...f, to: false })); setSendError(null); }}
+                placeholder="destinatario@exemplo.com" hasError={fieldErrors.to} /></div>
               {!compose.showCc && <button onClick={() => setCompose({ ...compose, showCc: true })} className="pt-1.5 text-[12px] text-zinc-400 hover:text-amber-700">Cc/Cco</button>}
             </div>
             {compose.showCc && (<>
@@ -1638,9 +1724,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 <div className="flex-1"><RecipientChips value={compose.bcc} onChange={(v) => setCompose((c) => ({ ...c, bcc: v }))} placeholder="copia-oculta@exemplo.com" /></div>
               </div>
             </>)}
-            <div className="flex items-center gap-2 border-b border-[#f0efe9] pb-2">
-              <span className="w-14 text-[13px] text-zinc-400">Assunto</span>
-              <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })} placeholder="Assunto"
+            <div className={`flex items-center gap-2 border-b pb-2 ${fieldErrors.subject ? 'border-red-300 bg-red-50/40' : 'border-[#f0efe9]'}`}>
+              <span className={`w-14 text-[13px] ${fieldErrors.subject ? 'text-red-500' : 'text-zinc-400'}`}>Assunto</span>
+              <input value={compose.subject}
+                onChange={(e) => { setCompose({ ...compose, subject: e.target.value }); setFieldErrors((f) => ({ ...f, subject: false })); setSendError(null); }}
+                placeholder="Assunto"
                 className="flex-1 bg-transparent text-[14px] text-zinc-800 outline-none placeholder:text-zinc-400" />
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -1660,53 +1748,75 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 ))}
               </div>
             )}
-            {sendError && <p className="text-[13px] text-red-600">{sendError}</p>}
           </div>
         </div>
       )}
 
       {/* Menu de contexto (botão direito na lista de e-mails) */}
-      {ctxMenu && (
-        <div ref={ctxRef} style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
-          className="min-w-[200px] overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
-          onMouseDown={(e) => e.stopPropagation()}>
-          {[
-            { icon: <Reply className="h-4 w-4" />, label: 'Responder', action: () => { openMessage(ctxMenu.m); setTimeout(onReply, 100); } },
-            { icon: <ReplyAll className="h-4 w-4" />, label: 'Responder a todos', action: () => { openMessage(ctxMenu.m); setTimeout(onReplyAll, 100); } },
-            { icon: <Forward className="h-4 w-4" />, label: 'Encaminhar', action: () => { openMessage(ctxMenu.m); setTimeout(onForward, 100); } },
-            null,
-            {
-              icon: ctxMenu.m.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />,
-              label: ctxMenu.m.is_read ? 'Marcar como não lido' : 'Marcar como lido',
-              action: () => {
-                emailService.markRead(ctxMenu.m.id, !ctxMenu.m.is_read).catch(() => {});
-                setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_read: !ctxMenu.m.is_read } : x));
-              }
+      {ctxMenu && (() => {
+        // 'sep' = separador visual; false/null = item omitido (não renderiza nada).
+        type CtxItem = { icon: React.ReactNode; label: string; action: () => void; danger?: boolean } | 'sep' | false | null;
+        const ctxItems: CtxItem[] = [
+          { icon: <Reply className="h-4 w-4" />, label: 'Responder', action: () => { void openMessage(ctxMenu.m); setTimeout(onReply, 100); } },
+          { icon: <ReplyAll className="h-4 w-4" />, label: 'Responder a todos', action: () => { void openMessage(ctxMenu.m); setTimeout(onReplyAll, 100); } },
+          { icon: <Forward className="h-4 w-4" />, label: 'Encaminhar', action: () => { void openMessage(ctxMenu.m); setTimeout(onForward, 100); } },
+          'sep',
+          {
+            icon: ctxMenu.m.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />,
+            label: ctxMenu.m.is_read ? 'Marcar como não lido' : 'Marcar como lido',
+            action: () => {
+              emailService.markRead(ctxMenu.m.id, !ctxMenu.m.is_read).catch(() => {});
+              setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_read: !ctxMenu.m.is_read } : x));
             },
-            {
-              icon: <Star className="h-4 w-4" />,
-              label: ctxMenu.m.is_starred ? 'Remover estrela' : 'Marcar com estrela',
-              action: () => {
-                emailService.toggleStar(ctxMenu.m.id, !ctxMenu.m.is_starred).catch(() => {});
-                setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_starred: !ctxMenu.m.is_starred } : x));
-              }
+          },
+          {
+            icon: <Star className="h-4 w-4" />,
+            label: ctxMenu.m.is_starred ? 'Remover estrela' : 'Marcar com estrela',
+            action: () => {
+              emailService.toggleStar(ctxMenu.m.id, !ctxMenu.m.is_starred).catch(() => {});
+              setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_starred: !ctxMenu.m.is_starred } : x));
             },
-            null,
-            { icon: <Inbox className="h-4 w-4" />, label: 'Mover para Caixa de entrada', action: () => void moveEmailToFolder(ctxMenu.m, 'inbox') },
-            { icon: <Flame className="h-4 w-4" />, label: 'Mover para Spam', action: () => void moveEmailToFolder(ctxMenu.m, 'spam'), danger: true },
-            { icon: <Trash2 className="h-4 w-4" />, label: 'Excluir', action: () => void moveEmailToFolder(ctxMenu.m, 'trash'), danger: true },
-          ].map((item, i) =>
-            item === null ? (
-              <div key={i} className="my-1 border-t border-[#f0efe9] dark:border-zinc-800" />
-            ) : (
-              <button key={i} onClick={() => { item.action(); setCtxMenu(null); }}
-                className={`flex w-full items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-zinc-50 dark:hover:bg-zinc-800 ${(item as any).danger ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
-                {item.icon}{item.label}
-              </button>
-            )
-          )}
-        </div>
-      )}
+          },
+          'sep',
+          // Ações de pasta adaptadas: não aparece a pasta atual como destino.
+          folder !== 'inbox' && {
+            icon: <Inbox className="h-4 w-4" />,
+            label: folder === 'spam' ? 'Não é spam' : 'Mover para Caixa de entrada',
+            action: () => void moveEmailToFolder(ctxMenu.m, 'inbox'),
+          },
+          folder !== 'spam' && {
+            icon: <Flame className="h-4 w-4" />,
+            label: 'Marcar como spam',
+            action: () => void moveEmailToFolder(ctxMenu.m, 'spam'),
+            danger: true,
+          },
+          ctxMenu.m.direction === 'inbound' && ctxMenu.m.from_address?.includes('@') && {
+            icon: <Ban className="h-4 w-4" />,
+            label: `Bloquear @${ctxMenu.m.from_address.split('@')[1]}`,
+            action: () => void blockDomain(ctxMenu.m),
+            danger: true,
+          },
+          folder === 'trash'
+            ? { icon: <RotateCcw className="h-4 w-4" />, label: 'Restaurar', action: () => void moveEmailToFolder(ctxMenu.m, 'inbox') }
+            : { icon: <Trash2 className="h-4 w-4" />, label: 'Excluir', action: () => void moveEmailToFolder(ctxMenu.m, 'trash'), danger: true },
+        ];
+        return (
+          <div ref={ctxRef} style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+            className="min-w-[200px] overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            onMouseDown={(e) => e.stopPropagation()}>
+            {ctxItems.map((item, i) =>
+              !item ? null
+              : item === 'sep' ? <div key={i} className="my-1 border-t border-[#f0efe9] dark:border-zinc-800" />
+              : (
+                <button key={i} onClick={() => { item.action(); setCtxMenu(null); }}
+                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-zinc-50 dark:hover:bg-zinc-800 ${item.danger ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                  {item.icon}{item.label}
+                </button>
+              )
+            )}
+          </div>
+        );
+      })()}
 
 
       {settingsOpen && (
@@ -1755,19 +1865,19 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
               <div className="space-y-3">
                 <div>
                   <Label>Nome de exibição (opcional)</Label>
-                  <Input value={sigDraft.name ?? ''} onChange={(e) => setSigDraft({ ...sigDraft, name: e.target.value })} placeholder="Dr. Pedro Montalvão" />
+                  <Input value={sigDraft.name ?? ''} onChange={(e) => setSigDraft({ ...sigDraft, name: e.target.value })} placeholder="Dr. Nome Sobrenome" />
                 </div>
                 <div>
                   <Label>Assinatura — texto simples</Label>
                   <textarea value={sigDraft.signature_text ?? ''} onChange={(e) => setSigDraft({ ...sigDraft, signature_text: e.target.value })} rows={4}
                     className="w-full resize-y rounded-lg border border-[#e7e5df] px-3 py-2 text-[14px] outline-none focus:border-amber-400"
-                    placeholder={'Dr. Pedro Montalvão\nOAB/MT 30.021'} />
+                    placeholder={'Dr. Nome Sobrenome\nOAB/XX 00.000'} />
                 </div>
                 <div>
                   <Label>Assinatura — HTML</Label>
                   <textarea value={sigDraft.signature_html ?? ''} onChange={(e) => setSigDraft({ ...sigDraft, signature_html: e.target.value })} rows={5}
                     className="w-full resize-y rounded-lg border border-[#e7e5df] px-3 py-2 font-mono text-[13px] outline-none focus:border-amber-400"
-                    placeholder='<div><strong>Dr. Pedro Montalvão</strong><br>OAB/MT 30.021</div>' />
+                    placeholder='<div><strong>Dr. Nome Sobrenome</strong><br>OAB/XX 00.000</div>' />
                   {sigDraft.signature_html && (
                     <div className="mt-2 rounded-lg border border-[#f0efe9] p-2">
                       <p className="mb-1 text-[11px] text-zinc-400">Prévia</p>
@@ -2221,7 +2331,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
         <input ref={fileRef} type="file" multiple className="hidden"
           onChange={(e) => { onAttach(e.target.files); e.target.value = ''; }} />
       </div>
-      <div ref={ref} contentEditable suppressContentEditableWarning
+      <div ref={ref} contentEditable suppressContentEditableWarning spellCheck lang="pt-BR"
         onInput={(e) => onChange((e.target as HTMLDivElement).innerHTML)}
         onKeyUp={saveSel} onMouseUp={saveSel} onBlur={saveSel}
         style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', lineHeight: 1.6, color: '#1f2937' }}
@@ -2234,8 +2344,8 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
 // vírgula/ponto-e-vírgula/Enter, validação visual (inválido fica vermelho),
 // Backspace remove o último. O valor externo continua sendo a string separada por
 // vírgulas (compatível com o DTO/ponte), então nada muda no envio.
-function RecipientChips({ value, onChange, placeholder, autoFocus }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean;
+function RecipientChips({ value, onChange, placeholder, autoFocus, hasError }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean; hasError?: boolean;
 }) {
   const [draft, setDraft] = useState('');
   const emails = parseRecipients(value);
@@ -2248,7 +2358,7 @@ function RecipientChips({ value, onChange, placeholder, autoFocus }: {
   const removeAt = (i: number) => setEmails(emails.filter((_, j) => j !== i));
 
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[#e7e5df] px-2 py-1 focus-within:border-amber-400">
+    <div className={`flex flex-wrap items-center gap-1 rounded-lg border px-2 py-1 focus-within:border-amber-400 ${hasError ? 'border-red-400 bg-red-50/40' : 'border-[#e7e5df]'}`}>
       {emails.map((e, i) => {
         const ok = isValidEmail(e);
         return (

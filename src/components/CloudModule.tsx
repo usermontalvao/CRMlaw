@@ -4709,13 +4709,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   return (
-    <div className="relative flex w-full flex-col overflow-visible rounded-[28px] border border-[#e7e5df] bg-[radial-gradient(circle_at_top,#fffaf5_0%,#ffffff_32%,#f6f4ef_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
+    <div className="@container relative flex w-full flex-col overflow-visible rounded-[28px] border border-[#e7e5df] bg-[radial-gradient(circle_at_top,#fffaf5_0%,#ffffff_32%,#f6f4ef_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
 
       {/* Filtros avançados - colapsados por padrão em mobile */}
       {showAdvancedFilters ? (
         <div className="border-b border-[#ece8df] bg-[#fbfaf7] px-3 py-3 lg:px-4 lg:py-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 @md:grid-cols-2 @lg:grid-cols-4 gap-3">
             <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-[#e7e3da] bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100">
               <option value="">Todos os clientes</option>
               {clients.map((client) => <option key={client.id} value={client.id}>{client.full_name}</option>)}
@@ -4746,12 +4746,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           type="button"
           aria-label="Fechar navegação do Cloud"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-[2px] @lg:hidden"
         />
       ) : null}
 
       {/* Barra de breadcrumb/busca - apenas desktop */}
-      <div className="hidden flex-col gap-2 border-b border-[#ece8df] bg-[#f8f7f5]/90 px-4 py-3 backdrop-blur lg:flex xl:flex-row xl:items-center xl:gap-3">
+      <div className="hidden flex-col gap-2 border-b border-[#ece8df] bg-[#f8f7f5]/90 px-4 py-3 backdrop-blur @lg:flex @lg:flex-row @lg:items-center @lg:gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button onClick={() => setCurrentFolderId(null)} className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-[#f3f1ec] hover:text-slate-700">
             <Home className="w-3.5 h-3.5" />
@@ -4774,7 +4774,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             </>
           )}
         </div>
-        <div className="w-full xl:w-[560px] xl:shrink-0 xl:px-1">
+        <div className="w-full @lg:w-[560px] @lg:shrink-0 @lg:px-1">
           <div className="relative flex w-full min-w-0 items-center gap-2">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -4783,7 +4783,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
               className="min-w-0 flex-1 rounded-[10px] border border-[#ebe6dc] bg-[#f4f4f1] py-2.5 pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-100"
             />
-            <div className="hidden max-w-[170px] shrink-0 items-center gap-1 md:flex">
+            <div className="hidden max-w-[170px] shrink-0 items-center gap-1 @md:flex">
               <span className="max-w-[88px] truncate whitespace-nowrap rounded-[9px] border border-[#ebe6dc] bg-[#f8f7f5] px-2.5 py-1.5 text-[10px] font-medium text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
               {headerClientPhone ? (
                 <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-[9px] border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
@@ -4802,7 +4802,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                 </span>
               ) : null}
             </div>
-            <div className="hidden items-center gap-1 rounded-[10px] border border-[#ebe6dc] bg-[#f8f7f5] p-0.5 xl:inline-flex">
+            <div className="hidden items-center gap-1 rounded-[10px] border border-[#ebe6dc] bg-[#f8f7f5] p-0.5 @lg:inline-flex">
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
@@ -4837,7 +4837,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:shrink-0">
+        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap @lg:justify-end @lg:shrink-0">
           <button
             type="button"
             onClick={() => setShowAdvancedFilters((prev) => !prev)}
@@ -4901,9 +4901,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,280px)] flex-col border-r border-[#ece8df] bg-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[226px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
-          <div className="flex items-center justify-between border-b border-[#f0e5d7] px-4 py-3 lg:hidden">
+      <div className="flex flex-col @lg:flex-row @lg:items-start">
+        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,280px)] flex-col border-r border-[#ece8df] bg-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 @lg:pointer-events-auto @lg:sticky @lg:top-20 @lg:z-auto @lg:w-[226px] @lg:translate-x-0 @lg:opacity-100 @lg:shadow-none`}>
+          <div className="flex items-center justify-between border-b border-[#f0e5d7] px-4 py-3 @lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fef2e8] shadow-[inset_0_0_0_1px_rgba(242,122,35,0.06)]">
                 <Cloud className="w-5 h-5 text-orange-500" />
@@ -4921,9 +4921,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex flex-col flex-1 overflow-y-auto pb-24 lg:pb-4">
+          <div className="flex flex-col flex-1 overflow-y-auto pb-24 @lg:pb-4">
             {/* ── Header do Sidebar ── */}
-            <div className="hidden border-b border-[#ece8df] px-4 py-4 lg:block">
+            <div className="hidden border-b border-[#ece8df] px-4 py-4 @lg:block">
               {(() => {
                 const totalBytes = allFiles.reduce((s, f) => s + (f.file_size ?? 0), 0);
                 const quotaBytes = 5 * 1024 * 1024 * 1024;
@@ -5183,7 +5183,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden gap-3 border-b border-[#e7e2d8] bg-[#f8f7f5]/90 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b8b80] select-none lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px]">
+              <div className="hidden gap-3 border-b border-[#e7e2d8] bg-[#f8f7f5]/90 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b8b80] select-none @lg:grid @lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px]">
                 {/* Select all checkbox */}
                 <button
                   type="button"
@@ -5264,7 +5264,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut', repeatDelay: 0.3 }}
                   />
                   {/* Header row */}
-                  <div className="hidden lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] gap-3 px-4 py-3 border-b border-slate-100">
+                  <div className="hidden @lg:grid @lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] gap-3 px-4 py-3 border-b border-slate-100">
                     <div className="h-2.5 w-3 rounded bg-slate-100/90" />
                     <div className="h-2.5 w-20 rounded-full bg-slate-100/90" />
                     <div className="h-2.5 w-16 rounded-full bg-slate-100/90" />
@@ -5285,10 +5285,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         <div className="h-2.5 rounded-full bg-slate-100" style={{ width: `${44 + (i * 11) % 36}%` }} />
                         <div className="h-2 rounded-full bg-slate-100/60" style={{ width: `${24 + (i * 9) % 22}%` }} />
                       </div>
-                      <div className="hidden md:block h-2 w-20 rounded-full bg-slate-100 flex-shrink-0" />
-                      <div className="hidden md:block h-2 w-14 rounded-full bg-slate-100 flex-shrink-0" />
-                      <div className="hidden md:block h-2 w-10 rounded-full bg-slate-100 flex-shrink-0" />
-                      <div className="hidden md:block h-2 w-24 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden @md:block h-2 w-20 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden @md:block h-2 w-14 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden @md:block h-2 w-10 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden @md:block h-2 w-24 rounded-full bg-slate-100 flex-shrink-0" />
                     </div>
                   ))}
                 </div>
@@ -5423,7 +5423,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer lg:grid lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] lg:items-center lg:gap-3 lg:py-2.5 transition-colors ${
+                        className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer @lg:grid @lg:grid-cols-[36px_minmax(200px,2.6fr)_150px_150px_120px_200px] @lg:items-center @lg:gap-3 @lg:py-2.5 transition-colors ${
                           isDropTarget
                             ? 'bg-orange-100/80 border-b-orange-300 shadow-[inset_3px_0_0_#f97316]'
                             : isSelected
@@ -5459,7 +5459,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                         }}
                       >
                         {/* Checkbox */}
-                        <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
+                        <div className="hidden @sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
                           <div className={`w-[15px] h-[15px] rounded-[4px] border-[1.5px] flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 border-orange-500 scale-110 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-slate-300 opacity-0 group-hover:opacity-100 group-hover:border-orange-400'}`}>
                             {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                           </div>
@@ -5583,7 +5583,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       draggable
                       onDragStart={(event) => handleItemDragStart(event, itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer lg:grid lg:grid-cols-[36px_minmax(200px,2.4fr)_150px_150px_120px_200px] lg:items-center lg:gap-3 lg:py-2.5 transition-colors ${
+                      className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer @lg:grid @lg:grid-cols-[36px_minmax(200px,2.4fr)_150px_150px_120px_200px] @lg:items-center @lg:gap-3 @lg:py-2.5 transition-colors ${
                         isSelected
                           ? 'bg-orange-50/90 border-b-orange-100 shadow-[inset_3px_0_0_#f97316]'
                           : 'border-b-slate-100 hover:bg-slate-50/70'
@@ -5625,7 +5625,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       }}
                     >
                       {/* Checkbox */}
-                      <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
+                      <div className="hidden @sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
                         <div className={`w-[15px] h-[15px] rounded-[4px] border-[1.5px] flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 border-orange-500 scale-110 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-slate-300 opacity-0 group-hover:opacity-100 group-hover:border-orange-400'}`}>
                           {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                         </div>
@@ -8775,7 +8775,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
         );
       })()}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e7e5df]/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e7e5df]/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl @lg:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-2 rounded-[28px] border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] pr-16">
           <button
             type="button"

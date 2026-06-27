@@ -1765,6 +1765,13 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       const lawyerCnpj  = officeIdentity?.cnpj   || '';
       const lawyerLogo  = officeIdentity?.logo_url || '';
       const issueDateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+      const juriusLogoBase64 = await fetch('/logo.png').then((r) => r.blob()).then(
+        (blob) => new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        })
+      ).catch(() => '');
 
       // Helpers para o HTML
       const fmtR = (v: number) => formatCurrency(v);
@@ -2113,7 +2120,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   <!-- ════════ JURIUS HEADER BAR ════════ -->
   <div class="jurius-top">
     <div class="jurius-logo">
-      <div class="jurius-mark">J</div>
+      ${juriusLogoBase64 ? `<img src="${juriusLogoBase64}" alt="Jurius" style="height:34px;width:34px;border-radius:9px;object-fit:contain;flex-shrink:0" />` : '<div class="jurius-mark">J</div>'}
       <div>
         <div class="jurius-wordmark">jurius<span style="color:#F2843E;">.</span><span style="font-weight:400;color:#8C7E72;">com.br</span></div>
         <div class="jurius-tagline">Gestão Jurídica Inteligente</div>
@@ -2459,7 +2466,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         {
           number: 1,
           dueDate: formData.firstDueDate,
-          value: Number(formData.totalValue || 0),
+          value: parseCurrencyToNumber(formData.totalValue),
         },
       ];
     }
@@ -2468,12 +2475,12 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       return formData.customInstallments.map((item, index) => ({
         number: index + 1,
         dueDate: item.dueDate || formData.firstDueDate,
-        value: Number(item.value || 0),
+        value: parseCurrencyToNumber(item.value),
       }));
     }
 
     const schedule: { number: number; dueDate: string; value: number }[] = [];
-    const total = Number(formData.totalValue || 0);
+    const total = parseCurrencyToNumber(formData.totalValue);
     const count = Number(formData.installmentsCount || '0') || 1;
     const baseDate = new Date(formData.firstDueDate);
     const installmentValue = count > 0 ? total / count : total;
@@ -2979,12 +2986,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
   }
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       {/* Header Unificado */}
       <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
         {/* Linha 1: Título + Badges + Ações */}
         <div className="p-4 border-b border-slate-100">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex flex-col @md:flex-row @md:items-center @md:justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-sm">
                 <PiggyBank className="w-5 h-5" />
@@ -3030,7 +3037,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           </div>
         </div>
         {/* Linha 2: Busca + Filtros */}
-        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex flex-col @sm:flex-row items-stretch @sm:items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -3102,7 +3109,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           {financialRevealed ? 'Ocultar valores' : 'Ver valores'}
         </button>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 @md:grid-cols-4 gap-3 @sm:gap-4">
         {/* A Receber */}
         <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden relative">
           <div className="absolute inset-y-0 left-0 w-1 bg-emerald-500" />
@@ -3597,7 +3604,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       {/* Parcelas Vencidas */}
       {stats && stats.overdue_installments > 0 && (
         <div className="bg-[#f8f7f5] border border-red-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="border-b border-red-100 px-4 py-3.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-gradient-to-r from-red-50 to-rose-50">
+          <div className="border-b border-red-100 px-4 py-3.5 flex flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-between bg-gradient-to-r from-red-50 to-rose-50">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
                 <AlertCircle className="w-4.5 h-4.5" />
@@ -3634,7 +3641,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   return (
                     <div
                       key={inst.id}
-                      className="flex flex-col sm:flex-row sm:items-center gap-4 px-4 py-4 sm:py-3 hover:bg-slate-50 transition"
+                      className="flex flex-col @sm:flex-row @sm:items-center gap-4 px-4 py-4 @sm:py-3 hover:bg-slate-50 transition"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className="flex-shrink-0 w-11 h-11 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-sm">
@@ -3658,8 +3665,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
-                        <div className="flex justify-between sm:flex-col sm:text-right text-sm font-semibold text-slate-900">
+                      <div className="flex flex-col @sm:flex-row @sm:items-center gap-3 w-full @sm:w-auto">
+                        <div className="flex justify-between @sm:flex-col @sm:text-right text-sm font-semibold text-slate-900">
                           <p>{formatCurrency(inst.value)}</p>
                           <p className="text-[11px] font-normal text-slate-500">
                             {fmtDateShared(inst.due_date)}
@@ -3731,7 +3738,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 <div className="p-4 sm:p-6">
                   {viewMode === 'grid' ? (
                   <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-1.5 sm:p-2">
-                    <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 sm:gap-2">
+                    <div className="grid grid-cols-1 @sm:grid-cols-2 @md:grid-cols-3 @lg:grid-cols-4 gap-1.5 @sm:gap-2">
                     {[...activeAgreements]
                       .sort((a, b) => {
                         const getNextDueTimestamp = (agreementId: string) => {
@@ -3998,15 +4005,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             })}
                           </div>
 
-                          <div className="hidden sm:block overflow-x-auto">
+                          <div className="hidden @sm:block overflow-x-auto">
                             <table className="w-full text-sm min-w-[680px]">
                               <thead>
                                 <tr className="border-b-2 border-slate-100">
                                   <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Acordo</th>
                                   <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
                                   <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-emerald-600">Honorários</th>
-                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden md:table-cell">Vencimento</th>
-                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden lg:table-cell">Progresso</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden @md:table-cell">Vencimento</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden @lg:table-cell">Progresso</th>
                                   <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
                                 </tr>
                               </thead>
@@ -4052,10 +4059,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                           <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} />
                                         </p>
                                       </td>
-                                      <td className="px-4 py-3.5 text-center hidden md:table-cell">
+                                      <td className="px-4 py-3.5 text-center hidden @md:table-cell">
                                         <span className="text-sm font-medium text-slate-600 tabular-nums">{nextDueLabel}</span>
                                       </td>
-                                      <td className="px-4 py-3.5 hidden lg:table-cell">
+                                      <td className="px-4 py-3.5 hidden @lg:table-cell">
                                         <div className="flex items-center gap-2.5">
                                           <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                             <div
@@ -4153,14 +4160,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         })}
                       </div>
 
-                      <div className="hidden sm:block overflow-x-auto">
+                      <div className="hidden @sm:block overflow-x-auto">
                         <table className="w-full text-sm min-w-[640px]">
                           <thead className="bg-slate-50 border-b border-[#e7e5df]">
                             <tr>
                               <th className="text-left px-4 py-3 font-semibold text-slate-600">Acordo</th>
                               <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor</th>
                               <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
-                              <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden md:table-cell">Encerrado em</th>
+                              <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden @md:table-cell">Encerrado em</th>
                               <th className="text-center px-4 py-3 font-semibold text-slate-600">Pagamento</th>
                             </tr>
                           </thead>
@@ -4182,7 +4189,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                   <td className="px-4 py-3 text-right">
                                     <p className="font-bold text-blue-700"><SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} /></p>
                                   </td>
-                                  <td className="px-4 py-3 text-center hidden md:table-cell">
+                                  <td className="px-4 py-3 text-center hidden @md:table-cell">
                                     <p className="text-slate-600">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</p>
                                   </td>
                                   <td className="px-4 py-3 text-center">
@@ -4208,7 +4215,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           onClick={() => handleOpenDetails(agreement)}
                           style={{ animationDelay: `${index * 50}ms` }}
                         >
-                          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex flex-col gap-1.5 @md:flex-row @md:items-center @md:justify-between">
                             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
                               <CheckCircle className="w-3.5 h-3.5" />
                               Concluído
@@ -4217,11 +4224,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             </div>
                             <div className="flex items-center gap-2 text-[11px] text-slate-500">
                               <span className="text-emerald-600 font-semibold">Encerrado</span>
-                              <span className="hidden sm:inline text-slate-300">•</span>
+                              <span className="hidden @sm:inline text-slate-300">•</span>
                               <span className="font-medium text-slate-400">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</span>
                             </div>
                           </div>
-                          <div className="mt-1.5 flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="mt-1.5 flex flex-col gap-1 @md:flex-row @md:items-center @md:justify-between">
                             <div className="flex-1 min-w-0">
                               <h3 className="text-sm font-semibold text-blue-950 truncate" title={agreement.title}>{agreement.title}</h3>
                               <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500">
@@ -4420,7 +4427,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               );
             })()}
             <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-500 italic hidden sm:block">
+              <p className="text-xs text-slate-500 italic hidden @sm:block">
                 Campos com <span className="text-red-500 font-bold not-italic">*</span> são obrigatórios
               </p>
               <div className="flex items-center gap-3 ml-auto">

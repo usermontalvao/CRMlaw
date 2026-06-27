@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -9,6 +9,7 @@ import type { EventContentArg, EventInput } from '@fullcalendar/core';
 import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle, UserCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { brandMarkHTML, BRAND_SERIF } from '../constants/brand';
+import { getLogoDataUrl } from '../utils/logoBase64';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -33,6 +34,7 @@ import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
+import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
 
 declare global {
   interface Window {
@@ -325,6 +327,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [cronogramaOnlyMine, setCronogramaOnlyMine] = useState(false);
   const [cronogramaStart, setCronogramaStart] = useState('');
   const [cronogramaEnd, setCronogramaEnd] = useState('');
+
+  // ── Busca global ────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchHighlightId, setSearchHighlightId] = useState<string | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
   const defaultFilterSet = useRef(false);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
@@ -1292,6 +1299,29 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return '';
   }, [memberMap, profileIdToName]);
 
+  // ── Busca global: resultados do modal (hoje+futuros, ordenados) ─
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const searchModalResults = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    return allEvents
+      .filter((ev) => {
+        const startStr = typeof ev.start === 'string' ? ev.start : '';
+        if (!startStr) return false;
+        const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+        if (d < todayStart) return false;
+        if (!deferredSearchQuery.trim()) return false; // sem query = sem resultados
+        return matchesCalendarSearch(ev, deferredSearchQuery, getResponsavel);
+      })
+      .sort((a, b) => {
+        const as = typeof a.start === 'string' ? a.start : '';
+        const bs = typeof b.start === 'string' ? b.start : '';
+        return as.localeCompare(bs);
+      })
+      .slice(0, 60);
+  }, [allEvents, deferredSearchQuery, getResponsavel]);
+
   // ── Cronograma: eventos filtrados e agrupados por dia ───────────
   const cronogramaByDay = useMemo(() => {
     const { start, end } = cronogramaRange;
@@ -1348,108 +1378,228 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [allEvents, cronogramaRange, cronogramaOnlyMine, viewFilters, user, members]);
 
-  // ── Cronograma: imprimir ─────────────────────────────────────────
-  const handlePrintCronograma = useCallback(() => {
-    const TYPE_LABELS: Record<string, string> = {
-      deadline: 'Prazo', hearing: 'Audiência', requirement: 'Exigência',
-      payment: 'Recebimento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
-    };
-    const TYPE_COLORS: Record<string, string> = {
-      deadline: '#4f46e5', hearing: '#dc2626', requirement: '#d97706',
-      payment: '#0284c7', meeting: '#059669', pericia: '#7c3aed', personal: '#a21caf',
-    };
-    const fmtDay = (key: string) => new Date(key + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-    const fmtTime = (ev: EventInput) => {
-      if ((ev.extendedProps as any)?._hasTime !== true) return '—';
-      const startStr = typeof ev.start === 'string' ? ev.start : '';
-      const t = new Date(startStr);
-      return isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    };
+  // ── Busca: ao clicar num resultado, navega para a data do evento ─
+  const handleSelectSearchResult = useCallback((ev: EventInput) => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
 
-    const { start, end } = cronogramaRange;
-    const periodLabel = `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`;
-    const issuedAt = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const startStr = typeof ev.start === 'string' ? ev.start : '';
+    if (startStr) {
+      const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+      setShowCronograma(false);
+      setTimeout(() => {
+        calendarRef.current?.getApi().gotoDate(d);
+      }, 50);
+    }
 
-    const daysHTML = cronogramaByDay.map(([dayKey, evs]) => {
-      const rowsHTML = evs.map(ev => {
-        const type  = ev.extendedProps?.type as string || 'meeting';
-        const color = TYPE_COLORS[type] || '#64748b';
-        const label = TYPE_LABELS[type] || type;
-        const time  = fmtTime(ev);
-        const client = ev.extendedProps?.clientName as string || '';
-        const resp  = getResponsavel(ev);
-        return `<tr>
-          <td style="padding:9px 12px;white-space:nowrap;color:#475569;font-size:12px;font-variant-numeric:tabular-nums;border-bottom:1px solid #f1f5f9;">${time}</td>
-          <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;">
-            <span style="display:inline-block;background:${color};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.06em;text-transform:uppercase;">${label}</span>
-          </td>
-          <td style="padding:9px 12px;font-weight:600;color:#0f172a;font-size:12px;border-bottom:1px solid #f1f5f9;">${ev.title || ''}</td>
-          <td style="padding:9px 12px;color:#475569;font-size:11.5px;border-bottom:1px solid #f1f5f9;">${client}</td>
-          <td style="padding:9px 12px;color:#64748b;font-size:11.5px;border-bottom:1px solid #f1f5f9;">${resp}</td>
-        </tr>`;
-      }).join('');
-      return `<div style="margin-bottom:28px;page-break-inside:avoid;">
-        <div style="background:#0e2a47;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-          <span style="font-size:13px;font-weight:700;text-transform:capitalize;">${fmtDay(dayKey)}</span>
-          <span style="font-size:10px;color:#94a3b8;">${evs.length} ${evs.length === 1 ? 'compromisso' : 'compromissos'}</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#f8fafc;">
-              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Horário</th>
-              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Tipo</th>
-              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Compromisso</th>
-              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
-              <th style="padding:7px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Responsável</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHTML}</tbody>
-        </table>
-      </div>`;
-    }).join('');
+    // Highlight pulse no evento encontrado (6 pulsos × 1.1s ≈ 7s)
+    if (ev.id) {
+      setSearchHighlightId(ev.id as string);
+      setTimeout(() => setSearchHighlightId(null), 7500);
+    }
 
-    const html = `<!DOCTYPE html><html lang="pt-BR"><head>
-      <meta charset="UTF-8"/>
-      <title>Cronograma — ${periodLabel}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-      <style>
-        @page{size:A4 portrait;margin:20mm 16mm;}
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{font-family:'Inter',system-ui,sans-serif;background:#fff;color:#0f172a;font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        .no-print{display:block;}
-        @media print{.no-print{display:none!important;}}
-      </style>
-    </head><body>
-      <div class="no-print" style="max-width:860px;margin:16px auto 0;text-align:right;">
-        <button onclick="window.print()" style="background:#0e2a47;color:#fff;border:none;padding:9px 22px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;">Imprimir / PDF</button>
-      </div>
-      <div style="max-width:860px;margin:16px auto;">
-        <div style="background:#1A1613;color:#fff;padding:20px 24px 16px;border-bottom:3px solid #EC6A1E;margin-bottom:0;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-            <div>
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-                ${brandMarkHTML({ px: 26, variant: 'reversed' })}
-                <span style="font-family:${BRAND_SERIF};font-size:17px;font-weight:700;letter-spacing:-.012em;color:#FBF6F1;">jurius<span style="color:#F2843E;">.</span><span style="font-weight:400;color:#8C7E72;">com.br</span></span>
-              </div>
-              <div style="font-size:22px;font-weight:700;letter-spacing:-.01em;">Cronograma de Compromissos</div>
-              <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${periodLabel}${cronogramaOnlyMine ? ' · Apenas os meus' : ' · Escritório'}</div>
-            </div>
-            <div style="text-align:right;font-size:10px;color:#64748b;">
-              <div>Emitido em ${issuedAt}</div>
-              <div style="margin-top:2px;">${cronogramaByDay.reduce((s,[,evs])=>s+evs.length,0)} compromissos · ${cronogramaByDay.length} dias</div>
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:24px;">
-          ${daysHTML || '<div style="text-align:center;color:#94a3b8;padding:48px 0;font-size:13px;">Nenhum compromisso no período.</div>'}
-        </div>
-      </div>
-    </body></html>`;
+    // Abre o painel de detalhe do evento
+    const ep = (ev.extendedProps ?? {}) as any;
+    setSelectedEvent({
+      title: ev.title as string,
+      start: startStr,
+      end: typeof ev.end === 'string' ? ev.end : undefined,
+      allDay: ev.allDay as boolean,
+      extendedProps: ep,
+    });
+  }, []);
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  }, [cronogramaByDay, cronogramaRange, cronogramaOnlyMine, getResponsavel]);
+  // ── Cronograma: exportar PDF (usa o mesmo template do export global) ─
+  const handlePrintCronograma = useCallback(async () => {
+    try {
+      const [jspdfModule, logoDataUrl] = await Promise.all([loadJsPdf(), getLogoDataUrl()]);
+      const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
+      const now = new Date();
+      const todayStr = now.toLocaleDateString('pt-BR');
+      const timeStr  = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const pageWidth  = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const M = 30;
+
+      const { start, end } = cronogramaRange;
+      const periodLabel = `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`;
+      const issuedBy = userName || 'Usuário do Sistema';
+
+      // Monta linhas a partir do cronogramaByDay (já filtrado por período + "apenas meus")
+      const TYPE_COLORS_RGB: Record<string, [number, number, number]> = {
+        'Prazo':        [ 67,  56, 202],
+        'Audiência':    [185,  28,  28],
+        'Reunião':      [  4, 120,  87],
+        'Recebimento':  [  3, 105, 161],
+        'Pagamento':    [  3, 105, 161],
+        'Perícia':      [126,  34, 206],
+        'Requerimento': [194,  65,  12],
+        'Exigência':    [194,  65,  12],
+        'Pessoal':      [134,  25, 143],
+      };
+
+      const rows: string[][] = [];
+      cronogramaByDay.forEach(([, evs]) => {
+        evs.forEach(ev => {
+          const startStr = typeof ev.start === 'string' ? ev.start : '';
+          const hasTime  = (ev.extendedProps as any)?._hasTime === true;
+          const d = startStr ? new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00') : null;
+          const dayPart  = d ? d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+          const timePart = hasTime && d ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
+          const typeKey  = (ev.extendedProps?.type as string) || 'meeting';
+          const typeLabel = eventTypeLabels[typeKey] ?? typeKey;
+          rows.push([
+            `${dayPart}\n${timePart}`,
+            typeLabel,
+            (ev.title as string) || '',
+            (ev.extendedProps?.clientName as string) || '',
+            getResponsavel(ev),
+          ]);
+        });
+      });
+
+      if (!rows.length) {
+        setFeedback({ type: 'error', message: 'Nenhum compromisso no período para exportar.' });
+        return;
+      }
+
+      const drawPageHeader = () => {
+        // Barra escura superior
+        doc.setFillColor(10, 15, 30);
+        doc.rect(0, 0, pageWidth, 28, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setCharSpace(2);
+        doc.text('JURIUS.COM.BR  —  GESTÃO JURÍDICA', pageWidth / 2, 17, { align: 'center' });
+        doc.setCharSpace(0);
+
+        // Faixa âmbar
+        doc.setFillColor(245, 158, 11);
+        doc.rect(0, 28, pageWidth, 3.5, 'F');
+
+        // Área branca do cabeçalho
+        doc.setFillColor(255, 255, 255);
+        doc.rect(0, 31.5, pageWidth, 76, 'F');
+
+        // Logo
+        try { doc.addImage(logoDataUrl, 'PNG', M + 4, 40, 50, 50); } catch (_) {}
+
+        // Título
+        const tX = M + 66;
+        doc.setTextColor(10, 15, 30);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.text('Cronograma de Compromissos', tX, 57);
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(2);
+        doc.line(tX, 61, tX + doc.getTextWidth('Cronograma de Compromissos'), 61);
+
+        // Sub-título (período)
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${periodLabel}${cronogramaOnlyMine ? '  ·  Apenas os meus' : ''}`, tX, 73);
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Gerado em ${todayStr} às ${timeStr}  ·  Exportado por: ${issuedBy}`, tX, 84);
+
+        // Contador (canto direito)
+        const rX = pageWidth - M;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(22);
+        doc.setTextColor(10, 15, 30);
+        doc.text(String(rows.length), rX, 57, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`compromisso${rows.length !== 1 ? 's' : ''}`, rX, 68, { align: 'right' });
+
+        // Linha divisória
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.4);
+        doc.line(0, 107.5, pageWidth, 107.5);
+      };
+
+      drawPageHeader();
+
+      (doc as any).autoTable({
+        startY: 111,
+        head: [['Data / Hora', 'Tipo', 'Compromisso', 'Cliente', 'Responsável']],
+        body: rows,
+        styles: {
+          font: 'helvetica',
+          fontSize: 7.8,
+          cellPadding: { top: 6, right: 6, bottom: 6, left: 7 },
+          lineWidth: 0,
+          overflow: 'linebreak',
+          textColor: [30, 41, 59],
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: [10, 15, 30],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 7.5,
+          halign: 'center',
+          cellPadding: { top: 7, right: 5, bottom: 7, left: 5 },
+          lineWidth: 0,
+        },
+        columnStyles: {
+          0: { cellWidth: 82,   halign: 'center', fontSize: 7.5, textColor: [71, 85, 105] },
+          1: { cellWidth: 76,   halign: 'center', fontSize: 7.5 },
+          2: { cellWidth: 'auto', fontStyle: 'bold' },
+          3: { cellWidth: 120 },
+          4: { cellWidth: 110 },
+        },
+        margin: { top: 111, left: M, right: M, bottom: 46 },
+        // Oculta texto bruto da coluna Tipo — desenhamos o ponto colorido manualmente
+        didParseCell: (data: any) => {
+          if (data.section === 'body' && data.column.index === 1)
+            data.cell.styles.textColor = data.cell.styles.fillColor ?? [255, 255, 255];
+        },
+        didDrawCell: (data: any) => {
+          if (data.section !== 'body' || data.column.index !== 1) return;
+          const tipo  = String(data.row.cells[1]?.raw || '');
+          const color = TYPE_COLORS_RGB[tipo];
+          if (!color) return;
+          const cy   = data.cell.y + data.cell.height / 2;
+          const dotX = data.cell.x + 10;
+          doc.setFillColor(...color);
+          doc.circle(dotX, cy, 2.5, 'F');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(30, 41, 59);
+          doc.text(tipo, dotX + 6, cy + 2.5);
+        },
+        didDrawPage: (_data: any) => {
+          const pageNum   = doc.internal.getCurrentPageInfo().pageNumber;
+          const pageCount = doc.internal.pages.length - 1;
+          // Faixa âmbar + rodapé escuro
+          doc.setFillColor(245, 158, 11);
+          doc.rect(0, pageHeight - 36, pageWidth, 1.5, 'F');
+          doc.setFillColor(10, 15, 30);
+          doc.rect(0, pageHeight - 34, pageWidth, 34, 'F');
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(140, 155, 175);
+          doc.text('jurius.com.br — Sistema de Gestão Jurídica', M, pageHeight - 15);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(200, 210, 225);
+          doc.text(`Página ${pageNum} de ${pageCount}`, pageWidth / 2, pageHeight - 15, { align: 'center' });
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(140, 155, 175);
+          doc.text(`Gerado em ${todayStr}`, pageWidth - M, pageHeight - 15, { align: 'right' });
+          if (pageNum > 1) drawPageHeader();
+        },
+      });
+
+      const fileLabel = `cronograma_${start.toISOString().slice(0, 10)}_${end.toISOString().slice(0, 10)}`;
+      doc.save(`${fileLabel}.pdf`);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao gerar PDF do cronograma.' });
+    }
+  }, [cronogramaByDay, cronogramaRange, cronogramaOnlyMine, getResponsavel, eventTypeLabels, userName]);
 
   const handleEventClick = useCallback(
     (info: any) => {
@@ -1984,9 +2134,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return str.length > 32760 ? `${str.slice(0, 32757)}...` : str;
   };
 
+  const stripInternalMetadata = useCallback((value?: string | null): string => {
+    if (!value) return '';
+    return value
+      .replace(/\[agreement_id:[^\]]+\]/g, '')
+      .replace(/\[installment:\d+\]/g, '')
+      .replace(/\[inadimplencia\]/g, '')
+      .split('\n')
+      .filter(line => !/Valor:\s*R\$\s*(NaN|undefined|null|--)/.test(line))
+      .join('\n')
+      .trim();
+  }, []);
+
   const prepareDescriptionForExport = useCallback(
-    (value?: string | null) => truncateForExcel(convertRichTextToPlainText(value)),
-    [convertRichTextToPlainText],
+    (value?: string | null) => truncateForExcel(convertRichTextToPlainText(stripInternalMetadata(value))),
+    [convertRichTextToPlainText, stripInternalMetadata],
   );
 
 
@@ -2146,7 +2308,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       }
 
       if (exportFormat === 'pdf') {
-        const jspdfModule = await loadJsPdf();
+        const [jspdfModule, logoDataUrl] = await Promise.all([loadJsPdf(), getLogoDataUrl()]);
         const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
         const now = new Date();
         const today = now.toLocaleDateString('pt-BR');
@@ -2158,15 +2320,16 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         // Colunas sigilosas: 4=Telefone, 5=Status, 6=Prioridade, 7=Descrição
         const REDACTED_COLS = new Set([4, 5, 6, 7]);
 
-        // Mapa de cores por tipo de compromisso (RGB)
+        // Cores idênticas ao EVENT_TYPE_COLORS do calendário (Tailwind exato)
         const TYPE_COLORS: Record<string, [number, number, number]> = {
-          'Prazo':       [220,  38,  38],  // red-600
-          'Audiência':   [ 37, 99, 235],   // blue-600
-          'Reunião':     [124,  58, 237],  // violet-600
-          'Pagamento':   [ 22, 163,  74],  // green-600
-          'Perícia':     [ 20, 184, 166],  // teal-500
-          'Requerimento':[217, 119,   6],  // amber-600
-          'Pessoal':     [100, 116, 139],  // slate-500
+          'Prazo':       [ 67,  56, 202],  // indigo-700
+          'Audiência':   [185,  28,  28],  // red-700
+          'Reunião':     [  4, 120,  87],  // emerald-700
+          'Recebimento': [  3, 105, 161],  // sky-700
+          'Pagamento':   [  3, 105, 161],  // sky-700
+          'Perícia':     [126,  34, 206],  // purple-700
+          'Exigência':   [194,  65,  12],  // orange-700
+          'Pessoal':     [134,  25, 143],  // fuchsia-700
         };
 
         const drawWatermark = () => {
@@ -2186,93 +2349,75 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         };
 
         const drawPageHeader = () => {
-          // ── Barra superior escura ──────────────────────────────────────────
+          const M = 30;
+          // ── Barra superior escura ─────────────────────────────────────────
           doc.setFillColor(10, 15, 30);
-          doc.rect(0, 0, pageWidth, 30, 'F');
-          // Texto centralizado na barra
+          doc.rect(0, 0, pageWidth, 28, 'F');
           doc.setTextColor(255, 255, 255);
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(9);
-          doc.setCharSpace(1.5);
-          doc.text('JURIUS.COM.BR  —  GESTÃO JURÍDICA', pageWidth / 2, 18.5, { align: 'center' });
+          doc.setFontSize(8);
+          doc.setCharSpace(2);
+          doc.text('JURIUS.COM.BR  —  GESTÃO JURÍDICA', pageWidth / 2, 17, { align: 'center' });
           doc.setCharSpace(0);
 
-          // Faixas decorativas: âmbar + escura mais fina
+          // Faixa âmbar
           doc.setFillColor(245, 158, 11);
-          doc.rect(0, 30, pageWidth, 4, 'F');
-          doc.setFillColor(180, 115, 5);
-          doc.rect(0, 34, pageWidth, 1, 'F');
+          doc.rect(0, 28, pageWidth, 3.5, 'F');
 
-          // ── Área de fundo do cabeçalho ─────────────────────────────────────
-          doc.setFillColor(250, 250, 252);
-          doc.rect(0, 35, pageWidth, 78, 'F');
+          // ── Área branca do cabeçalho ──────────────────────────────────────
+          doc.setFillColor(255, 255, 255);
+          doc.rect(0, 31.5, pageWidth, 76, 'F');
 
-          // ── Logo ──────────────────────────────────────────────────────────
-          // Sombra
-          doc.setFillColor(200, 150, 10);
-          doc.roundedRect(43, 47, 48, 48, 8, 8, 'F');
-          // Fundo âmbar
-          doc.setFillColor(245, 158, 11);
-          doc.roundedRect(40, 44, 48, 48, 8, 8, 'F');
-          // Letra J
-          doc.setTextColor(255, 255, 255);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(32);
-          doc.text('J', 64, 78, { align: 'center' });
+          // Logo
+          try { doc.addImage(logoDataUrl, 'PNG', M + 4, 40, 50, 50); } catch (_) {}
 
-          // ── Título ────────────────────────────────────────────────────────
+          // Título
+          const tX = M + 66;
           doc.setTextColor(10, 15, 30);
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(21);
-          doc.text('Agenda de Compromissos', 103, 62);
-
-          // Sublinhado âmbar preciso
+          doc.setFontSize(20);
+          doc.text('Agenda de Compromissos', tX, 57);
           doc.setDrawColor(245, 158, 11);
-          doc.setLineWidth(2.5);
-          const titleW = doc.getTextWidth('Agenda de Compromissos');
-          doc.line(103, 67, 103 + titleW, 67);
+          doc.setLineWidth(2);
+          doc.line(tX, 61, tX + doc.getTextWidth('Agenda de Compromissos'), 61);
 
-          // ── Período e meta ────────────────────────────────────────────────
+          // Período e meta numa linha só
           const periodText = exportPeriod === 'custom'
-            ? `Período: ${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+            ? `${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
             : `Próximos ${exportPeriod} dias`;
-
           doc.setFont('helvetica', 'normal');
-          doc.setFontSize(9.5);
+          doc.setFontSize(9);
           doc.setTextColor(71, 85, 105);
-          doc.text(periodText, 103, 79);
+          doc.text(periodText, tX, 73);
+          doc.setFontSize(7.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Gerado em ${today} às ${timeStr}  ·  Exportado por: ${exportedBy}`, tX, 84);
 
-          doc.setFontSize(8);
-          doc.setTextColor(120, 136, 160);
-          doc.text(`Gerado em: ${today} às ${timeStr}`, 103, 90);
-          doc.text(`Exportado por: ${exportedBy}`, 103, 100);
+          // Contador de registros (canto direito)
+          const rX = pageWidth - M;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(22);
+          doc.setTextColor(10, 15, 30);
+          doc.text(String(rows.length), rX, 57, { align: 'right' });
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`compromisso${rows.length !== 1 ? 's' : ''}`, rX, 68, { align: 'right' });
 
-          // ── Linha divisória entre cabeçalho e tabela ──────────────────────
-          doc.setDrawColor(220, 224, 232);
-          doc.setLineWidth(0.5);
-          doc.line(30, 113, pageWidth - 30, 113);
+          // Linha divisória
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.4);
+          doc.line(0, 107.5, pageWidth, 107.5);
 
-          // ── Badge de sigilo ───────────────────────────────────────────────
+          // Badge sigilo
           if (exportPrivate) {
-            const bW = 130; const bH = 22;
-            const bX = pageWidth - 40 - bW; const bY = 44;
-
-            // Borda vermelha sutil ao redor do badge
-            doc.setDrawColor(180, 20, 20);
-            doc.setLineWidth(0.5);
-            doc.roundedRect(bX - 1, bY - 1, bW + 2, bH + 2, 5, 5, 'S');
-
-            doc.setFillColor(200, 30, 30);
+            const bW = 128; const bH = 20; const bX = rX - bW; const bY = 74;
+            doc.setFillColor(185, 28, 28);
             doc.roundedRect(bX, bY, bW, bH, 4, 4, 'F');
             doc.setTextColor(255, 255, 255);
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8);
-            doc.text('INFORMAÇÕES RESTRITAS', bX + bW / 2, bY + 14, { align: 'center' });
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7);
-            doc.setTextColor(160, 30, 30);
-            doc.text('Campos sigilosos suprimidos neste documento.', pageWidth - 40, 78, { align: 'right' });
+            doc.setFontSize(7.5);
+            doc.text('INFORMAÇÕES RESTRITAS', bX + bW / 2, bY + 13, { align: 'center' });
           }
         };
 
@@ -2281,7 +2426,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
         // ── Tabela ─────────────────────────────────────────────────────────
         (doc as any).autoTable({
-          startY: 117,
+          startY: 111,
           head: [['Data', 'Tipo', 'Título', 'Cliente', 'Telefone', 'Status', 'Prioridade', 'Descrição']],
           body: rows.map((row) => [
             row['Data'],
@@ -2296,9 +2441,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           styles: {
             font: 'helvetica',
             fontSize: 7.8,
-            cellPadding: { top: 5.5, right: 5, bottom: 5.5, left: 6 },
-            lineWidth: 0.3,
-            lineColor: [220, 224, 232],
+            cellPadding: { top: 6, right: 6, bottom: 6, left: 7 },
+            lineWidth: 0,
             overflow: 'linebreak',
             textColor: [30, 41, 59],
             valign: 'middle',
@@ -2307,52 +2451,53 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             fillColor: [10, 15, 30],
             textColor: [255, 255, 255],
             fontStyle: 'bold',
-            fontSize: 8,
+            fontSize: 7.5,
             halign: 'center',
             cellPadding: { top: 7, right: 5, bottom: 7, left: 5 },
             lineWidth: 0,
           },
-          alternateRowStyles: {
-            fillColor: [246, 248, 252],
-          },
           columnStyles: {
-            0: { cellWidth: 78,  halign: 'center', fontSize: 7.5 },
-            1: { cellWidth: 60,  halign: 'center', fontStyle: 'bold', fontSize: 7.5 },
-            2: { cellWidth: 130 },
-            3: { cellWidth: 95 },
-            4: { cellWidth: 70,  halign: 'center' },
-            5: { cellWidth: 66,  halign: 'center' },
-            6: { cellWidth: 52,  halign: 'center' },
-            7: { cellWidth: 'auto' },
+            0: { cellWidth: 80,  halign: 'center', fontSize: 7.5, textColor: [71, 85, 105] },
+            1: { cellWidth: 74,  halign: 'center', fontSize: 7.5 },
+            2: { cellWidth: 132, fontStyle: 'bold' },
+            3: { cellWidth: 98  },
+            4: { cellWidth: 68,  halign: 'center', fontSize: 7.5 },
+            5: { cellWidth: 60,  halign: 'center', fontSize: 7.5 },
+            6: { cellWidth: 50,  halign: 'center', fontSize: 7.5 },
+            7: { cellWidth: 'auto', fontSize: 7.5, textColor: [71, 85, 105] },
           },
-          margin: { top: 117, left: 30, right: 30, bottom: 48 },
-          // Colorir bolinha do tipo + redação de células sigilosas
+          margin: { top: 111, left: 30, right: 30, bottom: 46 },
+
+            // Oculta o texto bruto da coluna Tipo — desenhamos o indicador manualmente
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.column.index === 1)
+              data.cell.styles.textColor = data.cell.styles.fillColor ?? [255, 255, 255];
+          },
+
           didDrawCell: (data: any) => {
-            if (data.section === 'body') {
-              // Bolinha colorida para coluna Tipo (índice 1)
-              if (data.column.index === 1 && !exportPrivate) {
-                const tipo = String(data.cell.raw || '');
-                const color = TYPE_COLORS[tipo];
-                if (color) {
-                  const cx = data.cell.x + 8;
-                  const cy = data.cell.y + data.cell.height / 2;
-                  doc.setFillColor(...color);
-                  doc.circle(cx, cy, 2.2, 'F');
-                }
-              }
-              // Redação preta sobre células sigilosas
-              if (exportPrivate && REDACTED_COLS.has(data.column.index)) {
-                const { x, y, width, height } = data.cell;
-                const pad = 5;
-                doc.setFillColor(22, 22, 28);
-                doc.rect(x + pad, y + pad, width - pad * 2, height - pad * 2, 'F');
-                // Listras sutis para efeito de redação real
-                doc.setFillColor(10, 10, 14);
-                const stripeW = 3;
-                for (let sx = x + pad; sx < x + width - pad; sx += stripeW * 2) {
-                  doc.rect(sx, y + pad, stripeW, height - pad * 2, 'F');
-                }
-              }
+            if (data.section !== 'body') return;
+
+            const tipo = String(data.row.cells[1]?.raw || '');
+            const color = TYPE_COLORS[tipo];
+
+            // Coluna Tipo: ponto colorido + texto ao lado
+            if (data.column.index === 1 && color) {
+              const cy = data.cell.y + data.cell.height / 2;
+              const dotX = data.cell.x + 10;
+              doc.setFillColor(...color);
+              doc.circle(dotX, cy, 2.5, 'F');
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(7.5);
+              doc.setTextColor(30, 41, 59);
+              doc.text(tipo, dotX + 6, cy + 2.5);
+            }
+
+            // Redação de células sigilosas
+            if (exportPrivate && REDACTED_COLS.has(data.column.index)) {
+              const { x, y, width, height } = data.cell;
+              const pad = 4;
+              doc.setFillColor(22, 22, 28);
+              doc.rect(x + pad, y + pad, width - pad * 2, height - pad * 2, 'F');
             }
           },
           didDrawPage: (_data: any) => {
@@ -2640,6 +2785,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
           {/* Ações secundárias — desktop only */}
           <div className="hidden sm:flex items-center gap-1 shrink-0">
+            <button type="button" onClick={() => setIsSearchOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-slate-100 transition-colors"
+              aria-label="Buscar compromissos">
+              <Search className="w-3.5 h-3.5" />
+            </button>
             <button type="button" onClick={() => setLegendExpanded(v => !v)}
               className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 hover:bg-slate-100 border-[#e7e5df]'}`}>
               <Filter className="w-3.5 h-3.5" />Filtros
@@ -2707,6 +2857,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           <button type="button" onClick={() => setShowCronograma(v => !v)}
             className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all shrink-0 ${showCronograma ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-[#e7e5df]'}`}>
             <LayoutList className="w-3 h-3" />Lista
+          </button>
+          <button type="button" onClick={() => setIsSearchOpen(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-[#e7e5df] text-slate-500 shrink-0"
+            aria-label="Buscar">
+            <Search className="w-3 h-3" />
           </button>
           <button type="button" onClick={() => setLegendExpanded(v => !v)}
             className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors shrink-0 ${legendExpanded ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-slate-500 border-[#e7e5df]'}`}>
@@ -2884,8 +3039,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             {cronogramaByDay.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                 <LayoutList className="w-10 h-10 mb-3 opacity-30" />
-                <p className="text-sm font-medium">Nenhum compromisso no período</p>
-                <p className="text-xs mt-1">Ajuste o período ou os filtros de tipo</p>
+                <p className="text-sm font-medium">
+                  {searchQuery.trim() ? 'Nenhum resultado para a busca' : 'Nenhum compromisso no período'}
+                </p>
+                <p className="text-xs mt-1">
+                  {searchQuery.trim()
+                    ? <button type="button" className="underline hover:text-slate-600 transition" onClick={() => setSearchQuery('')}>Limpar busca</button>
+                    : 'Ajuste o período ou os filtros de tipo'}
+                </p>
               </div>
             ) : cronogramaByDay.map(([dayKey, evs]) => {
               const dayDate = new Date(dayKey + 'T12:00:00');
@@ -3042,6 +3203,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               eventClick={handleEventClick}
               dateClick={handleDateClick}
               eventContent={renderEventContent}
+              eventClassNames={(arg) => searchHighlightId && arg.event.id === searchHighlightId ? ['calendar-event--search-pulse'] : []}
               eventDisplay="block"
               datesSet={(arg) => {
                 setCalendarTitle(arg.view.title);
@@ -4972,6 +5134,121 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           />
         </ModalBody>
       </Modal>
+
+      {/* ── Modal de busca global ─────────────────────────────────── */}
+      {isSearchOpen && (
+        <div
+          className="fixed inset-0 z-[9998] bg-black/40 flex items-start justify-center pt-[10vh]"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setIsSearchOpen(false); setSearchQuery(''); } }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col" style={{ maxHeight: '75vh' }}>
+            {/* Input */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar por cliente, processo, responsável, título…"
+                className="flex-1 text-sm text-slate-700 placeholder-slate-400 bg-transparent focus:outline-none"
+              />
+              {searchQuery ? (
+                <button type="button" onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600 transition shrink-0">
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <button type="button" onClick={() => { setIsSearchOpen(false); setSearchQuery(''); }} className="text-slate-400 hover:text-slate-600 transition shrink-0">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Resultados */}
+            <div className="overflow-y-auto flex-1">
+              {!searchQuery.trim() ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <Search className="w-8 h-8 mb-2 opacity-30" />
+                  <p className="text-sm">Digite para buscar compromissos futuros</p>
+                </div>
+              ) : searchModalResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <Search className="w-8 h-8 mb-2 opacity-30" />
+                  <p className="text-sm font-medium">Nenhum resultado encontrado</p>
+                  <p className="text-xs mt-1">Somente compromissos de hoje em diante</p>
+                </div>
+              ) : (
+                <ul>
+                  {searchModalResults.map((ev, idx) => {
+                    const ep = (ev.extendedProps ?? {}) as any;
+                    const startStr = typeof ev.start === 'string' ? ev.start : '';
+                    const d = startStr ? new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00') : null;
+                    const hasTime = ep._hasTime === true;
+                    const dateLabel = d
+                      ? d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+                      : '';
+                    const timeLabel = hasTime && d
+                      ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                      : '';
+
+                    const typeKey = ep.type as string;
+                    const canonical = EVENT_TYPE_COLORS[typeKey as EventType];
+                    const hex = eventTypeHexColors[typeKey];
+                    const badgeClass = canonical
+                      ? `text-[10px] font-semibold px-1.5 py-0.5 rounded border-l-2 ${canonical.badge}`
+                      : 'text-[10px] font-semibold px-1.5 py-0.5 rounded border-l-2 text-slate-700 bg-slate-100 border-slate-400';
+                    const badgeStyle = !canonical && hex
+                      ? { borderLeftColor: hex, background: hex + '22', color: '#374151' }
+                      : undefined;
+
+                    const responsible = getResponsavel(ev);
+                    const clientName = ep.clientName as string | undefined;
+
+                    return (
+                      <li key={`${ev.id}-${idx}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSearchResult(ev)}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start gap-3 border-b border-slate-50 last:border-0"
+                        >
+                          <div className="shrink-0 mt-0.5">
+                            <span className={badgeClass} style={badgeStyle}>
+                              {eventTypeLabels[typeKey] ?? typeKey}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{ev.title as string}</p>
+                            {clientName && (
+                              <p className="text-xs text-slate-500 truncate">{clientName}</p>
+                            )}
+                            {responsible && (
+                              <p className="text-xs text-slate-400 truncate">{responsible}</p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-medium text-slate-600">{dateLabel}</p>
+                            {timeLabel && <p className="text-xs text-slate-400">{timeLabel}</p>}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {/* Rodapé com contagem */}
+            {searchQuery.trim() && searchModalResults.length > 0 && (
+              <div className="px-4 py-2 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-xs text-slate-400">
+                  {searchModalResults.length} resultado{searchModalResults.length !== 1 ? 's' : ''} · apenas hoje em diante
+                </span>
+                <span className="text-xs text-slate-400">↵ clique para navegar</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

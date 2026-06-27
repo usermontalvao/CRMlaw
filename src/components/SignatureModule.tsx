@@ -4191,10 +4191,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
 
   return (
-    <div className="flex flex-col gap-3 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" style={{ background: 'transparent' }} data-signature-module>
+    <div className="@container flex flex-col gap-3 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" style={{ background: 'transparent' }} data-signature-module>
       {selectionMode && selectedRequestIds.size > 0 && (
         <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 sm:px-4 py-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex flex-col @sm:flex-row @sm:items-center @sm:justify-between gap-3">
             <div className="text-xs text-slate-600">
               <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
               <span className="text-slate-400"> · </span>
@@ -4282,7 +4282,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Organizar</span>
+                <span className="hidden @sm:inline">Organizar</span>
               </button>
               <button
                 type="button"
@@ -4291,7 +4291,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 title="Nova pasta"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Nova pasta</span>
+                <span className="hidden @sm:inline">Nova pasta</span>
               </button>
             </div>
           </div>
@@ -4426,7 +4426,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         {/* Painel de seleção em massa */}
         {selectionMode && (
           <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 sm:px-4 py-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col @sm:flex-row @sm:items-center @sm:justify-between gap-3">
               <div className="text-xs text-slate-600">
                 <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
                 <span className="text-slate-400"> · </span>
@@ -4871,7 +4871,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         ) : (
           <div className="p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 @sm:grid-cols-2 @md:grid-cols-3 @lg:grid-cols-4 gap-4">
               {filteredRequestsByFolder.map((req) => {
                 const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
                 const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
@@ -5070,7 +5070,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-3">
                   Documentos gerados
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 @sm:grid-cols-2 @md:grid-cols-3 @lg:grid-cols-4 gap-4">
                   {filteredGeneratedDocumentsByFolder.map((doc) => (
                     <button
                       key={doc.id}
@@ -5993,11 +5993,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     {showCreateProcess && !detailsRequest.process_id && (
                       <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-[#e7e5df]">
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Novo Processo</p>
-                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                        <div className="flex flex-col @sm:flex-row gap-2 @sm:gap-3">
                           <select
                             value={createProcessArea}
                             onChange={(e) => setCreateProcessArea(e.target.value as ProcessPracticeArea)}
-                            className="w-full sm:w-auto px-3 py-2 border border-[#e7e5df] rounded-lg text-sm font-medium text-slate-700 bg-[#f8f7f5] focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                            className="w-full @sm:w-auto px-3 py-2 border border-[#e7e5df] rounded-lg text-sm font-medium text-slate-700 bg-[#f8f7f5] focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                           >
                             <option value="trabalhista">Trabalhista</option>
                             <option value="familia">Família</option>
@@ -6294,7 +6294,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {/* Pending — signing link */}
                         {!isSigned && (
                           <div className="px-3 py-2 bg-white border-t border-slate-100 flex flex-col gap-1.5">
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+                            <div className="flex flex-col @sm:flex-row items-stretch @sm:items-center gap-1.5">
                               <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-[#e7e5df] rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
                               <div className="flex gap-1 flex-shrink-0">
                                 <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">

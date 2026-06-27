@@ -253,17 +253,17 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
   const buildScheduleFromForm = () => {
     if (!formData.firstDueDate) return [] as { number: number; dueDate: string; value: number }[];
     if (formData.paymentType === 'upfront') {
-      return [{ number: 1, dueDate: formData.firstDueDate, value: Number(formData.totalValue || 0) }];
+      return [{ number: 1, dueDate: formData.firstDueDate, value: parseCurrencyToNumber(formData.totalValue) }];
     }
     if (formData.customInstallments.length) {
       return formData.customInstallments.map((item, index) => ({
         number: index + 1,
         dueDate: item.dueDate || formData.firstDueDate,
-        value: Number(item.value || 0),
+        value: parseCurrencyToNumber(item.value),
       }));
     }
     const schedule: { number: number; dueDate: string; value: number }[] = [];
-    const total = Number(formData.totalValue || 0);
+    const total = parseCurrencyToNumber(formData.totalValue);
     const count = Number(formData.installmentsCount || '0') || 1;
     const baseDate = new Date(formData.firstDueDate);
     const installmentValue = count > 0 ? total / count : total;

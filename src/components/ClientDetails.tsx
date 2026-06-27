@@ -1254,20 +1254,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     const phone = client.phone || client.mobile || '';
     const now = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
-    // Foto de perfil para o PDF — converte para base64 para garantir impressão offline
+    // Logo e foto carregadas em paralelo — base64 para impressão offline
     const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0] ?? null;
+    const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
     let photoBase64 = '';
-    if (profileSelfie?.url) {
-      try {
-        const resp = await fetch(profileSelfie.url);
-        const blob = await resp.blob();
-        photoBase64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-      } catch { /* foto opcional — ignora se falhar */ }
-    }
+    let logoBase64 = '';
+    await Promise.allSettled([
+      fetch('/logo.png').then((r) => r.blob()).then(blobToDataUrl).then((u) => { logoBase64 = u; }),
+      profileSelfie?.url
+        ? fetch(profileSelfie.url).then((r) => r.blob()).then(blobToDataUrl).then((u) => { photoBase64 = u; })
+        : Promise.resolve(),
+    ]);
 
     const processRows = processes.map((p) => `
       <tr>
@@ -1395,7 +1396,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         </div>
       </div>
     </div>
-    <div class="header-logo">Gerado em ${now}<br/><strong>jurius.com.br</strong></div>
+    <div class="header-logo" style="text-align:right;">
+      ${logoBase64 ? `<img src="${logoBase64}" alt="Jurius" style="height:36px;width:auto;border-radius:8px;display:block;margin-left:auto;margin-bottom:6px" />` : ''}
+      Gerado em ${now}<br/><strong>jurius.com.br</strong>
+    </div>
   </div>
 
   <div class="kpis">

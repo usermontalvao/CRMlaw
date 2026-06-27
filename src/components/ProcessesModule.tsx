@@ -3696,7 +3696,7 @@ Regras:
   })();
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
 
       {/* Alerta: Processos arquivados com prazos pendentes */}
       {archivedWithDeadlines.length > 0 && (
@@ -3753,7 +3753,7 @@ Regras:
 
       {/* KPI Strip — enterprise, clicável p/ filtrar */}
       <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
-        <div className="grid grid-cols-2 md:grid-cols-5 divide-x divide-slate-100">
+        <div className="grid grid-cols-2 @md:grid-cols-5 divide-x divide-slate-100">
           {[
             { key: 'todos' as const, label: 'Total', value: statusCounts.todos, icon: Building2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
             { key: 'aguardando_confeccao' as const, label: 'Aguardando', value: statusCounts.aguardando_confeccao || 0, icon: FileText, accent: 'text-orange-600', ring: 'ring-orange-300', bg: 'bg-orange-50/50' },
@@ -3789,7 +3789,7 @@ Regras:
       </div>
 
       {/* Barra de Sincronização DJEN — visível e acionável */}
-      <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] px-4 py-3 flex flex-col @sm:flex-row @sm:items-center gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${syncingDjen ? 'bg-blue-100 text-blue-600' : djenStats.withData > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
             <RefreshCw className={`w-4 h-4 ${syncingDjen ? 'animate-spin' : ''}`} />
@@ -3868,7 +3868,7 @@ Regras:
 
           {/* Formulário inline expandido */}
           {quickAddExpanded && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-3 sm:px-4 py-3 bg-orange-50/50 border-b border-orange-100">
+            <div className="flex flex-col @sm:flex-row items-stretch @sm:items-center gap-2 px-3 @sm:px-4 py-3 bg-orange-50/50 border-b border-orange-100">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                 <input
@@ -3998,7 +3998,7 @@ Regras:
       )}
 
       <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
+        <div className="flex flex-col @sm:flex-row @sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setKanbanMode(false)}
@@ -4027,7 +4027,7 @@ Regras:
               title="Mapa de Fases"
             >
               <Clock className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Mapa de Fases</span>
+              <span className="hidden @sm:inline">Mapa de Fases</span>
             </button>
             {processStatusCronLog?.status === 'success' && (
               <button
@@ -4045,20 +4045,20 @@ Regras:
             )}
             <button
               onClick={() => setShowExportModal(true)}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-[#e7e5df] hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-1 @sm:gap-1.5 px-2 @sm:px-3 py-2 border border-[#e7e5df] hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Exportar</span>
+              <span className="hidden @sm:inline">Exportar</span>
             </button>
-            <button onClick={() => handleOpenModal()} className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
+            <button onClick={() => handleOpenModal()} className="flex items-center gap-1 @sm:gap-1.5 px-3 @sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
               <Plus className="w-3.5 h-3.5" />
               <span className="hidden xs:inline">Novo</span>
-              <span className="hidden sm:inline">Processo</span>
+              <span className="hidden @sm:inline">Processo</span>
             </button>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-4 py-3 bg-slate-50/40 border-b border-slate-100 dark:bg-zinc-900/40 dark:border-zinc-800">
+        <div className="flex flex-col @sm:flex-row items-stretch @sm:items-center gap-2 px-4 py-3 bg-slate-50/40 border-b border-slate-100 dark:bg-zinc-900/40 dark:border-zinc-800">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -4102,7 +4102,7 @@ Regras:
               </div>
             </div>
           ) : kanbanMode ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto">
+            <div className="grid grid-cols-1 @sm:grid-cols-2 @md:grid-cols-3 @lg:grid-cols-4 gap-3 @sm:gap-4 overflow-x-auto">
               {statusOptions.map((statusOption) => {
                 const processesInColumn = processesByStatus[statusOption.key] || [];
                 return (
@@ -4221,7 +4221,7 @@ Regras:
             </div>
           ) : (
             <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-              <div className="block lg:hidden divide-y divide-[#e7e5df]">
+              <div className="block @md:hidden divide-y divide-[#e7e5df]">
                 {filteredProcesses.map((process) => {
                   const client = clientMap.get(process.client_id);
                   return (
@@ -4284,7 +4284,7 @@ Regras:
                   );
                 })}
               </div>
-              <div className="hidden lg:block overflow-x-auto w-full">
+              <div className="hidden @md:block overflow-x-auto w-full">
                 <table className="min-w-full divide-y divide-slate-100">
                   <thead className="bg-slate-50/60 border-b border-[#e7e5df]">
                     <tr>
@@ -4431,7 +4431,7 @@ Regras:
       >
 
               <div className="p-4 border-b border-slate-100 bg-[#f8f7f5]">
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 gap-3">
                   {statusOptions.map((statusOption) => {
                     const count = (processesByStatus[statusOption.key] || []).length;
                     const isActive = stageMapSelectedStatus === statusOption.key;
@@ -4459,7 +4459,7 @@ Regras:
                 ) : (
                   <div>
                     <div className="p-4 border-b border-slate-100 bg-[#f8f7f5]">
-                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                      <div className="flex flex-col @sm:flex-row gap-2 @sm:items-center">
                         <div className="relative flex-1">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                           <input

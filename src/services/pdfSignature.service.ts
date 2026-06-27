@@ -1,4 +1,5 @@
 ﻿import { PDFDocument, PDFPage, rgb, StandardFonts, LineCapStyle, PDFString } from 'pdf-lib';
+import { getLogoBytes } from '../utils/logoBase64';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
@@ -721,6 +722,7 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const logoImage = await pdfDoc.embedPng(await getLogoBytes()).catch(() => null);
     const lm = 50;
     const pageWidth = 595.28;
     const pageHeight = 841.89;
@@ -898,12 +900,13 @@ class PdfSignatureService {
       // Orange top accent
       page.drawRectangle({ x: 0, y: pageHeight - 4, width: pageWidth, height: 4, color: orange });
 
-      // Wordmark + page label
+      // Logo + page label
       const wmY = pageHeight - 32;
-      page.drawText('JURIUS', { x: lm, y: wmY, size: 16, font: helveticaBold, color: navy });
-      const jw = helveticaBold.widthOfTextAtSize('JURIUS', 16);
-      circleDot(page, lm + jw + 9, wmY + 4, 1.7, orange);
-      page.drawText(title.toUpperCase(), { x: lm + jw + 17, y: wmY + 1.5, size: 8, font: helveticaBold, color: txtSoft });
+      const logoSize = 22;
+      if (logoImage) {
+        page.drawImage(logoImage, { x: lm, y: wmY - logoSize + 6, width: logoSize, height: logoSize });
+      }
+      page.drawText(title.toUpperCase(), { x: lm + logoSize + 8, y: wmY + 1.5, size: 8, font: helveticaBold, color: txtSoft });
 
       // Date (right-aligned)
       const dw = helvetica.widthOfTextAtSize(nowStr, 7.5);

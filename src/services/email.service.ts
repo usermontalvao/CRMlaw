@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import type { EmailMessage, EmailFolder, SendEmailDTO, EmailSignature, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
+import { patchForInbox, patchForSpam } from '../utils/email.transitions';
 
 const TABLE = 'email_messages';
 
@@ -88,20 +89,33 @@ class EmailService {
   }
 
   /**
+   * Mover para a Caixa de Entrada: limpa is_spam E is_trash.
+   * Operação idempotente; funciona de qualquer pasta.
+   */
+  async moveToInbox(id: string): Promise<void> {
+    const { error } = await supabase.from(TABLE).update(patchForInbox()).eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  /**
    * Marca como spam (move pro Spam) e, se learnSender, registra o remetente
    * para que emails futuros dele caiam direto no spam.
+   * Limpa is_trash para que o item saia da lixeira se estava lá.
    */
   async markSpam(msg: EmailMessage, learnSender = true): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_spam: true, spam_checked: true }).eq('id', msg.id);
+    const { error } = await supabase.from(TABLE).update(patchForSpam()).eq('id', msg.id);
     if (error) throw new Error(error.message);
     if (learnSender && msg.from_address) {
       await supabase.from('email_spam_senders').upsert({ address: msg.from_address.toLowerCase() });
     }
   }
 
+  /**
+   * Tira do spam (move para Inbox): limpa is_spam E is_trash.
+   * Garante que o item não fique preso numa pasta intermediária.
+   */
   async unmarkSpam(msg: EmailMessage, forgetSender = true): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_spam: false }).eq('id', msg.id);
-    if (error) throw new Error(error.message);
+    await this.moveToInbox(msg.id);
     if (forgetSender && msg.from_address) {
       await supabase.from('email_spam_senders').delete().eq('address', msg.from_address.toLowerCase());
     }
@@ -140,17 +154,29 @@ class EmailService {
     if (error) throw new Error(error.message);
   }
 
-  /** Restaura vários da lixeira de uma vez. */
+  /** Restaura vários da lixeira de uma vez (cada item volta para spam ou inbox conforme is_spam). */
   async bulkRestore(ids: string[]): Promise<void> {
     if (!ids.length) return;
     const { error } = await supabase.from(TABLE).update({ is_trash: false }).in('id', ids);
     if (error) throw new Error(error.message);
   }
 
-  /** Marca/desmarca spam em vários de uma vez. */
+  /** Move vários para a Caixa de Entrada (limpa is_spam E is_trash). */
+  async bulkMoveToInbox(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const { error } = await supabase.from(TABLE).update(patchForInbox()).in('id', ids);
+    if (error) throw new Error(error.message);
+  }
+
+  /**
+   * Marca/desmarca spam em vários de uma vez.
+   * Ao marcar: limpa is_trash (sai da lixeira se estava lá).
+   * Ao desmarcar: limpa is_trash também — equivale a moveToInbox em lote.
+   */
   async bulkSetSpam(ids: string[], isSpam: boolean): Promise<void> {
     if (!ids.length) return;
-    const { error } = await supabase.from(TABLE).update({ is_spam: isSpam, spam_checked: true }).in('id', ids);
+    const patch = isSpam ? patchForSpam() : patchForInbox();
+    const { error } = await supabase.from(TABLE).update(patch).in('id', ids);
     if (error) throw new Error(error.message);
   }
 

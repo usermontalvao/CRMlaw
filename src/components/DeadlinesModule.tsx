@@ -3156,10 +3156,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }
 
   return (
-    <div className="space-y-4">
-      
+    <div className="@container space-y-4">
+
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 @sm:grid-cols-4 gap-3">
         {[
           {
             label: 'Total do mês',
@@ -3547,7 +3547,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
       {/* Conteúdo Principal baseado no viewMode */}
       {viewMode === 'kanban' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 @md:grid-cols-2 @xl:grid-cols-3 gap-4">
           {statusFilterOptions.map((statusOption) => {
             const StatusIcon = statusOption.icon;
             const statusDeadlines = filteredDeadlines.filter((d) => d.status === statusOption.key);
@@ -3654,7 +3654,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       ) : viewMode === 'map' ? (
         <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-6">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+          <div className="flex flex-col @md:flex-row @md:items-center @md:justify-between gap-4 mb-6">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Mapa de Prazos: plano de ação</h4>
               <p className="text-sm text-slate-600">
@@ -3667,7 +3667,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 @xl:grid-cols-2 gap-6">
             {resolvedBuckets.map((bucket) => {
               const BucketIcon = bucket.icon;
               const bucketDeadlines = pendingDeadlines
@@ -3841,7 +3841,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       ) : (!isPastMonth && viewMode !== 'workload') ? (
         <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden">
           {/* Mobile Cards */}
-          <div className="block lg:hidden divide-y divide-[#e7e5df]">
+          <div className="block @md:hidden divide-y divide-[#e7e5df]">
             {paginatedDeadlines.map((deadline) => {
               const priorityConfig = getPriorityConfig(deadline.priority);
               const typeConfig = getTypeConfig(deadline.type);
@@ -3929,7 +3929,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
 
           {/* Desktop Table - Layout conforme imagem */}
-          <div className="hidden lg:block">
+          <div className="hidden @md:block">
             <table className="w-full">
               {selectedIds.size > 0 && (
                 <thead>
@@ -4175,7 +4175,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             const maxTotal = Math.max(...workloadRows.map((r) => r.total), 1);
 
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
                 {workloadRows.map(({ member, total, overdue, urgent }) => {
                   const initials = member.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?';
                   const pct = Math.round((total / maxTotal) * 100);
@@ -4259,7 +4259,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
           <div className="flex items-center gap-2">
             {/* Busca inline */}
-            <div className="relative hidden sm:block">
+            <div className="relative hidden @sm:block">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -4353,7 +4353,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         ) : (
           <>
             {/* Header da tabela */}
-            <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="hidden @sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               <span>Prazo / Cliente</span>
               <span className="w-24 text-center">Vencimento</span>
               <span className="w-24 text-center">Cumprido em</span>
@@ -4369,7 +4369,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
                 };
                 return (
-                  <div key={deadline.id} className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
+                  <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
                     {/* Prazo */}
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[deadline.priority] || 'bg-slate-300'}`} />

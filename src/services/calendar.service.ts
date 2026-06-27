@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import { syncBus } from '../lib/syncBus';
 import type {
   CalendarEvent,
+  CalendarEventAudit,
   CreateCalendarEventDTO,
   UpdateCalendarEventDTO,
   CalendarEventType,
@@ -158,6 +159,50 @@ class CalendarService {
     if (eventType) query = query.eq('event_type', eventType);
     const { error } = await query;
     if (error) throw new Error(error.message);
+  }
+
+  /**
+   * Retorna o histórico de auditoria de um compromisso específico,
+   * ordenado do mais recente para o mais antigo.
+   */
+  async getEventAudit(calendarEventId: string): Promise<CalendarEventAudit[]> {
+    const { data, error } = await supabase
+      .from('calendar_event_audit')
+      .select('*')
+      .eq('calendar_event_id', calendarEventId)
+      .order('changed_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar auditoria do evento:', error);
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as CalendarEventAudit[];
+  }
+
+  /**
+   * Retorna todas as entradas de auditoria de um período, útil para
+   * relatórios administrativos. Limit padrão de 200 registros.
+   */
+  async listAudit(options?: {
+    from?: string;
+    to?: string;
+    action?: 'create' | 'update' | 'delete';
+    limit?: number;
+  }): Promise<CalendarEventAudit[]> {
+    let query = supabase
+      .from('calendar_event_audit')
+      .select('*')
+      .order('changed_at', { ascending: false })
+      .limit(options?.limit ?? 200);
+
+    if (options?.from) query = query.gte('changed_at', options.from);
+    if (options?.to)   query = query.lte('changed_at', options.to);
+    if (options?.action) query = query.eq('action', options.action);
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return (data ?? []) as CalendarEventAudit[];
   }
 }
 

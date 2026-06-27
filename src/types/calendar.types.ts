@@ -62,3 +62,27 @@ export interface CreateCalendarEventDTO {
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}
+
+// ---------------------------------------------------------------------------
+// Auditoria
+// ---------------------------------------------------------------------------
+
+export type CalendarAuditAction = 'create' | 'update' | 'delete';
+
+export interface CalendarAuditField {
+  before: unknown;
+  after: unknown;
+}
+
+export interface CalendarEventAudit {
+  id: string;
+  calendar_event_id: string | null;
+  action: CalendarAuditAction;
+  changed_at: string;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  /** Presente somente em `update`: { campo: { before, after } } */
+  changed_fields: Record<string, CalendarAuditField> | null;
+}
