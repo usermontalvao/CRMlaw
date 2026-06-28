@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.276': { name: 'Cafe Thread Visivel', emoji: '[speech_balloon]' },
   '1.10.275': { name: 'Cafe Link Publico Direto', emoji: '[link]' },
   '1.10.274': { name: 'Cafe WhatsApp Coeso', emoji: '[green_heart]' },
   '1.10.273': { name: 'Cafe Operacao Afinada', emoji: '[sparkles]' },
@@ -927,6 +928,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.276',
+    date: '28/06/2026',
+    summary: 'O container persistente do modulo WhatsApp foi ajustado para preservar a altura real da tela e manter a thread com rolagem correta, sem cortar o compositor.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Container do WhatsApp deixou de cortar o compositor na base da tela', description: 'A montagem persistente do modulo saiu de `display: contents` para uma caixa flex com altura definida, permitindo que a thread role corretamente e que o compositor permaneça sempre visivel dentro da viewport.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Layout persistente ficou mais previsivel ao alternar modulos', description: 'A troca entre abas continua preservando o estado vivo do WhatsApp, mas agora com um ancestral que respeita `height: 100%` no Chrome e evita comportamento inconsistente de layout.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.275',
     date: '28/06/2026',

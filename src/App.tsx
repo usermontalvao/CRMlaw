@@ -2693,7 +2693,13 @@ useEffect(() => {
             {/* WhatsApp: montado uma vez e mantido vivo (display:none quando inativo)
                 para preservar estado da inbox e o realtime entre trocas de aba. */}
             {whatsappEverOpened && (
-              <div style={{ display: activeModule === 'whatsapp' ? 'contents' : 'none' }}>
+              // Caixa real (flex + h-full) em vez de `display: contents`: o Chrome
+              // não resolve `height: 100%` do módulo através de um ancestral
+              // `display: contents`, então a thread crescia até o tamanho do
+              // conteúdo e o compositor ficava cortado abaixo da viewport. Com uma
+              // caixa de altura definida, o módulo recebe a altura correta e o
+              // compositor fica sempre visível (a thread rola acima dele).
+              <div className="min-h-0 flex-col" style={{ display: activeModule === 'whatsapp' ? 'flex' : 'none', height: '100%' }}>
                 <WhatsAppModule
                   openConversationId={moduleParams['whatsapp'] ? JSON.parse(moduleParams['whatsapp']).conversationId : undefined}
                   onParamConsumed={() => clearModuleParams('whatsapp')}
