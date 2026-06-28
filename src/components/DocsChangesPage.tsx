@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.275': { name: 'Cafe Link Publico Direto', emoji: '[link]' },
   '1.10.274': { name: 'Cafe WhatsApp Coeso', emoji: '[green_heart]' },
   '1.10.273': { name: 'Cafe Operacao Afinada', emoji: '[sparkles]' },
   '1.10.272': { name: 'Cafe Auditoria Continua', emoji: '[signature]' },
@@ -926,6 +927,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.275',
+    date: '28/06/2026',
+    summary: 'Os links publicos compartilhados pelo WhatsApp passaram a usar a rota funcional do SPA em producao no Render, evitando quebra de acesso por regra de borda inexistente.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Link publico compartilhado voltou a abrir corretamente no dominio principal', description: 'A geracao do link de compartilhamento deixou de depender da rota `/l/...` que exigia proxy de borda nao suportado na publicacao atual e passou a apontar para a URL publica funcional do SPA.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Configuracao de deploy foi alinhada ao comportamento real do Render', description: 'A documentacao inline e a configuracao removeram a expectativa de redirect externo no `render.yaml`, reduzindo divergencia entre repositorio e ambiente publicado.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.274',
     date: '28/06/2026',

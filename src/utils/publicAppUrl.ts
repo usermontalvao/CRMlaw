@@ -59,19 +59,22 @@ export function buildPublicPermalinkUrl(slug: string): string {
 }
 
 /**
- * URL de preview para compartilhamento via WhatsApp.
- * O bot do WhatsApp scrapes esta URL e recebe OG tags personalizadas com nome
- * do signatário / documento / template. Browsers reais recebem redirect 302
- * para a URL do SPA.
+ * URL de compartilhamento via WhatsApp dos kits de preenchimento/assinatura.
  *
- * Servida pelo próprio domínio do app (ex.: jurius.com.br/l/preencher/<token>)
- * via proxy do Netlify para o edge function `link-preview` — assim o cliente vê
- * um link de marca, e não o domínio cru `.supabase.co`. O proxy preserva o
- * comportamento: OG tags para o robô, 302 para o SPA em navegador real.
- * Ver netlify.toml ([[redirects]] /l/*) e supabase/functions/link-preview.
+ * Aponta direto para a rota do SPA no próprio domínio (ex.:
+ * jurius.com.br/#/preencher/<token>) — link de marca e que funciona sem depender
+ * de regras de proxy na borda (o serviço Render em produção ignora a seção
+ * `routes` do render.yaml, então `/l/...` dava 404).
+ *
+ * Trade-off: sem o card de preview rico (OG tags) que o edge function
+ * `link-preview` gera. Para recuperar o card MANTENDO o domínio, é preciso uma
+ * regra de proxy na BORDA (Cloudflare Worker/Redirect Rule em jurius.com.br/l/*
+ * → functions/v1/link-preview, ou domínio custom do Supabase) — config de
+ * dashboard, fora do repositório. Enquanto isso não existe, este link direto é o
+ * comportamento correto e funcional.
  */
 export function buildWaPreviewUrl(linkType: 'assinar' | 'preencher' | 'p', token: string): string {
-  return `${getPublicAppBaseUrl()}/l/${linkType}/${token}`;
+  return buildPublicHashUrl(`/${linkType}/${token}`);
 }
 
 /** Página pública dos Termos de Uso da Assinatura (versionada). */

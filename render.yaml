@@ -15,15 +15,6 @@ services:
         name: Cache-Control
         value: public, max-age=31536000, immutable
     routes:
-      # Preview de links para WhatsApp/redes sociais: mantém o domínio jurius.com.br
-      # no link compartilhado e redireciona para o edge function link-preview, que
-      # serve as OG tags ao robô e faz 302 para o SPA em navegador real. Render
-      # estático não faz proxy para URL externa (rewrite é só interno), mas suporta
-      # redirect externo — o robô segue o redirect e o card aparece normalmente.
-      # DEVE vir antes do catch-all do SPA.
-      - type: redirect
-        source: /l/*
-        destination: https://uajwkqipbyxzvwjpitxl.supabase.co/functions/v1/link-preview/:splat
       - type: rewrite
         source: /*
         destination: /index.html
