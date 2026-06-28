@@ -108,6 +108,7 @@ export const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | nu
     || !!trackedReq?.signed_at
     || (trackedReq?.signers ?? []).some(sg => !!sg.signed_at || !!sg.refused_at);
   const trackedActive = !!trackedFill?.last_seen_at && (Date.now() - new Date(trackedFill.last_seen_at).getTime() <= 30_000);
+  const signerActive = !!trackedSigner?.last_seen_at && (Date.now() - new Date(trackedSigner.last_seen_at).getTime() <= 30_000);
   let fillLabel: string | null = null;
   let fillTone = 'bg-slate-100 text-slate-600';
   if (trackedFill && !trackedClosed) {
@@ -141,6 +142,21 @@ export const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | nu
       fillTone = 'bg-slate-100 text-slate-600';
     }
   }
+  // Histórico completo do kit (enviou → abriu → preencheu → abriu assinatura →
+  // saiu → assinou/recusou). Cada timestamp disponível vira um evento; ordenamos
+  // cronologicamente para o cartão hover do badge.
+  type KitEvent = { at: string; label: string; tone: string };
+  const kitHistory: KitEvent[] = trackedFill ? ([
+    trackedFill.created_at && { at: trackedFill.created_at, label: 'Link do kit enviado', tone: 'text-slate-500' },
+    trackedFill.opened_at && { at: trackedFill.opened_at, label: 'Abriu a página do kit', tone: 'text-blue-600' },
+    trackedFill.submitted_at && { at: trackedFill.submitted_at, label: 'Preencheu e enviou o kit', tone: 'text-amber-600' },
+    (trackedSigner?.opened_at || trackedSigner?.viewed_at) && { at: (trackedSigner.opened_at || trackedSigner.viewed_at)!, label: 'Abriu a página de assinatura', tone: 'text-sky-600' },
+    trackedSigner?.last_seen_at && { at: trackedSigner.last_seen_at, label: signerActive ? 'Na página de assinatura agora' : 'Saiu da página de assinatura', tone: signerActive ? 'text-violet-600' : 'text-blue-600' },
+    (!trackedSigner?.last_seen_at && trackedFill.last_seen_at) && { at: trackedFill.last_seen_at, label: trackedActive ? 'Na tela do kit agora' : 'Saiu do kit', tone: trackedActive ? 'text-violet-600' : 'text-blue-600' },
+    trackedSigner?.refused_at && { at: trackedSigner.refused_at, label: 'Recusou a assinatura', tone: 'text-rose-600' },
+    (trackedSigner?.signed_at || trackedReq?.signed_at) && { at: (trackedSigner?.signed_at || trackedReq?.signed_at)!, label: 'Assinou o kit', tone: 'text-emerald-600' },
+  ].filter(Boolean) as KitEvent[])
+    .sort((a, b) => a.at.localeCompare(b.at)) : [];
   return (
     <div className={`flex items-center gap-y-1 flex-wrap bg-amber-50/70 border-b border-amber-100 text-[12px] text-slate-600 ${embedded ? 'gap-x-3 px-3 py-1.5' : 'gap-x-4 px-5 py-2'}`}>
       <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-800">
@@ -158,16 +174,33 @@ export const ConversationSummaryBanner: React.FC<{ overview: ClientOverview | nu
         </span>
       )}
       {trackedFill && fillLabel && (
-        <span className={`inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-[11px] font-semibold ${fillTone}`}>
-          <FilePlus size={12} /> {fillLabel}
-          {onDismissTemplateFill && (
-            <button onClick={() => onDismissTemplateFill(trackedFill.id)}
-              title="Parar de acompanhar este link e interromper os lembretes automáticos"
-              className="ml-1 inline-flex items-center gap-0.5 pl-1 pr-1.5 py-0.5 rounded-full bg-white/80 border border-black/10 text-[10px] font-semibold text-slate-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition">
-              <X size={11} strokeWidth={2.75} /> Parar
-            </button>
+        <HoverDetail width="w-80" trigger={
+          <span className={`inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-[11px] font-semibold ${fillTone}`}>
+            <FilePlus size={12} /> {fillLabel}
+            {onDismissTemplateFill && (
+              <button onClick={() => onDismissTemplateFill(trackedFill.id)}
+                title="Parar de acompanhar este link e interromper os lembretes automáticos"
+                className="ml-1 inline-flex items-center gap-0.5 pl-1 pr-1.5 py-0.5 rounded-full bg-white/80 border border-black/10 text-[10px] font-semibold text-slate-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition">
+                <X size={11} strokeWidth={2.75} /> Parar
+              </button>
+            )}
+          </span>
+        }>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Histórico do kit{trackedFill.template_name ? ` · ${trackedFill.template_name}` : ''}</p>
+          {kitHistory.length > 0 ? (
+            <ol className="relative ml-1 space-y-2.5 border-l border-[#e7e5df] pl-3">
+              {kitHistory.map((ev, i) => (
+                <li key={i} className="relative">
+                  <span className={`absolute -left-[15px] top-1 h-1.5 w-1.5 rounded-full ring-2 ring-white ${ev.tone.replace('text-', 'bg-')}`} />
+                  <span className={`block text-[12px] font-semibold ${ev.tone}`}>{ev.label}</span>
+                  <span className="block text-[11px] text-slate-400">{fmtDateTime(ev.at)}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-[12px] text-slate-400">Sem eventos registrados ainda.</p>
           )}
-        </span>
+        </HoverDetail>
       )}
       {s.processCount > 0 && (
         <HoverDetail trigger={

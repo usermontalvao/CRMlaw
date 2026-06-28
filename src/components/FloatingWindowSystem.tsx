@@ -52,7 +52,7 @@ interface FloatingWindowSystemProps {
 
 const MIN_W = 400;
 const MIN_H = 300;
-const TASKBAR_H = 44;
+export const TASKBAR_H = 44;
 export const MAX_WINDOWS = 5;
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';

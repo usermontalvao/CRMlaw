@@ -73,6 +73,15 @@ export function useClientOverview(
     return () => { alive = false; };
   }, [selectedClientId]);
 
+  // Histórico do kit em tempo real: os heartbeats de presença (opened_at/
+  // last_seen_at do link e do signatário) não disparam realtime de assinatura,
+  // então revalidamos o overview periodicamente enquanto a conversa está aberta.
+  useEffect(() => {
+    if (!selectedClientId) return;
+    const id = window.setInterval(() => reloadOverview(), 12_000);
+    return () => window.clearInterval(id);
+  }, [selectedClientId, reloadOverview]);
+
   // ── Status de documentos por cliente (chips de lista/cabeçalho), em tempo real ──
   const [docStatusByClient, setDocStatusByClient] = useState<Record<string, 'awaiting' | 'ready'>>({});
   const [trackedSignatureStatusByClient, setTrackedSignatureStatusByClient] = useState<Record<string, ClientTrackedSignatureStatus>>({});

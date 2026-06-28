@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
-import { FloatingWindowSystem, useFloatingWindows, MAX_WINDOWS } from './components/FloatingWindowSystem';
+import { FloatingWindowSystem, useFloatingWindows, MAX_WINDOWS, TASKBAR_H } from './components/FloatingWindowSystem';
 import type { FloatingModuleKey } from './components/FloatingWindowSystem';
 import { NotificationBell } from './components/NotificationBell';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
@@ -2273,7 +2273,12 @@ useEffect(() => {
       </HiddenMenuModulesContext.Provider>
 
         {/* Main Content Area */}
-      <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'h-[100dvh] overflow-hidden' : ''}`}>
+      <div
+        className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'overflow-hidden' : ''}`}
+        style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email'
+          ? { height: `calc(100dvh - ${floatWins.length > 0 ? TASKBAR_H : 0}px)` }
+          : undefined}
+      >
         {/* Cloud Mobile Header - Pill-shaped navigation shell */}
         {activeModule === 'cloud' ? (
           <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
@@ -2985,4 +2990,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

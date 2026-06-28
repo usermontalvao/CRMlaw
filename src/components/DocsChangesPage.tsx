@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.277': { name: 'Cafe Kit Rastreador', emoji: '[eyes]' },
   '1.10.276': { name: 'Cafe Thread Visivel', emoji: '[speech_balloon]' },
   '1.10.275': { name: 'Cafe Link Publico Direto', emoji: '[link]' },
   '1.10.274': { name: 'Cafe WhatsApp Coeso', emoji: '[green_heart]' },
@@ -928,6 +929,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.277',
+    date: '28/06/2026',
+    summary: 'O WhatsApp passou a reagir melhor ao modo bloco com taskbar inferior e o resumo do kit de assinatura ganhou histórico detalhado de navegação e assinatura.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Taskbar do modo bloco deixou de cortar o campo de mensagem', description: 'O shell dos modulos de conversa passou a descontar a altura da taskbar das janelas flutuantes, evitando que o compositor do WhatsApp fique escondido quando a barra inferior estiver visivel.' },
+        { type: 'feature' as const, title: 'Resumo do kit passou a exibir historico completo no hover', description: 'O badge de acompanhamento do kit agora mostra a trilha de eventos relevantes, incluindo envio, abertura do kit, preenchimento, entrada na assinatura, saida da pagina, recusa e assinatura.' },
+        { type: 'improvement' as const, title: 'Overview do cliente passou a revalidar a presenca do kit em tempo real leve', description: 'Enquanto a conversa fica aberta, o resumo do cliente reconsulta periodicamente os heartbeats de preenchimento e assinatura para refletir melhor entradas e saidas da pagina sem depender apenas de realtime de assinatura.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Shell principal passou a respeitar melhor overlays estruturais', description: 'A area util dos modulos com layout de conversa agora considera a presenca de elementos fixos do workspace, reduzindo risco de sobreposicao visual no rodape.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.276',
     date: '28/06/2026',
