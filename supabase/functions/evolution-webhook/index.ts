@@ -152,6 +152,9 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   const altJid: string = key?.remoteJidAlt || '';
   const realJid = altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid;
   const phone = realJid.split('@')[0];
+  // ATENÇÃO: `pushName` só representa o nome do CONTATO quando a mensagem é
+  // RECEBIDA (!fromMe). Em mensagens próprias (fromMe) ele é o nome do dono da
+  // conta conectada — nunca deve virar `contact_name` (ver guarda mais abaixo).
   const pushName: string | null = m?.pushName || null;
 
   const msg = m?.message || {};
@@ -255,8 +258,12 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   }
 
   // Atualiza nome/telefone reais quando ainda não temos.
+  // `pushName` só vale como nome do CONTATO em mensagens recebidas: numa mensagem
+  // própria (fromMe) o pushName é o nome do dono da conta conectada — aplicá-lo
+  // batizava todo contato novo com o nome do atendente (ex.: a saudação automática
+  // disparada ao abrir a conversa gravava "pedro" como contact_name).
   const patch: Record<string, unknown> = {};
-  if (pushName) patch.contact_name = pushName;
+  if (pushName && !fromMe) patch.contact_name = pushName;
   if (phone) patch.contact_phone = phone;
   if (Object.keys(patch).length) {
     await admin.from('whatsapp_conversations').update(patch)

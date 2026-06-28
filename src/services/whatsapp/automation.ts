@@ -20,6 +20,8 @@ export const automationApi = {
     conversationId: string; channelId?: string | null; scheduledAt: string;
     text?: string; type?: WhatsAppScheduledMessage['type'];
     storagePath?: string; mimeType?: string; fileName?: string;
+    /** 'reconnect' → retida aguardando reconexão automática (não é agendamento do usuário). */
+    holdReason?: 'reconnect';
   }): Promise<WhatsAppScheduledMessage> {
     if (new Date(input.scheduledAt).getTime() < Date.now() - 30000) throw new Error('Escolha uma data/hora no futuro.');
     const type = input.type || 'text';
@@ -34,6 +36,7 @@ export const automationApi = {
       mime_type: input.mimeType || null,
       file_name: input.fileName || null,
       scheduled_at: input.scheduledAt,
+      hold_reason: input.holdReason ?? null,
       created_by: auth?.user?.id ?? null,
     }).select('*').single();
     if (error) throw new Error(error.message);

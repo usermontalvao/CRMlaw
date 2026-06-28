@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { FilePlus, Loader2, Trash2, Plus } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
 import { whatsappService } from '../../services/whatsapp.service';
+import { sendTextResilient } from '../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../contexts/ToastContext';
 
 const DOC_QUICK_ADD = ['Documento de identificação', 'Comprovante de residência', 'Extrato do FGTS', 'Carteira de trabalho', 'Holerite'];
@@ -64,10 +65,16 @@ export const RequestDocumentModal: React.FC<{
         conversationId,
         `\u{1F4C4} Documentos solicitados: ${noteList}${dueDate ? ` (prazo ${new Date(dueDate + 'T00:00:00').toLocaleDateString('pt-BR')})` : ''}`,
       ).catch(() => {});
+      let queued = false;
       if (sendMsg && clientMsg.trim()) {
-        await whatsappService.sendText({ conversationId, text: clientMsg.trim() });
+        // Resiliente: canal fora → mensagem retida para reenvio automático.
+        const r = await sendTextResilient({ conversationId, text: clientMsg.trim() });
+        queued = r.queued;
       }
-      toast.success('Solicitação de documento registrada' + (sendMsg ? ' e mensagem enviada.' : '.'));
+      toast.success(
+        'Solicitação de documento registrada' +
+        (sendMsg ? (queued ? '. Mensagem na fila (reenvio automático ao reconectar).' : ' e mensagem enviada.') : '.'),
+      );
       onCreated?.();
       onClose();
     } catch (e: any) { toast.error('Erro ao registrar solicitação', e.message); }

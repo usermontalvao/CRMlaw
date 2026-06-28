@@ -1790,7 +1790,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             action: () => void moveEmailToFolder(ctxMenu.m, 'spam'),
             danger: true,
           },
-          ctxMenu.m.direction === 'inbound' && ctxMenu.m.from_address?.includes('@') && {
+          ctxMenu.m.direction === 'inbound' && !!ctxMenu.m.from_address?.includes('@') && {
             icon: <Ban className="h-4 w-4" />,
             label: `Bloquear @${ctxMenu.m.from_address.split('@')[1]}`,
             action: () => void blockDomain(ctxMenu.m),

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.274': { name: 'Cafe WhatsApp Coeso', emoji: '[green_heart]' },
   '1.10.273': { name: 'Cafe Operacao Afinada', emoji: '[sparkles]' },
   '1.10.272': { name: 'Cafe Auditoria Continua', emoji: '[signature]' },
   '1.10.271': { name: 'Cafe Emails Alinhados', emoji: '[mail]' },
@@ -925,6 +926,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.274',
+    date: '28/06/2026',
+    summary: 'O modulo WhatsApp foi consolidado com extracoes estruturais, envio resiliente em mais pontos do fluxo e reforco na trilha operacional de reconexao e fila automatica.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Modulo WhatsApp foi reorganizado em componentes e hooks dedicados', description: 'A tela principal deixou de concentrar blocos grandes demais e passou a delegar partes relevantes da interface e da logica operacional para arquivos especificos, reduzindo acoplamento e facilitando manutencao.' },
+        { type: 'fix' as const, title: 'Envio ganhou camada mais resiliente contra desconexao do canal', description: 'Composer, funcoes auxiliares e edge functions foram alinhados para detectar reconexao pendente, manter mensagens na fila quando necessario e evitar falhas definitivas prematuras durante oscilacoes da instancia.' },
+        { type: 'fix' as const, title: 'Contato novo deixou de herdar nome indevido do agente', description: 'O webhook do WhatsApp foi ajustado para preservar corretamente o nome real do contato na entrada de novas conversas, evitando contaminacao com o nome do atendente.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Versionamento e deploy operacional acompanharam a consolidacao', description: 'A release inclui ajustes de configuracao, migration de apoio e scripts auxiliares para sustentar a reorganizacao do fluxo sem perder rastreabilidade nem previsibilidade de publicacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.273',
     date: '27/06/2026',

@@ -25,6 +25,64 @@ const CORS = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+function mapState(state: string): string {
+  if (state === 'open') return 'connected';
+  if (state === 'connecting') return 'connecting';
+  return 'disconnected';
+}
+
+async function persistChannelStatus(admin: any, channelId: string, state: string) {
+  const mapped = mapState(state);
+  await admin.from('whatsapp_instances').update({
+    status: mapped,
+    connected_at: mapped === 'connected' ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', channelId);
+}
+
+/**
+ * Evita falso "desconectado" por status local stale e tenta religar a instância
+ * automaticamente quando a sessão ainda é recuperável na Evolution.
+ */
+async function ensureChannelReady(
+  admin: any,
+  evo: (path: string, init?: RequestInit) => Promise<Response>,
+  channelId: string,
+  instanceName: string,
+  cachedStatus: string | null | undefined,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const inst = encodeURIComponent(instanceName);
+  const readState = async (): Promise<string> => {
+    const res = await evo(`/instance/connectionState/${inst}`);
+    if (!res.ok) return cachedStatus === 'connected' ? 'open' : 'close';
+    const out = await res.json().catch(() => ({}));
+    return out?.instance?.state || out?.state || 'close';
+  };
+
+  let state = await readState();
+  await persistChannelStatus(admin, channelId, state).catch(() => {});
+  if (state === 'open') return { ok: true };
+
+  // Tenta reconectar automaticamente. Se a sessão ainda existir, a Evolution
+  // costuma voltar sem exigir QR. Se exigir QR, devolvemos erro claro.
+  try {
+    await evo(`/instance/connect/${inst}`, { method: 'GET' }).catch(() => null);
+  } catch { /* segue para rechecagem */ }
+
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    state = await readState();
+    await persistChannelStatus(admin, channelId, state).catch(() => {});
+    if (state === 'open') return { ok: true };
+  }
+
+  const mapped = mapState(state);
+  if (mapped === 'connecting') {
+    return { ok: false, message: 'Canal reconectando automaticamente. Aguarde alguns segundos e tente novamente.' };
+  }
+  return { ok: false, message: 'Canal desconectado e não reconectou sozinho. Abra Configurações → Integrações → WhatsApp para revalidar o número.' };
+}
+
 /** Extrai mensagem de erro legível de uma resposta da Evolution API. */
 function evoError(out: any, fallback: string): string {
   // Evolution v2 coloca o detalhe em response.message (array ou string)
@@ -127,6 +185,11 @@ Deno.serve(async (req: Request) => {
   }
   const base = server.base_url.replace(/\/+$/, '');
   const apikey = server.api_key!;
+  const evo = (path: string, init?: RequestInit) =>
+    fetch(`${base}${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', apikey, ...(init?.headers || {}) },
+    });
 
   if (body?.action === 'edit') return await handleEdit(admin, base, apikey, body);
   if (body?.action === 'block' || body?.action === 'unblock') {
@@ -167,8 +230,11 @@ Deno.serve(async (req: Request) => {
   const { data: channel } = await admin.from('whatsapp_instances')
     .select('instance_name, status').eq('id', instanceId).maybeSingle();
   if (!channel?.instance_name) return json({ error: 'Canal sem instância configurada' }, 400);
-  if (channel.status !== 'connected') {
-    return json({ error: `Canal desconectado (${channel.status}). Reconecte o número em Configurações → Integrações → WhatsApp.` }, 503);
+  const ready = await ensureChannelReady(admin, evo, instanceId, channel.instance_name, channel.status);
+  if (!ready.ok) {
+    // Flag estruturada: o cliente (frontend e scheduler) detecta "canal fora" sem
+    // depender de casar o texto da mensagem — contrato robusto para a auto-fila.
+    return json({ error: ready.message, reconnect_pending: true }, 503);
   }
   const inst = encodeURIComponent(channel.instance_name);
 

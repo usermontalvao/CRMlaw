@@ -186,6 +186,8 @@ export interface WhatsAppScheduledMessage {
   scheduled_at: string;
   status: WhatsAppScheduledStatus;
   error: string | null;
+  /** NULL = agendada pelo usuário; 'reconnect' = retida aguardando reconexão automática do canal. */
+  hold_reason: string | null;
   created_by: string | null;
   created_at: string;
   sent_at: string | null;

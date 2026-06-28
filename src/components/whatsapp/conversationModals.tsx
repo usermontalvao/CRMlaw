@@ -2,10 +2,11 @@
 // atendimento. Extraídos de WhatsAppModule.tsx — autocontidos, dependem só das
 // primitivas de UI compartilhadas, do serviço e do contexto de toast.
 import React, { useState } from 'react';
-import { Ban, Loader2, CheckCircle2, ArrowRightLeft } from 'lucide-react';
+import { Ban, Loader2, CheckCircle2, ArrowRightLeft, ShieldCheck } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary, waBtnDanger } from './ui';
 import { prettyPhone, agentLabel } from './format';
 import { whatsappService, type StaffOption } from '../../services/whatsapp.service';
+import { sendTextResilient } from '../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppConversation, WhatsAppDepartment } from '../../types/whatsapp.types';
 
@@ -52,9 +53,11 @@ export const TransferModal: React.FC<{
         note: note.trim() || undefined,
       });
       // Transferência nunca muda: avisa o cliente automaticamente (best-effort).
+      // Resiliente: se o canal estiver fora, o aviso é retido para reenvio
+      // automático em vez de se perder.
       const msg = buildTransferMessage();
       if (msg && !conversation.is_blocked) {
-        try { await whatsappService.sendText({ conversationId: conversation.id, text: msg }); }
+        try { await sendTextResilient({ conversationId: conversation.id, channelId: conversation.instance_id, text: msg }); }
         catch { /* aviso é best-effort; a transferência já foi registrada */ }
       }
       onDone();
@@ -146,6 +149,44 @@ export const BlockContactModal: React.FC<{
         </p>
         <label className={waLabel}>Motivo do bloqueio <span className="text-red-500">*</span></label>
         <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Ex: spam, número trote, contato indevido"
+          className={`${waInput} resize-none`} />
+      </WaDialogBody>
+    </WaDialog>
+  );
+};
+
+// ── Modal: Ativar guarda jurídica ──
+// Substitui o antigo prompt() nativo: coleta um motivo OPCIONAL ao ativar a
+// guarda. Dialog puro de entrada — a mutação/optimismo/toast vivem no hook
+// useWaConversationActions, que recebe o motivo via onConfirm.
+export const LegalHoldModal: React.FC<{
+  subtitle?: string;
+  onClose: () => void;
+  onConfirm: (reason: string | undefined) => void;
+}> = ({ subtitle, onClose, onConfirm }) => {
+  const [reason, setReason] = useState('');
+  return (
+    <WaDialog
+      title="Ativar guarda jurídica"
+      subtitle={subtitle}
+      icon={<ShieldCheck size={18} />}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
+          <button onClick={() => onConfirm(reason.trim() || undefined)} className={waBtnPrimary}>
+            <ShieldCheck size={14} /> Ativar guarda
+          </button>
+        </div>
+      }
+    >
+      <WaDialogBody>
+        <p className="text-[12.5px] text-slate-500 mb-3">
+          A conversa fica protegida da política de retenção (não é purgada). Você pode registrar um motivo.
+        </p>
+        <label className={waLabel}>Motivo da guarda jurídica <span className="font-normal text-slate-400">(opcional, interno)</span></label>
+        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Ex: processo em andamento, ordem judicial"
           className={`${waInput} resize-none`} />
       </WaDialogBody>
     </WaDialog>

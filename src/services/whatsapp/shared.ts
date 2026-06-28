@@ -244,13 +244,24 @@ export async function invokeFn<T = any>(name: string, body: Record<string, any>)
   const { data, error } = await supabase.functions.invoke(name, { body });
   if (error) {
     let msg = error.message || 'Falha na função.';
+    let parsed: any = null;
     const ctx = (error as any).context;
     if (ctx && typeof ctx.json === 'function') {
-      try { const j = await ctx.json(); if (j?.error) msg = j.error; } catch { /* */ }
+      try { parsed = await ctx.json(); if (parsed?.error) msg = parsed.error; } catch { /* */ }
     }
-    throw new Error(msg);
+    // Preserva o corpo estruturado da resposta no erro para detecção robusta
+    // (ex.: reconnect_pending → fila automática), sem depender de casar texto.
+    const e = new Error(msg) as Error & { body?: any; reconnectPending?: boolean };
+    e.body = parsed;
+    if (parsed?.reconnect_pending === true) e.reconnectPending = true;
+    throw e;
   }
-  if (data?.error) throw new Error(data.error);
+  if (data?.error) {
+    const e = new Error(data.error) as Error & { body?: any; reconnectPending?: boolean };
+    e.body = data;
+    if (data?.reconnect_pending === true) e.reconnectPending = true;
+    throw e;
+  }
   return data as T;
 }
 

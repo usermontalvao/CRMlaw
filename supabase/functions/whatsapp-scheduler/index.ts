@@ -8,6 +8,17 @@ const TOKEN = Deno.env.get('WA_SCHEDULER_TOKEN') || 'wa-scheduler-2026';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+// Detecção robusta de "canal fora": prioriza a flag estruturada que o
+// evolution-send devolve (reconnect_pending) e cai no texto só por compatibilidade.
+function isReconnectPending(flag: unknown, message: string): boolean {
+  if (flag === true) return true;
+  const lower = (message || '').toLowerCase();
+  return lower.includes('canal desconectado')
+    || lower.includes('reconectando automaticamente')
+    || lower.includes('aguarde alguns segundos')
+    || lower.includes('não reconectou sozinho');
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   if (url.searchParams.get('token') !== TOKEN) {
@@ -59,14 +70,32 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify(payload),
       });
       const j = await resp.json().catch(() => ({}));
-      if (!resp.ok || j?.error) throw new Error(j?.error || `HTTP ${resp.status}`);
+      if (!resp.ok || j?.error) {
+        const err = new Error(j?.error || `HTTP ${resp.status}`) as Error & { reconnectPending?: boolean };
+        if (j?.reconnect_pending === true) err.reconnectPending = true;
+        throw err;
+      }
       await admin.from('whatsapp_scheduled_messages')
         .update({ status: 'sent', sent_at: new Date().toISOString(), error: null })
         .eq('id', m.id);
       sent++;
     } catch (e) {
+      const message = String((e as Error).message || e);
+      if (isReconnectPending((e as { reconnectPending?: boolean })?.reconnectPending, message)) {
+        // Mantém retida e re-tenta em ~1min; marca a origem para a UI distinguir.
+        await admin.from('whatsapp_scheduled_messages')
+          .update({
+            status: 'pending',
+            hold_reason: 'reconnect',
+            error: 'Aguardando reconexão automática do canal.',
+            scheduled_at: new Date(Date.now() + 60_000).toISOString(),
+          })
+          .eq('id', m.id);
+        skipped++;
+        continue;
+      }
       await admin.from('whatsapp_scheduled_messages')
-        .update({ status: 'failed', error: String((e as Error).message || e).slice(0, 500) })
+        .update({ status: 'failed', error: message.slice(0, 500) })
         .eq('id', m.id);
       failed++;
     }
