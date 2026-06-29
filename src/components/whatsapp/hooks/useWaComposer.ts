@@ -10,12 +10,14 @@ import {
   type AgentPrefs,
   type StaffOption,
 } from '../../../services/whatsapp.service';
-import { agentLabel, buildGreeting, conversationPreviewLabel } from '../format';
+import { agentLabel, buildGreeting, conversationPreviewLabel, greetingByHour, prettyPhone } from '../format';
+import { renderTemplate } from '../../../services/whatsapp.service';
 import { isReconnectPendingError, enqueueReconnectHold, sendTextResilient } from '../../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
 } from '../../../types/whatsapp.types';
+import type { WhatsAppModuleConfig } from '../../../services/settings.service';
 
 // Limite operacional alinhado ao teto comum da Evolution/WhatsApp.
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -25,6 +27,7 @@ interface WaComposerArgs {
   selected: WhatsAppConversation | null;
   user: { id: string } | null;
   agentPrefs: AgentPrefs;
+  moduleConfig: WhatsAppModuleConfig;
   staffById: Map<string, StaffOption>;
   aiSession: WhatsAppAiSession | null;
   messages: WhatsAppMessage[];
@@ -71,7 +74,7 @@ export interface WaComposerApi {
  * ausência) e expõe à camada de UI exatamente os contratos que o JSX já usava.
  */
 export function useWaComposer({
-  selectedId, selected, user, agentPrefs, staffById, aiSession,
+  selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
   messages, setMessages, setConversations, refreshMessages,
 }: WaComposerArgs): WaComposerApi {
   const toast = useToastContext();
@@ -320,7 +323,12 @@ export function useWaComposer({
     const me = user ? staffById.get(user.id) : null;
     if ((justAssumed || !hasOutbound) && agentPrefs.auto_greeting && me) {
       try {
-        const greeting = buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
+        const greeting = renderTemplate(moduleConfig.auto_greeting_template, {
+          clientName: selected.contact_name ?? null,
+          clientPhone: prettyPhone(selected.contact_phone),
+          agentName: agentPrefs.short_name || me.name,
+          greeting: greetingByHour(),
+        }) || buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
         // Resiliente: se o canal estiver fora, a saudação é retida (reenvio
         // automático) em vez de se perder antes da mensagem principal.
         await sendTextResilient({ conversationId: selected.id, channelId: selected.instance_id, text: greeting });

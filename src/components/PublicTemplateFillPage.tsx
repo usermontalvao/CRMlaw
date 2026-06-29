@@ -1,6 +1,6 @@
 import PizZip from 'pizzip';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle, MessageCircle, Mail } from 'lucide-react';
 import { templateFillService } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
@@ -221,7 +221,17 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
   const [bundle, setBundle] = useState<Awaited<ReturnType<typeof templateFillService.getBundle>> | null>(null);
   const [placeholders, setPlaceholders] = useState<string[]>([]);
+  const [officeContact, setOfficeContact] = useState<Awaited<ReturnType<typeof templateFillService.getOfficeContact>> | null>(null);
   const heartbeatStartedRef = useRef(false);
+
+  // Contato do escritório para a tela pública (ex.: suporte no link indisponível).
+  useEffect(() => {
+    let cancelled = false;
+    templateFillService.getOfficeContact()
+      .then((c) => { if (!cancelled) setOfficeContact(c); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -884,11 +894,78 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   }
 
   if (!bundle) {
+    const officeName = officeContact?.name?.trim() || 'o escritório responsável';
+    const phoneDigits = (officeContact?.phone || '').replace(/\D/g, '');
+    const waDigits = phoneDigits.length === 10 || phoneDigits.length === 11 ? `55${phoneDigits}` : phoneDigits;
+    const waHref = waDigits.length >= 12
+      ? `https://wa.me/${waDigits}?text=${encodeURIComponent('Olá! Tentei acessar um link de documento que está indisponível e gostaria de receber um novo. Pode me ajudar?')}`
+      : null;
+    const email = officeContact?.email?.trim() || null;
+    const mailHref = email
+      ? `mailto:${email}?subject=${encodeURIComponent('Link de documento indisponível')}&body=${encodeURIComponent('Olá! Tentei acessar um link de documento que está indisponível e gostaria de receber um novo.')}`
+      : null;
+
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="bg-[#f8f7f5] rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 max-w-sm w-full">
-          <p className="text-sm font-medium text-slate-900">Link indisponível</p>
-          <p className="mt-1 text-xs text-slate-500">{error || 'Não foi possível carregar.'}</p>
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-lg mx-auto px-4 py-8">
+          {officeContact?.logo_url ? (
+            <img
+              src={officeContact.logo_url}
+              alt={officeContact.name || 'Logo'}
+              className="h-9 mb-5 object-contain"
+            />
+          ) : null}
+
+          <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 text-orange-500 shrink-0" strokeWidth={2} />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900">Link indisponível</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  Este link de preenchimento expirou ou já foi utilizado. Para continuar,
+                  solicite um novo link a {officeName}.
+                </p>
+              </div>
+            </div>
+
+            {(waHref || mailHref) && (
+              <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                {waHref && (
+                  <a
+                    href={waHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md bg-orange-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-orange-700"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" strokeWidth={2} />
+                    Falar no WhatsApp
+                  </a>
+                )}
+                {mailHref && (
+                  <a
+                    href={mailHref}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white border border-[#e7e5df] px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <Mail className="w-3.5 h-3.5" strokeWidth={2} />
+                    Enviar e-mail
+                  </a>
+                )}
+              </div>
+            )}
+
+            {(officeContact?.name || officeContact?.phone) && (
+              <div className="mt-4 pt-3 border-t border-[#e7e5df]">
+                {officeContact?.name && (
+                  <p className="text-xs font-medium text-slate-700">{officeContact.name}</p>
+                )}
+                {officeContact?.phone && (
+                  <p className="mt-0.5 text-xs text-slate-500">{formatPhoneBR(officeContact.phone)}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <p className="mt-4 text-xs text-slate-400 text-center">Atendimento e suporte ao cliente</p>
         </div>
       </div>
     );

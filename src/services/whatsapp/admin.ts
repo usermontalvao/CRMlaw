@@ -5,7 +5,7 @@ import type {
   WhatsAppAiChannelConfig, WhatsAppAiPlaybook, AiPlaybookQuestion,
 } from '../../types/whatsapp.types';
 import {
-  CHANNEL_TABLE, DEPT_TABLE, DEPT_MEMBER_TABLE, CHANNEL_MEMBER_TABLE, TEMPLATES_TABLE,
+  CHANNEL_TABLE, DEPT_TABLE, DEPT_MEMBER_TABLE, TEMPLATES_TABLE,
   invokeFn, type StaffOption, type AgentPrefs,
 } from './shared';
 
@@ -53,24 +53,6 @@ export const adminApi = {
 
   async channelStatus(channelId: string): Promise<{ status: string; phone?: string }> {
     return invokeFn('evolution-instance', { action: 'status', channel_id: channelId });
-  },
-
-  /** Usuários associados a um canal. Canal sem membros = aberto a todo staff. */
-  async listChannelMembers(channelId: string): Promise<string[]> {
-    const { data } = await supabase
-      .from(CHANNEL_MEMBER_TABLE)
-      .select('user_id')
-      .eq('channel_id', channelId);
-    return (data || []).map((r: any) => r.user_id);
-  },
-
-  async setChannelMembers(channelId: string, userIds: string[]): Promise<void> {
-    await supabase.from(CHANNEL_MEMBER_TABLE).delete().eq('channel_id', channelId);
-    if (userIds.length) {
-      await supabase.from(CHANNEL_MEMBER_TABLE).insert(
-        userIds.map(uid => ({ channel_id: channelId, user_id: uid })),
-      );
-    }
   },
 
   // ── Departamentos ────────────────────────────────────────────

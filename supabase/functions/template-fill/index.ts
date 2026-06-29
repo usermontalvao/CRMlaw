@@ -10,7 +10,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Action = 'get' | 'submit' | 'heartbeat';
+type Action = 'get' | 'submit' | 'heartbeat' | 'contact';
 
 type GetRequestBody = {
   action: 'get';
@@ -112,8 +112,31 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as RequestBody;
     const action = body?.action as Action;
 
-    if (action !== 'get' && action !== 'submit' && action !== 'heartbeat') {
+    if (action !== 'get' && action !== 'submit' && action !== 'heartbeat' && action !== 'contact') {
       throw new Error('Ação inválida');
+    }
+
+    // Contato público do escritório (não exige token) — usado pelas telas
+    // públicas (ex.: link indisponível) para oferecer um canal de suporte.
+    if (action === 'contact') {
+      const { data: row } = await admin
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'office_identity')
+        .maybeSingle();
+      const office = (row?.value ?? {}) as Record<string, string>;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          office: {
+            name: office.name ?? null,
+            phone: office.phone ?? null,
+            email: office.email ?? null,
+            logo_url: office.logo_url ?? null,
+          },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const token = parseToken(body.token);

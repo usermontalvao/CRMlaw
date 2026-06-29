@@ -4,9 +4,10 @@
 import React, { useEffect, useState } from 'react';
 import { FilePlus, Loader2, Trash2, Plus } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
-import { whatsappService } from '../../services/whatsapp.service';
+import { whatsappService, renderTemplate } from '../../services/whatsapp.service';
 import { sendTextResilient } from '../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../contexts/ToastContext';
+import type { WhatsAppModuleConfig } from '../../services/settings.service';
 
 const DOC_QUICK_ADD = ['Documento de identificação', 'Comprovante de residência', 'Extrato do FGTS', 'Carteira de trabalho', 'Holerite'];
 
@@ -17,9 +18,10 @@ export const RequestDocumentModal: React.FC<{
   clientId: string;
   clientName: string | null;
   createdBy: string | null;
+  moduleConfig: WhatsAppModuleConfig;
   onClose: () => void;
   onCreated?: () => void;
-}> = ({ conversationId, clientId, clientName, createdBy, onClose, onCreated }) => {
+}> = ({ conversationId, clientId, clientName, createdBy, moduleConfig, onClose, onCreated }) => {
   const toast = useToastContext();
   const [items, setItems] = useState<DocReqItem[]>([{ label: '', required: true }]);
   const [dueDate, setDueDate] = useState('');
@@ -29,17 +31,18 @@ export const RequestDocumentModal: React.FC<{
   const [saving, setSaving] = useState(false);
 
   const buildMsg = (its: DocReqItem[], name: string | null) => {
-    const firstName = (name || '').split(' ')[0] || '';
     const valid = its.filter(i => i.label.trim());
     const list = valid.map(i => `• ${i.label.trim()}${i.required ? '' : ' (opcional)'}`).join('\n');
-    const head = `Olá${firstName ? `, ${firstName}` : ''}! Para darmos continuidade ao seu atendimento, precisamos que nos envie:`;
-    return valid.length ? `${head}\n\n${list}` : `${head}\n\n`;
+    return renderTemplate(moduleConfig.document_request_message_template, {
+      clientName: name,
+      extraVars: { itens: list },
+    });
   };
 
   // Mantém a mensagem em sincronia com a lista de documentos, até o usuário editá-la.
   useEffect(() => {
     if (!msgDirty) setClientMsg(buildMsg(items, clientName));
-  }, [items, clientName, msgDirty]);
+  }, [items, clientName, msgDirty, moduleConfig.document_request_message_template]);
 
   const setItem = (idx: number, patch: Partial<DocReqItem>) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));

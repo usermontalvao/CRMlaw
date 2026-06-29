@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react';
 import {
   whatsappService,
+  renderTemplate,
   type AgentPrefs,
   type StaffOption,
 } from '../../../services/whatsapp.service';
@@ -19,11 +20,13 @@ import type { ConfirmFn } from '../types';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
 } from '../../../types/whatsapp.types';
+import type { WhatsAppModuleConfig } from '../../../services/settings.service';
 
 interface WaConversationActionsArgs {
   selected: WhatsAppConversation | null;
   user: { id: string } | null;
   agentPrefs: AgentPrefs;
+  moduleConfig: WhatsAppModuleConfig;
   staffById: Map<string, StaffOption>;
   aiSession: WhatsAppAiSession | null;
   confirm: ConfirmFn;
@@ -70,7 +73,7 @@ export interface WaConversationActionsApi {
  * apresentação automática ao aceitar) que vivia inline no WhatsAppModule.
  */
 export function useWaConversationActions({
-  selected, user, agentPrefs, staffById, aiSession, confirm,
+  selected, user, agentPrefs, moduleConfig, staffById, aiSession, confirm,
   setConversations, refreshMessages, closeMuteMenu,
   setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
 }: WaConversationActionsArgs): WaConversationActionsApi {
@@ -105,7 +108,14 @@ export function useWaConversationActions({
       const me = user ? staffById.get(user.id) : null;
       if (me && !selected.is_blocked) {
         try {
-          const text = buildAcceptPresentation({ ...me, name: agentPrefs.short_name || me.name });
+          const text = renderTemplate(moduleConfig.accept_presentation_template, {
+            clientName: selected.contact_name ?? null,
+            clientPhone: selected.contact_phone ?? null,
+            agentName: agentPrefs.short_name || me.name,
+            extraVars: {
+              'agente.primeiro_nome': (agentPrefs.short_name || me.name || '').trim().split(/\s+/).filter(Boolean)[0] || '',
+            },
+          }) || buildAcceptPresentation({ ...me, name: agentPrefs.short_name || me.name });
           // Resiliente: canal fora → apresentação retida para reenvio automático.
           await sendTextResilient({ conversationId: selected.id, channelId: selected.instance_id, text });
           await refreshMessages(selected.id);
@@ -115,7 +125,7 @@ export function useWaConversationActions({
         ? { ...c, awaiting_accept: false, transfer_pending_since: null,
             assigned_user_id: c.assigned_user_id || (user?.id ?? null) } : c));
     } catch (e: any) { toast.error('Falha ao aceitar', e.message); }
-  }, [selected, user, agentPrefs, staffById, refreshMessages, toast, setConversations]);
+  }, [selected, user, agentPrefs, moduleConfig.accept_presentation_template, staffById, refreshMessages, toast, setConversations]);
 
   // Assumir o atendimento direto da fila (sem transferência): vira responsável.
   const handleAssume = useCallback(async () => {

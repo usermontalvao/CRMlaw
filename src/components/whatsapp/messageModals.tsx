@@ -1,7 +1,7 @@
 // Modais ligados à composição de mensagens: seletor de modelos/macros e
 // agendamento de mensagem. Extraídos de WhatsAppModule.tsx — autocontidos.
 import React, { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, CalendarClock, Plus, Loader2, Trash2 } from 'lucide-react';
+import { MessageSquare, CalendarClock, Plus, Loader2, Trash2, Pencil, Save, X } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
 import { whatsappService, renderTemplate } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -22,6 +22,9 @@ export const TemplatePickerModal: React.FC<{
   const [newBody, setNewBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editBody, setEditBody] = useState('');
 
   const load = useCallback(() => {
     whatsappService.listTemplates({ activeOnly: true })
@@ -51,6 +54,30 @@ export const TemplatePickerModal: React.FC<{
       setTemplates(prev => (prev || []).filter(x => x.id !== t.id));
     } catch (e: any) { toast.error('Falha ao excluir modelo', e.message); }
     finally { setDeletingId(null); }
+  };
+
+  const startEdit = (t: WhatsAppTemplate) => {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditBody(t.body);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName('');
+    setEditBody('');
+  };
+
+  const saveEdit = async (t: WhatsAppTemplate) => {
+    if (!editName.trim() || !editBody.trim()) return;
+    setSaving(true);
+    try {
+      await whatsappService.updateTemplate(t.id, { name: editName.trim(), body: editBody.trim() });
+      toast.success('Modelo atualizado.');
+      cancelEdit();
+      load();
+    } catch (e: any) { toast.error('Falha ao atualizar modelo', e.message); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -96,19 +123,46 @@ export const TemplatePickerModal: React.FC<{
           return (
             <div key={t.id}
               className="group/tpl relative rounded-xl border border-[#e7e5df] hover:border-[#00a884] hover:bg-[#00a884]/5 transition">
-              <button onClick={() => onPick(preview)} className="w-full text-left p-3 pr-9">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-700">
-                    <span className="text-[#00a884]">/</span>{t.name}
-                  </span>
-                  {t.category && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">{t.category}</span>}
+              {editingId === t.id ? (
+                <div className="p-3 space-y-2">
+                  <div>
+                    <label className={waLabel}>Atalho / título</label>
+                    <input value={editName} onChange={e => setEditName(e.target.value)} className={waInput} />
+                  </div>
+                  <div>
+                    <label className={waLabel}>Texto da mensagem</label>
+                    <textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={4} className={`${waInput} resize-none`} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={cancelEdit} className={waBtnGhost}><X size={14} /> Cancelar</button>
+                    <button onClick={() => saveEdit(t)} disabled={saving || !editName.trim() || !editBody.trim()} className={waBtnPrimary}>
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[12px] text-slate-500 line-clamp-3 whitespace-pre-wrap break-words">{preview}</p>
-              </button>
-              <button onClick={() => remove(t)} disabled={deletingId === t.id} title="Excluir modelo"
-                className="absolute top-2 right-2 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 opacity-0 group-hover/tpl:opacity-100 transition disabled:opacity-50">
-                {deletingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              </button>
+              ) : (
+                <>
+                  <button onClick={() => onPick(preview)} className="w-full text-left p-3 pr-16">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-700">
+                        <span className="text-[#00a884]">/</span>{t.name}
+                      </span>
+                      {t.category && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">{t.category}</span>}
+                    </div>
+                    <p className="text-[12px] text-slate-500 line-clamp-3 whitespace-pre-wrap break-words">{preview}</p>
+                  </button>
+                  <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover/tpl:opacity-100 transition">
+                    <button onClick={() => startEdit(t)} title="Editar modelo"
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-slate-700 hover:bg-slate-100 transition">
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => remove(t)} disabled={deletingId === t.id} title="Excluir modelo"
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition disabled:opacity-50">
+                      {deletingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}

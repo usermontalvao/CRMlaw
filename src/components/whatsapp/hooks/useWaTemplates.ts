@@ -15,6 +15,7 @@ import { useToastContext } from '../../../contexts/ToastContext';
 import type { StaffOption } from '../../../services/whatsapp.service';
 import type { WhatsAppConversation, WhatsAppMessage, WhatsAppTemplate } from '../../../types/whatsapp.types';
 import type { DocumentTemplate } from '../../../types/document.types';
+import type { WhatsAppModuleConfig } from '../../../services/settings.service';
 
 export type SlashKitItem = {
   kind: 'kit';
@@ -41,6 +42,7 @@ interface WaTemplatesArgs {
   selectedId: string | null;
   user: { id: string } | null;
   staffById: Map<string, StaffOption>;
+  moduleConfig: WhatsAppModuleConfig;
   draft: string;
   editing: WhatsAppMessage | null;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
@@ -65,7 +67,7 @@ export interface WaTemplatesApi {
  * mantém o comportamento (anti-duplicação do mint de kit) que vivia inline.
  */
 export function useWaTemplates({
-  selected, selectedId, user, staffById, draft, editing, setDraft,
+  selected, selectedId, user, staffById, moduleConfig, draft, editing, setDraft,
 }: WaTemplatesArgs): WaTemplatesApi {
   const toast = useToastContext();
 
@@ -162,7 +164,13 @@ export function useWaTemplates({
         guard.lastSlug = item.slug;
         guard.lastAt = Date.now();
         const url = buildWaPreviewUrl('preencher', result.token);
-        setDraft(`Segue o link para preencher e assinar seus documentos:\n\n${url}`);
+        setDraft(renderTemplate(moduleConfig.kit_link_message_template, {
+          clientName: selected?.contact_name ?? null,
+          clientPhone: selected ? prettyPhone(selected.contact_phone) : null,
+          agentName: agentLabel(user ? staffById.get(user.id) : null),
+          greeting: greetingByHour(),
+          extraVars: { url },
+        }));
         setSlashIndex(0);
       } catch (e: any) {
         toast.error('Falha ao gerar link do kit', e?.message || 'Não foi possível gerar o link de preenchimento.');
@@ -173,7 +181,7 @@ export function useWaTemplates({
     }
     setDraft(renderTemplate(item.body, templateCtx));
     setSlashIndex(0);
-  }, [selected?.client_id, selectedId, templateCtx, toast, setDraft]);
+  }, [selected?.client_id, selected?.contact_name, selected?.contact_phone, selectedId, templateCtx, toast, setDraft, moduleConfig.kit_link_message_template, user, staffById]);
 
   return {
     reloadTemplates, templateCtx,

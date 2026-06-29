@@ -139,6 +139,15 @@ async function handleStatusUpdate(admin: any, u: any) {
   await admin.from('whatsapp_messages').update({ status }).eq('id', msg.id);
 }
 
+async function getDefaultDepartmentForChannel(admin: any, instanceId: string): Promise<string | null> {
+  const { data } = await admin.from('whatsapp_channel_departments')
+    .select('department_id')
+    .eq('channel_id', instanceId)
+    .eq('is_default', true)
+    .maybeSingle();
+  return data?.department_id || null;
+}
+
 async function handleMessage(admin: any, instanceId: string, instanceName: string, m: any) {
   const key = m?.key || {};
   const remoteJid: string = key?.remoteJid || '';
@@ -184,17 +193,17 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // 1) por remote_jid exato; 2) se @lid com telefone real conhecido, por
   // contact_phone (variantes do 9º dígito) — pega a thread que o agente já criou
   // via <telefone>@s.whatsapp.net; 3) cria nova pela chave original.
-  let conv: { id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string } | null = null;
+  let conv: { id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string; department_id: string | null } | null = null;
   {
     const { data } = await admin.from('whatsapp_conversations')
-      .select('id, contact_avatar_path, is_blocked, status')
+      .select('id, contact_avatar_path, is_blocked, status, department_id')
       .eq('instance_id', instanceId).eq('remote_jid', remoteJid).maybeSingle();
     conv = data || null;
   }
   if (!conv && remoteJid.includes('@lid') && /^\d{12,13}$/.test(phone)) {
     const variants = phoneVariants(phone);
     const { data } = await admin.from('whatsapp_conversations')
-      .select('id, contact_avatar_path, is_blocked, status')
+      .select('id, contact_avatar_path, is_blocked, status, department_id')
       .eq('instance_id', instanceId)
       .in('contact_phone', variants)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -202,12 +211,25 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     conv = data?.[0] || null;
   }
   if (!conv) {
+    // Conversa nova: nasce no departamento padrão do canal (aba Roteamento).
+    const defaultDepartmentId = await getDefaultDepartmentForChannel(admin, instanceId);
     const { data } = await admin.from('whatsapp_conversations').upsert({
       instance_id: instanceId,
       remote_jid: remoteJid,
       contact_phone: phone,
-    }, { onConflict: 'instance_id,remote_jid' }).select('id, contact_avatar_path, is_blocked, status').single();
+      department_id: defaultDepartmentId,
+    }, { onConflict: 'instance_id,remote_jid' }).select('id, contact_avatar_path, is_blocked, status, department_id').single();
     conv = data || null;
+  } else if (conv.department_id == null) {
+    // Conversa legada sem setor: faz o backfill uma única vez (não em toda mensagem).
+    const defaultDepartmentId = await getDefaultDepartmentForChannel(admin, instanceId);
+    if (defaultDepartmentId) {
+      await admin.from('whatsapp_conversations')
+        .update({ department_id: defaultDepartmentId })
+        .eq('id', conv.id)
+        .is('department_id', null);
+      conv = { ...conv, department_id: defaultDepartmentId };
+    }
   }
   if (!conv?.id) return;
 

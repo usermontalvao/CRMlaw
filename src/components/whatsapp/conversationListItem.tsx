@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag,
+  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -69,7 +69,8 @@ export const ConversationListItem: React.FC<{
   draftPreview: string;
   funnelLabels: FunnelLabel[];
   onSelect: (id: string) => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, onSelect }) => {
+  onDismissTracking?: () => void;
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, onSelect, onDismissTracking }) => {
   const sla = slaSignal(c);
   const slaInt = slaInternalSignal(c);
   const ta = transferAlert(c);
@@ -120,6 +121,15 @@ export const ConversationListItem: React.FC<{
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
             {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
+            {onDismissTracking && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDismissTracking(); }}
+                title="Fechar acompanhamento"
+                className="inline-flex items-center justify-center h-3 w-3 rounded-full bg-white/60 hover:bg-slate-700 hover:text-white transition"
+              >
+                <X size={8} strokeWidth={2.75} />
+              </button>
+            )}
           </span>
           {ds && (
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>

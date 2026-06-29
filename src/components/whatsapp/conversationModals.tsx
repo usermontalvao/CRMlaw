@@ -5,19 +5,21 @@ import React, { useState } from 'react';
 import { Ban, Loader2, CheckCircle2, ArrowRightLeft, ShieldCheck } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary, waBtnDanger } from './ui';
 import { prettyPhone, agentLabel } from './format';
-import { whatsappService, type StaffOption } from '../../services/whatsapp.service';
+import { whatsappService, renderTemplate, type StaffOption } from '../../services/whatsapp.service';
 import { sendTextResilient } from '../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppConversation, WhatsAppDepartment } from '../../types/whatsapp.types';
+import type { WhatsAppModuleConfig } from '../../services/settings.service';
 
 // ── Modal de transferência ──
 export const TransferModal: React.FC<{
   conversation: WhatsAppConversation;
   departments: WhatsAppDepartment[];
   staff: StaffOption[];
+  moduleConfig: WhatsAppModuleConfig;
   onClose: () => void;
   onDone: () => void;
-}> = ({ conversation, departments, staff, onClose, onDone }) => {
+}> = ({ conversation, departments, staff, moduleConfig, onClose, onDone }) => {
   const toast = useToastContext();
   const [dept, setDept] = useState<string>(conversation.department_id || '');
   const [person, setPerson] = useState<string>(conversation.assigned_user_id || '');
@@ -33,11 +35,19 @@ export const TransferModal: React.FC<{
     if (person) {
       const target = staff.find(s => s.user_id === person);
       const label = agentLabel(target) || target?.name;
-      if (label) return `Aguarde um instante, estamos encaminhando seu atendimento para ${label}.`;
+      if (label) return renderTemplate(moduleConfig.transfer_to_agent_template, {
+        clientName: conversation.contact_name ?? null,
+        clientPhone: conversation.contact_phone ?? null,
+        extraVars: { destino: label },
+      });
     }
     if (dept) {
       const d = departments.find(x => x.id === dept);
-      if (d) return `Aguarde um instante, estamos encaminhando seu atendimento para o setor ${d.name}.`;
+      if (d) return renderTemplate(moduleConfig.transfer_to_department_template, {
+        clientName: conversation.contact_name ?? null,
+        clientPhone: conversation.contact_phone ?? null,
+        extraVars: { setor: d.name },
+      });
     }
     return null;
   };
@@ -197,12 +207,13 @@ export const LegalHoldModal: React.FC<{
 export const CloseConversationModal: React.FC<{
   conversation: WhatsAppConversation;
   agent?: StaffOption | null;
+  moduleConfig: WhatsAppModuleConfig;
   onClose: () => void;
   onDone: () => void;
-}> = ({ conversation, onClose, onDone }) => {
+}> = ({ conversation, moduleConfig, onClose, onDone }) => {
   const toast = useToastContext();
   const [reason, setReason] = useState('');
-  const [farewell, setFarewell] = useState('Encerramos este atendimento por agora. Se precisar retomar, é só nos chamar por aqui.');
+  const [farewell, setFarewell] = useState(moduleConfig.close_farewell_default);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {

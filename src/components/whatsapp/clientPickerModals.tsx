@@ -8,6 +8,7 @@ import { prettyPhone, prettyDoc, initials } from './format';
 import { whatsappService, normalizePhone } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppClientLite, WhatsAppChannel } from '../../types/whatsapp.types';
+import type { WhatsAppChannelDepartmentRouting } from '../../services/settings.service';
 
 // ── Vincular cliente à conversa (com alerta anti-duplicado de telefone) ──
 export const ClientPickerModal: React.FC<{
@@ -128,9 +129,10 @@ export const ClientPickerModal: React.FC<{
 // usar o telefone digitado. Reabre conversa existente do mesmo número/canal.
 export const NewConversationModal: React.FC<{
   channels: WhatsAppChannel[];
+  channelRouting: WhatsAppChannelDepartmentRouting[];
   onClose: () => void;
   onOpened: (conversationId: string) => void;
-}> = ({ channels, onClose, onOpened }) => {
+}> = ({ channels, channelRouting, onClose, onOpened }) => {
   const toast = useToastContext();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<WhatsAppClientLite[]>([]);
@@ -161,7 +163,11 @@ export const NewConversationModal: React.FC<{
     setBusy(true);
     try {
       const { conversation_id } = await whatsappService.openConversation({
-        phone, channelId, clientId: client?.id ?? null, contactName: client?.full_name ?? null,
+        phone,
+        channelId,
+        clientId: client?.id ?? null,
+        contactName: client?.full_name ?? null,
+        departmentId: channelRouting.find(item => item.channel_id === channelId)?.default_department_id || null,
       });
       onOpened(conversation_id);
     } catch (e: any) {

@@ -15,7 +15,6 @@ export const MSG_TABLE = 'whatsapp_messages';
 export const CHANNEL_TABLE = 'whatsapp_instances';
 export const DEPT_TABLE = 'whatsapp_departments';
 export const DEPT_MEMBER_TABLE = 'whatsapp_department_members';
-export const CHANNEL_MEMBER_TABLE = 'whatsapp_channel_members';
 export const TRANSFER_TABLE = 'whatsapp_transfers';
 export const NOTES_TABLE = 'whatsapp_internal_notes';
 export const TEMPLATES_TABLE = 'whatsapp_templates';
@@ -62,6 +61,7 @@ export interface TemplateContext {
   agentName?: string | null;
   processNumber?: string | null;
   greeting?: string | null;
+  extraVars?: Record<string, string | null | undefined>;
 }
 
 /**
@@ -71,11 +71,20 @@ export interface TemplateContext {
 export function renderTemplate(body: string, ctx: TemplateContext): string {
   const map: Record<string, string> = {
     'cliente.nome': ctx.clientName || '',
+    'cliente.primeiro_nome': (ctx.clientName || '').trim().split(/\s+/).filter(Boolean)[0] || '',
+    'cliente.primeiro_nome_com_virgula': (() => {
+      const first = (ctx.clientName || '').trim().split(/\s+/).filter(Boolean)[0] || '';
+      return first ? `, ${first}` : '';
+    })(),
     'cliente.telefone': ctx.clientPhone || '',
     'agente.nome': ctx.agentName || '',
+    'agente.primeiro_nome': (ctx.agentName || '').trim().split(/\s+/).filter(Boolean)[0] || '',
     'processo.numero': ctx.processNumber || '',
     'saudacao': ctx.greeting || '',
   };
+  Object.entries(ctx.extraVars || {}).forEach(([key, value]) => {
+    map[key] = value || '';
+  });
   return body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => (k in map ? map[k] : ''));
 }
 

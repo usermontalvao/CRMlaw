@@ -200,6 +200,36 @@ export const WHATSAPP_EVOLUTION_DEFAULTS: WhatsAppEvolutionConfig = {
   api_key: '',
 };
 
+export interface WhatsAppModuleConfig {
+  outside_hours_fallback_message: string;
+  outside_hours_schedule_template: string;
+  auto_greeting_template: string;
+  accept_presentation_template: string;
+  transfer_to_agent_template: string;
+  transfer_to_department_template: string;
+  kit_link_message_template: string;
+  document_request_message_template: string;
+  close_farewell_default: string;
+}
+
+export interface WhatsAppChannelDepartmentRouting {
+  channel_id: string;
+  allowed_department_ids: string[];
+  default_department_id: string | null;
+}
+
+export const WHATSAPP_MODULE_DEFAULTS: WhatsAppModuleConfig = {
+  outside_hours_fallback_message: 'Canal fora do horário de atendimento.',
+  outside_hours_schedule_template: 'Atendimento: {{inicio}}–{{fim}}.',
+  auto_greeting_template: '{{saudacao}}!',
+  accept_presentation_template: 'Olá! Sou {{agente.primeiro_nome}} e vou seguir com o seu atendimento a partir de agora.',
+  transfer_to_agent_template: 'Aguarde um instante, estamos encaminhando seu atendimento para {{destino}}.',
+  transfer_to_department_template: 'Aguarde um instante, estamos encaminhando seu atendimento para o setor {{setor}}.',
+  kit_link_message_template: 'Segue o link para preencher e assinar seus documentos:\n\n{{url}}',
+  document_request_message_template: 'Olá{{cliente.primeiro_nome_com_virgula}}! Para darmos continuidade ao seu atendimento, precisamos que nos envie:\n\n{{itens}}',
+  close_farewell_default: 'Encerramos este atendimento por agora. Se precisar retomar, é só nos chamar por aqui.',
+};
+
 // ── Regras de notificação ──────────────────────────────────────────────────
 
 export type NotificationChannel = 'email' | 'push' | 'whatsapp';
@@ -1492,6 +1522,63 @@ class SettingsService {
 
   async updateWhatsAppEvolutionConfig(config: WhatsAppEvolutionConfig, userName?: string): Promise<void> {
     await this.updateSetting('whatsapp_evolution_config', config, userName);
+  }
+
+  async getWhatsAppModuleConfig(): Promise<WhatsAppModuleConfig> {
+    const stored = await this.getSetting<WhatsAppModuleConfig>('whatsapp_module_config');
+    return { ...WHATSAPP_MODULE_DEFAULTS, ...(stored || {}) };
+  }
+
+  async updateWhatsAppModuleConfig(config: WhatsAppModuleConfig, userName?: string): Promise<void> {
+    await this.updateSetting('whatsapp_module_config', config, userName);
+  }
+
+  /**
+   * Roteamento canal↔departamento (tabela relacional whatsapp_channel_departments).
+   * Mantém o formato agrupado por canal para compatibilidade com os consumidores.
+   */
+  async getWhatsAppChannelDepartmentRouting(): Promise<WhatsAppChannelDepartmentRouting[]> {
+    const { data, error } = await supabase
+      .from('whatsapp_channel_departments')
+      .select('channel_id, department_id, is_default');
+    if (error) throw new Error(error.message);
+
+    const byChannel = new Map<string, WhatsAppChannelDepartmentRouting>();
+    for (const row of data || []) {
+      let entry = byChannel.get(row.channel_id);
+      if (!entry) {
+        entry = { channel_id: row.channel_id, allowed_department_ids: [], default_department_id: null };
+        byChannel.set(row.channel_id, entry);
+      }
+      entry.allowed_department_ids.push(row.department_id);
+      if (row.is_default) entry.default_department_id = row.department_id;
+    }
+    return Array.from(byChannel.values());
+  }
+
+  async updateWhatsAppChannelDepartmentRouting(config: WhatsAppChannelDepartmentRouting[], _userName?: string): Promise<void> {
+    // Reescreve o roteamento de cada canal presente no payload (substituição completa por canal).
+    for (const item of config) {
+      const allowed = Array.from(new Set(item.allowed_department_ids)).filter(Boolean);
+      const defaultId = allowed.includes(item.default_department_id || '') ? item.default_department_id : null;
+
+      const { error: delErr } = await supabase
+        .from('whatsapp_channel_departments')
+        .delete()
+        .eq('channel_id', item.channel_id);
+      if (delErr) throw new Error(delErr.message);
+
+      if (allowed.length === 0) continue;
+
+      const { error: insErr } = await supabase
+        .from('whatsapp_channel_departments')
+        .insert(allowed.map(deptId => ({
+          channel_id: item.channel_id,
+          department_id: deptId,
+          is_default: deptId === defaultId,
+        })));
+      if (insErr) throw new Error(insErr.message);
+    }
   }
 
   async getNotificationRules(): Promise<NotificationRule[]> {

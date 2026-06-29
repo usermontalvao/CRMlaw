@@ -1,9 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
-  Clock, BellOff, Bot, ChevronDown, ChevronUp,
+  Clock, BellOff, Bot, Pencil, MessageSquare, Share2,
 } from 'lucide-react';
-import { settingsService, WHATSAPP_EVOLUTION_DEFAULTS, type WhatsAppEvolutionConfig } from '../services/settings.service';
+import {
+  settingsService,
+  WHATSAPP_EVOLUTION_DEFAULTS,
+  WHATSAPP_MODULE_DEFAULTS,
+  type WhatsAppEvolutionConfig,
+  type WhatsAppChannelDepartmentRouting,
+  type WhatsAppModuleConfig,
+} from '../services/settings.service';
 import { whatsappService, type StaffOption } from '../services/whatsapp.service';
 import type {
   WhatsAppChannel, WhatsAppDepartment, WhatsAppTemplate, WhatsAppBusinessHoursRow,
@@ -40,8 +47,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const [copyConfig, setCopyConfig] = useState<WhatsAppModuleConfig>({ ...WHATSAPP_MODULE_DEFAULTS });
+  const [channelRouting, setChannelRouting] = useState<WhatsAppChannelDepartmentRouting[]>([]);
   const [newTpl, setNewTpl] = useState({ name: '', category: '', body: '' });
+  const [editingTplId, setEditingTplId] = useState<string | null>(null);
+  const [tplDraft, setTplDraft] = useState({ name: '', category: '', body: '' });
   const [addingTpl, setAddingTpl] = useState(false);
+  const [savingTplId, setSavingTplId] = useState<string | null>(null);
+  const [savingCopy, setSavingCopy] = useState(false);
+  const [savingRouting, setSavingRouting] = useState(false);
+  const [activeSection, setActiveSection] = useState<'connection' | 'channels' | 'departments' | 'routing' | 'copies' | 'templates' | 'playbooks'>('connection');
+  const [activeChannelSection, setActiveChannelSection] = useState<'list' | 'new'>('list');
   const [loading, setLoading] = useState(true);
 
   // formulário de canal
@@ -68,14 +84,16 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   const [newDept, setNewDept] = useState({ name: '', color: PALETTE[1] });
   const [addingDept, setAddingDept] = useState(false);
   // membros (canal ou departamento — mesmo editor)
-  const [editMembersFor, setEditMembersFor] = useState<{ type: 'channel' | 'dept'; id: string } | null>(null);
+  const [editMembersFor, setEditMembersFor] = useState<{ id: string } | null>(null);
   const [memberSel, setMemberSel] = useState<Set<string>>(new Set());
   const [savingMembers, setSavingMembers] = useState(false);
 
   const reload = async () => {
     try {
-      const [cfg, chs, depts, st, tpls, pbs] = await Promise.all([
+      const [cfg, copyCfg, routingCfg, chs, depts, st, tpls, pbs] = await Promise.all([
         settingsService.getWhatsAppEvolutionConfig(),
+        settingsService.getWhatsAppModuleConfig(),
+        settingsService.getWhatsAppChannelDepartmentRouting(),
         whatsappService.listChannels(),
         whatsappService.listDepartments(),
         whatsappService.listStaff(),
@@ -83,6 +101,8 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         whatsappService.listPlaybooks().catch(() => [] as WhatsAppAiPlaybook[]),
       ]);
       setServer(cfg);
+      setCopyConfig(copyCfg);
+      setChannelRouting(routingCfg);
       setChannels(chs);
       setDepartments(depts);
       setStaff(st);
@@ -237,11 +257,9 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     }
   };
 
-  const openMembers = async (type: 'channel' | 'dept', id: string) => {
-    setEditMembersFor({ type, id });
-    const ids = type === 'channel'
-      ? await whatsappService.listChannelMembers(id)
-      : await whatsappService.listDepartmentMembers(id);
+  const openMembers = async (id: string) => {
+    setEditMembersFor({ id });
+    const ids = await whatsappService.listDepartmentMembers(id);
     setMemberSel(new Set(ids));
   };
 
@@ -250,11 +268,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     setSavingMembers(true);
     try {
       const ids = Array.from(memberSel);
-      if (editMembersFor.type === 'channel') {
-        await whatsappService.setChannelMembers(editMembersFor.id, ids);
-      } else {
-        await whatsappService.setDepartmentMembers(editMembersFor.id, ids);
-      }
+      await whatsappService.setDepartmentMembers(editMembersFor.id, ids);
       setEditMembersFor(null);
       onFeedback('success', 'Membros atualizados.');
     } catch (e: any) {
@@ -350,6 +364,87 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     }
   };
 
+  const saveCopyConfig = async () => {
+    const pinOk = await requirePin({
+      action: 'update_whatsapp_module_config',
+      resourceType: 'setting',
+      sensitivity: 'high',
+      title: 'Salvar copys do WhatsApp',
+      description: 'Confirme com seu PIN para salvar os textos padrão do módulo WhatsApp.',
+    });
+    if (!pinOk) return;
+    setSavingCopy(true);
+    try {
+      await settingsService.updateWhatsAppModuleConfig(copyConfig, userName);
+      onFeedback('success', 'Copys do WhatsApp salvas!');
+    } catch (e: any) {
+      onFeedback('error', e.message || 'Erro ao salvar copys do WhatsApp.');
+    } finally {
+      setSavingCopy(false);
+    }
+  };
+
+  const getChannelRouting = (channelId: string): WhatsAppChannelDepartmentRouting => {
+    return channelRouting.find(item => item.channel_id === channelId) ?? {
+      channel_id: channelId,
+      allowed_department_ids: [],
+      default_department_id: null,
+    };
+  };
+
+  const updateChannelRouting = (channelId: string, patch: Partial<WhatsAppChannelDepartmentRouting>) => {
+    setChannelRouting(prev => {
+      const current = prev.find(item => item.channel_id === channelId) ?? {
+        channel_id: channelId,
+        allowed_department_ids: [],
+        default_department_id: null,
+      };
+      const next = { ...current, ...patch };
+      const filtered = prev.filter(item => item.channel_id !== channelId);
+      return [...filtered, next];
+    });
+  };
+
+  const toggleAllowedDepartment = (channelId: string, departmentId: string) => {
+    const current = getChannelRouting(channelId);
+    const on = current.allowed_department_ids.includes(departmentId);
+    const nextAllowed = on
+      ? current.allowed_department_ids.filter(id => id !== departmentId)
+      : [...current.allowed_department_ids, departmentId];
+    updateChannelRouting(channelId, {
+      allowed_department_ids: nextAllowed,
+      default_department_id: nextAllowed.includes(current.default_department_id || '') ? current.default_department_id : null,
+    });
+  };
+
+  const saveChannelRouting = async () => {
+    const pinOk = await requirePin({
+      action: 'update_whatsapp_channel_department_routing',
+      resourceType: 'setting',
+      sensitivity: 'high',
+      title: 'Salvar roteamento de canais',
+      description: 'Confirme com seu PIN para salvar departamentos permitidos e padrão por canal.',
+    });
+    if (!pinOk) return;
+    setSavingRouting(true);
+    try {
+      // Envia todos os canais presentes no estado — inclusive os esvaziados,
+      // para que a remoção de departamentos seja persistida (delete por canal).
+      const sanitized = channelRouting
+        .map(item => ({
+          channel_id: item.channel_id,
+          allowed_department_ids: Array.from(new Set(item.allowed_department_ids)).filter(Boolean),
+          default_department_id: item.default_department_id || null,
+        }));
+      await settingsService.updateWhatsAppChannelDepartmentRouting(sanitized, userName);
+      onFeedback('success', 'Roteamento de departamentos por canal salvo!');
+    } catch (e: any) {
+      onFeedback('error', e.message || 'Erro ao salvar roteamento por canal.');
+    } finally {
+      setSavingRouting(false);
+    }
+  };
+
   const removeTemplate = async (t: WhatsAppTemplate) => {
     if (!confirm(`Excluir o modelo "${t.name}"?`)) return;
     try {
@@ -358,6 +453,42 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       onFeedback('success', 'Modelo excluído.');
     } catch (e: any) {
       onFeedback('error', e.message || 'Erro ao excluir.');
+    }
+  };
+
+  const startEditTemplate = (t: WhatsAppTemplate) => {
+    setEditingTplId(t.id);
+    setTplDraft({
+      name: t.name || '',
+      category: t.category || '',
+      body: t.body || '',
+    });
+  };
+
+  const cancelEditTemplate = () => {
+    setEditingTplId(null);
+    setTplDraft({ name: '', category: '', body: '' });
+  };
+
+  const saveTemplateEdit = async (t: WhatsAppTemplate) => {
+    if (!tplDraft.name.trim() || !tplDraft.body.trim()) {
+      onFeedback('error', 'Informe nome e corpo do modelo.');
+      return;
+    }
+    setSavingTplId(t.id);
+    try {
+      await whatsappService.updateTemplate(t.id, {
+        name: tplDraft.name.trim(),
+        category: tplDraft.category.trim() || null,
+        body: tplDraft.body.trim(),
+      });
+      await reload();
+      cancelEditTemplate();
+      onFeedback('success', 'Modelo atualizado.');
+    } catch (e: any) {
+      onFeedback('error', e.message || 'Erro ao atualizar modelo.');
+    } finally {
+      setSavingTplId(null);
     }
   };
 
@@ -390,18 +521,144 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     </div>
   );
 
+  const sectionItems = [
+    { key: 'connection' as const, label: 'Conexão', summary: 'Servidor Evolution e API', icon: QrCode },
+    { key: 'channels' as const, label: 'Canais', summary: 'Números, horários e IA', icon: Phone },
+    { key: 'departments' as const, label: 'Departamentos', summary: 'Setores e membros', icon: Users },
+    { key: 'routing' as const, label: 'Roteamento', summary: 'Canais × departamentos', icon: Share2 },
+    { key: 'copies' as const, label: 'Textos padrão', summary: 'Copys operacionais', icon: Pencil },
+    { key: 'templates' as const, label: 'Modelos', summary: 'Mensagens prontas', icon: MessageSquare },
+    { key: 'playbooks' as const, label: 'Playbooks IA', summary: 'Fluxos automatizados', icon: Bot },
+  ];
+
+  const renderSection = (key: typeof sectionItems[number]['key'], title: string, summary: string, content: React.ReactNode) => {
+    if (activeSection !== key) return null;
+    return (
+      <div className="settings-card">
+        <p className="settings-card-title">{title}</p>
+        <p style={{ fontSize: '12.5px', color: '#9ca3af', marginBottom: '14px' }}>{summary}</p>
+        {content}
+      </div>
+    );
+  };
+
+  const hasServerConfig = !!server.base_url.trim() && !!server.api_key.trim();
+  const connectedChannels = channels.filter(ch => ch.status === 'connected').length;
+  const connectingChannels = channels.filter(ch => ch.status === 'connecting').length;
+  const disconnectedChannels = channels.filter(ch => ch.status !== 'connected' && ch.status !== 'connecting').length;
+  const connectionStatus = !hasServerConfig
+    ? { label: 'Não configurado', tone: '#991b1b', bg: '#fef2f2', border: '#fecaca', detail: 'Preencha URL base e API Key para ativar a integração.' }
+    : connectedChannels > 0
+      ? { label: 'Online', tone: '#166534', bg: '#f0fdf4', border: '#bbf7d0', detail: `${connectedChannels} canal${connectedChannels !== 1 ? 'is' : ''} conectado${connectedChannels !== 1 ? 's' : ''}.` }
+      : connectingChannels > 0
+        ? { label: 'Conectando', tone: '#92400e', bg: '#fffbeb', border: '#fde68a', detail: `${connectingChannels} canal${connectingChannels !== 1 ? 'is' : ''} em pareamento.` }
+        : channels.length === 0
+          ? { label: 'Configurado', tone: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', detail: 'Servidor salvo, mas ainda não há canais cadastrados.' }
+          : { label: 'Sem canais online', tone: '#6b7280', bg: '#f8fafc', border: '#e5e7eb', detail: `${disconnectedChannels} canal${disconnectedChannels !== 1 ? 'is' : ''} desconectado${disconnectedChannels !== 1 ? 's' : ''}.` };
+
   if (loading) {
     return <div className="flex items-center justify-center py-16 text-slate-400"><Loader2 size={20} className="animate-spin" /></div>;
   }
 
   return (
-    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ padding: '28px 40px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', gap: '20px', alignItems: 'start' }}>
+        <div className="settings-card" style={{ position: 'sticky', top: '16px' }}>
+          <p className="settings-card-title">WhatsApp</p>
+          <p style={{ fontSize: '12.5px', color: '#9ca3af', marginBottom: '14px' }}>
+            Submenu do módulo para separar conexão, canais, textos e automações.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sectionItems.map(item => {
+              const active = activeSection === item.key;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setActiveSection(item.key)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    borderRadius: '12px',
+                    border: active ? '1px solid #f59e0b' : '1px solid #ebe7df',
+                    background: active ? '#fff7ed' : '#fff',
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                    <span style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '999px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: active ? '#fed7aa' : '#f8fafc',
+                      color: active ? '#c2410c' : '#6b7280',
+                      flexShrink: 0,
+                    }}>
+                      <Icon size={13} />
+                    </span>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: active ? '#c2410c' : '#1f2937' }}>
+                      {item.label}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: active ? '#9a3412' : '#9ca3af' }}>
+                    {item.summary}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* ── Servidor Evolution ── */}
-      <div className="settings-card">
-        <p className="settings-card-title">Servidor Evolution</p>
+      {renderSection('connection', 'Conexão com Evolution', 'Servidor global e credenciais da API', <>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
           Um servidor para todos os canais. Cada canal abaixo é uma instância (número) neste servidor.
         </p>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          padding: '12px 14px',
+          marginBottom: '14px',
+          borderRadius: '12px',
+          background: connectionStatus.bg,
+          border: `1px solid ${connectionStatus.border}`,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: connectionStatus.tone,
+                flexShrink: 0,
+              }} />
+              <span style={{ fontSize: '12px', fontWeight: 800, color: connectionStatus.tone, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Status da conexão
+              </span>
+            </div>
+            <p style={{ fontSize: '14px', fontWeight: 700, color: '#1f2937', marginBottom: '2px' }}>{connectionStatus.label}</p>
+            <p style={{ fontSize: '12px', color: '#6b7280' }}>{connectionStatus.detail}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '5px 9px' }}>
+              Conectados: {connectedChannels}
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '5px 9px' }}>
+              Pareando: {connectingChannels}
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '5px 9px' }}>
+              Total: {channels.length}
+            </span>
+          </div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
             <label className="settings-label">URL base</label>
@@ -428,11 +685,42 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
             {savingServer ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar servidor
           </button>
         </div>
-      </div>
+      </>)}
 
       {/* ── Canais ── */}
-      <div className="settings-card">
-        <p className="settings-card-title">Canais (números)</p>
+      {renderSection('channels', 'Canais', `${channels.length} canal${channels.length !== 1 ? 'is' : ''} configurado${channels.length !== 1 ? 's' : ''}`, <>
+        <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
+          O horário comercial é configurado por canal. Em cada número, use o botão <strong>Horário comercial</strong> para definir dias,
+          faixa de atendimento, fuso e a mensagem automática fora do horário.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+          {[
+            { key: 'list' as const, label: 'Lista de canais' },
+            { key: 'new' as const, label: 'Novo canal' },
+          ].map(item => {
+            const active = activeChannelSection === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveChannelSection(item.key)}
+                style={{
+                  borderRadius: '999px',
+                  border: active ? '1px solid #f59e0b' : '1px solid #e5e7eb',
+                  background: active ? '#fff7ed' : '#fff',
+                  color: active ? '#c2410c' : '#6b7280',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        {activeChannelSection === 'list' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
           {channels.length === 0 && (
             <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhum canal ainda. Crie o primeiro abaixo.</p>
@@ -456,12 +744,9 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   {connecting === ch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />}
                   {ch.status === 'connected' ? 'Reconectar' : 'Conectar'}
                 </button>
-                <button onClick={() => openMembers('channel', ch.id)} className="settings-btn-ghost" style={{ padding: '6px 10px' }}>
-                  <Users size={13} /> Membros
-                </button>
-                <button onClick={() => openHours(ch)} title="Horários e ausência"
+                <button onClick={() => openHours(ch)} title="Horário comercial e ausência"
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: hoursOpenFor === ch.id ? '#d97706' : undefined }}>
-                  <Clock size={13} /> Horários
+                  <Clock size={13} /> Horário comercial
                 </button>
                 <button onClick={() => openAiPanel(ch)} title="Configurar IA de atendimento"
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: aiOpenFor === ch.id ? '#7c3aed' : (aiConfigs[ch.id]?.ai_enabled ? '#059669' : undefined) }}>
@@ -476,8 +761,11 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               {/* Painel de horários e ausência (Fase N) */}
               {hoursOpenFor === ch.id && (
                 <div style={{ marginTop: '12px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '14px', background: '#fafaf9' }}>
+                  <p style={{ fontSize: '11.5px', color: '#6b7280', marginBottom: '10px' }}>
+                    Aqui você define o horário comercial real deste canal. A copy usada quando o cliente escreve fora do horário fica logo abaixo.
+                  </p>
                   <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Clock size={13} /> Horários de atendimento
+                    <Clock size={13} /> Horário comercial
                   </p>
 
                   {/* Timezone */}
@@ -550,10 +838,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                 </div>
               )}
 
-              {editMembersFor?.type === 'channel' && editMembersFor.id === ch.id && (
-                <div style={{ marginTop: '12px' }}>{renderMemberEditor('10px')}</div>
-              )}
-
               {/* Painel de IA por canal (Fase J) */}
               {aiOpenFor === ch.id && (() => {
                 const cfg = aiConfigs[ch.id] ?? { channel_id: ch.id, ai_enabled: false, max_ai_turns: 5, playbook_id: null, require_human_approval: false };
@@ -612,11 +896,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   </div>
                 );
               })()}
+
+              <p style={{ marginTop: '12px', borderTop: '1px dashed #ece7df', paddingTop: '12px', fontSize: '11.5px', color: '#9ca3af' }}>
+                Os departamentos que atendem este número são definidos na aba <strong>Roteamento</strong>.
+              </p>
             </div>
           ))}
         </div>
+        )}
 
         {/* Novo canal */}
+        {activeChannelSection === 'new' && (
         <div style={{ borderTop: '1px dashed #e0ded8', paddingTop: '14px' }}>
           <p style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', marginBottom: '10px' }}>Novo canal</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
@@ -648,10 +938,11 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
             </button>
           </div>
         </div>
-      </div>
+        )}
+      </>)}
 
       {/* ── Departamentos ── */}
-      <div className="settings-card">
+      {renderSection('departments', 'Departamentos', `${departments.length} setor${departments.length !== 1 ? 'es' : ''} configurado${departments.length !== 1 ? 's' : ''}`, <>
         <p className="settings-card-title">Departamentos (setores)</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
           {departments.length === 0 && (
@@ -662,7 +953,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '10px 12px' }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: d.color || '#16a34a', flexShrink: 0 }} />
                 <span style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: '#1f2937' }}>{d.name}</span>
-                <button onClick={() => openMembers('dept', d.id)} className="settings-btn-ghost" style={{ padding: '6px 10px' }}>
+                <button onClick={() => openMembers(d.id)} className="settings-btn-ghost" style={{ padding: '6px 10px' }}>
                   <Users size={13} /> Membros
                 </button>
                 <button onClick={() => removeDepartment(d)} title="Excluir"
@@ -671,7 +962,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                 </button>
               </div>
 
-              {editMembersFor?.type === 'dept' && editMembersFor.id === d.id && renderMemberEditor('0 0 10px 10px')}
+              {editMembersFor?.id === d.id && renderMemberEditor('0 0 10px 10px')}
             </div>
           ))}
         </div>
@@ -692,14 +983,180 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
             {addingDept ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Adicionar
           </button>
         </div>
-      </div>
+      </>)}
+
+      {/* ── Roteamento: matriz canal × departamento ── */}
+      {renderSection('routing', 'Roteamento', 'Quais departamentos atendem cada canal e qual é o padrão', <>
+        <p className="settings-card-title">Canais × departamentos</p>
+        <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '14px' }}>
+          Marque quais setores podem atender cada número. O <strong>padrão</strong> recebe as novas conversas
+          que chegam nesse canal. Um mesmo departamento pode atender vários canais.
+        </p>
+
+        {channels.length === 0 || departments.length === 0 ? (
+          <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>
+            {channels.length === 0 ? 'Cadastre canais na aba Canais.' : 'Cadastre departamentos na aba Departamentos.'}
+            {channels.length > 0 && departments.length === 0 ? '' : ''}
+          </p>
+        ) : (
+          <div style={{ overflowX: 'auto', border: '1px solid #ece7df', borderRadius: '12px' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12.5px' }}>
+              <thead>
+                <tr style={{ background: '#faf9f7' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700, color: '#374151', position: 'sticky', left: 0, background: '#faf9f7', borderBottom: '1px solid #ece7df' }}>
+                    Canal
+                  </th>
+                  {departments.map(d => (
+                    <th key={d.id} style={{ padding: '10px 8px', fontWeight: 600, color: '#374151', borderBottom: '1px solid #ece7df', whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: d.color || '#16a34a' }} />
+                        {d.name}
+                      </span>
+                    </th>
+                  ))}
+                  <th style={{ padding: '10px 12px', fontWeight: 700, color: '#374151', borderBottom: '1px solid #ece7df', borderLeft: '1px solid #ece7df', whiteSpace: 'nowrap' }}>
+                    Padrão
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {channels.map(ch => {
+                  const routing = getChannelRouting(ch.id);
+                  const allowed = departments.filter(d => routing.allowed_department_ids.includes(d.id));
+                  return (
+                    <tr key={ch.id} style={{ borderTop: '1px solid #f1efe9' }}>
+                      <td style={{ padding: '10px 12px', position: 'sticky', left: 0, background: '#fff', borderRight: '1px solid #f1efe9' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                          <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: ch.color || '#ea6c00' }} />
+                          <span style={{ fontWeight: 600, color: '#1f2937' }}>{ch.name || ch.instance_name}</span>
+                        </span>
+                      </td>
+                      {departments.map(d => {
+                        const on = routing.allowed_department_ids.includes(d.id);
+                        return (
+                          <td key={d.id} style={{ textAlign: 'center', padding: '8px' }}>
+                            <button
+                              onClick={() => toggleAllowedDepartment(ch.id, d.id)}
+                              title={on ? 'Atende este canal' : 'Não atende'}
+                              style={{
+                                width: '22px', height: '22px', borderRadius: '6px', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                border: on ? `1px solid ${d.color || '#16a34a'}` : '1px solid #e5e7eb',
+                                background: on ? `${d.color || '#16a34a'}18` : '#fff',
+                                color: on ? (d.color || '#16a34a') : 'transparent',
+                              }}>
+                              <Check size={13} />
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding: '8px 12px', borderLeft: '1px solid #f1efe9' }}>
+                        <select
+                          className="settings-input"
+                          style={{ minWidth: '130px', padding: '5px 8px', fontSize: '12px' }}
+                          value={routing.default_department_id || ''}
+                          disabled={allowed.length === 0}
+                          onChange={e => updateChannelRouting(ch.id, { default_department_id: e.target.value || null })}
+                        >
+                          <option value="">{allowed.length === 0 ? '—' : 'Nenhum'}</option>
+                          {allowed.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {channels.length > 0 && departments.length > 0 && (
+          <div className="settings-save-bar" style={{ marginTop: '14px' }}>
+            <button className="settings-btn-primary" onClick={saveChannelRouting} disabled={savingRouting}>
+              {savingRouting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar roteamento
+            </button>
+          </div>
+        )}
+      </>)}
+
+      {/* ── Copys e textos padrão do módulo ── */}
+      {renderSection('copies', 'Textos padrão', 'Saudações, horários, transferências e mensagens automáticas', <>
+        <p className="settings-card-title">Copys e textos padrão</p>
+        <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
+          Textos automáticos usados pelo módulo WhatsApp. Você pode usar variáveis como
+          {' '}<code>{'{{saudacao}}'}</code>, <code>{'{{agente.nome}}'}</code>, <code>{'{{agente.primeiro_nome}}'}</code>,
+          {' '}<code>{'{{cliente.nome}}'}</code>, <code>{'{{cliente.primeiro_nome}}'}</code>, <code>{'{{cliente.primeiro_nome_com_virgula}}'}</code>,
+          {' '}<code>{'{{url}}'}</code>, <code>{'{{destino}}'}</code>, <code>{'{{setor}}'}</code>, <code>{'{{inicio}}'}</code>, <code>{'{{fim}}'}</code> e <code>{'{{itens}}'}</code>.
+        </p>
+        <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>
+          Importante: esta seção edita a <strong>copy</strong>. O <strong>horário comercial real</strong> continua sendo configurado por canal na seção acima.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div>
+            <label className="settings-label">Saudação automática inicial</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.auto_greeting_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, auto_greeting_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Apresentação ao aceitar transferência</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.accept_presentation_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, accept_presentation_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Mensagem de transferência para responsável</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.transfer_to_agent_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, transfer_to_agent_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Mensagem de transferência para setor</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.transfer_to_department_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, transfer_to_department_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Mensagem padrão do link de kit</label>
+            <textarea className="settings-input" rows={3} style={{ resize: 'vertical' }} value={copyConfig.kit_link_message_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, kit_link_message_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Mensagem padrão de solicitação de documentos</label>
+            <textarea className="settings-input" rows={3} style={{ resize: 'vertical' }} value={copyConfig.document_request_message_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, document_request_message_template: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Mensagem padrão ao encerrar atendimento</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.close_farewell_default}
+              onChange={e => setCopyConfig(prev => ({ ...prev, close_farewell_default: e.target.value }))} />
+          </div>
+          <div>
+            <label className="settings-label">Copy fora do horário</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.outside_hours_fallback_message}
+              onChange={e => setCopyConfig(prev => ({ ...prev, outside_hours_fallback_message: e.target.value }))} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label className="settings-label">Copy do resumo de horário comercial</label>
+            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.outside_hours_schedule_template}
+              onChange={e => setCopyConfig(prev => ({ ...prev, outside_hours_schedule_template: e.target.value }))} />
+            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+              Use <code>{'{{inicio}}'}</code> e <code>{'{{fim}}'}</code> para montar a frase com a faixa configurada no canal.
+            </p>
+          </div>
+        </div>
+        <div className="settings-save-bar" style={{ marginTop: '16px' }}>
+          <button className="settings-btn-primary" onClick={saveCopyConfig} disabled={savingCopy}>
+            {savingCopy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar copys do WhatsApp
+          </button>
+        </div>
+      </>)}
 
       {/* ── Modelos de mensagem (templates/macros) ── */}
-      <div className="settings-card">
+      {renderSection('templates', 'Modelos de mensagem', `${templates.length} modelo${templates.length !== 1 ? 's' : ''} cadastrado${templates.length !== 1 ? 's' : ''}`, <>
         <p className="settings-card-title">Modelos de mensagem</p>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
           Mensagens padrão para a equipe inserir na conversa. Variáveis:{' '}
           <code>{'{{cliente.nome}}'}</code>, <code>{'{{cliente.telefone}}'}</code>, <code>{'{{agente.nome}}'}</code>, <code>{'{{processo.numero}}'}</code>, <code>{'{{saudacao}}'}</code>.
+        </p>
+        <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>
+          Os modelos existentes podem ser editados diretamente aqui.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
           {templates.length === 0 && (
@@ -710,12 +1167,47 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '13px', fontWeight: 700, color: '#1f2937' }}>{t.name}</span>
                 {t.category && <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#6b7280', background: '#f2f4f6', padding: '1px 6px', borderRadius: '6px' }}>{t.category}</span>}
+                <button onClick={() => startEditTemplate(t)} title="Editar modelo"
+                  style={{ marginLeft: 'auto', padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#6b7280' }}>
+                  <Pencil size={14} />
+                </button>
                 <button onClick={() => removeTemplate(t)} title="Excluir modelo"
-                  style={{ marginLeft: 'auto', padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
+                  style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
                   <Trash2 size={14} />
                 </button>
               </div>
-              <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', whiteSpace: 'pre-wrap' }}>{t.body}</p>
+              {editingTplId === t.id ? (
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label className="settings-label">Nome</label>
+                      <input className="settings-input" value={tplDraft.name}
+                        onChange={e => setTplDraft(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Ex: Pedir documento" />
+                    </div>
+                    <div>
+                      <label className="settings-label">Categoria (opcional)</label>
+                      <input className="settings-input" value={tplDraft.category}
+                        onChange={e => setTplDraft(prev => ({ ...prev, category: e.target.value }))}
+                        placeholder="espera, documento..." />
+                    </div>
+                  </div>
+                  <label className="settings-label">Corpo</label>
+                  <textarea className="settings-input" rows={4} style={{ resize: 'vertical' }} value={tplDraft.body}
+                    onChange={e => setTplDraft(prev => ({ ...prev, body: e.target.value }))}
+                    placeholder="Olá {{cliente.nome}}, ..." />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                    <button className="settings-btn-ghost" onClick={cancelEditTemplate}>
+                      <X size={13} /> Cancelar
+                    </button>
+                    <button className="settings-btn-primary" onClick={() => saveTemplateEdit(t)} disabled={savingTplId === t.id}>
+                      {savingTplId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar edição
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', whiteSpace: 'pre-wrap' }}>{t.body}</p>
+              )}
             </div>
           ))}
         </div>
@@ -744,10 +1236,10 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
             </button>
           </div>
         </div>
-      </div>
+      </>)}
 
       {/* ── Playbooks de IA (Fase J) ── */}
-      <div className="settings-card">
+      {renderSection('playbooks', 'Playbooks de IA', `${playbooks.length} playbook${playbooks.length !== 1 ? 's' : ''} disponível${playbooks.length !== 1 ? 'eis' : ''}`, <>
         <p className="settings-card-title">Playbooks de atendimento IA</p>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
           Roteiros de coleta estruturada. O assistente segue a sequência de perguntas e transfere para um humano ao concluir.
@@ -829,6 +1321,8 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               {addingPb ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Criar playbook
             </button>
           </div>
+        </div>
+      </>)}
         </div>
       </div>
     </div>

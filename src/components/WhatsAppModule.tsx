@@ -85,7 +85,10 @@ import { ClientCloudDocsLink } from './CloudFolderModal';
 import { Modal, ModalBody } from './ui/Modal';
 import { buildPublicFillUrl } from '../utils/publicAppUrl';
 import type { Lead } from '../types/lead.types';
-import { settingsService, funnelLabelsFromConfig, type FunnelLabel } from '../services/settings.service';
+import {
+  settingsService, funnelLabelsFromConfig, WHATSAPP_MODULE_DEFAULTS,
+  type FunnelLabel, type WhatsAppModuleConfig, type WhatsAppChannelDepartmentRouting,
+} from '../services/settings.service';
 
 /**
  * `true` quando a viewport é estreita demais para mostrar lista + thread lado a
@@ -150,12 +153,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // estágio do funil de cada conversa. Recarregadas ao abrir a gaveta de Leads
   // (onde a config pode ter sido alterada) e no mount.
   const [funnelLabels, setFunnelLabels] = useState<FunnelLabel[]>([]);
+  const [moduleConfig, setModuleConfig] = useState<WhatsAppModuleConfig>({ ...WHATSAPP_MODULE_DEFAULTS });
   const reloadFunnelLabels = useCallback(() => {
     settingsService.getLeadModuleConfig()
       .then(cfg => setFunnelLabels(funnelLabelsFromConfig(cfg)))
       .catch(() => {});
   }, []);
   useEffect(() => { reloadFunnelLabels(); }, [reloadFunnelLabels]);
+  useEffect(() => {
+    settingsService.getWhatsAppModuleConfig().then(setModuleConfig).catch(() => {});
+  }, []);
   // Reflete no atendimento qualquer ajuste de funil feito na gaveta de Leads.
   useEffect(() => { if (leadsPanelOpen) { setLeadsEverOpened(true); reloadFunnelLabels(); } }, [leadsPanelOpen, reloadFunnelLabels]);
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
@@ -185,6 +192,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   useEffect(() => { if (panelDocked) setMobilePanelOpen(false); }, [panelDocked]);
   const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
+  const [channelRouting, setChannelRouting] = useState<WhatsAppChannelDepartmentRouting[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>({ auto_greeting: true, short_name: null, role_label: null });
   const [search, setSearch] = useState('');
@@ -245,6 +253,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
   const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
+  const channelRoutingById = useMemo(() => new Map(channelRouting.map(item => [item.channel_id, item])), [channelRouting]);
   const staffByUser = useMemo(() => new Map(staff.map(s => [s.user_id, s.name])), [staff]);
   const staffById = useMemo(() => new Map(staff.map(s => [s.user_id, s])), [staff]);
   // Papel operacional do usuário logado → permissões da UI (Fase 9).
@@ -255,6 +264,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => conversations.find(c => c.id === selectedId) || null,
     [conversations, selectedId],
   );
+  const selectedAllowedDepartments = useMemo(() => {
+    if (!selected?.instance_id) return departments;
+    const routing = channelRoutingById.get(selected.instance_id);
+    if (!routing?.allowed_department_ids?.length) return departments;
+    return departments.filter(d => routing.allowed_department_ids.includes(d.id));
+  }, [selected?.instance_id, channelRoutingById, departments]);
 
   const selectedClientId = selected?.client_id ?? null;
 
@@ -291,6 +306,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     loadConversations();
     whatsappService.listChannels().then(setChannels).catch(() => {});
     whatsappService.listDepartments().then(setDepartments).catch(() => {});
+    settingsService.getWhatsAppChannelDepartmentRouting().then(setChannelRouting).catch(() => {});
     whatsappService.listStaff().then(setStaff).catch(() => {});
     whatsappService.getMyAgentPrefs().then(setAgentPrefs).catch(() => {});
   }, [loadConversations]);
@@ -318,7 +334,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     startRecording, stopRecording,
     onPickFiles, handleDroppedFiles, confirmStagedSend,
   } = useWaComposer({
-    selectedId, selected, user, agentPrefs, staffById, aiSession,
+    selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
     messages, setMessages, setConversations, refreshMessages,
   });
 
@@ -349,7 +365,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     slashMatch, slashResults, slashActive, slashIdx, setSlashIndex,
     applyTemplate,
   } = useWaTemplates({
-    selected, selectedId, user, staffById, draft, editing, setDraft,
+    selected, selectedId, user, staffById, moduleConfig, draft, editing, setDraft,
   });
 
   // Ao abrir uma conversa, marca como lida e zera o contador de não-lidas. A carga
@@ -381,7 +397,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       const { dow, curMins } = getCurrentTimeInTz(tz);
       const row = rows.find(r => r.day_of_week === dow);
       if (!row || !row.is_active) {
-        setOutsideHours({ message: ch?.absence_message || 'Canal fora do horário de atendimento.' });
+        setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
         return;
       }
       const [sh, sm] = row.start_time.split(':').map(Number);
@@ -389,13 +405,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       const startMins = sh * 60 + sm;
       const endMins = eh * 60 + em;
       if (curMins < startMins || curMins >= endMins) {
-        setOutsideHours({ message: ch?.absence_message || `Atendimento: ${row.start_time}–${row.end_time}.` });
+        setOutsideHours({
+          message: ch?.absence_message || renderTemplate(moduleConfig.outside_hours_schedule_template, {
+            extraVars: { inicio: row.start_time, fim: row.end_time },
+          }),
+        });
       } else {
         setOutsideHours(null);
       }
     }).catch(() => { if (!cancelled) setOutsideHours(null); });
     return () => { cancelled = true; };
-  }, [selected?.instance_id, selected?.id, channels]);
+  }, [selected?.instance_id, selected?.id, channels, moduleConfig.outside_hours_fallback_message, moduleConfig.outside_hours_schedule_template]);
 
   // Ao abrir uma conversa sem foto, busca a foto de perfil na Evolution (1x por conversa).
   useEffect(() => {
@@ -507,7 +527,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     handleToggleAbsenceSuppressed, handleToggleLegalHold,
     legalHoldModalOpen, confirmLegalHold, closeLegalHoldModal,
   } = useWaConversationActions({
-    selected, user, agentPrefs, staffById, aiSession, confirm,
+    selected, user, agentPrefs, moduleConfig, staffById, aiSession, confirm,
     setConversations, refreshMessages,
     closeMuteMenu: () => setMuteMenuOpen(false),
     setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
@@ -759,6 +779,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             // "Rascunho:" só nas conversas NÃO abertas (ao trocar/fechar). Na
             // conversa ativa não aparece — você já está vendo o composer.
             const draftPreview = c.id === selectedId ? '' : (draftMap[c.id] ?? '').trim();
+            const tracked = st.key === 'waiting_client' ? trackedSignatureStatus(c.client_id) : null;
             return (
               <ConversationListItem
                 key={c.id}
@@ -775,6 +796,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 draftPreview={draftPreview}
                 funnelLabels={funnelLabels}
                 onSelect={setSelectedId}
+                onDismissTracking={tracked
+                  ? () => (tracked.signature_request_id
+                    ? stopSignatureTracking(tracked.signature_request_id)
+                    : stopTemplateFillTracking(tracked.link_id))
+                  : undefined}
               />
             );
           })}
@@ -1557,8 +1583,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       {transferOpen && selected && (
         <TransferModal
           conversation={selected}
-          departments={departments}
+          departments={selectedAllowedDepartments}
           staff={staff}
+          moduleConfig={moduleConfig}
           onClose={() => setTransferOpen(false)}
           onDone={onTransferDone}
         />
@@ -1567,6 +1594,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       {newConvOpen && (
         <NewConversationModal
           channels={connectedChannels}
+          channelRouting={channelRouting}
           onClose={() => setNewConvOpen(false)}
           onOpened={handleConversationOpened}
         />
@@ -1626,6 +1654,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <CloseConversationModal
           conversation={selected}
           agent={user ? staffById.get(user.id) : null}
+          moduleConfig={moduleConfig}
           onClose={() => setCloseOpen(false)}
           onDone={onCloseDone}
         />
@@ -1664,6 +1693,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           clientId={selected.client_id}
           clientName={selected.contact_name}
           createdBy={user?.id ?? null}
+          moduleConfig={moduleConfig}
           onClose={() => setDocRequestOpen(false)}
           onCreated={onRequestDocCreated}
         />

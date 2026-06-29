@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.278': { name: 'Cafe WhatsApp Operacional Afinado', emoji: '[green_heart]' },
   '1.10.277': { name: 'Cafe Kit Rastreador', emoji: '[eyes]' },
   '1.10.276': { name: 'Cafe Thread Visivel', emoji: '[speech_balloon]' },
   '1.10.275': { name: 'Cafe Link Publico Direto', emoji: '[link]' },
@@ -929,6 +930,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.278',
+    date: '28/06/2026',
+    summary: 'O ecossistema de WhatsApp ganhou configuracao mais operacional por canal, edicao de modelos e apoio melhor para links publicos de preenchimento indisponiveis.',
+    modules: [
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Configuracoes do WhatsApp foram reorganizadas com roteamento e copys por canal', description: 'A central de configuracao passou a concentrar textos padrao do modulo, departamentos permitidos por canal e definicao de setor padrao, deixando o ajuste operacional mais claro e menos disperso.' },
+        { type: 'improvement' as const, title: 'Modelos de mensagem passaram a permitir edicao direta', description: 'Os templates salvos do WhatsApp agora podem ser revisados e atualizados sem recriacao manual, acelerando manutencao de mensagens recorrentes.' },
+        { type: 'fix' as const, title: 'Fluxos de conversa e envio foram alinhados ao novo contexto operacional', description: 'Composer, acoes de conversa e listagem passaram a consumir a configuracao centralizada do modulo para sustentar regras de horario, acompanhamento e roteamento de forma mais consistente.' },
+      ]},
+      { moduleId: 'docs', changes: [
+        { type: 'improvement' as const, title: 'Link publico indisponivel passou a orientar contato com o escritorio', description: 'A pagina publica de preenchimento agora exibe contato institucional, com atalhos de WhatsApp e e-mail, quando o token estiver expirado ou indisponivel.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.277',
     date: '28/06/2026',

@@ -360,6 +360,7 @@ export const conversationsApi = {
     channelId: string;
     clientId?: string | null;
     contactName?: string | null;
+    departmentId?: string | null;
   }): Promise<{ conversation_id: string; existed: boolean }> {
     const digits = normalizePhone(params.phone);
     if (!digits) throw new Error('Telefone inválido.');
@@ -382,6 +383,7 @@ export const conversationsApi = {
     if (found?.id) {
       const patch: Record<string, unknown> = {};
       if (params.clientId) patch.client_id = params.clientId;
+      if (params.departmentId) patch.department_id = params.departmentId;
       if (Object.keys(patch).length) await supabase.from(CONV_TABLE).update(patch).eq('id', found.id);
       return { conversation_id: found.id, existed: true };
     }
@@ -394,6 +396,7 @@ export const conversationsApi = {
         contact_phone: digits,
         contact_name: params.contactName || null,
         client_id: params.clientId || null,
+        department_id: params.departmentId || null,
       })
       .select('id')
       .single();
