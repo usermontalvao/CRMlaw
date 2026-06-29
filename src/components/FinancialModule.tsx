@@ -176,13 +176,30 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     cartao_debito:  CreditCard,
     cheque:        FileText,
   };
+  const isOperationalAgreementStatus = (status?: AgreementStatus | null) => (
+    status !== 'cancelado' && status !== 'aguardando_definicao'
+  );
+  const getAgreementStatusLabel = (status?: AgreementStatus | null) => {
+    if (status === 'ativo') return 'Em Andamento';
+    if (status === 'concluido') return 'Concluído';
+    if (status === 'cancelado') return 'Cancelado';
+    if (status === 'aguardando_definicao') return 'Aguardando definição';
+    return status ? status.charAt(0).toUpperCase() + status.slice(1) : '—';
+  };
+  const getAgreementStatusBadgeClass = (status?: AgreementStatus | null) => {
+    if (status === 'ativo') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+    if (status === 'concluido') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+    if (status === 'cancelado') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+    if (status === 'aguardando_definicao') return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+  };
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [activeMonth, setActiveMonth] = useState(new Date().toISOString().slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'ativo' | 'concluido' | 'cancelado'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'ativo' | 'concluido' | 'cancelado' | 'aguardando_definicao'>('all');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'with_pending' | 'fully_paid'>('all');
   const [allInstallments, setAllInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
@@ -196,6 +213,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [showPaidInstallments, setShowPaidInstallments] = useState(false);
   const [showAvulsoEntries, setShowAvulsoEntries] = useState(false);
   const [overpaymentWarning, setOverpaymentWarning] = useState<{ diff: number; scheduled: number } | null>(null);
+  const editStatusSelectRef = React.useRef<HTMLSelectElement | null>(null);
 
   // Navigate to another module
   const navigateToClient = (clientId: string) => {
@@ -203,6 +221,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   };
   const activeAgreementsCount = useMemo(
     () => agreements.filter((agreement) => agreement.status === 'ativo').length,
+    [agreements],
+  );
+  const operationalAgreementIds = useMemo(
+    () => new Set(agreements.filter((agreement) => isOperationalAgreementStatus(agreement.status)).map((agreement) => agreement.id)),
     [agreements],
   );
   const concludedThisMonth = useMemo(() => {
@@ -253,6 +275,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [auditAgreementId, setAuditAgreementId] = useState<string | null>(null);
   const [auditFilterMonth, setAuditFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [auditShowAll, setAuditShowAll] = useState(false);
 
   // Estados para selector processo/requerimento
   const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
@@ -311,6 +334,22 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [financialDefaults, setFinancialDefaults] = useState<FinancialModuleConfig>(FINANCIAL_MODULE_DEFAULTS);
 
   useEffect(() => {
+    const select = editStatusSelectRef.current;
+    if (!select) return;
+
+    Array.from(select.options).forEach((option) => {
+      if (option.value === 'concluido') {
+        option.disabled = true;
+        option.hidden = editForm.status !== 'concluido';
+      }
+      if (option.value === 'cancelado') {
+        option.disabled = true;
+        option.hidden = editForm.status !== 'cancelado';
+      }
+    });
+  }, [editForm.status, isEditModalOpen]);
+
+  useEffect(() => {
     profileService.listMembers().then(setMembers).catch(() => {});
     settingsService.getOfficeIdentity().then(setOfficeIdentity).catch(() => {});
     settingsService.getFinancialModuleConfig().then(cfg => {
@@ -326,7 +365,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         financialService.getFinancialStats(month),
         financialService.listAgreements(),
         clientService.listClients(),
-        financialService.listAllInstallments(),
+        financialService.listAllInstallments({ includeNonOperational: true }),
       ]);
       
       // Enriquecer parcelas com dados do acordo
@@ -512,12 +551,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
   const nextDueInstallment = useMemo(() => {
     const pending = allInstallments
-      .filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus))
+      .filter(inst =>
+        pendingStatuses.includes(inst.status as InstallmentStatus) &&
+        operationalAgreementIds.has(inst.agreement_id),
+      )
       .sort((a, b) => a.due_date.localeCompare(b.due_date));
     if (!pending.length) return null;
     const upcoming = pending.find(inst => inst.due_date >= today);
     return upcoming || pending[0];
-  }, [allInstallments, today]);
+  }, [allInstallments, today, operationalAgreementIds]);
 
   const nextDueInfo = useMemo(() => {
     if (!nextDueInstallment) return null;
@@ -686,13 +728,20 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const handleSubmitEdit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedAgreement) return;
+    const statusTouchesWaitingDefinition =
+      selectedAgreement.status !== editForm.status &&
+      (selectedAgreement.status === 'aguardando_definicao' || editForm.status === 'aguardando_definicao');
 
     const pinOk = await requirePin({
-      action: 'edit_agreement',
+      action: statusTouchesWaitingDefinition
+        ? (editForm.status === 'aguardando_definicao' ? 'set_agreement_waiting_definition' : 'resume_agreement_flow')
+        : 'edit_agreement',
       resourceType: 'agreement',
       resourceId: selectedAgreement.id,
       sensitivity: 'high',
-      title: 'Editar acordo financeiro',
+      title: statusTouchesWaitingDefinition
+        ? (editForm.status === 'aguardando_definicao' ? 'Mover acordo para aguardando definição' : 'Retomar acordo no fluxo')
+        : 'Editar acordo financeiro',
       description: 'Confirme com seu PIN para salvar as alterações neste acordo.',
     });
     if (!pinOk) return;
@@ -750,6 +799,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     try {
       setEditLoading(true);
       setEditError(null);
+      const previousStatus = selectedAgreement.status;
 
       const customInstallmentsPayload = editForm.customInstallments.length
         ? editForm.customInstallments.map((item) => ({
@@ -777,6 +827,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         first_due_date: editForm.firstDueDate,
         custom_installments: customInstallmentsPayload,
       });
+      const updatedInstallments = await financialService.listInstallments(updated.id);
+
+      if (updated.status === 'aguardando_definicao' || updated.status === 'cancelado') {
+        await syncAgreementCalendarState(updated, updatedInstallments, 'cancelado');
+      } else if ((previousStatus === 'aguardando_definicao' || previousStatus === 'cancelado') && updated.status === 'ativo') {
+        await syncAgreementCalendarState(updated, updatedInstallments, 'pendente');
+      }
+
+      await ensureOverdueDeadlines(updated, updatedInstallments);
 
       setSelectedAgreement(updated);
       setAgreements((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
@@ -978,6 +1037,48 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     setSelectedAgreement(null);
     setInstallments([]);
   }, []);
+
+  const handleSetAgreementWaitingDefinition = async (agreement: Agreement, nextStatus: 'aguardando_definicao' | 'ativo') => {
+    const pinOk = await requirePin({
+      action: nextStatus === 'aguardando_definicao' ? 'set_agreement_waiting_definition' : 'resume_agreement_flow',
+      resourceType: 'financial_agreement',
+      resourceId: agreement.id,
+      sensitivity: 'high',
+      title: nextStatus === 'aguardando_definicao' ? 'Mover acordo para aguardando definição' : 'Retomar acordo no fluxo',
+      description: nextStatus === 'aguardando_definicao'
+        ? 'Confirme com seu PIN para tirar este acordo do fluxo operacional e do faturamento estimado.'
+        : 'Confirme com seu PIN para devolver este acordo ao fluxo operacional do financeiro.',
+    });
+    if (!pinOk) return;
+
+    try {
+      const updated = await financialService.updateAgreement(agreement.id, { status: nextStatus });
+      const updatedInstallments = await financialService.listInstallments(updated.id);
+
+      if (nextStatus === 'aguardando_definicao') {
+        await syncAgreementCalendarState(updated, updatedInstallments, 'cancelado');
+      } else {
+        await syncAgreementCalendarState(updated, updatedInstallments, 'pendente');
+        await ensureOverdueDeadlines(updated, updatedInstallments);
+      }
+
+      setSelectedAgreement(updated);
+      setInstallments(updatedInstallments);
+      setAgreements((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      loadData(activeMonth);
+      toast.success(
+        nextStatus === 'aguardando_definicao' ? 'Acordo em aguardando definição' : 'Acordo retomado',
+        nextStatus === 'aguardando_definicao'
+          ? 'O acordo saiu do fluxo operacional e dos indicadores do financeiro.'
+          : 'O acordo voltou a contar no fluxo operacional do financeiro.',
+      );
+    } catch (err: any) {
+      toast.error(
+        nextStatus === 'aguardando_definicao' ? 'Erro ao mover acordo' : 'Erro ao retomar acordo',
+        err.message || 'Não foi possível atualizar o status do acordo.',
+      );
+    }
+  };
 
   useEffect(() => {
     if (!entityId) return;
@@ -1206,10 +1307,22 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const handleOpenAuditModal = async (agreementId: string) => {
     setAuditAgreementId(agreementId);
     setIsAuditModalOpen(true);
-    // Reseta o filtro de mês para o mês atual e carrega com contexto do acordo
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    setAuditFilterMonth(currentMonth);
-    await loadAuditByMonth(currentMonth, agreementId);
+    // Aberto a partir dos detalhes: mostra TODO o histórico do acordo (sem filtro de mês)
+    setAuditShowAll(true);
+    await loadAllAuditForAgreement(agreementId);
+  };
+
+  const loadAllAuditForAgreement = async (agreementId: string) => {
+    setLoadingAudit(true);
+    try {
+      const logs = await financialService.getPaymentAuditLog(agreementId);
+      setAuditLogs(logs);
+    } catch (err) {
+      console.error('Erro ao carregar auditoria:', err);
+      toast.error('Erro ao carregar histórico de auditoria');
+    } finally {
+      setLoadingAudit(false);
+    }
   };
 
   const loadAuditByMonth = async (month: string, forAgreementId?: string | null) => {
@@ -1253,7 +1366,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       if (e.key !== 'Escape') return;
       // Ordem de prioridade: payment > audit > edit > details > new > IR
       if (isPaymentModalOpen) { handleClosePaymentModal(); }
-      else if (isAuditModalOpen) { setIsAuditModalOpen(false); setAuditLogs([]); setAuditAgreementId(null); }
+      else if (isAuditModalOpen) { setIsAuditModalOpen(false); setAuditLogs([]); setAuditAgreementId(null); setAuditShowAll(false); }
       else if (isEditModalOpen) { handleCloseEditModal(); }
       else if (isDetailsModalOpen) { handleCloseDetails(); }
       else if (isModalOpen) { handleCloseModal(); }
@@ -1268,6 +1381,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     setIsAuditModalOpen(false);
     setAuditLogs([]);
     setAuditAgreementId(null);
+    setAuditShowAll(false);
   };
 
   // Buscar nome do cliente e título do acordo a partir do agreement_id
@@ -2552,7 +2666,43 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     }
   };
 
+  const syncAgreementCalendarState = async (
+    agreement: Agreement,
+    installmentsList: Installment[],
+    status: 'pendente' | 'cancelado',
+  ) => {
+    try {
+      const pendingNumbers = new Set(
+        installmentsList
+          .filter((installment) => installment.status === 'pendente' || installment.status === 'vencido')
+          .map((installment) => installment.installment_number),
+      );
+      if (pendingNumbers.size === 0) return;
+
+      const events = await calendarService.listEvents(['payment', 'deadline']);
+      await Promise.all(
+        events
+          .filter((event) => event.description?.includes(`[agreement_id:${agreement.id}]`))
+          .map(async (event) => {
+            const match = event.description?.match(/\[installment:(\d+)\]/);
+            const eventInstallmentNumber = match ? Number(match[1]) : null;
+            if (!eventInstallmentNumber || !pendingNumbers.has(eventInstallmentNumber)) return;
+
+            await calendarService.updateEvent(event.id, {
+              status,
+              start_at: event.start_at,
+              description: event.description,
+            });
+          }),
+      );
+    } catch (_) {
+      // Silenciar erros de sincronizaÃ§Ã£o do calendÃ¡rio para nÃ£o interromper fluxo principal
+    }
+  };
+
   const ensureOverdueDeadlines = async (agreement: Agreement, installmentsList: Installment[]) => {
+    if (!isOperationalAgreementStatus(agreement.status)) return;
+
     try {
       const events = await calendarService.listEvents(['deadline']);
       await Promise.all(
@@ -3026,7 +3176,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               <button onClick={() => setIsIRModalOpen(true)} className="p-1.5 sm:p-2 border border-[#e7e5df] hover:bg-slate-50 rounded-lg transition" title="Relatório IR">
                 <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
               </button>
-              <button onClick={() => { setIsAuditModalOpen(true); setAuditAgreementId(null); loadAuditByMonth(auditFilterMonth); }} className="p-1.5 sm:p-2 border border-purple-200 hover:bg-purple-50 rounded-lg transition" title="Auditoria">
+              <button onClick={() => { setIsAuditModalOpen(true); setAuditAgreementId(null); setAuditShowAll(false); loadAuditByMonth(auditFilterMonth); }} className="p-1.5 sm:p-2 border border-purple-200 hover:bg-purple-50 rounded-lg transition" title="Auditoria">
                 <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
               </button>
               <button onClick={handleOpenModal} className="inline-flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition shadow-sm hover:shadow-md">
@@ -3056,6 +3206,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             >
               <option value="all">Status</option>
               <option value="ativo">Ativos</option>
+              <option value="aguardando_definicao">Aguardando definição</option>
               <option value="concluido">Concluídos</option>
               <option value="cancelado">Cancelados</option>
             </select>
@@ -3574,14 +3725,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       <div className="flex flex-col w-full md:col-span-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Status do acordo</p>
                         <select
+                          ref={editStatusSelectRef}
                           value={editForm.status}
                           onChange={(e) => handleEditChange('status', e.target.value)}
                           className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm transition appearance-none"
                         >
                           <option value="ativo">Ativo</option>
+                          <option value="aguardando_definicao">Aguardando definição</option>
                           <option value="concluido">Concluído</option>
-                          <option value="cancelado">Cancelado</option>
+                          {editForm.status === 'cancelado' && (
+                            <option value="cancelado" disabled>Cancelado</option>
+                          )}
                         </select>
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                          Concluído é definido automaticamente quando todas as parcelas forem baixadas.
+                        </p>
                       </div>
                       <div className="flex flex-col w-full md:col-span-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Notas internas <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span></p>
@@ -4100,6 +4258,83 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             );
           })()}
 
+          {/* Acordos Aguardando Definição */}
+          {(() => {
+            const waitingDefinitionAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'aguardando_definicao');
+            if (waitingDefinitionAgreements.length === 0) return null;
+
+            return (
+              <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75">
+                <div className="bg-slate-50 border-b border-[#e7e5df] px-6 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-slate-200 text-slate-600 p-2.5 rounded-lg">
+                        <Clock className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-slate-700">Aguardando definição</h2>
+                        <p className="text-sm text-slate-500">Fora do faturamento estimado e do acompanhamento operacional</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
+                      {waitingDefinitionAgreements.length} acordo{waitingDefinitionAgreements.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y divide-[#e7e5df]">
+                  {waitingDefinitionAgreements.map((agreement: Agreement) => {
+                    const agreementInstallments = allInstallments.filter((inst) => inst.agreement_id === agreement.id);
+                    const pendingInstallments = agreementInstallments.filter((inst) => pendingStatuses.includes(inst.status as InstallmentStatus));
+                    const nextInstallment = [...pendingInstallments].sort((a, b) => a.due_date.localeCompare(b.due_date))[0] ?? null;
+
+                    return (
+                      <div
+                        key={agreement.id}
+                        className="group px-6 py-5 hover:bg-slate-50 transition-all duration-200 cursor-pointer"
+                        onClick={() => handleOpenDetails(agreement)}
+                      >
+                        <div className="flex items-center justify-between gap-6">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="font-semibold text-slate-800 text-base truncate" title={agreement.title}>
+                                {agreement.title}
+                              </h3>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-200 text-slate-700 uppercase tracking-wide flex-shrink-0">
+                                Aguardando definição
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
+                              <span className="flex items-center gap-1.5">
+                                <User className="w-3.5 h-3.5" />
+                                {getClientName(agreement.client_id)}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span>{pendingInstallments.length} pendente{pendingInstallments.length !== 1 ? 's' : ''} fora do fluxo</span>
+                              {nextInstallment && (
+                                <>
+                                  <span className="text-slate-300">•</span>
+                                  <span>Próximo vencimento original: {fmtDateShared(nextInstallment.due_date)}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-lg font-bold text-slate-700">
+                              <SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} />
+                            </p>
+                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                              Honorários: <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} />
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Acordos Concluídos */}
           {(() => {
             const completedAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'concluido');
@@ -4292,7 +4527,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
           {/* Acordos Cancelados */}
           {(() => {
-            const canceledAgreements = agreements.filter((a: Agreement) => a.status === 'cancelado');
+            const canceledAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'cancelado');
             if (canceledAgreements.length === 0) return null;
             
             return (
@@ -4991,6 +5226,26 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 >
                   <Trash2 className="w-3.5 h-3.5" />Excluir
                 </button>
+                {selectedAgreement.status !== 'concluido' && selectedAgreement.status !== 'cancelado' && (
+                  <select
+                    value={selectedAgreement.status === 'aguardando_definicao' ? 'aguardando_definicao' : 'ativo'}
+                    onChange={(e) => {
+                      const next = e.target.value as 'ativo' | 'aguardando_definicao';
+                      const current = selectedAgreement.status === 'aguardando_definicao' ? 'aguardando_definicao' : 'ativo';
+                      if (next === current) return;
+                      handleSetAgreementWaitingDefinition(selectedAgreement, next);
+                    }}
+                    title="Status do acordo"
+                    className={`inline-flex items-center px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                      selectedAgreement.status === 'aguardando_definicao'
+                        ? 'border-slate-300 dark:border-slate-700/60 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        : 'border-[#e7e5df] dark:border-zinc-600 bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    <option value="ativo">Status: Ativo</option>
+                    <option value="aguardando_definicao">Aguardando definição</option>
+                  </select>
+                )}
               </div>
 
               {/* Grid de 3 colunas */}
@@ -5109,13 +5364,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       </div>
                       <div className="flex justify-between items-center py-2.5">
                         <span className="text-slate-500 dark:text-slate-400">Status</span>
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          selectedAgreement.status === 'ativo' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
-                          selectedAgreement.status === 'concluido' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' :
-                          selectedAgreement.status === 'cancelado' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
-                          'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                        }`}>
-                          {selectedAgreement.status === 'ativo' ? 'Em Andamento' : selectedAgreement.status.charAt(0).toUpperCase() + selectedAgreement.status.slice(1)}
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${getAgreementStatusBadgeClass(selectedAgreement.status)}`}>
+                          {getAgreementStatusLabel(selectedAgreement.status)}
                         </span>
                       </div>
                     </div>
@@ -5865,23 +6115,46 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         zIndex={70}
         headerActions={
           <div className="flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-slate-500" />
-            <input
-              type="month"
-              value={auditFilterMonth}
-              onChange={(e) => {
-                setAuditFilterMonth(e.target.value);
-                loadAuditByMonth(e.target.value);
-              }}
-              className="border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm bg-[#f8f7f5] dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+            {auditShowAll ? (
+              <>
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400 px-2 py-1.5 rounded-lg bg-[#f8f7f5] dark:bg-zinc-800 border border-[#e7e5df] dark:border-zinc-700">
+                  Histórico completo
+                </span>
+                {auditAgreementId && (
+                  <button
+                    onClick={() => {
+                      const currentMonth = new Date().toISOString().slice(0, 7);
+                      setAuditShowAll(false);
+                      setAuditFilterMonth(currentMonth);
+                      loadAuditByMonth(currentMonth);
+                    }}
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 px-2 py-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
+                  >
+                    Filtrar por mês
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <CalendarIcon className="w-4 h-4 text-slate-500" />
+                <input
+                  type="month"
+                  value={auditFilterMonth}
+                  onChange={(e) => {
+                    setAuditFilterMonth(e.target.value);
+                    loadAuditByMonth(e.target.value);
+                  }}
+                  className="border border-[#e7e5df] dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm bg-[#f8f7f5] dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </>
+            )}
           </div>
         }
         footer={
           <div className="flex items-center justify-between w-full">
             <p className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
               <span className="text-red-500">▌</span>
-              {auditTotals.count} registro{auditTotals.count !== 1 ? 's' : ''} em {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              {auditTotals.count} registro{auditTotals.count !== 1 ? 's' : ''} {auditShowAll ? 'no histórico completo' : `em ${new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`}
             </p>
             <button
               onClick={handleCloseAuditModal}
@@ -5898,7 +6171,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl p-3 border border-[#e7e5df] dark:border-zinc-800 shadow-sm">
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-medium mb-1">Período</p>
                   <p className="text-base font-bold text-slate-900 dark:text-white">
-                    {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+                    {auditShowAll ? 'Tudo' : new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
                   </p>
                 </div>
                 <div className="bg-[#f8f7f5] dark:bg-zinc-900 rounded-xl p-3 border border-[#e7e5df] dark:border-zinc-800 shadow-sm">
@@ -5924,9 +6197,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               ) : auditLogs.length === 0 ? (
                 <div className="text-center py-12">
                   <History className="w-16 h-16 text-slate-300 dark:text-zinc-600 mx-auto mb-4" />
-                  <p className="text-slate-600 dark:text-slate-400 font-medium mb-2">Nenhuma baixa neste período</p>
+                  <p className="text-slate-600 dark:text-slate-400 font-medium mb-2">{auditShowAll ? 'Nenhuma baixa registrada' : 'Nenhuma baixa neste período'}</p>
                   <p className="text-sm text-slate-500 dark:text-slate-500">
-                    Selecione outro mês para ver os registros
+                    {auditShowAll ? 'Este acordo ainda não possui baixas registradas' : 'Selecione outro mês para ver os registros'}
                   </p>
                 </div>
               ) : (

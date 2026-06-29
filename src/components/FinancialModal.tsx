@@ -12,6 +12,13 @@ interface FinancialModalProps {
 export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [loading, setLoading] = useState(true);
+  const statusLabel = (status?: Agreement['status'] | null) => {
+    if (status === 'ativo') return 'Em Andamento';
+    if (status === 'concluido') return 'Concluído';
+    if (status === 'cancelado') return 'Cancelado';
+    if (status === 'aguardando_definicao') return 'Aguardando definição';
+    return status || '-';
+  };
 
   useEffect(() => {
     async function loadAgreement() {
@@ -136,9 +143,10 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
               agreement.status === 'ativo' ? 'bg-green-100 text-green-800' :
               agreement.status === 'concluido' ? 'bg-slate-100 text-slate-700' :
               agreement.status === 'cancelado' ? 'bg-red-100 text-red-800' :
+              agreement.status === 'aguardando_definicao' ? 'bg-slate-200 text-slate-700' :
               'bg-slate-100 text-slate-800'
             }`}>
-              {agreement.status || '-'}
+              {statusLabel(agreement.status)}
             </span>
           </div>
         </div>

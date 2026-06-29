@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import { syncBus } from '../lib/syncBus';
 import type {
   Agreement,
+  AgreementStatus,
   Installment,
   CreateAgreementDTO,
   UpdateAgreementDTO,
@@ -11,6 +12,12 @@ import type {
   PaymentAuditLog,
   CreatePaymentAuditDTO,
 } from '../types/financial.types';
+
+const NON_OPERATIONAL_AGREEMENT_STATUSES: AgreementStatus[] = ['cancelado', 'aguardando_definicao'];
+
+const isOperationalAgreementStatus = (status?: AgreementStatus | string | null) => (
+  !status || !NON_OPERATIONAL_AGREEMENT_STATUSES.includes(status as AgreementStatus)
+);
 
 class FinancialService {
   // ============================================
@@ -503,7 +510,7 @@ class FinancialService {
     return data || [];
   }
 
-  async listAllInstallments(filters?: { status?: string; overdue?: boolean }): Promise<(Installment & { agreement?: Agreement })[]> {
+  async listAllInstallments(filters?: { status?: string; overdue?: boolean; includeNonOperational?: boolean }): Promise<(Installment & { agreement?: Agreement })[]> {
     let query = supabase
       .from('installments')
       .select('*, agreements(*)')
@@ -524,7 +531,15 @@ class FinancialService {
     // Atualizar status de vencidas
     if (data) {
       const today = new Date().toISOString().split('T')[0];
-      const overdueIds = data
+      const normalized = data.map((inst: any) => ({
+        ...inst,
+        agreement: inst.agreements,
+        agreements: undefined,
+      }));
+      const operationalInstallments = normalized.filter((inst: any) =>
+        isOperationalAgreementStatus(inst.agreement?.status),
+      );
+      const overdueIds = operationalInstallments
         .filter((i: any) => i.status === 'pendente' && i.due_date < today)
         .map((i: any) => i.id);
 
@@ -536,17 +551,14 @@ class FinancialService {
       }
 
       const overdueSet = new Set(overdueIds);
-      return data.map((inst: any) => {
+      const visibleInstallments = filters?.includeNonOperational ? normalized : operationalInstallments;
+
+      return visibleInstallments.map((inst: any) => {
         const installment = overdueSet.has(inst.id)
           ? { ...inst, status: 'vencido' as const }
           : inst;
-        
-        // Renomear agreements para agreement (singular)
-        return {
-          ...installment,
-          agreement: inst.agreements,
-          agreements: undefined,
-        };
+
+        return installment;
       });
     }
 
@@ -560,6 +572,13 @@ class FinancialService {
   async getFinancialStats(referenceMonth?: string): Promise<FinancialStats> {
     const { data: agreements } = await supabase.from('agreements').select('*');
     const { data: installments } = await supabase.from('installments').select('*');
+    const operationalAgreements = (agreements || []).filter((agreement) =>
+      isOperationalAgreementStatus(agreement.status),
+    );
+    const operationalAgreementIds = new Set(operationalAgreements.map((agreement) => agreement.id));
+    const operationalInstallments = (installments || []).filter((installment) =>
+      operationalAgreementIds.has(installment.agreement_id),
+    );
 
     const referenceDate = referenceMonth ? new Date(`${referenceMonth}-01T00:00:00`) : new Date();
     const today = new Date().toISOString().split('T')[0];
@@ -570,15 +589,15 @@ class FinancialService {
     const monthEnd = monthEndDate.toISOString().split('T')[0];
 
     // Calcular honorários do escritório
-    const totalFees = agreements?.reduce((sum, a) => sum + a.fee_value, 0) || 0;
+    const totalFees = operationalAgreements.reduce((sum, a) => sum + a.fee_value, 0);
     
     // Calcular proporção de honorários por parcela
     const pendingStatuses: Array<'pendente' | 'vencido'> = ['pendente', 'vencido'];
 
     const calculateFeesPaid = () => {
       let feesPaid = 0;
-      agreements?.forEach(agreement => {
-        const agreementInstallments = installments?.filter(i => i.agreement_id === agreement.id) || [];
+      operationalAgreements.forEach(agreement => {
+        const agreementInstallments = operationalInstallments.filter(i => i.agreement_id === agreement.id);
         const paidInstallments = agreementInstallments.filter(i => i.status === 'pago');
         const feePerInstallment = agreement.fee_value / agreement.installments_count;
         feesPaid += paidInstallments.length * feePerInstallment;
@@ -594,9 +613,9 @@ class FinancialService {
     let monthlyFeesPending = 0;
     let monthlyPaidInstallments = 0;
 
-    agreements?.forEach(agreement => {
+    operationalAgreements.forEach(agreement => {
       const feePerInstallment = agreement.fee_value / agreement.installments_count;
-      const agreementInstallments = installments?.filter(i => i.agreement_id === agreement.id) || [];
+      const agreementInstallments = operationalInstallments.filter(i => i.agreement_id === agreement.id);
 
       // Honorários previstos e pendentes do mês (baseado na data de vencimento)
       agreementInstallments
@@ -629,9 +648,9 @@ class FinancialService {
 
     // Calcular honorários vencidos
     let totalOverdueFees = 0;
-    agreements?.forEach(agreement => {
+    operationalAgreements.forEach(agreement => {
       const feePerInstallment = agreement.fee_value / agreement.installments_count;
-      const agreementInstallments = installments?.filter(i => i.agreement_id === agreement.id) || [];
+      const agreementInstallments = operationalInstallments.filter(i => i.agreement_id === agreement.id);
       const overdueInstallments = agreementInstallments.filter(
         i => pendingStatuses.includes(i.status as any) && i.due_date < today
       );
@@ -639,19 +658,19 @@ class FinancialService {
     });
 
     const stats: FinancialStats = {
-      total_agreements: agreements?.length || 0,
-      active_agreements: agreements?.filter(a => a.status === 'ativo').length || 0,
-      total_contracted: agreements?.reduce((sum, a) => sum + a.total_value, 0) || 0,
+      total_agreements: operationalAgreements.length,
+      active_agreements: operationalAgreements.filter(a => a.status === 'ativo').length,
+      total_contracted: operationalAgreements.reduce((sum, a) => sum + a.total_value, 0),
       total_fees: totalFees,
       total_fees_received: feesReceived,
       total_fees_pending: feesPending,
-      total_received: installments?.filter(i => i.status === 'pago').reduce((sum, i) => sum + (i.paid_value || 0), 0) || 0,
+      total_received: operationalInstallments.filter(i => i.status === 'pago').reduce((sum, i) => sum + (i.paid_value || 0), 0),
       total_pending:
-        installments?.filter(i => pendingStatuses.includes(i.status as any)).reduce((sum, i) => sum + i.value, 0) || 0,
+        operationalInstallments.filter(i => pendingStatuses.includes(i.status as any)).reduce((sum, i) => sum + i.value, 0),
       total_overdue: Number(totalOverdueFees.toFixed(2)),
       overdue_installments:
-        installments?.filter(i => pendingStatuses.includes(i.status as any) && i.due_date < today).length || 0,
-      paid_installments: installments?.filter(i => {
+        operationalInstallments.filter(i => pendingStatuses.includes(i.status as any) && i.due_date < today).length,
+      paid_installments: operationalInstallments.filter(i => {
         if (i.status !== 'pago') return false;
         const dateToCompare = i.payment_date || i.due_date;
         return dateToCompare >= monthStart && dateToCompare <= monthEnd;
@@ -664,10 +683,27 @@ class FinancialService {
       monthly_paid_installments: monthlyPaidInstallments,
     };
 
+    stats.pending_installments = operationalInstallments.filter(
+      (installment) =>
+        pendingStatuses.includes(installment.status as any) &&
+        installment.due_date >= monthStart &&
+        installment.due_date <= monthEnd,
+    ).length;
+
     return stats;
   }
 
   private async checkAndUpdateAgreementStatus(agreementId: string): Promise<void> {
+    const { data: agreement } = await supabase
+      .from('agreements')
+      .select('status')
+      .eq('id', agreementId)
+      .single();
+
+    if (agreement && !isOperationalAgreementStatus(agreement.status)) {
+      return;
+    }
+
     const installments = await this.listInstallments(agreementId);
     
     const allPaid = installments.every(i => i.status === 'pago');

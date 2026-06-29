@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.279': { name: 'Cafe Financeiro em Definicao', emoji: '[coffee]' },
   '1.10.278': { name: 'Cafe WhatsApp Operacional Afinado', emoji: '[green_heart]' },
   '1.10.277': { name: 'Cafe Kit Rastreador', emoji: '[eyes]' },
   '1.10.276': { name: 'Cafe Thread Visivel', emoji: '[speech_balloon]' },
@@ -930,6 +931,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.279',
+    date: '29/06/2026',
+    summary: 'O financeiro passou a tratar acordos em aguardando definicao fora do fluxo operacional, com auditoria e calendario mais coerentes, enquanto o editor de peticoes recebeu ajustes visuais e de usabilidade.',
+    modules: [
+      { moduleId: 'financeiro', changes: [
+        { type: 'improvement' as const, title: 'Novo status aguardando definicao entrou no fluxo de acordos', description: 'Acordos agora podem ser movidos para aguardando definicao, com suporte de tipagem, interface e migration para persistir o novo estado no banco.' },
+        { type: 'improvement' as const, title: 'Indicadores, parcelas e agenda passaram a ignorar acordos nao operacionais', description: 'Listagens, estatisticas, proximos vencimentos e sincronizacao com calendario passaram a retirar do fluxo operacional os acordos cancelados ou em aguardando definicao.' },
+        { type: 'fix' as const, title: 'Historico de auditoria e exibicao de status ficaram mais claros', description: 'A auditoria do acordo ganhou carregamento integral no contexto de detalhes e os badges/textos de status passaram a mostrar rotulos mais compreensiveis no financeiro.' },
+      ]},
+      { moduleId: 'peticoes', changes: [
+        { type: 'improvement' as const, title: 'Modal de blocos e acoes do editor foram refinados', description: 'O editor de peticoes recebeu ajustes de layout, rodape, botoes e acabamentos visuais para deixar o modal de blocos e a experiencia de edicao mais consistentes.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.278',
     date: '28/06/2026',

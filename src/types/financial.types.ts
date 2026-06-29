@@ -1,6 +1,6 @@
 // Tipos do Módulo Financeiro
 
-export type AgreementStatus = 'pendente' | 'ativo' | 'concluido' | 'cancelado';
+export type AgreementStatus = 'pendente' | 'ativo' | 'concluido' | 'cancelado' | 'aguardando_definicao';
 export type InstallmentStatus = 'pendente' | 'pago' | 'vencido' | 'cancelado';
 export type PaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'cheque' | 'cartao_credito' | 'cartao_debito';
 export type FeeType = 'percentage' | 'fixed'; // Tipo de honorário (risco ou fixo)
