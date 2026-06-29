@@ -42,10 +42,6 @@ import {
   Pencil,
   LayoutGrid,
   List,
-  Image as ImageIcon,
-  Table,
-  Link,
-  Bookmark,
   ChevronUp,
   Copy,
   Hash,
@@ -75,7 +71,7 @@ import type { CloudFile } from '../types/cloud.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { supabase } from '../config/supabase';
-import SyncfusionEditor, { SyncfusionEditorRef, type SyncfusionSelectionState } from './SyncfusionEditor';
+import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 
 const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
   const [debounced, setDebounced] = useState(value);
@@ -342,45 +338,6 @@ const EDITOR_STYLES = `
     overflow: hidden;
     position: relative;
     background: #f8fafc;
-  }
-
-  .word-ribbon-btn,
-  .word-ribbon-action,
-  .word-ribbon-color {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 36px;
-    padding: 0 12px;
-    border-radius: 8px;
-    border: 1px solid #e5ded3;
-    background: #fff;
-    color: #4b5563;
-    font-size: 12px;
-    font-weight: 600;
-    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-  }
-
-  .word-ribbon-btn:hover,
-  .word-ribbon-action:hover,
-  .word-ribbon-color:hover {
-    background: #f8f2e8;
-    border-color: #d9b17e;
-    color: #9a4f1d;
-  }
-
-  .word-ribbon-btn-active {
-    background: #efe1cf !important;
-    border-color: #d9b17e !important;
-    color: #9a4f1d !important;
-  }
-
-  .word-ribbon-color {
-    flex-direction: column;
-    gap: 0;
-    min-width: 36px;
-    padding: 0 8px;
   }
   
   /* Container Raiz do Syncfusion */
@@ -776,13 +733,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
-  const ribbonImageInputRef = useRef<HTMLInputElement>(null);
-  const [wordRibbonTab, setWordRibbonTab] = useState<'inicio' | 'inserir' | 'layout' | 'revisao' | 'exibir'>('inicio');
-  const [selectionState, setSelectionState] = useState<SyncfusionSelectionState>({});
-  const [ribbonFontFamily, setRibbonFontFamily] = useState('Times New Roman');
-  const [ribbonFontSize, setRibbonFontSize] = useState('10');
-  const [showRulerOnEditor, setShowRulerOnEditor] = useState(true);
-  const [pageFitMode, setPageFitMode] = useState<'FitPageWidth' | 'FitOnePage'>('FitPageWidth');
 
   const [defaultDocFont, setDefaultDocFont] = useState<{ fontFamily?: string; fontSize?: number } | null>(() => {
     try {
@@ -845,14 +795,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     defaultDocFontRef.current = defaultDocFont;
   }, [defaultDocFont]);
 
-  useEffect(() => {
-    if (!defaultDocFont) return;
-    if (defaultDocFont.fontFamily) setRibbonFontFamily(defaultDocFont.fontFamily);
-    if (typeof defaultDocFont.fontSize === 'number' && Number.isFinite(defaultDocFont.fontSize)) {
-      setRibbonFontSize(String(Math.round(defaultDocFont.fontSize * 10) / 10).replace(/\.0$/, ''));
-    }
-  }, [defaultDocFont]);
-
   const saveDefaultDocFont = (font: { fontFamily?: string; fontSize?: number } | null) => {
     setDefaultDocFont(font);
     try {
@@ -880,87 +822,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         // ignore
       }
     }, 180);
-  };
-
-  const ribbonFonts = [
-    'Times New Roman',
-    'Arial',
-    'Calibri',
-    'Georgia',
-    'Cambria',
-    'Verdana',
-    'Tahoma',
-    'Garamond',
-  ];
-
-  const syncRibbonFontState = (state?: SyncfusionSelectionState) => {
-    const fontFamily = state?.fontFamily?.trim();
-    const fontSize = state?.fontSize;
-    if (fontFamily) setRibbonFontFamily(fontFamily);
-    if (typeof fontSize === 'number' && Number.isFinite(fontSize) && fontSize > 0) {
-      setRibbonFontSize(String(Math.round(fontSize * 10) / 10).replace(/\.0$/, ''));
-    }
-  };
-
-  const applyRibbonFontFamily = (fontFamily: string) => {
-    setRibbonFontFamily(fontFamily);
-    editorRef.current?.applyCurrentFont(fontFamily, undefined);
-    editorRef.current?.focus();
-    setHasUnsavedChanges(true);
-  };
-
-  const applyRibbonFontSize = (rawValue: string) => {
-    setRibbonFontSize(rawValue);
-    const numeric = Number(String(rawValue).replace(',', '.'));
-    if (!Number.isFinite(numeric) || numeric <= 0) return;
-    editorRef.current?.applyCurrentFont(undefined, numeric);
-    editorRef.current?.focus();
-    setHasUnsavedChanges(true);
-  };
-
-  const applyRibbonAction = (action: () => void) => {
-    action();
-    editorRef.current?.focus();
-    setHasUnsavedChanges(true);
-  };
-
-  const handleRibbonSelectionChange = (state: SyncfusionSelectionState) => {
-    setSelectionState(state);
-    syncRibbonFontState(state);
-  };
-
-  const handleRibbonInsertImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const result = typeof reader.result === 'string' ? reader.result : '';
-        if (!result) return;
-        await editorRef.current?.insertImage(result);
-        editorRef.current?.focus();
-        setHasUnsavedChanges(true);
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      event.target.value = '';
-    }
-  };
-
-  const handleRibbonInsertLink = () => {
-    const selectedText = editorRef.current?.getSelectedText?.().trim();
-    const address = window.prompt('Informe a URL do link:', 'https://');
-    if (!address) return;
-    applyRibbonAction(() => editorRef.current?.insertHyperlink(address, selectedText || address));
-  };
-
-  const handleRibbonReplace = () => {
-    const searchText = window.prompt('Localizar:');
-    if (!searchText) return;
-    const replaceText = window.prompt('Substituir por:', '') ?? '';
-    applyRibbonAction(() => {
-      editorRef.current?.replaceAll(searchText, replaceText);
-    });
   };
 
   useEffect(() => {
@@ -4237,289 +4098,12 @@ Regras:
 
   // Tela principal do editor
   return (
-    <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-[#ece8e1]`}>
+    <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-slate-50`}>
       {/* Faixa de acento */}
-      <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-[#df4d23] via-[#ef7d1d] to-[#f6a627]" />
-
-      <div className="relative z-[30] shrink-0 border-b border-[#e3ddd4] bg-[#f7f4ee] shadow-[0_8px_24px_rgba(47,38,24,0.08)]">
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#ddd7ce] bg-white text-slate-500 transition hover:bg-[#f3efe8]"
-            title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
-          >
-            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-          </button>
-          <div className="flex items-center rounded-lg border border-[#ddd7ce] bg-[#ece7de] p-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveWorkspace('editor')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeWorkspace === 'editor' ? 'bg-white text-[#3a362f] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Editor
-            </button>
-            {blocksEnabled && (
-              <button
-                type="button"
-                onClick={() => setActiveWorkspace('blocks')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeWorkspace === 'blocks' ? 'bg-white text-[#3a362f] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Blocos
-              </button>
-            )}
-          </div>
-          <button
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                const what = [
-                  petitionTitle ? `Documento: "${petitionTitle}"` : '',
-                  selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-                ].filter(Boolean).join('\n');
-                const msg = `Há alterações não salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
-                if (!confirm(msg)) return;
-              }
-              setShowStartScreen(true);
-            }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#efe9df] hover:text-[#ba5b22]"
-            title="Voltar para a tela inicial"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <input
-            type="text"
-            value={petitionTitle}
-            onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-            className="min-w-[180px] flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-slate-700 outline-none transition hover:border-[#e7e0d4] focus:border-[#e7e0d4] focus:bg-white/70"
-            placeholder="Sem título"
-          />
-          {legalAreas.length > 0 && (
-            <div className="flex items-center gap-1">
-              <select
-                value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  if (raw.startsWith('type:')) {
-                    const typeId = raw.replace('type:', '').trim();
-                    const foundType = Object.values(standardTypesByArea).flat().find((t) => t.id === typeId) || null;
-                    const areaId = foundType?.legal_area_id || null;
-                    if (areaId) {
-                      setSelectedLegalAreaId(areaId);
-                      try { window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId); } catch {}
-                      setStandardTypes(standardTypesByArea[areaId] ?? []);
-                    }
-                    setSelectedStandardTypeId(typeId);
-                    setBlockFilterScope('type');
-                    if (areaId) {
-                      try { window.localStorage.setItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`, typeId); } catch {}
-                    }
-                    if (foundType?.default_document && editorRef.current) {
-                      editorRef.current.loadSfdt(foundType.default_document);
-                      if (foundType.default_document_name) setPetitionTitle(foundType.default_document_name);
-                    }
-                    return;
-                  }
-                  const newAreaId = raw.replace('area:', '').trim() || null;
-                  setSelectedLegalAreaId(newAreaId);
-                  setSelectedStandardTypeId(null);
-                  setBlockFilterScope('area');
-                  if (newAreaId) {
-                    try {
-                      window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, newAreaId);
-                      window.localStorage.removeItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${newAreaId}`);
-                    } catch {}
-                  }
-                  setStandardTypes(newAreaId ? (standardTypesByArea[newAreaId] ?? []) : []);
-                  const area = legalAreas.find((a) => a.id === newAreaId);
-                  if (area && (!petitionTitle || petitionTitle.startsWith('Nova Petição'))) {
-                    setPetitionTitle(`Nova Petição ${area.name}`);
-                  }
-                }}
-                className="h-8 min-w-[190px] rounded-md border border-[#ddd7ce] bg-white px-3 text-xs font-medium text-slate-700 outline-none"
-                style={{ borderLeftWidth: '3px', borderLeftColor: selectedLegalArea?.color || '#e2e8f0' }}
-              >
-                {legalAreas.map((area) => (
-                  <optgroup key={area.id} label={area.name}>
-                    <option value={`area:${area.id}`}>Todos da área</option>
-                    {(standardTypesByArea[area.id] ?? []).map((t) => (
-                      <option key={t.id} value={`type:${t.id}`}>{t.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <button onClick={() => openLegalAreaModal()} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#efe9df] hover:text-[#ba5b22]" title="Gerenciar áreas jurídicas">
-                <Settings className="w-4 h-4" />
-              </button>
-              <button onClick={() => openStandardTypeModal()} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#eef4ff] hover:text-blue-600" title="Gerenciar modelos">
-                <FileText className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-          {selectedClient && (
-            <div className="inline-flex items-center gap-2 rounded-md border border-[#efc78f] bg-white px-3 py-1.5 text-xs font-semibold text-[#b66222]">
-              <User className="w-3.5 h-3.5" />
-              <span className="max-w-[220px] truncate">{selectedClient.full_name}</span>
-              <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-[#d0a16e] transition hover:text-[#b66222]">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-          {lastSaved && (
-            <div className="ml-auto flex items-center gap-1 text-[11px] text-slate-400 tabular-nums whitespace-nowrap">
-              <Clock className="w-3.5 h-3.5" />
-              <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
-            </div>
-          )}
-          <button onClick={() => newPetition({ keepClient: true })} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-[#efe9df]"><Plus className="w-4 h-4" />Novo</button>
-          <button onClick={savePetition} disabled={savingDoc} className="inline-flex items-center gap-1 rounded-md bg-[#f3a01f] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#df8f15] disabled:opacity-50">
-            {savingDoc ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Salvar
-          </button>
-          <button onClick={exportToWord} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-[#efe9df]"><Download className="w-4 h-4" />Word</button>
-          <input ref={ribbonImageInputRef} type="file" accept="image/*" onChange={handleRibbonInsertImage} className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-[#efe9df]"><FileUp className="w-4 h-4" />Modelo</button>
-          <button onClick={loadDefaultTemplate} disabled={!hasDefaultTemplate} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-[#efe9df] disabled:opacity-50 disabled:hover:bg-transparent"><FolderOpen className="w-4 h-4" />Padrão</button>
-        </div>
-
-        <div className="flex items-end gap-1 border-t border-[#eee8df] px-3 pt-2">
-          {[
-            ['inicio', 'Início'],
-            ['inserir', 'Inserir'],
-            ['layout', 'Layout'],
-            ['revisao', 'Revisão'],
-            ['exibir', 'Exibir'],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setWordRibbonTab(key as typeof wordRibbonTab)}
-              className={`rounded-t-md px-4 py-2 text-sm font-medium transition ${wordRibbonTab === key ? 'bg-white text-[#bf5a23]' : 'text-slate-500 hover:bg-[#f0ebe3] hover:text-slate-700'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="border-t border-[#e2ddd5] bg-white px-3 py-3">
-          {wordRibbonTab === 'inicio' && (
-            <div className="flex flex-wrap items-stretch gap-3">
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Área de Transferência</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.paste())} className="word-ribbon-action">Colar</button>
-                  <button onClick={() => editorRef.current?.copySelection()} className="word-ribbon-action">Copiar</button>
-                  <button onClick={() => editorRef.current?.copyAll()} className="word-ribbon-action">Copiar tudo</button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Fonte</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select value={ribbonFontFamily} onChange={(e) => applyRibbonFontFamily(e.target.value)} className="h-9 min-w-[170px] rounded-md border border-[#ddd7ce] bg-white px-3 text-sm text-slate-700 outline-none">
-                    {ribbonFonts.map((font) => <option key={font} value={font}>{font}</option>)}
-                  </select>
-                  <input value={ribbonFontSize} onChange={(e) => setRibbonFontSize(e.target.value)} onBlur={(e) => applyRibbonFontSize(e.target.value)} className="h-9 w-16 rounded-md border border-[#ddd7ce] bg-white px-2 text-sm text-slate-700 outline-none" />
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setBold(!selectionState.bold))} className={`word-ribbon-btn ${selectionState.bold ? 'word-ribbon-btn-active' : ''}`}>B</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setItalic(!selectionState.italic))} className={`word-ribbon-btn italic ${selectionState.italic ? 'word-ribbon-btn-active' : ''}`}>I</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setUnderline(!selectionState.underline))} className={`word-ribbon-btn underline ${selectionState.underline ? 'word-ribbon-btn-active' : ''}`}>U</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setStrikethrough(!selectionState.strikethrough))} className={`word-ribbon-btn line-through ${selectionState.strikethrough ? 'word-ribbon-btn-active' : ''}`}>S</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setSuperscript())} className={`word-ribbon-btn ${selectionState.baselineAlignment === 'Superscript' ? 'word-ribbon-btn-active' : ''}`}>x²</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setSubscript())} className={`word-ribbon-btn ${selectionState.baselineAlignment === 'Subscript' ? 'word-ribbon-btn-active' : ''}`}>x₂</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyTextColor('#111827'))} className="word-ribbon-color"><span className="font-semibold">A</span><span className="mt-0.5 h-0.5 w-4 bg-black" /></button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyHighlightColor('Yellow'))} className="word-ribbon-color"><span className="bg-yellow-300 px-1">A</span></button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Parágrafo</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyBulletList())} className="word-ribbon-action">• Lista</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyNumberedList())} className="word-ribbon-action">1. Lista</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setTextAlignment('Left'))} className={`word-ribbon-btn ${selectionState.textAlignment === 'Left' ? 'word-ribbon-btn-active' : ''}`}>Esq.</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setTextAlignment('Center'))} className={`word-ribbon-btn ${selectionState.textAlignment === 'Center' ? 'word-ribbon-btn-active' : ''}`}>Centro</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setTextAlignment('Right'))} className={`word-ribbon-btn ${selectionState.textAlignment === 'Right' ? 'word-ribbon-btn-active' : ''}`}>Dir.</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setTextAlignment('Justify'))} className={`word-ribbon-btn ${selectionState.textAlignment === 'Justify' ? 'word-ribbon-btn-active' : ''}`}>Just.</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setLineSpacing(18))} className="word-ribbon-btn">1,0</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setLineSpacing(24))} className="word-ribbon-btn">1,5</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.setLineSpacing(30))} className="word-ribbon-btn">2,0</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('Paragraph'))} className="word-ribbon-action">Parágrafo…</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {wordRibbonTab === 'inserir' && (
-            <div className="flex flex-wrap items-stretch gap-3">
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ilustrações</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => ribbonImageInputRef.current?.click()} className="word-ribbon-action"><ImageIcon className="w-4 h-4" />Imagem</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.insertTable(3, 3))} className="word-ribbon-action"><Table className="w-4 h-4" />Tabela</button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Links e Referências</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={handleRibbonInsertLink} className="word-ribbon-action"><Link className="w-4 h-4" />Link</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('Bookmark'))} className="word-ribbon-action"><Bookmark className="w-4 h-4" />Indicador</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.insertTableOfContents())} className="word-ribbon-action"><List className="w-4 h-4" />Sumário</button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Cabeçalho e Rodapé</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.goToHeader())} className="word-ribbon-action">Cabeçalho</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.goToFooter())} className="word-ribbon-action">Rodapé</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.insertPageNumber())} className="word-ribbon-action">Nº Página</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.closeHeaderFooter())} className="word-ribbon-action">Fechar</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {wordRibbonTab === 'layout' && (
-            <div className="flex flex-wrap items-stretch gap-3">
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Configurar Página</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('PageSetup'))} className="word-ribbon-action">Margens</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('Columns'))} className="word-ribbon-action">Colunas</button>
-                  <button onClick={() => setPageFitMode('FitPageWidth')} className={`word-ribbon-action ${pageFitMode === 'FitPageWidth' ? 'word-ribbon-btn-active' : ''}`}>Largura</button>
-                  <button onClick={() => setPageFitMode('FitOnePage')} className={`word-ribbon-action ${pageFitMode === 'FitOnePage' ? 'word-ribbon-btn-active' : ''}`}>Uma página</button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recuos Prontos</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyParagraphFormat(113.4, 0))} className="word-ribbon-action">Parágrafo 4cm</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.applyCitationFormat())} className="word-ribbon-action">Citação 6cm</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {wordRibbonTab === 'revisao' && (
-            <div className="flex flex-wrap items-stretch gap-3">
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Revisão</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={handleRibbonReplace} className="word-ribbon-action"><Search className="w-4 h-4" />Substituir</button>
-                  <button onClick={() => setShowAiEditModal(true)} className="word-ribbon-action">Editar com IA</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('Font'))} className="word-ribbon-action">Fonte…</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.showDialog('Paragraph'))} className="word-ribbon-action">Parágrafo…</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {wordRibbonTab === 'exibir' && (
-            <div className="flex flex-wrap items-stretch gap-3">
-              <div className="rounded-lg border border-[#ebe5dc] bg-[#fbfaf7] px-3 py-2">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Mostrar</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setShowRulerOnEditor((prev) => !prev)} className={`word-ribbon-action ${showRulerOnEditor ? 'word-ribbon-btn-active' : ''}`}>Régua</button>
-                  <button onClick={() => setSidebarOpen((prev) => !prev)} className={`word-ribbon-action ${sidebarOpen ? 'word-ribbon-btn-active' : ''}`}>Painel lateral</button>
-                  <button onClick={() => applyRibbonAction(() => editorRef.current?.refresh())} className="word-ribbon-action">Atualizar layout</button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <div className="h-1 w-full shrink-0 bg-amber-500" />
 
       {/* Toolbar Superior */}
-      <div className="hidden relative z-[20] bg-white border-b border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
+      <div className="relative z-[20] bg-white border-b border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
         {/* Toggle Sidebar */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -6008,13 +5592,9 @@ Deseja fechar mesmo assim?`;
             id="petition-main-editor"
             height="100%"
             readOnly={!isOnline}
-            enableToolbar={false}
-            showPropertiesPane={false}
+            showPropertiesPane
             showNavigationPane={false}
-            showRuler={showRulerOnEditor}
-            pageFit={pageFitMode}
             onContentChange={handleContentChange}
-            onSelectionChange={handleRibbonSelectionChange}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
               setBlockSearchScope(

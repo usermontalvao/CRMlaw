@@ -530,15 +530,8 @@ export interface SyncfusionEditorRef {
   focus: () => void;
   // Toggle bold on current selection / next inserted text
   setBold: (bold: boolean) => void;
-  setItalic: (italic: boolean) => void;
-  setUnderline: (underline: boolean) => void;
-  setStrikethrough: (enabled: boolean) => void;
-  setSuperscript: () => void;
-  setSubscript: () => void;
   getCurrentFont: () => { fontFamily?: string; fontSize?: number };
   applyCurrentFont: (fontFamily?: string, fontSize?: number) => void;
-  applyTextColor: (color: string) => void;
-  applyHighlightColor: (color: string) => void;
   moveToDocumentStart: () => void;
   // Check if editor has content
   hasContent: () => boolean;
@@ -564,33 +557,6 @@ export interface SyncfusionEditorRef {
   replaceAll: (searchText: string, replaceText: string) => boolean;
   // Force editor to refresh its layout and repaint
   refresh: () => void;
-  setTextAlignment: (alignment: 'Left' | 'Center' | 'Right' | 'Justify') => void;
-  setLineSpacing: (lineSpacing: number) => void;
-  applyBulletList: () => void;
-  applyNumberedList: () => void;
-  showDialog: (dialogType: string) => void;
-  goToHeader: () => void;
-  goToFooter: () => void;
-  closeHeaderFooter: () => void;
-  insertPageNumber: () => void;
-  insertTableOfContents: () => void;
-  insertTable: (rows?: number, columns?: number) => void;
-  insertHyperlink: (address: string, displayText?: string) => void;
-  insertImage: (imageData: string, width?: number, height?: number) => Promise<void>;
-}
-
-export interface SyncfusionSelectionState {
-  fontFamily?: string;
-  fontSize?: number;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strikethrough?: boolean;
-  baselineAlignment?: string;
-  fontColor?: string;
-  highlightColor?: string;
-  textAlignment?: string;
-  lineSpacing?: number;
 }
 
 interface SyncfusionEditorProps {
@@ -598,7 +564,6 @@ interface SyncfusionEditorProps {
   height?: string;
   onContentChange?: () => void;
   onDocumentChange?: () => void;
-  onSelectionChange?: (state: SyncfusionSelectionState) => void;
   onRequestInsertBlock?: () => void;
   onRequestCreateBlockFromSelection?: (selectedText: string, selectedSfdt?: string) => void;
   onRequestCompanyLookup?: () => void;
@@ -622,7 +587,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       height = '100%',
       onContentChange,
       onDocumentChange,
-      onSelectionChange,
       onRequestInsertBlock,
       onRequestCreateBlockFromSelection,
       onRequestCompanyLookup,
@@ -686,30 +650,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         } catch {
           // ignore
         }
-      }
-    };
-
-    const emitSelectionState = () => {
-      const editor: any = containerRef.current?.documentEditor as any;
-      if (!editor) return;
-      try {
-        const characterFormat: any = editor.selection?.characterFormat;
-        const paragraphFormat: any = editor.selection?.paragraphFormat;
-        onSelectionChange?.({
-          fontFamily: typeof characterFormat?.fontFamily === 'string' ? characterFormat.fontFamily : undefined,
-          fontSize: typeof characterFormat?.fontSize === 'number' ? characterFormat.fontSize : undefined,
-          bold: !!characterFormat?.bold,
-          italic: !!characterFormat?.italic,
-          underline: String(characterFormat?.underline || 'None') !== 'None',
-          strikethrough: String(characterFormat?.strikethrough || 'None') !== 'None',
-          baselineAlignment: typeof characterFormat?.baselineAlignment === 'string' ? characterFormat.baselineAlignment : undefined,
-          fontColor: typeof characterFormat?.fontColor === 'string' ? characterFormat.fontColor : undefined,
-          highlightColor: typeof characterFormat?.highlightColor === 'string' ? characterFormat.highlightColor : undefined,
-          textAlignment: typeof paragraphFormat?.textAlignment === 'string' ? paragraphFormat.textAlignment : undefined,
-          lineSpacing: typeof paragraphFormat?.lineSpacing === 'number' ? paragraphFormat.lineSpacing : undefined,
-        });
-      } catch {
-        // ignore
       }
     };
 
@@ -955,71 +895,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         try {
           const characterFormat = editor.selection?.characterFormat;
           if (characterFormat) characterFormat.bold = !!bold;
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setItalic: (italic: boolean) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat = editor.selection?.characterFormat;
-          if (characterFormat) characterFormat.italic = !!italic;
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setUnderline: (underline: boolean) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat = editor.selection?.characterFormat;
-          if (characterFormat) characterFormat.underline = underline ? 'Single' : 'None';
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setStrikethrough: (enabled: boolean) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat = editor.selection?.characterFormat;
-          if (characterFormat) characterFormat.strikethrough = enabled ? 'SingleStrike' : 'None';
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setSuperscript: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat = editor.selection?.characterFormat;
-          if (!characterFormat) return;
-          characterFormat.baselineAlignment =
-            characterFormat.baselineAlignment === 'Superscript' ? 'Normal' : 'Superscript';
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setSubscript: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat = editor.selection?.characterFormat;
-          if (!characterFormat) return;
-          characterFormat.baselineAlignment =
-            characterFormat.baselineAlignment === 'Subscript' ? 'Normal' : 'Subscript';
-          emitSelectionState();
         } catch {
           // ignore
         }
@@ -1049,33 +924,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           if (!characterFormat) return;
           if (fontFamily) characterFormat.fontFamily = fontFamily;
           if (typeof fontSize === 'number' && Number.isFinite(fontSize) && fontSize > 0) characterFormat.fontSize = fontSize;
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      applyTextColor: (color: string) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat: any = editor.selection?.characterFormat;
-          if (!characterFormat || !color) return;
-          characterFormat.fontColor = color;
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      applyHighlightColor: (color: string) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const characterFormat: any = editor.selection?.characterFormat;
-          if (!characterFormat || !color) return;
-          characterFormat.highlightColor = color;
-          emitSelectionState();
         } catch {
           // ignore
         }
@@ -1126,7 +974,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           paragraphFormat.firstLineIndent = firstLineIndent;
           paragraphFormat.leftIndent = leftIndent;
           paragraphFormat.textAlignment = 'Justify';
-          emitSelectionState();
         }
       },
 
@@ -1138,14 +985,12 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           paragraphFormat.firstLineIndent = 0;
           paragraphFormat.leftIndent = 170;
           paragraphFormat.textAlignment = 'Left';
-          paragraphFormat.lineSpacing = 18;
         }
         const characterFormat = editor.selection?.characterFormat;
         if (characterFormat) {
           characterFormat.italic = true;
           characterFormat.fontSize = 11;
         }
-        emitSelectionState();
       },
 
       copySelection: () => {
@@ -1329,155 +1174,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           // ignore
         }
       },
-
-      setTextAlignment: (alignment: 'Left' | 'Center' | 'Right' | 'Justify') => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          if (editor.editor && typeof editor.editor.toggleTextAlignment === 'function') {
-            editor.editor.toggleTextAlignment(alignment);
-          } else if (editor.selection?.paragraphFormat) {
-            editor.selection.paragraphFormat.textAlignment = alignment;
-          }
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      setLineSpacing: (lineSpacing: number) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          const paragraphFormat = editor.selection?.paragraphFormat;
-          if (!paragraphFormat || !Number.isFinite(lineSpacing) || lineSpacing <= 0) return;
-          paragraphFormat.lineSpacing = lineSpacing;
-          paragraphFormat.lineSpacingType = 'Multiple';
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      applyBulletList: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.editor?.applyBullet?.('\uf0b7', 'Symbol');
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      applyNumberedList: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.editor?.applyNumbering?.('%1.', 'Arabic');
-          emitSelectionState();
-        } catch {
-          // ignore
-        }
-      },
-
-      showDialog: (dialogType: string) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.showDialog?.(dialogType as any);
-        } catch {
-          // ignore
-        }
-      },
-
-      goToHeader: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.selection?.goToHeader?.();
-        } catch {
-          // ignore
-        }
-      },
-
-      goToFooter: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.selection?.goToFooter?.();
-        } catch {
-          // ignore
-        }
-      },
-
-      closeHeaderFooter: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.selection?.closeHeaderFooter?.();
-        } catch {
-          // ignore
-        }
-      },
-
-      insertPageNumber: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.editorModule?.insertPageNumber?.();
-        } catch {
-          // ignore
-        }
-      },
-
-      insertTableOfContents: () => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.editorModule?.insertTableOfContents?.();
-        } catch {
-          // ignore
-        }
-      },
-
-      insertTable: (rows = 3, columns = 3) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor) return;
-        try {
-          editor.editorModule?.insertTable?.(rows, columns);
-        } catch {
-          try {
-            editor.showDialog?.('Table');
-          } catch {
-            // ignore
-          }
-        }
-      },
-
-      insertHyperlink: (address: string, displayText?: string) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor || !address) return;
-        try {
-          editor.editorModule?.insertHyperlink?.(address, displayText || address);
-        } catch {
-          try {
-            editor.showDialog?.('Hyperlink');
-          } catch {
-            // ignore
-          }
-        }
-      },
-
-      insertImage: async (imageData: string, width?: number, height?: number) => {
-        const editor: any = containerRef.current?.documentEditor as any;
-        if (!editor || !imageData) return;
-        try {
-          await editor.editorModule?.insertImageInternal?.(imageData, true, width, height, 'Imagem');
-        } catch {
-          // ignore
-        }
-      },
     }));
 
     const handleContentChange = () => {
@@ -1509,7 +1205,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         try { initContextMenu(); } catch { /* ignore */ }
         try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
         try { editor.focusIn?.(); } catch { /* ignore */ }
-        try { emitSelectionState(); } catch { /* ignore */ }
       }, 250);
 
       window.setTimeout(() => {
@@ -2199,7 +1894,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           layoutType={layoutType}
           contentChange={handleContentChange}
           documentChange={handleDocumentChange}
-          selectionChange={emitSelectionState}
           locale="pt-BR"
           style={{ display: 'block', width: '100%', height: '100%' }}
         />
