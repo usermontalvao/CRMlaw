@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.280': { name: 'Cafe Ribbon Editorial', emoji: '[memo]' },
   '1.10.279': { name: 'Cafe Financeiro em Definicao', emoji: '[coffee]' },
   '1.10.278': { name: 'Cafe WhatsApp Operacional Afinado', emoji: '[green_heart]' },
   '1.10.277': { name: 'Cafe Kit Rastreador', emoji: '[eyes]' },
@@ -931,6 +932,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.280',
+    date: '29/06/2026',
+    summary: 'O editor de peticoes ganhou uma casca operacional inspirada no Word, com ribbon por abas, comandos de formatacao mais amplos e uma experiencia de edicao mais proxima de um processador de texto completo.',
+    modules: [
+      { moduleId: 'peticoes', changes: [
+        { type: 'feature' as const, title: 'Editor passou a operar com ribbon estilo Word', description: 'O topo do editor foi reorganizado em abas como Inicio, Inserir, Layout, Revisao e Exibir, aproximando a navegacao e os atalhos da experiencia do Microsoft Word.' },
+        { type: 'feature' as const, title: 'Comandos de formatacao e insercao ficaram acessiveis pelo ribbon', description: 'O wrapper do Syncfusion agora expoe acoes de fonte, alinhamento, listas, espacamento, cabecalho, rodape, imagens, links, tabela, sumario e numeracao para alimentar o novo ribbon.' },
+        { type: 'improvement' as const, title: 'Estado de selecao passou a refletir a formatacao ativa', description: 'A selecao atual do documento passou a sincronizar familia, tamanho e estilos ativos com a interface, deixando o ribbon mais fiel ao contexto do cursor durante a edicao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.279',
     date: '29/06/2026',
