@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.280': { name: 'Cafe Editor Unificado', emoji: '[memo]' },
   '1.10.279': { name: 'Cafe Financeiro em Definicao', emoji: '[coffee]' },
   '1.10.278': { name: 'Cafe WhatsApp Operacional Afinado', emoji: '[green_heart]' },
   '1.10.277': { name: 'Cafe Kit Rastreador', emoji: '[eyes]' },
@@ -931,6 +932,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.280',
+    date: '29/06/2026',
+    summary: 'O editor de peticoes foi consolidado com ribbon propria, saneamento de encoding e o fluxo de documentos passou a abrir o DOCX no mesmo editor completo em tela cheia.',
+    modules: [
+      { moduleId: 'peticoes', changes: [
+        { type: 'feature' as const, title: 'Ribbon proprietaria passou a comandar o editor principal', description: 'O editor de peticoes ganhou uma faixa de opcoes estilo Word, com recolhimento, regua, arquivo, exibicao e comandos ligados diretamente ao DocumentEditor.' },
+        { type: 'fix' as const, title: 'Textos quebrados e nomes corrompidos passaram a ser saneados no modulo', description: 'Titulos, areas, peticoes padrao, blocos e outras strings dinamicas agora passam por reparo de mojibake para evitar labels como PetiÃ§Ã£o ou Ãrea na interface.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'feature' as const, title: 'Editor de documentos passou a abrir no mesmo shell completo do editor', description: 'O fluxo de edicao de DOCX dos documentos agora abre em tela cheia com a mesma ribbon do editor de peticoes, mantendo salvar, abrir arquivo local, exportar DOCX e regua no mesmo ambiente.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.279',
     date: '29/06/2026',

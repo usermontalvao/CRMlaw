@@ -101,6 +101,28 @@ const buildDocxImportError = (error: unknown) => {
   return new Error('Não foi possível importar o arquivo DOCX no editor. Verifique a configuração de `VITE_SYNC_FUSION`.');
 };
 
+const forceRulerVisibility = (container: any, show: boolean) => {
+  try {
+    const host = container?.element as HTMLElement | undefined;
+    if (host) host.dataset.codexRulerVisible = show ? '1' : '0';
+
+    const root = (container?.element || container?.containerTarget || container) as ParentNode | null;
+    if (!root?.querySelectorAll) return;
+
+    const rulerNodes = root.querySelectorAll<HTMLElement>(
+      '.e-de-hruler, .e-de-vruler, .e-ruler, .e-ruler-container, .e-de-ruler'
+    );
+
+    rulerNodes.forEach((node) => {
+      node.style.display = show ? '' : 'none';
+      node.style.visibility = show ? '' : 'hidden';
+      node.style.pointerEvents = show ? '' : 'none';
+    });
+  } catch {
+    // ignore
+  }
+};
+
 const applySyncfusionServiceUrl = (editor: any) => {
   if (!editor) return;
   try {
@@ -481,6 +503,23 @@ function patchRulerForCentimeters(editor: any): void {
       }
 
       this.updateTickLabel(rulerSegment, rulerSize);
+      if (this.orientation === 'Horizontal' && rulerSegment?.label) {
+        try {
+          const labelEl = rulerSegment.label as SVGTextElement;
+          // Pequeno recuo à esquerda para o número não colidir com o marcador
+          // do fim da régua, preservando o alinhamento visual do modelo antigo.
+          labelEl.setAttribute('x', '-6');
+          const box = labelEl.getBBox();
+          const rightEdge = box.x + box.width;
+          const maxRight = this.length - 6;
+          if (rightEdge > maxRight) {
+            const shift = Math.ceil(rightEdge - maxRight);
+            labelEl.setAttribute('x', String(-6 - shift));
+          }
+        } catch {
+          // ignore
+        }
+      }
       const translate =
         this.orientation === 'Horizontal'
           ? trans.trans + 0.5 + ',0.5'
@@ -557,6 +596,18 @@ export interface SyncfusionEditorRef {
   replaceAll: (searchText: string, replaceText: string) => boolean;
   // Force editor to refresh its layout and repaint
   refresh: () => void;
+  // Get the underlying Syncfusion DocumentEditor instance (for the custom ribbon)
+  getEditor: () => any;
+  // Get the underlying DocumentEditorContainer instance
+  getContainer: () => any;
+  // Toggle the ruler visibility at runtime
+  setShowRuler: (show: boolean) => void;
+  // Toggle the navigation pane (document headings) at runtime
+  setShowNavigationPane: (show: boolean) => void;
+  // Enable/disable track changes (controle de alterações)
+  setTrackChanges: (enabled: boolean) => void;
+  // Open the browser print dialog for the document
+  printDocument: () => void;
 }
 
 interface SyncfusionEditorProps {
@@ -568,6 +619,8 @@ interface SyncfusionEditorProps {
   onRequestCreateBlockFromSelection?: (selectedText: string, selectedSfdt?: string) => void;
   onRequestCompanyLookup?: () => void;
   onRequestFormatQualification?: (selectedText: string) => void;
+  /** Called once the underlying DocumentEditor is created and ready. */
+  onReady?: () => void;
   showPropertiesPane?: boolean;
   enableToolbar?: boolean;
   toolbarItems?: any;
@@ -591,6 +644,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       onRequestCreateBlockFromSelection,
       onRequestCompanyLookup,
       onRequestFormatQualification,
+      onReady,
       showPropertiesPane = true,
       enableToolbar = true,
       toolbarItems,
@@ -1174,6 +1228,74 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           // ignore
         }
       },
+
+      getEditor: () => containerRef.current?.documentEditor ?? null,
+
+      getContainer: () => containerRef.current ?? null,
+
+      setShowRuler: (show: boolean) => {
+        const container = containerRef.current as any;
+        if (!container) return;
+        try {
+          forceRulerVisibility(container, !!show);
+          container.documentEditorSettings = {
+            ...(container.documentEditorSettings || {}),
+            showRuler: !!show,
+          };
+          container.dataBind?.();
+          container.documentEditor?.resize?.();
+          if (show) {
+            try {
+              patchRulerForCentimeters(container.documentEditor);
+            } catch {
+              // ignore
+            }
+            try {
+              container.documentEditor?.rulerHelper?.updateRuler?.(container.documentEditor, true);
+            } catch {
+              // ignore
+            }
+          }
+          forceRulerVisibility(container, !!show);
+        } catch {
+          // ignore
+        }
+      },
+
+      setShowNavigationPane: (show: boolean) => {
+        const container = containerRef.current as any;
+        if (!container) return;
+        try {
+          container.documentEditorSettings = {
+            ...(container.documentEditorSettings || {}),
+            showNavigationPane: !!show,
+          };
+          container.dataBind?.();
+          container.documentEditor?.resize?.();
+        } catch {
+          // ignore
+        }
+      },
+
+      setTrackChanges: (enabled: boolean) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          editor.enableTrackChanges = !!enabled;
+        } catch {
+          // ignore
+        }
+      },
+
+      printDocument: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          editor.print();
+        } catch (err) {
+          console.error('Erro ao imprimir:', err);
+        }
+      },
     }));
 
     const handleContentChange = () => {
@@ -1466,31 +1588,50 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           // ignore
         }
 
-        // Forçar resize inicial
-        setTimeout(() => {
-          if (typeof editor?.resize === 'function') editor.resize();
-          if (pageFit && typeof editor?.fitPage === 'function') {
-            editor.fitPage(pageFit as any);
+        // Força o editor a remedir a largura do container várias vezes após a criação.
+        // O Syncfusion calcula a largura interna no created(); se o container ainda não
+        // tinha a largura final naquele instante, a folha fica comprimida e não se recupera
+        // sozinha. Vários ticks garantem que ele remeça quando o flex já estiver estável.
+        const forceResize = () => {
+          const ed: any = containerRef.current?.documentEditor as any;
+          if (!ed) return;
+          try {
+            if (typeof ed.resize === 'function') ed.resize();
+            if (pageFit && typeof ed.fitPage === 'function') ed.fitPage(pageFit as any);
+          } catch {
+            // ignore
           }
-        }, 100);
+        };
+        [0, 60, 150, 350, 700].forEach((ms) =>
+          window.setTimeout(() => window.requestAnimationFrame(forceResize), ms),
+        );
+
+        // Notifica o consumidor (ex.: ribbon customizado) que o editor está pronto
+        try {
+          onReady?.();
+        } catch {
+          // ignore
+        }
       } catch {
         // ignore
       }
 
-      // Adicionar ResizeObserver para garantir que o editor se ajuste ao container
+      // ResizeObserver: observa o container E seus wrappers externos, para remedir a folha
+      // sempre que o layout mudar (sidebar, fullscreen, ribbon, janela) — não só o elemento interno.
       const rootEl = containerRef.current?.element;
       if (rootEl && typeof ResizeObserver !== 'undefined') {
         const observer = new ResizeObserver(() => {
-          const editor: any = containerRef.current?.documentEditor as any;
-          if (editor && typeof editor.resize === 'function') {
-            editor.resize();
-            if (pageFit && typeof editor.fitPage === 'function') {
-              editor.fitPage(pageFit as any);
+          const ed: any = containerRef.current?.documentEditor as any;
+          if (ed && typeof ed.resize === 'function') {
+            ed.resize();
+            if (pageFit && typeof ed.fitPage === 'function') {
+              ed.fitPage(pageFit as any);
             }
           }
         });
         observer.observe(rootEl);
-        // Guardar no ref para limpar depois se necessário, mas como o componente é desmontado, o DOM limpa
+        if (rootEl.parentElement) observer.observe(rootEl.parentElement);
+        if (rootEl.parentElement?.parentElement) observer.observe(rootEl.parentElement.parentElement);
       }
 
       // Alguns builds do Syncfusion iniciam o contextMenu alguns ticks depois
@@ -1538,6 +1679,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     }, []);
 
     useEffect(() => {
+      if (!showPropertiesPane) return;
       const container = containerRef.current;
       const rootEl = (container as any)?.element as HTMLElement | undefined;
       if (!rootEl) return;
@@ -1613,8 +1755,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       };
 
       const selectors = [
-        '.e-de-ctnr-properties-pane',
-        '.e-de-ctnr-propertiespane',
+        '.e-de-pane',
+        '.e-de-pane-rtl',
         '.e-de-property-pane',
         '.e-de-ctnr-prop-pane',
         '.e-de-ctn-properties-pane',
@@ -1872,7 +2014,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
       };
-    }, []);
+    }, [showPropertiesPane]);
 
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>

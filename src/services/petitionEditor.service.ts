@@ -170,19 +170,42 @@ class PetitionEditorService {
     if (error) throw error;
   }
 
-  async getDefaultTemplate(): Promise<{ name: string; dataBase64: string } | null> {
+  async saveDefaultFont(fontFamily: string | null, fontSize: number | null): Promise<void> {
+    const userId = await this.requireUserId();
+
+    const { error } = await supabase.from('petition_default_templates').upsert(
+      {
+        user_id: userId,
+        name: '',
+        data_base64: '',
+        default_font_family: fontFamily,
+        default_font_size: fontSize,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+
+    if (error) throw error;
+  }
+
+  async getDefaultTemplate(): Promise<{ name: string; dataBase64: string; fontFamily?: string | null; fontSize?: number | null } | null> {
     const userId = await this.requireUserId();
 
     const { data, error } = await supabase
       .from('petition_default_templates')
-      .select('name, data_base64')
+      .select('name, data_base64, default_font_family, default_font_size')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error) throw error;
     if (!data) return null;
 
-    return { name: data.name, dataBase64: data.data_base64 };
+    return {
+      name: data.name,
+      dataBase64: data.data_base64,
+      fontFamily: data.default_font_family,
+      fontSize: data.default_font_size,
+    };
   }
 
   // ==================== BLOCOS ====================

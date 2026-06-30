@@ -1,5 +1,5 @@
-// Editor de Petições Trabalhistas - Syncfusion DocumentEditor v4
-// Módulo isolado - pode ser removido sem afetar outros módulos
+﻿// Editor de PetiçÃµes Trabalhistas - Syncfusion DocumentEditor v4
+// MÃ³dulo isolado - pode ser removido sem afetar outros mÃ³dulos
 
 declare global {
   interface Window {
@@ -50,6 +50,7 @@ import {
   Filter,
   ChevronsUpDown,
 } from 'lucide-react';
+import PetitionRibbon from './PetitionRibbon';
 import { saveAs } from 'file-saver';
 import { ModuleSkeleton } from './ui';
 import { petitionEditorService } from '../services/petitionEditor.service';
@@ -82,6 +83,63 @@ const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
   }, [value, delayMs]);
 
   return debounced;
+};
+
+const repairLikelyMojibake = (value: string) => {
+  const input = String(value ?? '');
+  if (!input || !/[ÃÂâ�]/.test(input)) return input;
+
+  try {
+    const bytes = Uint8Array.from(Array.from(input, (char) => char.charCodeAt(0) & 0xff));
+    const fixed = new TextDecoder('utf-8', { fatal: false }).decode(bytes).trim();
+    return fixed && fixed !== input ? fixed : input;
+  } catch {
+    return input;
+  }
+};
+
+const sanitizeText = (value: unknown) => repairLikelyMojibake(String(value ?? ''));
+
+const sanitizeLegalAreaRecord = (area: LegalArea): LegalArea => ({
+  ...area,
+  name: sanitizeText(area.name),
+  description: area.description ? sanitizeText(area.description) : area.description,
+  icon: area.icon ? sanitizeText(area.icon) : area.icon,
+});
+
+const sanitizeStandardTypeRecord = (type: PetitionStandardType): PetitionStandardType => ({
+  ...type,
+  name: sanitizeText(type.name),
+  description: type.description ? sanitizeText(type.description) : type.description,
+  default_document_name: type.default_document_name ? sanitizeText(type.default_document_name) : type.default_document_name,
+});
+
+const sanitizeSavedPetitionRecord = (petition: SavedPetition): SavedPetition => ({
+  ...petition,
+  title: sanitizeText(petition.title),
+  client_name: petition.client_name ? sanitizeText(petition.client_name) : petition.client_name,
+});
+
+const sanitizeBlockRecord = (block: PetitionBlock): PetitionBlock => ({
+  ...block,
+  title: sanitizeText(block.title),
+  tags: Array.isArray(block.tags) ? block.tags.map((tag) => sanitizeText(tag)) : block.tags,
+});
+
+const loadDocxWithFallback = async (
+  editor: SyncfusionEditorRef,
+  arrayBuffer: ArrayBuffer,
+  fileName: string,
+) => {
+  try {
+    await editor.loadDocx(arrayBuffer, fileName);
+  } catch (primaryError) {
+    try {
+      await editor.loadDocxViaImport(arrayBuffer, fileName);
+    } catch {
+      throw primaryError;
+    }
+  }
 };
 
 const sfdtToPlainText = (value: string) => {
@@ -241,12 +299,12 @@ const getPhraseTagsFromText = (text: string) => {
   if (!n) return [] as string[];
 
   const rules: { re: RegExp; tag: string }[] = [
-    { re: /\bacumulo de funcao\b|\bacumul[oó] de fun[cç][aã]o\b/i, tag: 'acumulo de funcao' },
-    { re: /\baviso previo\b.*\bcumprid[oa]\b|\baviso pr[eé]vio\b.*\bcumprid[oa]\b/i, tag: 'aviso previo cumprido' },
+    { re: /\bacumulo de funcao\b|\bacumul[oÃ³] de fun[cç][aÃ£]o\b/i, tag: 'acumulo de funcao' },
+    { re: /\baviso previo\b.*\bcumprid[oa]\b|\baviso pr[eÃ©]vio\b.*\bcumprid[oa]\b/i, tag: 'aviso previo cumprido' },
     { re: /\bdispensad[oa]\b.*\bsem justa causa\b|\bsem justa causa\b/i, tag: 'dispensa sem justa causa' },
     { re: /\bcontrato de trabalho\b/i, tag: 'contrato de trabalho' },
-    { re: /\badmiss[aã]o\b|\bcontratad[oa]\b/i, tag: 'admissao' },
-    { re: /\bdispensad[oa]\b|\bdesligament[oó]\b/i, tag: 'dispensa' },
+    { re: /\badmiss[aÃ£]o\b|\bcontratad[oa]\b/i, tag: 'admissao' },
+    { re: /\bdispensad[oa]\b|\bdesligament[oÃ³]\b/i, tag: 'dispensa' },
     { re: /\batendente\b/i, tag: 'funcao: atendente' },
   ];
 
@@ -284,8 +342,8 @@ const getDerivedTagsFromText = (text: string) => {
     'sem',
     'ao',
     'aos',
-    'à',
-    'às',
+    'Ã ',
+    'Ã s',
   ]);
   const words = n
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -299,12 +357,12 @@ const getDerivedTagsFromText = (text: string) => {
 
 // Labels
 const CATEGORY_LABELS: Record<BlockCategory, string> = {
-  cabecalho: 'Cabeçalho',
-  qualificacao: 'DAS QUESTÕES INICIAIS',
+  cabecalho: 'Cabecalho',
+  qualificacao: 'DAS QUESTOES INICIAIS',
   fatos: 'Dos Fatos',
   direito: 'Do Direito',
   pedidos: 'Dos Pedidos',
-  citacao: 'Citação',
+  citacao: 'Citacao',
   encerramento: 'Encerramento',
   outros: 'Outros',
 };
@@ -313,8 +371,8 @@ const MARITAL_STATUS_LABELS: Record<string, string> = {
   solteiro: 'solteiro(a)',
   casado: 'casado(a)',
   divorciado: 'divorciado(a)',
-  viuvo: 'viúvo(a)',
-  uniao_estavel: 'em união estável',
+  viuvo: 'viÃºvo(a)',
+  uniao_estavel: 'em uniÃ£o estÃ¡vel',
 };
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'petition-editor-sidebar-width';
@@ -328,7 +386,7 @@ const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
 const EDITOR_STYLES = `
   /* ========== ESTRUTURA PRINCIPAL ========== */
   
-  /* Wrapper do Editor - ocupa espaço restante após sidebar */
+  /* Wrapper do Editor - ocupa espaço restante apÃ³s sidebar */
   .syncfusion-editor-wrapper {
     flex: 1 1 0%;
     min-width: 0;
@@ -349,90 +407,28 @@ const EDITOR_STYLES = `
     overflow: hidden !important;
   }
 
-  /* ========== ÁREA PRINCIPAL (Toolbar + Viewer + Pane) ========== */
+  /* ========== ÃREA PRINCIPAL (Toolbar + Viewer + Pane) ========== */
   
-  /* Toolbar superior */
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar {
-    flex-shrink: 0 !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-  }
+  /* Toolbar nativa do Syncfusion desativada no editor principal (enableToolbar={false});
+     a faixa de opçÃµes Ã© o PetitionRibbon. Regras da toolbar nativa removidas (cÃ³digo morto). */
 
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar,
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar,
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-items {
-    height: auto !important;
-    min-height: 0 !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-items {
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    align-items: center !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    scrollbar-width: thin;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item {
-    flex: 0 0 auto !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-items::-webkit-scrollbar {
-    height: 6px;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-items::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.6);
-    border-radius: 999px;
-  }
-
-  /* Toolbar ultra-compacta: altura mínima, ícones pequenos, sem textos */
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-items {
-    padding: 1px 2px !important;
-    gap: 1px !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item,
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-tbar-btn {
-    height: 22px !important;
-    min-width: 22px !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-tbar-btn {
-    padding: 1px 3px !important;
-    min-height: 22px !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-btn-icon,
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-icons {
-    font-size: 12px !important;
-    line-height: 1 !important;
-  }
-
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-tbar-btn-text,
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-toolbar-item .e-btn-text {
-    display: none !important;
-  }
-
-  /* Separadores menores */
-  .syncfusion-editor-wrapper .e-de-ctnr-toolbar .e-separator {
-    height: 16px !important;
-    margin: 0 2px !important;
-  }
-
-  /* Container principal (Viewer + Properties Pane) */
-  .syncfusion-editor-wrapper .e-de-ctnr-main-container,
-  .syncfusion-editor-wrapper .e-de-ctnr-container {
+  /* Container principal do Syncfusion quando a toolbar nativa estÃ¡ desligada */
+  .syncfusion-editor-wrapper .e-de-tool-ctnr-properties-pane,
+  .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+  .syncfusion-editor-wrapper .e-de-ribbon-simplified-ctnr-properties-pane,
+  .syncfusion-editor-wrapper .e-de-ribbon-classic-ctnr-properties-pane {
     display: flex !important;
     flex-direction: row !important;
     flex: 1 1 auto !important;
     min-height: 0 !important;
+    min-width: 0 !important;
+    width: 100% !important;
     max-width: 100% !important;
     overflow: hidden !important;
     background: #f8fafc !important;
   }
 
-  /* ========== VIEWER DA FOLHA (Área Central) ========== */
+  /* ========== VIEWER DA FOLHA (Area Central) ========== */
   
   /* Container do viewer - deve encolher para caber */
   .syncfusion-editor-wrapper .e-de-ctn {
@@ -448,9 +444,20 @@ const EDITOR_STYLES = `
     min-width: 0 !important;
   }
 
+  .syncfusion-editor-wrapper .e-de-page-container {
+    width: 100% !important;
+    min-width: 0 !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    padding: 24px 32px !important;
+    box-sizing: border-box !important;
+  }
+
   /* ========== PAINEL DE PROPRIEDADES (TEXT) - Lado Direito ========== */
   
-  .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+  .syncfusion-editor-wrapper .e-de-pane,
+  .syncfusion-editor-wrapper .e-de-pane-rtl,
   .syncfusion-editor-wrapper .e-de-property-pane {
     flex: 0 0 auto !important;
     background: white !important;
@@ -459,8 +466,9 @@ const EDITOR_STYLES = `
     overflow-x: hidden !important;
   }
 
-  /* Modo colapsado (aba fina) — controlado via atributo pelo SyncfusionEditor */
-  .syncfusion-editor-wrapper .e-de-ctnr-properties-pane[data-prop-collapsed="1"],
+  /* Modo colapsado (aba fina) â€” controlado via atributo pelo SyncfusionEditor */
+  .syncfusion-editor-wrapper .e-de-pane[data-prop-collapsed="1"],
+  .syncfusion-editor-wrapper .e-de-pane-rtl[data-prop-collapsed="1"],
   .syncfusion-editor-wrapper .e-de-property-pane[data-prop-collapsed="1"] {
     width: 64px !important;
     min-width: 64px !important;
@@ -471,7 +479,8 @@ const EDITOR_STYLES = `
   /* ========== RESPONSIVIDADE ========== */
   
   @media (max-width: 1600px) {
-    .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+    .syncfusion-editor-wrapper .e-de-pane,
+    .syncfusion-editor-wrapper .e-de-pane-rtl,
     .syncfusion-editor-wrapper .e-de-property-pane {
       width: 175px;
       min-width: 160px;
@@ -479,7 +488,8 @@ const EDITOR_STYLES = `
   }
 
   @media (max-width: 1440px) {
-    .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+    .syncfusion-editor-wrapper .e-de-pane,
+    .syncfusion-editor-wrapper .e-de-pane-rtl,
     .syncfusion-editor-wrapper .e-de-property-pane {
       width: 170px;
       min-width: 160px;
@@ -487,7 +497,8 @@ const EDITOR_STYLES = `
   }
 
   @media (max-width: 1366px) {
-    .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+    .syncfusion-editor-wrapper .e-de-pane,
+    .syncfusion-editor-wrapper .e-de-pane-rtl,
     .syncfusion-editor-wrapper .e-de-property-pane {
       width: 165px;
       min-width: 160px;
@@ -547,6 +558,15 @@ const EDITOR_STYLES = `
   }
 `;
 
+// Injeta os estilos estruturais do editor (flex do wrapper, container Syncfusion, etc.).
+// Sem isto o .syncfusion-editor-wrapper nÃ£o recebe flex:1 e colapsa para a largura mÃ­nima do conteudo.
+if (typeof document !== 'undefined' && !document.getElementById('petition-editor-structural-styles')) {
+  const styleEl = document.createElement('style');
+  styleEl.id = 'petition-editor-structural-styles';
+  styleEl.innerHTML = EDITOR_STYLES;
+  document.head.appendChild(styleEl);
+}
+
 interface PetitionEditorModuleProps {
   isFloatingWidget?: boolean;
   initialClientId?: string;
@@ -601,9 +621,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     (user?.user_metadata as any)?.name ||
     (user?.user_metadata as any)?.display_name ||
     (typeof user?.email === 'string' && user.email.includes('@') ? user.email.split('@')[0] : '') ||
-    'Usuário';
+    'Usuario';
 
-  const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuário';
+  const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuario';
   const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl);
 
   const getGreeting = () => {
@@ -649,7 +669,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const sidebarResizeStartXRef = useRef(0);
   const sidebarResizeStartWidthRef = useRef(288);
 
-  // Áreas Jurídicas
+  // Areas JurÃ­dicas
   const [legalAreas, setLegalAreas] = useState<LegalArea[]>([]);
   const [selectedLegalAreaId, setSelectedLegalAreaId] = useState<string | null>(() => {
     try {
@@ -663,7 +683,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [editingLegalArea, setEditingLegalArea] = useState<LegalArea | null>(null);
   const [legalAreaFormData, setLegalAreaFormData] = useState({ name: '', description: '', color: '#f97316', icon: 'scale' });
 
-  // Petições Padrões (Standard Types)
+  // PetiçÃµes Padroes (Standard Types)
   const [standardTypes, setStandardTypes] = useState<PetitionStandardType[]>([]);
   const [standardTypesByArea, setStandardTypesByArea] = useState<Record<string, PetitionStandardType[]>>({});
   const [selectedStandardTypeId, setSelectedStandardTypeId] = useState<string | null>(() => {
@@ -679,7 +699,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [showStandardTypeModal, setShowStandardTypeModal] = useState(false);
   const [editingStandardType, setEditingStandardType] = useState<PetitionStandardType | null>(null);
   const [standardTypeFormData, setStandardTypeFormData] = useState({ name: '', description: '' });
-  // Escopo de filtro de blocos: 'type' = petição padrão, 'area' = área jurídica, 'global' = todos
+  // Escopo de filtro de blocos: 'type' = petiçÃ£o padrÃ£o, 'area' = area jurÃ­dica, 'global' = todos
   const [blockFilterScope, setBlockFilterScope] = useState<'type' | 'area' | 'global'>(() => {
     try {
       const v = window.localStorage.getItem(BLOCK_FILTER_SCOPE_STORAGE_KEY);
@@ -701,13 +721,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Editor Syncfusion
-  const [petitionTitle, setPetitionTitle] = useState('Nova Petição Trabalhista');
+  const [petitionTitle, setPetitionTitle] = useState('Nova Peticao Trabalhista');
   const [currentPetitionId, setCurrentPetitionId] = useState<string | null>(null);
-  // Ref síncrono: usado em savePetition para evitar race condition de duplicação
-  // (setCurrentPetitionId é async; sem este ref, múltiplos saves concorrentes
-  // viam null e criavam várias petições do mesmo documento).
+  // Ref sÃ­ncrono: usado em savePetition para evitar race condition de duplicaçÃ£o
+  // (setCurrentPetitionId Ã© async; sem este ref, mÃºltiplos saves concorrentes
+  // viam null e criavam vÃ¡rias petiçÃµes do mesmo documento).
   const currentPetitionIdRef = useRef<string | null>(null);
-  // Lock síncrono: impede 2 saves concorrentes de chegarem ao create() simultâneo
+  // Lock sÃ­ncrono: impede 2 saves concorrentes de chegarem ao create() simultÃ¢neo
   const saveInFlightRef = useRef(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -718,6 +738,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       return true;
     }
   });
+
+  useEffect(() => {
+    if (!petitionTitle) return;
+    const fixedTitle = repairLikelyMojibake(petitionTitle);
+    if (fixedTitle !== petitionTitle) {
+      setPetitionTitle(fixedTitle);
+    }
+  }, [petitionTitle]);
 
   const handleRetryConnection = useCallback(() => {
     const next = (() => {
@@ -733,20 +761,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
+  const [editorReady, setEditorReady] = useState(false);
 
-  const [defaultDocFont, setDefaultDocFont] = useState<{ fontFamily?: string; fontSize?: number } | null>(() => {
-    try {
-      const raw = window.localStorage.getItem(DEFAULT_FONT_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { fontFamily?: string; fontSize?: number };
-      const fontFamily = typeof parsed?.fontFamily === 'string' ? parsed.fontFamily : undefined;
-      const fontSize = typeof parsed?.fontSize === 'number' ? parsed.fontSize : undefined;
-      if (!fontFamily && !fontSize) return null;
-      return { fontFamily, fontSize };
-    } catch {
-      return null;
-    }
-  });
+  const [defaultDocFont, setDefaultDocFont] = useState<{ fontFamily?: string; fontSize?: number } | null>(null);
   const defaultDocFontRef = useRef<{ fontFamily?: string; fontSize?: number } | null>(null);
   const blockViewDocxTokenRef = useRef(0);
   const blockViewDocxContainerRef = useRef<HTMLDivElement | null>(null);
@@ -766,7 +783,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const lastInstantSaveAtRef = useRef(0);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
 
-  // Petições salvas
+  // PetiçÃµes salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
   const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
@@ -797,15 +814,20 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const saveDefaultDocFont = (font: { fontFamily?: string; fontSize?: number } | null) => {
     setDefaultDocFont(font);
-    try {
-      if (!font) {
-        window.localStorage.removeItem(DEFAULT_FONT_STORAGE_KEY);
-        return;
-      }
-      window.localStorage.setItem(DEFAULT_FONT_STORAGE_KEY, JSON.stringify(font));
-    } catch {
-      // ignore
-    }
+    // Salvar no banco
+    petitionEditorService.saveDefaultFont(
+      font?.fontFamily ?? null,
+      font?.fontSize ?? null,
+    ).catch(() => {
+      // Fallback localStorage
+      try {
+        if (!font) {
+          window.localStorage.removeItem(DEFAULT_FONT_STORAGE_KEY);
+        } else {
+          window.localStorage.setItem(DEFAULT_FONT_STORAGE_KEY, JSON.stringify(font));
+        }
+      } catch { /* ignore */ }
+    });
   };
 
   const captureAndApplyDocFontSoon = (editor: SyncfusionEditorRef) => {
@@ -852,9 +874,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       setIsOnline(next);
 
       if (!next) {
-        setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+        setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       } else {
-        setError((prev) => (prev === 'Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.' ? null : prev));
+        setError((prev) => (prev === 'Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.' ? null : prev));
       }
     };
 
@@ -928,7 +950,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         setSavedPetitionsLoading(true);
         petitionEditorService
           .listPetitions()
-          .then((petitionsData) => setSavedPetitions(petitionsData))
+          .then((petitionsData) => setSavedPetitions((petitionsData || []).map(sanitizeSavedPetitionRecord)))
           .catch(() => {
             // ignore
           })
@@ -1028,19 +1050,19 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, []);
 
   const formatRelativeTime = (dateString?: string | null): string => {
-    if (!dateString) return '—';
+    if (!dateString) return '-';
     const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return '—';
+    if (Number.isNaN(d.getTime())) return '-';
     const diffMs = Date.now() - d.getTime();
     const diffSec = Math.floor(diffMs / 1000);
     if (diffSec < 10) return 'Agora';
-    if (diffSec < 60) return `Há ${diffSec} s`;
+    if (diffSec < 60) return `Ha ${diffSec} s`;
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `Há ${diffMin} min`;
+    if (diffMin < 60) return `Ha ${diffMin} min`;
     const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `Há ${diffH} h`;
+    if (diffH < 24) return `Ha ${diffH} h`;
     const diffD = Math.floor(diffH / 24);
-    if (diffD < 7) return `Há ${diffD} d`;
+    if (diffD < 7) return `Ha ${diffD} d`;
     return d.toLocaleDateString('pt-BR');
   };
 
@@ -1076,8 +1098,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       'as',
       'ao',
       'aos',
-      'à',
-      'às',
+      'Ã ',
+      'Ã s',
       'com',
       'da',
       'das',
@@ -1215,19 +1237,20 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setBlockStandardTypeLoading(false);
 
     if (block) {
-      setEditingBlock(block);
+      const normalizedBlock = sanitizeBlockRecord(block);
+      setEditingBlock(normalizedBlock);
       setUpdateExistingBlockMode(false);
       setUpdateExistingBlockId('');
       setBlockStandardTypeId(null);
       setBlockFormData({
-        title: block.title,
-        content: block.content,
-        category: block.category,
-        document_type: (block.document_type || selectedDocumentType) as any,
-        legal_area_id: (block.legal_area_id ?? selectedLegalAreaId) as any,
-        is_default: block.is_default,
-        is_active: block.is_active,
-        tags: block.tags || [],
+        title: normalizedBlock.title,
+        content: normalizedBlock.content,
+        category: normalizedBlock.category,
+        document_type: (normalizedBlock.document_type || selectedDocumentType) as any,
+        legal_area_id: (normalizedBlock.legal_area_id ?? selectedLegalAreaId) as any,
+        is_default: normalizedBlock.is_default,
+        is_active: normalizedBlock.is_active,
+        tags: normalizedBlock.tags || [],
       });
     } else {
       setEditingBlock(null);
@@ -1271,7 +1294,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setCategoryDraft(base);
   };
 
-  // ==================== ÁREAS JURÍDICAS ====================
+  // ==================== ÃREAS JURÃDICAS ====================
 
   const openLegalAreaModal = (area?: LegalArea) => {
     setError(null);
@@ -1293,7 +1316,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const handleSaveLegalArea = async () => {
     if (!legalAreaFormData.name.trim()) {
-      setError('Nome da área é obrigatório');
+      setError('Nome da area e obrigatorio');
       return;
     }
 
@@ -1306,7 +1329,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           color: legalAreaFormData.color,
           icon: legalAreaFormData.icon,
         });
-        showSuccessMessage('Área atualizada com sucesso');
+        showSuccessMessage('Area atualizada com sucesso');
       } else {
         const newArea = await petitionEditorService.createLegalArea({
           name: legalAreaFormData.name.trim(),
@@ -1314,17 +1337,17 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           color: legalAreaFormData.color,
           icon: legalAreaFormData.icon,
         });
-        // Selecionar a nova área
+        // Selecionar a nova area
         setSelectedLegalAreaId(newArea.id);
-        showSuccessMessage('Área criada com sucesso');
+        showSuccessMessage('Area criada com sucesso');
       }
-      // Recarregar áreas
-      const areas = await petitionEditorService.listLegalAreas();
+      // Recarregar areas
+      const areas = (await petitionEditorService.listLegalAreas()).map(sanitizeLegalAreaRecord);
       setLegalAreas(areas);
       setShowLegalAreaModal(false);
     } catch (err) {
-      console.error('Erro ao salvar área:', err);
-      setError('Erro ao salvar área jurídica');
+      console.error('Erro ao salvar area:', err);
+      setError('Erro ao salvar area juridica');
     } finally {
       setSaving(false);
     }
@@ -1333,20 +1356,20 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const handleDeleteLegalArea = async (areaId: string) => {
     try {
       await petitionEditorService.deleteLegalArea(areaId);
-      const areas = await petitionEditorService.listLegalAreas();
+      const areas = (await petitionEditorService.listLegalAreas()).map(sanitizeLegalAreaRecord);
       setLegalAreas(areas);
-      // Se a área deletada era a selecionada, selecionar outra
+      // Se a area deletada era a selecionada, selecionar outra
       if (selectedLegalAreaId === areaId) {
         setSelectedLegalAreaId(areas.length > 0 ? areas[0].id : null);
       }
-      showSuccessMessage('Área desativada com sucesso');
+      showSuccessMessage('Area desativada com sucesso');
     } catch (err) {
-      console.error('Erro ao deletar área:', err);
-      setError('Erro ao desativar área jurídica');
+      console.error('Erro ao deletar area:', err);
+      setError('Erro ao desativar area juridica');
     }
   };
 
-  // ==================== PETIÇÕES PADRÕES ====================
+  // ==================== PETIÃ‡Ã•ES PADRÃ•ES ====================
 
   const openStandardTypeModal = (type?: PetitionStandardType) => {
     if (type) {
@@ -1361,11 +1384,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const handleSaveStandardType = async () => {
     if (!standardTypeFormData.name.trim()) {
-      setError('Nome da petição padrão é obrigatório');
+      setError('Nome da peticao padrao e obrigatorio');
       return;
     }
     if (!selectedLegalAreaId) {
-      setError('Selecione uma área jurídica primeiro');
+      setError('Selecione uma area juridica primeiro');
       return;
     }
 
@@ -1376,7 +1399,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           name: standardTypeFormData.name.trim(),
           description: standardTypeFormData.description.trim() || null,
         });
-        showSuccessMessage('Petição padrão atualizada');
+        showSuccessMessage('Peticao padrao atualizada');
       } else {
         const newType = await petitionEditorService.createStandardType({
           legal_area_id: selectedLegalAreaId,
@@ -1384,18 +1407,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           description: standardTypeFormData.description.trim() || null,
         });
         setSelectedStandardTypeId(newType.id);
-        showSuccessMessage('Petição padrão criada');
+        showSuccessMessage('Peticao padrao criada');
       }
       // Recarregar tipos
-      const types = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+      const types = (await petitionEditorService.listStandardTypes(selectedLegalAreaId)).map(sanitizeStandardTypeRecord);
       setStandardTypes(types);
       if (selectedLegalAreaId) {
         setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: types }));
       }
       setShowStandardTypeModal(false);
     } catch (err) {
-      console.error('Erro ao salvar petição padrão:', err);
-      setError('Erro ao salvar petição padrão');
+      console.error('Erro ao salvar peticao padrao:', err);
+      setError('Erro ao salvar peticao padrao');
     } finally {
       setSaving(false);
     }
@@ -1404,7 +1427,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const handleDeleteStandardType = async (typeId: string) => {
     try {
       await petitionEditorService.deleteStandardType(typeId);
-      const types = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+      const types = (await petitionEditorService.listStandardTypes(selectedLegalAreaId)).map(sanitizeStandardTypeRecord);
       setStandardTypes(types);
       if (selectedLegalAreaId) {
         setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: types }));
@@ -1413,10 +1436,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         setSelectedStandardTypeId(null);
         setBlockFilterScope('area');
       }
-      showSuccessMessage('Petição padrão removida');
+      showSuccessMessage('Peticao padrao removida');
     } catch (err) {
-      console.error('Erro ao deletar petição padrão:', err);
-      setError('Erro ao remover petição padrão');
+      console.error('Erro ao deletar peticao padrao:', err);
+      setError('Erro ao remover peticao padrao');
     }
   };
 
@@ -1425,10 +1448,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     try {
       setSaving(true);
       const sfdt = editorRef.current.getSfdt();
-      const updated = await petitionEditorService.updateStandardType(typeId, {
+      const updated = sanitizeStandardTypeRecord(await petitionEditorService.updateStandardType(typeId, {
         default_document: sfdt,
-        default_document_name: petitionTitle || 'Documento Padrão',
-      });
+        default_document_name: petitionTitle || 'Documento Padrao',
+      }));
       setStandardTypes((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
       setStandardTypesByArea((prev) => {
         const areaId = String(updated.legal_area_id || '');
@@ -1440,10 +1463,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         return { ...prev, [areaId]: next };
       });
       setEditingStandardType((prev) => (prev && prev.id === updated.id ? updated : prev));
-      showSuccessMessage('Documento padrão vinculado');
+      showSuccessMessage('Documento padrao vinculado');
     } catch (err) {
       console.error('Erro ao vincular documento:', err);
-      setError('Erro ao vincular documento padrão');
+      setError('Erro ao vincular documento padrao');
     } finally {
       setSaving(false);
     }
@@ -1453,7 +1476,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     if (!selectedStandardTypeId) return;
     try {
       await petitionEditorService.addBlockToStandardType(selectedStandardTypeId, blockId);
-      showSuccessMessage('Bloco vinculado à petição padrão');
+      showSuccessMessage('Bloco vinculado a peticao padrao');
     } catch (err) {
       console.error('Erro ao vincular bloco:', err);
       setError('Erro ao vincular bloco');
@@ -1464,12 +1487,12 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     return legalAreas.find((a) => a.id === selectedLegalAreaId) || null;
   }, [legalAreas, selectedLegalAreaId]);
 
-  // Título dinâmico baseado na área selecionada
+  // TÃ­tulo dinÃ¢mico baseado na area selecionada
   const getDefaultPetitionTitle = useCallback(() => {
     if (selectedLegalArea) {
-      return `Nova Petição ${selectedLegalArea.name}`;
+      return `Nova Peticao ${selectedLegalArea.name}`;
     }
-    return 'Nova Petição';
+    return 'Nova Peticao';
   }, [selectedLegalArea]);
 
   const openCreateBlockFromSelection = (selectedText: string, selectedSfdt: string) => {
@@ -1528,7 +1551,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           setBlockViewUseFallback(true);
           setBlockViewFallbackText(sfdtToPlainText(sfdt));
           setBlockViewDocxLoading(false);
-          setBlockViewDocxError('Não foi possível inicializar o conversor');
+          setBlockViewDocxError('Nao foi possivel inicializar o conversor');
         }
         return;
       }
@@ -1541,7 +1564,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           setBlockViewUseFallback(true);
           setBlockViewFallbackText(sfdtToPlainText(sfdt));
           setBlockViewDocxLoading(false);
-          setBlockViewDocxError('Pré-visualização indisponível');
+          setBlockViewDocxError('Pre-visualizacao indisponivel');
         }
         return;
       }
@@ -1587,7 +1610,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         } catch {
           if (blockViewDocxTokenRef.current !== token) return;
           setBlockViewDocxLoading(false);
-          setBlockViewDocxError('Falha ao renderizar pré-visualização');
+          setBlockViewDocxError('Falha ao renderizar pre-visualizacao');
           setBlockViewUseFallback(true);
           setBlockViewFallbackText(sfdtToPlainText(sfdt));
         }
@@ -1637,18 +1660,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     if (!aiService.isEnabled()) return fallback();
 
     try {
-      const systemPrompt = `Você é um assistente jurídico especialista em ações trabalhistas no Brasil.
-Sua tarefa é gerar palavras-chave (tags) curtas para um bloco de petição.
+      const systemPrompt = `VocÃª Ã© um assistente jurÃ­dico especialista em açÃµes trabalhistas no Brasil.
+Sua tarefa Ã© gerar palavras-chave (tags) curtas para um bloco de petiçÃ£o.
 Regras:
-- Retorne APENAS um JSON válido no formato: {"tags": ["tag1", "tag2", ...]}
-- Tags em português, minúsculas, sem acentos.
+- Retorne APENAS um JSON vÃ¡lido no formato: {"tags": ["tag1", "tag2", ...]}
+- Tags em portuguÃªs, minÃºsculas, sem acentos.
 - 3 a 8 tags.
 - Prefira EXPRESSOES COMPOSTAS (2-4 palavras) quando fizer sentido.
 - Inclua fatos relevantes quando presentes (ex.: "aviso previo cumprido", "acumulo de funcao", "contrato de trabalho", "dispensa sem justa causa").
-- Evite tags genéricas sem utilidade jurídica (ex.: "juizo", "digital", "informacoes").
+- Evite tags genÃ©ricas sem utilidade jurÃ­dica (ex.: "juizo", "digital", "informacoes").
 - Foque em tema + contexto (ex.: "horas extras", "rescisao indireta", "pedido de demissao", "dispensa sem justa causa", "fgts", "ctps", "dano moral").`;
 
-      const userPrompt = `Título do bloco:\n${title}\n\nConteúdo (texto extraído):\n${plain}\n\nGere as tags.`;
+      const userPrompt = `Titulo do bloco:\n${title}\n\nConteudo (texto extraido):\n${plain}\n\nGere as tags.`;
       const raw = await aiService.generateText(systemPrompt, userPrompt, 220);
       const jsonText = String(raw || '').trim();
       const parsed: any = JSON.parse(jsonText);
@@ -1720,9 +1743,9 @@ Regras:
 
     // Ajustes comuns sem depender de biblioteca externa
     return base
-      .replace(/\bSao\b/g, 'São')
-      .replace(/\bJoao\b/g, 'João')
-      .replace(/\bCuiaba\b/g, 'Cuiabá');
+      .replace(/\bSao\b/g, 'SÃ£o')
+      .replace(/\bJoao\b/g, 'JoÃ£o')
+      .replace(/\bCuiaba\b/g, 'CuiabÃ¡');
   };
 
   const expandLogradouro = (value: string): string => {
@@ -1787,7 +1810,7 @@ Regras:
 
     const partsAddr: string[] = [];
     if (logradouro) partsAddr.push(logradouro);
-    if (numero) partsAddr.push(`número ${numero}`);
+    if (numero) partsAddr.push(`nÃºmero ${numero}`);
     if (complemento) partsAddr.push(complemento);
     if (bairro) partsAddr.push(bairro);
     let addr = partsAddr.join(', ');
@@ -1819,7 +1842,7 @@ Regras:
 
     const addrIntro = logradouro ? formatAddressIntro(logradouro) : '';
     const addrRestParts: string[] = [];
-    if (numero) addrRestParts.push(`número ${numero}`);
+    if (numero) addrRestParts.push(`nÃºmero ${numero}`);
     if (complemento) addrRestParts.push(complemento);
     if (bairro) addrRestParts.push(bairro);
     let addrRest = addrRestParts.join(', ');
@@ -1836,7 +1859,7 @@ Regras:
     const tail = tailParts.length ? `, ${tailParts.join(', ')}` : '';
 
     const nomeUpper = (nomeBase || '').toUpperCase();
-    return `${nomeUpper}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${cnpjFmt}${tail}, pelos fatos e fundamentos jurídicos enunciados.`;
+    return `${nomeUpper}, pessoa jurÃ­dica de direito privado, inscrita no CNPJ sob o nÂº ${cnpjFmt}${tail}, pelos fatos e fundamentos jurÃ­dicos enunciados.`;
   };
 
   const openCompanyLookup = () => {
@@ -1848,7 +1871,7 @@ Regras:
   const handleCompanyLookup = async () => {
     const digits = normalizeCnpj(companyCnpjInput);
     if (digits.length !== 14) {
-      setError('Informe um CNPJ válido (14 dígitos)');
+      setError('Informe um CNPJ valido (14 digitos)');
       return;
     }
 
@@ -1939,12 +1962,12 @@ Regras:
 
       if (aiService.isEnabled()) {
         const systemPrompt =
-          'Você é um assistente jurídico. Sua tarefa é COMPILAR e NORMALIZAR dados cadastrais de empresa a partir de DUAS fontes (BrasilAPI e OpenCNPJ). ' +
-          'Use apenas dados fornecidos. Não invente. Quando houver conflito, escolha o valor mais completo e consistente. ' +
+          'VocÃª Ã© um assistente jurÃ­dico. Sua tarefa Ã© COMPILAR e NORMALIZAR dados cadastrais de empresa a partir de DUAS fontes (BrasilAPI e OpenCNPJ). ' +
+          'Use apenas dados fornecidos. NÃ£o invente. Quando houver conflito, escolha o valor mais completo e consistente. ' +
           'IMPORTANTE: e-mail e telefones podem existir em apenas uma fonte.';
 
         const schema = {
-          cnpj: 'string (somente dígitos ou formatado)',
+          cnpj: 'string (somente dÃ­gitos ou formatado)',
           razao_social: 'string',
           nome_fantasia: 'string',
           logradouro: 'string',
@@ -1964,8 +1987,8 @@ Regras:
         const userPrompt =
           'Fonte BrasilAPI (JSON, pode ser null):\n' + JSON.stringify(brasil, null, 2) +
           '\n\nFonte OpenCNPJ (JSON, pode ser null):\n' + JSON.stringify(openCnpj, null, 2) +
-          '\n\nPayload atual (merge determinístico):\n' + JSON.stringify(mergedPayload, null, 2) +
-          '\n\nRetorne APENAS um JSON válido seguindo este schema (sem texto extra):\n' + JSON.stringify(schema, null, 2);
+          '\n\nPayload atual (merge determinÃ­stico):\n' + JSON.stringify(mergedPayload, null, 2) +
+          '\n\nRetorne APENAS um JSON vÃ¡lido seguindo este schema (sem texto extra):\n' + JSON.stringify(schema, null, 2);
 
         const aiJsonText = (await aiService.generateText(systemPrompt, userPrompt, 750)).trim();
         if (aiJsonText) {
@@ -1976,7 +1999,7 @@ Regras:
               text = formatCompanyQualification(payload);
             }
           } catch {
-            // Se a IA não retornar JSON, mantém fallback determinístico
+            // Se a IA nÃ£o retornar JSON, mantÃ©m fallback determinÃ­stico
           }
         }
       }
@@ -1984,7 +2007,7 @@ Regras:
       setCompanyLookupResultText(text);
     } catch (err) {
       console.error(err);
-      setError('Erro ao consultar CNPJ. Verifique o número e tente novamente.');
+      setError('Erro ao consultar CNPJ. Verifique o numero e tente novamente.');
     } finally {
       setCompanyLookupLoading(false);
     }
@@ -2040,7 +2063,7 @@ Regras:
     return client;
   }, [initialClientId, clients]);
 
-  // Helper para mostrar mensagem de sucesso temporária
+  // Helper para mostrar mensagem de sucesso temporÃ¡ria
   const showSuccessMessage = (msg: string) => {
     setSuccess(msg);
     window.setTimeout(() => setSuccess((current) => (current === msg ? null : current)), 5000);
@@ -2072,7 +2095,7 @@ Regras:
     };
   }, [initialCloudFileId]);
 
-  // Salvar petição
+  // Salvar petiçÃ£o
   const savePetition = async () => {
     const startSeq = contentChangeSeqRef.current;
     // Regra: salvar apenas documentos vinculados a cliente
@@ -2080,11 +2103,11 @@ Regras:
       if (initialClientId) {
         return;
       }
-      if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a petição');
+      if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a peticao');
       return;
     }
     if (!isOnlineRef.current) {
-      if (!window.__autoSaving) setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      if (!window.__autoSaving) setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     if (isLoadingPetitionRef.current) {
@@ -2092,8 +2115,8 @@ Regras:
       return;
     }
     if (savingDoc) return;
-    // Lock síncrono: previne race condition onde 2 autosaves disparam
-    // antes de setCurrentPetitionId ter efeito → criavam petições duplicadas
+    // Lock sÃ­ncrono: previne race condition onde 2 autosaves disparam
+    // antes de setCurrentPetitionId ter efeito â†’ criavam petiçÃµes duplicadas
     if (saveInFlightRef.current) return;
     saveInFlightRef.current = true;
     setSavingDoc(true);
@@ -2101,22 +2124,22 @@ Regras:
 
     try {
       const editor = editorRef.current;
-      if (!editor) throw new Error('Editor não disponível');
+      if (!editor) throw new Error('Editor nao disponivel');
 
       const sfdt = await editor.getSfdt();
-      if (!sfdt) throw new Error('Não foi possível obter o conteúdo do documento');
+      if (!sfdt) throw new Error('Nao foi possivel obter o conteudo do documento');
 
-      const title = petitionTitle.trim() || 'Sem título';
+      const title = petitionTitle.trim() || 'Sem titulo';
       const clientId = selectedClient?.id || null;
       const clientName = selectedClient?.full_name || null;
 
       let savedRow: SavedPetition | null = null;
 
-      // Lê do ref síncrono — garante valor mais atualizado entre saves concorrentes
+      // LÃª do ref sÃ­ncrono â€” garante valor mais atualizado entre saves concorrentes
       const existingId = currentPetitionIdRef.current ?? currentPetitionId;
 
       if (existingId) {
-        // Atualizar petição existente
+        // Atualizar petiçÃ£o existente
         savedRow = await petitionEditorService.updatePetition(existingId, {
           title,
           content: sfdt,
@@ -2124,7 +2147,7 @@ Regras:
           client_name: clientName,
         });
       } else {
-        // Criar nova petição
+        // Criar nova petiçÃ£o
         savedRow = await petitionEditorService.createPetition({
           title,
           content: sfdt,
@@ -2132,17 +2155,18 @@ Regras:
           client_name: clientName,
         });
         if (savedRow?.id) {
-          // Atualiza ref ANTES do state — próximos saves leem imediatamente
+          // Atualiza ref ANTES do state â€” prÃ³ximos saves leem imediatamente
           currentPetitionIdRef.current = savedRow.id;
           setCurrentPetitionId(savedRow.id);
         }
       }
 
-      // Update otimista da lista de petições salvas
+      // Update otimista da lista de petiçÃµes salvas
       if (savedRow) {
         setSavedPetitions((prev) => {
-          const next = prev.filter((p) => p.id !== savedRow!.id);
-          next.unshift(savedRow!);
+          const normalizedSavedRow = sanitizeSavedPetitionRecord(savedRow!);
+          const next = prev.filter((p) => p.id !== normalizedSavedRow.id);
+          next.unshift(normalizedSavedRow);
           next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
           return next;
         });
@@ -2157,7 +2181,7 @@ Regras:
 
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
-      // Não mostrar mensagem de sucesso em salvamento automático (apenas em salvamento manual)
+      // NÃ£o mostrar mensagem de sucesso em salvamento automÃ¡tico (apenas em salvamento manual)
       if (!window.__autoSaving) {
         showSuccessMessage('Documento salvo com sucesso');
       }
@@ -2175,10 +2199,10 @@ Regras:
     savePetitionActionRef.current = savePetition;
   }, [savePetition]);
 
-  // Petição pendente para carregar após o editor estar pronto
+  // PetiçÃ£o pendente para carregar apÃ³s o editor estar pronto
   const pendingPetitionRef = useRef<SavedPetition | null>(null);
 
-  // Carregar petição existente
+  // Carregar petiçÃ£o existente
   const loadPetition = async (petition: SavedPetition) => {
     if (isLoadingPetitionRef.current) return;
     isLoadingPetitionRef.current = true;
@@ -2190,11 +2214,11 @@ Regras:
       try {
         const fullPetition = await petitionEditorService.getPetition(petition.id);
         if (!fullPetition) {
-          throw new Error('Petição não encontrada');
+          throw new Error('Peticao nao encontrada');
         }
         petitionToLoad = fullPetition;
       } catch (err) {
-        console.error('Erro ao buscar petição completa:', err);
+        console.error('Erro ao buscar peticao completa:', err);
         setError('Erro ao carregar documento');
         window.__autoSaving = false;
         isLoadingPetitionRef.current = false;
@@ -2206,7 +2230,7 @@ Regras:
     // Atualizar estados primeiro
     currentPetitionIdRef.current = petitionToLoad.id;
     setCurrentPetitionId(petitionToLoad.id);
-    setPetitionTitle(petitionToLoad.title || '');
+    setPetitionTitle(sanitizeText(petitionToLoad.title) || '');
     setLastSaved(petitionToLoad.updated_at ? new Date(petitionToLoad.updated_at) : null);
 
     // Carregar cliente se houver
@@ -2231,7 +2255,7 @@ Regras:
         captureAndApplyDocFontSoon(editor);
         setShowStartScreen(false);
       } catch (err) {
-        console.error('Erro ao carregar conteúdo:', err);
+        console.error('Erro ao carregar conteudo:', err);
         setError('Erro ao carregar documento');
       } finally {
         window.__autoSaving = false;
@@ -2247,7 +2271,7 @@ Regras:
     setPendingPetitionLoadKey((k) => k + 1);
   };
 
-  // Carregar petição pendente quando o editor estiver pronto
+  // Carregar petiçÃ£o pendente quando o editor estiver pronto
   useEffect(() => {
     const petition = pendingPetitionRef.current;
     if (!petition) return;
@@ -2265,7 +2289,7 @@ Regras:
           showSuccessMessage('Documento carregado');
         }
       } catch (err) {
-        console.error('Erro ao carregar conteúdo:', err);
+        console.error('Erro ao carregar conteudo:', err);
         setError('Erro ao carregar documento');
       } finally {
         window.__autoSaving = false;
@@ -2274,11 +2298,11 @@ Regras:
       }
     };
     
-    // Pequeno delay para garantir que o editor está totalmente inicializado
+    // Pequeno delay para garantir que o editor estÃ¡ totalmente inicializado
     window.setTimeout(loadContent, 100);
   }, [pendingPetitionLoadKey]);
 
-  // Nova petição
+  // Nova petiçÃ£o
   const newPetition = (options?: { keepClient?: boolean }) => {
     const editor = editorRef.current;
     if (editor) {
@@ -2308,7 +2332,7 @@ Regras:
     try {
       const editor = editorRef.current;
       if (!editor) {
-        setError('Editor não disponível');
+        setError('Editor nao disponivel');
         return;
       }
 
@@ -2349,12 +2373,12 @@ Regras:
     try {
       const editor = editorRef.current;
       if (!editor) {
-        setError('Editor não disponível');
+        setError('Editor nao disponivel');
         return;
       }
 
       const arrayBuffer = await file.arrayBuffer();
-      await editor.loadDocx(arrayBuffer, file.name);
+      await loadDocxWithFallback(editor, arrayBuffer, file.name);
       captureAndApplyDocFontSoon(editor);
 
       try {
@@ -2367,7 +2391,7 @@ Regras:
         try {
           await petitionEditorService.saveDefaultTemplate(file.name, dataBase64);
         } catch (dbErr) {
-          console.error('Erro ao salvar modelo padrão no banco:', dbErr);
+          console.error('Erro ao salvar modelo padrao no banco:', dbErr);
           // Fallback para localStorage se falhar
           try {
             window.localStorage.setItem(
@@ -2375,8 +2399,8 @@ Regras:
               JSON.stringify({ name: file.name, dataBase64 })
             );
           } catch (storageErr) {
-            console.error('Erro ao salvar Documento padrão no storage:', storageErr);
-            setError('Não foi possível salvar o Documento padrão no navegador (armazenamento cheio).');
+            console.error('Erro ao salvar Documento padrao no storage:', storageErr);
+            setError('Nao foi possivel salvar o Documento padrao no navegador (armazenamento cheio).');
           }
         }
       } catch {
@@ -2401,7 +2425,7 @@ Regras:
   // Inserir bloco no editor
   const insertBlock = async (block: PetitionBlock) => {
     if (!isOnlineRef.current) {
-      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     const editor = editorRef.current;
@@ -2410,7 +2434,7 @@ Regras:
     const sfdt = String(block.content || '').trim();
     const looksLikeSfdt = sfdt.startsWith('{') || sfdt.startsWith('[');
 
-    // Função para restaurar foco e garantir estado editável
+    // FunçÃ£o para restaurar foco e garantir estado editÃ¡vel
     const restoreFocus = () => {
       try {
         editorRef.current?.refresh?.();
@@ -2448,7 +2472,7 @@ Regras:
         const processed = applyClientPlaceholders(sfdt);
         const fragment = await blockConvertEditorRef.current.convertSfdtToFragment(processed);
         if (fragment && fragment.trim()) {
-          // Inserção síncrona para evitar perda de foco
+          // InserçÃ£o sÃ­ncrona para evitar perda de foco
           const ok = editor.pasteSfdt(fragment);
           if (ok) {
             setHasUnsavedChanges(true);
@@ -2462,7 +2486,7 @@ Regras:
       // Fallback: texto puro
       let content = sfdtToPlainText(block.content);
       if (!content.trim() || content.trim().startsWith('{') || content.trim().startsWith('[')) {
-        content = 'Pré-visualização indisponível';
+        content = 'Pre-visualizacao indisponivel';
       }
       editor.insertText(applyClientPlaceholders(content));
       setHasUnsavedChanges(true);
@@ -2481,18 +2505,18 @@ Regras:
     try {
       await petitionEditorService.deleteBlock(blockId);
       setBlocks((prev) => prev.filter((b) => b.id !== blockId));
-      showSuccessMessage('Bloco excluído');
+      showSuccessMessage('Bloco excluido');
     } catch (err) {
       console.error('Erro ao excluir bloco:', err);
       setError('Erro ao excluir bloco');
     }
   };
 
-  // Handler de mudança de conteúdo do editor
+  // Handler de mudança de conteudo do editor
   const handleContentChange = () => {
     if (isLoadingPetitionRef.current) return;
     if (!isOnlineRef.current) {
-      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     contentChangeSeqRef.current += 1;
@@ -2562,13 +2586,13 @@ Regras:
   // Salvar bloco (criar ou atualizar)
   const saveBlock = async () => {
     if (!blockFormData.title.trim()) {
-      setError('Título é obrigatório');
+      setError('Titulo e obrigatorio');
       return;
     }
 
     const targetUpdateId = editingBlock?.id || (updateExistingBlockMode ? updateExistingBlockId : '');
     if (!editingBlock && updateExistingBlockMode && !targetUpdateId) {
-      setError('Selecione o bloco que será atualizado');
+      setError('Selecione o bloco que sera atualizado');
       return;
     }
 
@@ -2587,7 +2611,7 @@ Regras:
 
       if (targetUpdateId) {
         if (!editingBlock && updateExistingBlockMode) {
-          const ok = window.confirm('Atualizar bloco existente? Isso substituirá título, conteúdo e tags do bloco selecionado.');
+          const ok = window.confirm('Atualizar bloco existente? Isso substituira titulo, conteudo e tags do bloco selecionado.');
           if (!ok) return;
         }
 
@@ -2606,13 +2630,13 @@ Regras:
         // Atualizar lista conforme escopo atual
         if (blockFilterScope === 'type' && selectedStandardTypeId) {
           const blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         } else if (blockFilterScope === 'global') {
           const blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         } else {
           const blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         }
         showSuccessMessage('Bloco atualizado');
       } else {
@@ -2631,13 +2655,13 @@ Regras:
         // Atualizar lista conforme escopo atual
         if (blockFilterScope === 'type' && selectedStandardTypeId) {
           const blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         } else if (blockFilterScope === 'global') {
           const blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         } else {
           const blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
-          setBlocks(blocksData);
+          setBlocks(blocksData.map(sanitizeBlockRecord));
         }
         showSuccessMessage('Bloco criado');
       }
@@ -2666,7 +2690,7 @@ Regras:
     loadData();
   }, []);
 
-  // Carregar conteúdo do bloco no editor do modal quando abrir
+  // Carregar conteudo do bloco no editor do modal quando abrir
   useEffect(() => {
     if (!showBlockModal) {
       blockModalInitDoneRef.current = false;
@@ -2722,7 +2746,7 @@ Regras:
               }
             }, 160);
           } else if (sfdt) {
-            // Texto puro já inserido; se vazio, nada a fazer
+            // Texto puro jÃ¡ inserido; se vazio, nada a fazer
           }
         }, 160);
       } catch {
@@ -2740,7 +2764,7 @@ Regras:
   useEffect(() => {
     if (!showBlockModal) return;
 
-    // Se estiver criando dentro de um modelo, manter como padrão
+    // Se estiver criando dentro de um modelo, manter como padrÃ£o
     if (!editingBlock && !updateExistingBlockMode && selectedStandardTypeId) {
       setBlockStandardTypeId(selectedStandardTypeId);
       return;
@@ -2775,16 +2799,31 @@ Regras:
       try {
         const template = await petitionEditorService.getDefaultTemplate();
         if (template) {
-          setHasDefaultTemplate(true);
-          setDefaultTemplateName(template.name);
-          defaultTemplateMemoryRef.current = { name: template.name, dataBase64: template.dataBase64 };
+          if (template.dataBase64) {
+            setHasDefaultTemplate(true);
+            setDefaultTemplateName(template.name);
+            defaultTemplateMemoryRef.current = { name: template.name, dataBase64: template.dataBase64 };
+          } else {
+            setHasDefaultTemplate(false);
+            setDefaultTemplateName(null);
+            defaultTemplateMemoryRef.current = null;
+          }
+          // Restaurar fonte padrão do banco
+          if (template.fontFamily || template.fontSize) {
+            const font = {
+              fontFamily: template.fontFamily ?? undefined,
+              fontSize: template.fontSize ?? undefined,
+            };
+            setDefaultDocFont(font);
+            defaultDocFontRef.current = font;
+          }
         } else {
           setHasDefaultTemplate(false);
           setDefaultTemplateName(null);
           defaultTemplateMemoryRef.current = null;
         }
       } catch (err) {
-        console.error('Erro ao carregar modelo padrão do banco:', err);
+        console.error('Erro ao carregar modelo padrao do banco:', err);
         // Fallback para localStorage se falhar
         try {
           const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
@@ -2801,6 +2840,17 @@ Regras:
           setHasDefaultTemplate(false);
           setDefaultTemplateName(null);
         }
+        // Fallback fonte localStorage
+        try {
+          const raw = window.localStorage.getItem(DEFAULT_FONT_STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { fontFamily?: string; fontSize?: number };
+            if (parsed?.fontFamily || parsed?.fontSize) {
+              setDefaultDocFont(parsed);
+              defaultDocFontRef.current = parsed;
+            }
+          }
+        } catch { /* ignore */ }
       }
     };
 
@@ -2831,17 +2881,17 @@ Regras:
       applyInitialClientIfNeeded();
       const editor = await waitForEditorReady();
       if (!editor) {
-        setError('Editor não disponível');
+        setError('Editor nao disponivel');
         return;
       }
 
       const arrayBuffer = base64ToArrayBuffer(dataBase64);
-      await editor.loadDocx(arrayBuffer, fileName || 'documento.docx');
+      await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
       setHasUnsavedChanges(true);
-      showSuccessMessage('Documento importado. As alterações ficam em rascunho e serão salvas automaticamente no editor.');
-      if (!petitionTitle || petitionTitle === 'Nova Petição Trabalhista') {
+      showSuccessMessage('Documento importado. As alteracoes ficam em rascunho e serao salvas automaticamente no editor.');
+      if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
         setPetitionTitle(cleanName || 'Documento importado');
       }
@@ -2866,28 +2916,28 @@ Regras:
       const arrayBuffer = await response.arrayBuffer();
 
       if (arrayBuffer.byteLength === 0) {
-        throw new Error('O documento baixado está vazio (0 bytes). Verifique se o link é válido.');
+        throw new Error('O documento baixado esta vazio (0 bytes). Verifique se o link e valido.');
       }
 
       const editor = await waitForEditorReady();
       if (!editor) {
-        setError('O editor Syncfusion não carregou a tempo. Tente recarregar a página.');
+        setError('O editor Syncfusion nao carregou a tempo. Tente recarregar a pagina.');
         return;
       }
 
-      await editor.loadDocx(arrayBuffer, fileName || 'documento.docx');
+      await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
       setHasUnsavedChanges(true);
       showSuccessMessage('Documento importado com sucesso.');
-      if (!petitionTitle || petitionTitle === 'Nova Petição Trabalhista') {
+      if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
         setPetitionTitle(cleanName || 'Documento importado');
       }
     } catch (err: any) {
       console.error('Erro ao importar documento inicial por URL:', err);
       const msg = err?.message || 'Erro desconhecido';
-      setError(`Não foi possível abrir o documento: ${msg}`);
+      setError(`Nao foi possivel abrir o documento: ${msg}`);
     } finally {
       setDocumentImportLoading(false);
     }
@@ -2895,27 +2945,27 @@ Regras:
 
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
-      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     try {
       const memory = defaultTemplateMemoryRef.current;
       let parsed: { name: string; dataBase64: string } | null = memory;
 
-      // Se não tiver em memória, tentar do banco
+      // Se nÃ£o tiver em memÃ³ria, tentar do banco
       if (!parsed) {
         try {
-          console.log('[PetitionEditor] Buscando modelo padrão no Supabase...');
+          console.log('[PetitionEditor] Buscando modelo padrÃ£o no Supabase...');
           const template = await petitionEditorService.getDefaultTemplate();
           if (template) {
-            console.log('[PetitionEditor] Modelo padrão encontrado no banco.');
+            console.log('[PetitionEditor] Modelo padrÃ£o encontrado no banco.');
             parsed = { name: template.name, dataBase64: template.dataBase64 };
             defaultTemplateMemoryRef.current = parsed;
           } else {
-            console.log('[PetitionEditor] Nenhum modelo padrão encontrado no banco.');
+            console.log('[PetitionEditor] Nenhum modelo padrÃ£o encontrado no banco.');
           }
         } catch (dbErr: any) {
-          console.error('Erro ao buscar modelo padrão do banco:', dbErr);
+          console.error('Erro ao buscar modelo padrÃ£o do banco:', dbErr);
           const isTimeout = dbErr?.message?.includes('timeout') || dbErr?.code === '500';
           if (isTimeout) {
             setError('O banco de dados demorou muito para responder (timeout). Tente recarregar ou use um arquivo local.');
@@ -2930,24 +2980,24 @@ Regras:
       }
 
       if (!parsed?.dataBase64) {
-        setError('Nenhum modelo padrão definido');
+        setError('Nenhum modelo padrao definido');
         return;
       }
 
       const editor = await waitForEditorReady();
       if (!editor) {
-        setError('Editor não disponível');
+        setError('Editor nao disponivel');
         return;
       }
 
       const arrayBuffer = base64ToArrayBuffer(parsed.dataBase64);
-      await editor.loadDocx(arrayBuffer, parsed.name || 'modelo.docx');
+      await loadDocxWithFallback(editor, arrayBuffer, parsed.name || 'modelo.docx');
       captureAndApplyDocFontSoon(editor);
       setHasUnsavedChanges(true);
-      showSuccessMessage(`Modelo padrão${parsed.name ? ` "${parsed.name}"` : ''} carregado`);
+      showSuccessMessage(`Modelo padrao${parsed.name ? ` "${parsed.name}"` : ''} carregado`);
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar modelo padrão');
+      setError('Erro ao carregar modelo padrao');
     }
   };
 
@@ -2956,7 +3006,7 @@ Regras:
     if (loading) return;
     if (!hasDefaultTemplate) return;
 
-    // Não sobrescrever petição carregada ou alterações do usuário
+    // NÃ£o sobrescrever petiçÃ£o carregada ou alteraçÃµes do usuÃ¡rio
     if (currentPetitionId) return;
     if (hasUnsavedChanges) return;
 
@@ -3178,7 +3228,7 @@ Regras:
 
     let score = 0;
     for (const term of terms) {
-      // Prioriza título
+      // Prioriza tÃ­tulo
       const sTitle = scoreTermInWords(term, titleWords, 1.0, 0.75);
       const sContent = scoreTermInWords(term, contentWords, 0.5, 0.35);
       score += Math.max(sTitle, sContent);
@@ -3187,7 +3237,7 @@ Regras:
     // Normaliza por quantidade de termos
     score = score / terms.length;
 
-    // Boost se query inteira aparece no título
+    // Boost se query inteira aparece no tÃ­tulo
     if (title.includes(query)) score += 0.35;
     if (score > 1.5) score = 1.5;
     return score;
@@ -3205,9 +3255,11 @@ Regras:
         petitionEditorService.listLegalAreas(),
       ]);
 
-      const preferredAreaId = selectedLegalAreaId && areasData.some((a) => a.id === selectedLegalAreaId) ? selectedLegalAreaId : null;
-      const nextAreaId = preferredAreaId || areasData[0]?.id || null;
-      setLegalAreas(areasData);
+      const normalizedAreas = (areasData || []).map(sanitizeLegalAreaRecord);
+      const normalizedPetitions = (petitionsData || []).map(sanitizeSavedPetitionRecord);
+      const preferredAreaId = selectedLegalAreaId && normalizedAreas.some((a) => a.id === selectedLegalAreaId) ? selectedLegalAreaId : null;
+      const nextAreaId = preferredAreaId || normalizedAreas[0]?.id || null;
+      setLegalAreas(normalizedAreas);
       if (!preferredAreaId && nextAreaId) setSelectedLegalAreaId(nextAreaId);
       if (nextAreaId) {
         try {
@@ -3217,8 +3269,8 @@ Regras:
         }
       }
 
-      // Carregar Petições Padrões (todas as áreas para navegação hierárquica no header)
-      const allTypes = await petitionEditorService.listStandardTypes(null);
+      // Carregar PetiçÃµes Padroes (todas as areas para navegaçÃ£o hierÃ¡rquica no header)
+      const allTypes = (await petitionEditorService.listStandardTypes(null)).map(sanitizeStandardTypeRecord);
       const byArea: Record<string, PetitionStandardType[]> = {};
       for (const t of allTypes || []) {
         const key = String(t.legal_area_id || '');
@@ -3228,7 +3280,7 @@ Regras:
       }
       setStandardTypesByArea(byArea);
 
-      // Tipos da área selecionada
+      // Tipos da area selecionada
       const typesData = nextAreaId ? byArea[nextAreaId] ?? [] : [];
       setStandardTypes(typesData);
       if (nextAreaId) {
@@ -3244,12 +3296,12 @@ Regras:
         }
       }
 
-      const blocksData = await petitionEditorService.listBlocksByLegalArea(nextAreaId, selectedDocumentType);
+      const blocksData = (await petitionEditorService.listBlocksByLegalArea(nextAreaId, selectedDocumentType)).map(sanitizeBlockRecord);
       setBlocks(blocksData);
-      const withClient = (petitionsData || []).filter((p) => Boolean(p.client_id));
-      const orphans = (petitionsData || []).filter((p) => !p.client_id);
+      const withClient = normalizedPetitions.filter((p) => Boolean(p.client_id));
+      const orphans = normalizedPetitions.filter((p) => !p.client_id);
       setSavedPetitions(withClient);
-      // Limpar automaticamente documentos antigos sem vinculação
+      // Limpar automaticamente documentos antigos sem vinculaçÃ£o
       if (orphans.length) {
         petitionEditorService.deleteOrphanPetitions().catch(() => {
           // ignore
@@ -3266,13 +3318,13 @@ Regras:
   };
 
   useEffect(() => {
-    // Recarregar blocos e petições padrões quando trocar área ou tipo de documento
+    // Recarregar blocos e petiçÃµes padrÃµes quando trocar area ou tipo de documento
     let cancelled = false;
     const reload = async () => {
       try {
-        // Carregar petições padrões da área
+        // Carregar petiçÃµes padrÃµes da area
         if (selectedLegalAreaId) {
-          const typesData = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+          const typesData = (await petitionEditorService.listStandardTypes(selectedLegalAreaId)).map(sanitizeStandardTypeRecord);
           if (!cancelled) {
             setStandardTypes(typesData);
             setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: typesData }));
@@ -3286,7 +3338,7 @@ Regras:
                 // ignore
               }
             }
-            // Se tinha um tipo selecionado que não existe mais na nova área, limpar
+            // Se tinha um tipo selecionado que nÃ£o existe mais na nova area, limpar
             if (selectedStandardTypeId && !typesData.find((t) => t.id === selectedStandardTypeId)) {
               setSelectedStandardTypeId(null);
               setBlockFilterScope('area');
@@ -3302,11 +3354,11 @@ Regras:
         // Carregar blocos baseado no escopo
         let blocksData: PetitionBlock[] = [];
         if (blockFilterScope === 'type' && selectedStandardTypeId) {
-          blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
+          blocksData = (await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId)).map(sanitizeBlockRecord);
         } else if (blockFilterScope === 'global') {
-          blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
+          blocksData = (await petitionEditorService.listBlocks(selectedDocumentType)).map(sanitizeBlockRecord);
         } else {
-          blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
+          blocksData = (await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType)).map(sanitizeBlockRecord);
         }
         if (!cancelled) setBlocks(blocksData);
       } catch {
@@ -3383,7 +3435,7 @@ Regras:
     return data || [];
   };
 
-  // Notificar parent sobre mudanças não salvas (para widget flutuante)
+  // Notificar parent sobre mudanças nÃ£o salvas (para widget flutuante)
   useEffect(() => {
     onUnsavedChanges?.(hasUnsavedChanges);
   }, [hasUnsavedChanges, onUnsavedChanges]);
@@ -3392,7 +3444,7 @@ Regras:
     onWidgetInfoChange?.({ lastSaved, selectedClient });
   }, [lastSaved, selectedClient, onWidgetInfoChange]);
 
-  // Carregar cliente/petição inicial quando em modo widget flutuante
+  // Carregar cliente/petiçÃ£o inicial quando em modo widget flutuante
   const initialLoadDoneRef = useRef(false);
   useEffect(() => {
     if (initialLoadDoneRef.current) return;
@@ -3422,7 +3474,7 @@ Regras:
 
     initialLoadDoneRef.current = true;
 
-    // Se tiver petição inicial, carregar
+    // Se tiver petiçÃ£o inicial, carregar
     if (initialPetitionId) {
       const petition = savedPetitions.find(p => p.id === initialPetitionId);
       if (petition) {
@@ -3431,16 +3483,16 @@ Regras:
       }
     }
 
-    // Se tiver cliente inicial, selecionar e mostrar petições do cliente
+    // Se tiver cliente inicial, selecionar e mostrar peticoes do cliente
     if (initialClientId) {
       const client = clients.find(c => c.id === initialClientId);
       if (client) {
         setSelectedClient(client);
         setSidebarTab('blocks');
-        // Filtrar petições do cliente para mostrar opções
+        // Filtrar peticoes do cliente para mostrar opçÃµes
         const clientPetitions = savedPetitions.filter(p => p.client_id === initialClientId);
         if (clientPetitions.length > 0) {
-          showSuccessMessage(`${clientPetitions.length} petição(ões) encontrada(s) para ${client.full_name}`);
+          showSuccessMessage(`${clientPetitions.length} peticao(oes) encontrada(s) para ${client.full_name}`);
         }
       }
     }
@@ -3599,8 +3651,8 @@ Regras:
       'as',
       'ao',
       'aos',
-      'à',
-      'às',
+      'Ã ',
+      'Ã s',
       'com',
       'da',
       'das',
@@ -3743,7 +3795,7 @@ Regras:
     });
   }, [clients, clientSearch]);
 
-  // Gerar qualificação do cliente
+  // Gerar qualificaçÃ£o do cliente
   const generateClientQualification = (client: Client): string => {
     const parts: string[] = [];
     
@@ -3752,16 +3804,16 @@ Regras:
     if (client.nationality) parts.push(client.nationality.toLowerCase());
     if (client.marital_status) parts.push(MARITAL_STATUS_LABELS[client.marital_status] || client.marital_status);
     if (client.profession) parts.push(client.profession.toLowerCase());
-    if (client.cpf_cnpj) parts.push(`inscrito(a) no CPF sob o nº ${client.cpf_cnpj}`);
-    if (client.rg) parts.push(`RG nº ${client.rg}`);
+    if (client.cpf_cnpj) parts.push(`inscrito(a) no CPF sob o nÂº ${client.cpf_cnpj}`);
+    if (client.rg) parts.push(`RG nÂº ${client.rg}`);
     
     let address = '';
     if (client.address_street) address += `residente e domiciliado(a) na ${client.address_street}`;
-    if (client.address_number) address += `, nº ${client.address_number}`;
+    if (client.address_number) address += `, nÂº ${client.address_number}`;
     if (client.address_complement) address += `, ${client.address_complement}`;
     if (client.address_neighborhood) address += `, Bairro ${client.address_neighborhood}`;
     if (client.address_city) address += `, ${client.address_city}`;
-    if (client.address_state) address += ` – ${client.address_state}`;
+    if (client.address_state) address += ` â€“ ${client.address_state}`;
     if (client.address_zip_code) address += `, CEP ${client.address_zip_code}`;
     if (address) parts.push(address);
     
@@ -3771,10 +3823,10 @@ Regras:
     return parts.join(', ');
   };
 
-  // Inserir qualificação do cliente
+  // Inserir qualificaçÃ£o do cliente
   const insertClientQualification = (client: Client) => {
     if (!isOnlineRef.current) {
-      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     setSelectedClient(client);
@@ -3791,7 +3843,7 @@ Regras:
     editor.setBold(false);
     editor.insertText(rest);
     setHasUnsavedChanges(true);
-    showSuccessMessage('DAS QUESTÕES INICIAIS inseridas');
+    showSuccessMessage('DAS QUESTOES INICIAIS inseridas');
     window.setTimeout(() => savePetitionActionRef.current?.(), 300);
     window.setTimeout(() => {
       const ed = editorRef.current;
@@ -3814,19 +3866,19 @@ Regras:
     }
 
     setError(null);
-    setAiEditInstruction('Melhore a redação jurídica, preservando o sentido e deixando o texto mais técnico e claro.');
+    setAiEditInstruction('Melhore a redacao juridica, preservando o sentido e deixando o texto mais tecnico e claro.');
     setAiEditSelectedText(text);
     setShowAiEditModal(true);
   }, []);
 
-  // Formatar qualificação com IA
+  // Formatar qualificaçÃ£o com IA
   const handleFormatQualification = async (selectedText: string) => {
     openAiEditModalFromSelection(selectedText);
   };
 
   const handleApplyAiEdit = async () => {
     if (!isOnlineRef.current) {
-      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
 
@@ -3853,7 +3905,7 @@ Regras:
       });
 
       const editor = editorRef.current;
-      if (!editor) throw new Error('Editor não disponível');
+      if (!editor) throw new Error('Editor nao disponivel');
 
       editor.focus();
       const selection = (editor as any).containerRef?.current?.documentEditor?.selection;
@@ -3875,17 +3927,17 @@ Regras:
   };
 
   // ========== RENDER ==========
-  // Tela de início (quando showStartScreen === true)
+  // Tela de inÃ­cio (quando showStartScreen === true)
   if (showStartScreen) {
     return (
       <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-white`}>
-        {/* Barra de título (estilo Word) */}
+        {/* Barra de tÃ­tulo (estilo Word) */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-slate-200 bg-white">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-md bg-[#2b579a] flex items-center justify-center shadow-sm">
               <FileText className="w-4 h-4 text-white" />
             </div>
-            <div className="text-sm font-semibold text-slate-900">Editor de Petições</div>
+            <div className="text-sm font-semibold text-slate-900">Editor de Peticoes</div>
           </div>
           <div className="flex items-center gap-1">
             {isFloatingWidget && (
@@ -3911,7 +3963,7 @@ Regras:
 
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-6 py-8">
-            {/* Saudação */}
+            {/* SaudaçÃ£o */}
             <div className="mb-7">
               <div className="text-[26px] font-semibold tracking-tight text-slate-900">{getGreeting()}</div>
               <div className="mt-0.5 text-sm text-slate-500">{userDisplayName}</div>
@@ -3953,7 +4005,7 @@ Regras:
                   }}
                   disabled={!hasDefaultTemplate}
                   className="group w-[168px] text-left disabled:opacity-50"
-                  title={hasDefaultTemplate ? `Carregar documento padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrão definido'}
+                  title={hasDefaultTemplate ? `Carregar documento padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrao definido'}
                 >
                   <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md group-disabled:border-slate-200 group-disabled:shadow-none">
                     <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
@@ -3967,7 +4019,7 @@ Regras:
                       </div>
                     </div>
                   </div>
-                  <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento padrão</div>
+                  <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento padrao</div>
                 </button>
 
                 <button
@@ -4003,14 +4055,14 @@ Regras:
                     <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-slate-100 flex items-center justify-center">
                       <Clock className="w-6 h-6 text-slate-400" />
                     </div>
-                    <div className="text-sm text-slate-500">Nenhuma petição recente</div>
+                    <div className="text-sm text-slate-500">Nenhuma peticao recente</div>
                   </div>
                 ) : (
                   <div className="max-h-[420px] overflow-y-auto -mx-1.5">
                     {(() => {
-                      // Dedup: agrupa por (título normalizado + client_id), mantém o mais recente.
-                      // Normalização remove sufixos Windows ` (N)` do final do título:
-                      // "MODELO MASCULINO (8) (1) (2)" → "modelo masculino"
+                      // Dedup: agrupa por (tÃ­tulo normalizado + client_id), mantÃ©m o mais recente.
+                      // NormalizaçÃ£o remove sufixos Windows ` (N)` do final do tÃ­tulo:
+                      // "MODELO MASCULINO (8) (1) (2)" â†’ "modelo masculino"
                       const normalizeTitle = (t: string) =>
                         t.trim().replace(/(\s*\(\d+\))+$/g, '').trim().toLowerCase();
                       const seen = new Map<string, SavedPetition>();
@@ -4051,7 +4103,7 @@ Regras:
                             {isOpening ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-[18px] h-[18px]" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-sm text-slate-800 truncate">{isOpening ? 'Abrindo...' : (p.title || 'Sem título')}</div>
+                            <div className="text-sm text-slate-800 truncate">{isOpening ? 'Abrindo...' : (p.title || 'Sem titulo')}</div>
                             <div className="text-xs text-slate-500 truncate">{p.client_name || 'Sem cliente'}</div>
                           </div>
                           <div className="shrink-0 text-xs text-slate-400 whitespace-nowrap tabular-nums" data-tick={relativeTimeTick}>
@@ -4062,9 +4114,9 @@ Regras:
                               e.stopPropagation();
                               if (isBusyOpening) return;
                               const confirmed = await confirmDelete({
-                                title: 'Excluir petição',
-                                entityName: p.title || 'Sem título',
-                                message: `Deseja excluir a petição "${p.title || 'Sem título'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
+                                title: 'Excluir peticao',
+                                entityName: p.title || 'Sem titulo',
+                                message: `Deseja excluir a peticao "${p.title || 'Sem titulo'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
                                 confirmLabel: 'Excluir',
                               });
                               if (!confirmed) return;
@@ -4073,13 +4125,13 @@ Regras:
                                 notifyDeleted(p.title || undefined);
                                 setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
                               } catch (err) {
-                                console.error('Erro ao excluir petição:', err);
-                                setError('Erro ao excluir petição');
+                                console.error('Erro ao excluir peticao:', err);
+                                setError('Erro ao excluir peticao');
                               }
                             }}
                             disabled={isBusyOpening}
                             className="shrink-0 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
-                            title="Excluir petição"
+                            title="Excluir peticao"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -4096,51 +4148,257 @@ Regras:
     );
   }
 
-  // Tela principal do editor
-  return (
-    <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-slate-50`}>
-      {/* Faixa de acento */}
-      <div className="h-1 w-full shrink-0 bg-amber-500" />
+  const ribbonTopContent = (
+    <>
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+        title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
+      >
+        {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+      </button>
 
-      {/* Toolbar Superior */}
-      <div className="relative z-[20] bg-white border-b border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
-        {/* Toggle Sidebar */}
+      <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
         <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1.5 hover:bg-slate-100 rounded transition-colors"
-          title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
+          type="button"
+          onClick={() => setActiveWorkspace('editor')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+            activeWorkspace === 'editor'
+              ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-800'
+          }`}
         >
-          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+          Editor
         </button>
-
-        <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
+        {blocksEnabled && (
           <button
             type="button"
-            onClick={() => setActiveWorkspace('editor')}
+            onClick={() => setActiveWorkspace('blocks')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              activeWorkspace === 'editor'
+              activeWorkspace === 'blocks'
                 ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            Editor
+            Blocos
           </button>
-          {blocksEnabled && (
-            <button
-              type="button"
-              onClick={() => setActiveWorkspace('blocks')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                activeWorkspace === 'blocks'
-                  ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-            >
-              Blocos
-            </button>
-          )}
-        </div>
+        )}
+      </div>
 
-        {/* Voltar para a tela inicial */}
+      <button
+        onClick={() => {
+          if (hasUnsavedChanges) {
+            const what = [
+              petitionTitle ? `Documento: "${petitionTitle}"` : '',
+              selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+            const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
+            if (!confirm(msg)) return;
+          }
+          setShowStartScreen(true);
+        }}
+        className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600"
+        title="Voltar para a tela inicial"
+      >
+        <ArrowLeft className="w-4 h-4" />
+      </button>
+
+      <input
+        type="text"
+        value={petitionTitle}
+        onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
+        className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none"
+        placeholder="Titulo da peticao..."
+      />
+
+      {legalAreas.length > 0 && (
+        <div className="flex items-center gap-1">
+          <select
+            value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw.startsWith('type:')) {
+                const typeId = raw.replace('type:', '').trim();
+                const foundType = Object.values(standardTypesByArea).flat().find((t) => t.id === typeId) || null;
+                const areaId = foundType?.legal_area_id || null;
+                if (areaId) {
+                  setSelectedLegalAreaId(areaId);
+                  try {
+                    window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId);
+                  } catch {
+                    // ignore
+                  }
+                  setStandardTypes((standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord));
+                }
+
+                setSelectedStandardTypeId(typeId);
+                setBlockFilterScope('type');
+                if (areaId) {
+                  try {
+                    window.localStorage.setItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`, typeId);
+                  } catch {
+                    // ignore
+                  }
+                }
+                if (foundType?.default_document && editorRef.current) {
+                  editorRef.current.loadSfdt(foundType.default_document);
+                  if (foundType.default_document_name) {
+                    setPetitionTitle(sanitizeText(foundType.default_document_name));
+                  }
+                }
+                return;
+              }
+
+              const newAreaId = raw.replace('area:', '').trim() || null;
+              setSelectedLegalAreaId(newAreaId);
+              setSelectedStandardTypeId(null);
+              setBlockFilterScope('area');
+              if (newAreaId) {
+                try {
+                  window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, newAreaId);
+                  window.localStorage.removeItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${newAreaId}`);
+                } catch {
+                  // ignore
+                }
+              }
+              setStandardTypes(newAreaId ? (standardTypesByArea[newAreaId] ?? []).map(sanitizeStandardTypeRecord) : []);
+
+              const area = legalAreas.find((a) => a.id === newAreaId);
+              if (area && (!petitionTitle || petitionTitle.startsWith('Nova Peticao'))) {
+                setPetitionTitle(`Nova Peticao ${sanitizeText(area.name)}`);
+              }
+            }}
+            className="px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+            style={{ borderLeftColor: selectedLegalArea?.color || '#e2e8f0', borderLeftWidth: '3px' }}
+          >
+            {legalAreas.map((area) => (
+              <optgroup key={area.id} label={area.name}>
+                <option value={`area:${area.id}`}>Todos da area</option>
+                {(standardTypesByArea[area.id] ?? []).map((t) => (
+                  <option key={t.id} value={`type:${t.id}`}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            onClick={() => openLegalAreaModal()}
+            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+            title="Gerenciar areas juridicas"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => openStandardTypeModal()}
+            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            title="Gerenciar modelos (peticoes padroes)"
+          >
+            <FileText className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {legalAreas.length === 0 && (
+        <button
+          onClick={() => openLegalAreaModal()}
+          className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Criar Area Juridica
+        </button>
+      )}
+
+      {selectedClient && (
+        <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs">
+          <User className="w-3.5 h-3.5 text-amber-600" />
+          <span className="text-amber-700 font-medium">{selectedClient.full_name}</span>
+          <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1" />
+
+      {lastSaved && (
+        <div className="flex items-center gap-1 text-xs text-slate-400 w-[170px] justify-end tabular-nums whitespace-nowrap">
+          <Clock className="w-3.5 h-3.5" />
+          <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
+        </div>
+      )}
+
+      <button
+        onClick={() => newPetition({ keepClient: true })}
+        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Novo
+      </button>
+      <button
+        onClick={savePetition}
+        disabled={savingDoc}
+        className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
+      >
+        {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+        Salvar
+      </button>
+      <button
+        onClick={exportToWord}
+        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Word
+      </button>
+
+      <div className="h-4 w-px bg-slate-200 mx-1" />
+
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
+        title="Importar modelo Word"
+      >
+        <FileUp className="w-3.5 h-3.5" />
+        Modelo
+      </button>
+
+      <button
+        onClick={loadDefaultTemplate}
+        disabled={!hasDefaultTemplate}
+        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1 disabled:opacity-50 disabled:hover:bg-transparent"
+        title={hasDefaultTemplate ? `Carregar modelo padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrao definido'}
+      >
+        <FolderOpen className="w-3.5 h-3.5" />
+        Padrao
+      </button>
+
+      <div className="h-4 w-px bg-slate-200 mx-1" />
+
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            if (isFloatingWidget) {
+              onRequestMinimize?.();
+              return;
+            }
+            setIsMinimized(true);
+          }}
+          className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+          title="Minimizar"
+        >
+          <Minimize2 className="w-4 h-4" />
+        </button>
+        {!isFloatingWidget && (
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+            title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        )}
         <button
           onClick={() => {
             if (hasUnsavedChanges) {
@@ -4150,264 +4408,26 @@ Regras:
               ]
                 .filter(Boolean)
                 .join('\n');
-              const msg = `Há alterações não salvas.${what ? `
-
-${what}` : ''}
-
-Deseja voltar para a tela inicial mesmo assim?`;
+              const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja fechar mesmo assim?`;
               if (!confirm(msg)) return;
             }
-            setShowStartScreen(true);
-          }}
-          className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600"
-          title="Voltar para a tela inicial"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-
-        {/* Título */}
-        <input
-          type="text"
-          value={petitionTitle}
-          onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-          className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none"
-          placeholder="Título da petição..."
-        />
-
-        {/* Seletor de Área Jurídica */}
-        {legalAreas.length > 0 && (
-          <div className="flex items-center gap-1">
-            <select
-              value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
-              onChange={(e) => {
-                const raw = e.target.value;
-                if (raw.startsWith('type:')) {
-                  const typeId = raw.replace('type:', '').trim();
-                  const foundType = Object.values(standardTypesByArea).flat().find((t) => t.id === typeId) || null;
-                  const areaId = foundType?.legal_area_id || null;
-                  if (areaId) {
-                    setSelectedLegalAreaId(areaId);
-                    try {
-                      window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId);
-                    } catch {
-                      // ignore
-                    }
-                    setStandardTypes(standardTypesByArea[areaId] ?? []);
-                  }
-
-                  setSelectedStandardTypeId(typeId);
-                  setBlockFilterScope('type');
-                  if (areaId) {
-                    try {
-                      window.localStorage.setItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`, typeId);
-                    } catch {
-                      // ignore
-                    }
-                  }
-                  if (foundType?.default_document && editorRef.current) {
-                    editorRef.current.loadSfdt(foundType.default_document);
-                    if (foundType.default_document_name) {
-                      setPetitionTitle(foundType.default_document_name);
-                    }
-                  }
-                  return;
-                }
-
-                const newAreaId = raw.replace('area:', '').trim() || null;
-                setSelectedLegalAreaId(newAreaId);
-                setSelectedStandardTypeId(null);
-                setBlockFilterScope('area');
-                if (newAreaId) {
-                  try {
-                    window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, newAreaId);
-                    window.localStorage.removeItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${newAreaId}`);
-                  } catch {
-                    // ignore
-                  }
-                }
-                setStandardTypes(newAreaId ? (standardTypesByArea[newAreaId] ?? []) : []);
-
-                // Atualizar título se estiver vazio ou for o padrão
-                const area = legalAreas.find((a) => a.id === newAreaId);
-                if (area && (!petitionTitle || petitionTitle.startsWith('Nova Petição'))) {
-                  setPetitionTitle(`Nova Petição ${area.name}`);
-                }
-              }}
-              className="px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
-              style={{ 
-                borderLeftColor: selectedLegalArea?.color || '#e2e8f0',
-                borderLeftWidth: '3px'
-              }}
-            >
-              {legalAreas.map((area) => (
-                <optgroup key={area.id} label={area.name}>
-                  <option value={`area:${area.id}`}>Todos da área</option>
-                  {(standardTypesByArea[area.id] ?? []).map((t) => (
-                    <option key={t.id} value={`type:${t.id}`}>
-                      {t.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            <button
-              onClick={() => openLegalAreaModal()}
-              className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-              title="Gerenciar áreas jurídicas"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => openStandardTypeModal()}
-              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-              title="Gerenciar modelos (petições padrões)"
-            >
-              <FileText className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        {/* Botão para criar primeira área se não existir nenhuma */}
-        {legalAreas.length === 0 && (
-          <button
-            onClick={() => openLegalAreaModal()}
-            className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Criar Área Jurídica
-          </button>
-        )}
-
-        {/* Cliente selecionado */}
-        {selectedClient && (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs">
-            <User className="w-3.5 h-3.5 text-amber-600" />
-            <span className="text-amber-700 font-medium">{selectedClient.full_name}</span>
-            <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Status de salvamento */}
-        {lastSaved && (
-          <div className="flex items-center gap-1 text-xs text-slate-400 w-[170px] justify-end tabular-nums whitespace-nowrap">
-            <Clock className="w-3.5 h-3.5" />
-            <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
-          </div>
-        )}
-
-        {/* Ações */}
-        <button
-          onClick={() => newPetition({ keepClient: true })}
-          className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Novo
-        </button>
-        <button
-          onClick={savePetition}
-          disabled={savingDoc}
-          className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
-        >
-          {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-          Salvar
-        </button>
-        <button
-          onClick={exportToWord}
-          className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Word
-        </button>
-
-        <div className="h-4 w-px bg-slate-200 mx-1" />
-
-        {/* Importar modelo */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".doc,.docx"
-          onChange={handleImportTemplate}
-          className="hidden"
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-          title="Importar modelo Word"
-        >
-          <FileUp className="w-3.5 h-3.5" />
-          Modelo
-        </button>
-
-        <button
-          onClick={loadDefaultTemplate}
-          disabled={!hasDefaultTemplate}
-          className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1 disabled:opacity-50 disabled:hover:bg-transparent"
-          title={hasDefaultTemplate ? `Carregar modelo padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrão definido'}
-        >
-          <FolderOpen className="w-3.5 h-3.5" />
-          Padrão
-        </button>
-
-        <div className="h-4 w-px bg-slate-200 mx-1" />
-
-        {/* Botões de controle do modal */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              if (isFloatingWidget) {
-                onRequestMinimize?.();
-                return;
-              }
+            if (isFloatingWidget) {
+              onRequestClose?.();
+            } else {
               setIsMinimized(true);
-            }}
-            className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
-            title="Minimizar"
-          >
-            <Minimize2 className="w-4 h-4" />
-          </button>
-          {!isFloatingWidget && (
-            <button
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
-              title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                const what = [
-                  petitionTitle ? `Documento: "${petitionTitle}"` : '',
-                  selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-                ]
-                  .filter(Boolean)
-                  .join('\n');
-                const msg = `Há alterações não salvas.${what ? `
-
-${what}` : ''}
-
-Deseja fechar mesmo assim?`;
-                if (!confirm(msg)) return;
-              }
-              if (isFloatingWidget) {
-                onRequestClose?.();
-              } else {
-                setIsMinimized(true);
-              }
-            }}
-            className="p-1.5 hover:bg-red-100 rounded transition-colors text-slate-500 hover:text-red-600"
-            title="Fechar"
-          >
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
+            }
+          }}
+          className="p-1.5 hover:bg-red-50 rounded transition-colors text-slate-500 hover:text-red-600"
+          title="Fechar editor"
+        >
+          <XCircle className="w-4 h-4" />
+        </button>
       </div>
+    </>
+  );
 
+  return (
+    <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} relative flex flex-col overflow-hidden bg-[#f5f6f8]`}>
       {success && (
         <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
           <CheckCircle2 className="w-4 h-4" />
@@ -4427,7 +4447,7 @@ Deseja fechar mesmo assim?`;
               </div>
               <div className="min-w-0">
                 <div className="text-base font-semibold text-slate-900">Carregando documento...</div>
-                <div className="mt-1 text-sm text-slate-600">Importando o arquivo no editor de petições e aplicando o vínculo do cliente da pasta.</div>
+                <div className="mt-1 text-sm text-slate-600">Importando o arquivo no editor de peticoes e aplicando o vinculo do cliente da pasta.</div>
               </div>
             </div>
             <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-amber-100">
@@ -4448,10 +4468,10 @@ Deseja fechar mesmo assim?`;
         </div>
       )}
 
-      {/* Modal: Visualizar Conteúdo do Bloco */}
+      {/* Modal: Visualizar ConteÃºdo do Bloco */}
       {showBlockViewModal && viewingBlock && (
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="block-editor-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="block-editor-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-4xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-amber-500" />
 
             <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
@@ -4488,7 +4508,7 @@ Deseja fechar mesmo assim?`;
             <div className="p-4 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-[12px] font-medium text-slate-600 mb-2">Título do Bloco *</label>
+                  <label className="block text-[12px] font-medium text-slate-600 mb-2">Titulo do Bloco *</label>
                   <input
                     type="text"
                     value={viewingBlock.title}
@@ -4510,7 +4530,7 @@ Deseja fechar mesmo assim?`;
               </div>
 
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-1">Conteúdo SFDT *</label>
+                <label className="block text-[12px] font-medium text-slate-600 mb-1">Conteudo SFDT *</label>
                 <div className="border border-[#e7e5df] rounded-2xl overflow-hidden bg-[#f8f7f5] shadow-inner">
                   <div className="relative w-full h-[620px] overflow-auto bg-[#f8f7f5] petition-block-docx-preview">
                     <div className="min-h-[620px] p-4">
@@ -4542,8 +4562,8 @@ Deseja fechar mesmo assim?`;
                           <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                             {(() => {
                               const t = (blockViewFallbackText || '').trim();
-                              if (!t) return 'Pré-visualização indisponível';
-                              if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
+                              if (!t) return 'Pre-visualizacao indisponivel';
+                              if (t.startsWith('{') || t.startsWith('[')) return 'Pre-visualizacao indisponivel';
                               return t;
                             })()}
                           </pre>
@@ -4553,7 +4573,7 @@ Deseja fechar mesmo assim?`;
                   </div>
                 </div>
                 <div className="mt-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Variáveis disponíveis</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Variaveis disponiveis</span>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     [[NOME_CLIENTE]], [[CPF]], [[RG]], [[NACIONALIDADE]], [[ESTADO_CIVIL]], [[PROFISSAO]], [[ENDERECO]], [[CIDADE]], [[UF]], [[CEP]], [[EMAIL]], [[TELEFONE]]
                   </p>
@@ -4596,8 +4616,8 @@ Deseja fechar mesmo assim?`;
                   <CheckCircle2 className="w-3 h-3 text-white absolute left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
                 </div>
                 <div>
-                  <span className="text-sm font-bold text-amber-900 uppercase tracking-tight">Incluir por padrão</span>
-                  <p className="text-xs text-amber-700/70 font-medium">Este bloco será inserido automaticamente ao criar uma nova petição</p>
+                  <span className="text-sm font-bold text-amber-900 uppercase tracking-tight">Incluir por padrao</span>
+                  <p className="text-xs text-amber-700/70 font-medium">Este bloco sera inserido automaticamente ao criar uma nova peticao</p>
                 </div>
               </label>
             </div>
@@ -4606,7 +4626,7 @@ Deseja fechar mesmo assim?`;
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    // Abrir modal de edição com o bloco atual
+                    // Abrir modal de ediçÃ£o com o bloco atual
                     if (viewingBlock) {
                       openBlockModal(viewingBlock);
                       setShowBlockViewModal(false);
@@ -4627,7 +4647,7 @@ Deseja fechar mesmo assim?`;
                 <button
                   onClick={async () => {
                     if (!isOnlineRef.current) {
-                      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+                      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
                       return;
                     }
                     await insertBlock(viewingBlock);
@@ -4669,7 +4689,7 @@ Deseja fechar mesmo assim?`;
         </aside>
       )}
 
-      {/* Desativado para não ocupar espaço no topo */}
+      {/* Desativado para nÃ£o ocupar espaço no topo */}
       {false && success && (
         <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
           <Star className="w-4 h-4" />
@@ -4677,7 +4697,7 @@ Deseja fechar mesmo assim?`;
         </div>
       )}
 
-      {/* Conteúdo Principal */}
+      {/* ConteÃºdo Principal */}
       {activeWorkspace === 'blocks' ? (() => {
         const bmDefaultCount = filteredBlocks.filter((b) => b.is_default).length;
         const bmInactiveCount = blocks.filter((b) => !b.is_active && String((b.document_type || 'petition') as any) === String(selectedDocumentType)).length;
@@ -4699,7 +4719,7 @@ Deseja fechar mesmo assim?`;
 
           const ed = blockConvertEditorRef.current;
           if (!ed) {
-            container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px">Editor não disponível</div>';
+            container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px">Editor nao disponivel</div>';
             setBmDocxPreviews((prev) => { const n = new Map(prev); n.set(blockId, 'error'); return n; });
             return;
           }
@@ -4813,8 +4833,8 @@ Deseja fechar mesmo assim?`;
             <div className={`flex items-center gap-2 ${compact ? '' : 'flex-wrap'}`}>
               <h4 className={`font-semibold text-slate-900 ${compact ? 'text-sm leading-snug line-clamp-2' : 'text-sm'}`}>{block.title}</h4>
               {block.is_default && (
-                <span className={`inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Bloco padrão">
-                  <Star className="w-3 h-3" />{!compact && ' Padrão'}
+                <span className={`inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Bloco padrao">
+                  <Star className="w-3 h-3" />{!compact && ' Padrao'}
                 </span>
               )}
               {!block.is_active && (
@@ -4868,7 +4888,7 @@ Deseja fechar mesmo assim?`;
                       docxPreviewContainer
                     ) : (
                       <div className="text-xs text-slate-600 leading-relaxed line-clamp-4">
-                        {summaryText || <span className="italic text-slate-400">Sem conteúdo</span>}
+                        {summaryText || <span className="italic text-slate-400">Sem conteudo</span>}
                       </div>
                     )}
                     <button
@@ -4930,14 +4950,14 @@ Deseja fechar mesmo assim?`;
                       ) : (
                         <div className="p-3.5 bg-slate-50 border border-[#e7e5df]/80 rounded-xl">
                           <div className="text-[13px] text-slate-600 leading-relaxed line-clamp-3">
-                            {summaryText || <span className="italic text-slate-400">Sem conteúdo</span>}
+                            {summaryText || <span className="italic text-slate-400">Sem conteudo</span>}
                           </div>
                           <button
                             type="button"
                             onClick={() => bmToggleExpand(block.id)}
                             className="mt-2 text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1"
                           >
-                            <Eye className="w-3.5 h-3.5" /> Ver conteúdo formatado (Word)
+                            <Eye className="w-3.5 h-3.5" /> Ver conteudo formatado (Word)
                           </button>
                         </div>
                       )}
@@ -4976,7 +4996,7 @@ Deseja fechar mesmo assim?`;
                   </div>
                   <div className="min-w-0">
                     <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{filteredBlocks.length}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Blocos visíveis</div>
+                    <div className="mt-1 text-[12px] text-slate-500">Blocos visiveis</div>
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
@@ -4994,7 +5014,7 @@ Deseja fechar mesmo assim?`;
                   </div>
                   <div className="min-w-0">
                     <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{bmDefaultCount}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Padrões</div>
+                    <div className="mt-1 text-[12px] text-slate-500">Padroes</div>
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
@@ -5003,7 +5023,7 @@ Deseja fechar mesmo assim?`;
                   </div>
                   <div className="min-w-0">
                     <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{bmAllTags.size}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Tags únicas</div>
+                    <div className="mt-1 text-[12px] text-slate-500">Tags unicas</div>
                   </div>
                 </div>
               </div>
@@ -5016,7 +5036,7 @@ Deseja fechar mesmo assim?`;
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Buscar por título, tags ou conteúdo..."
+                      placeholder="Buscar por titulo, tags ou conteudo..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
                       className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 bg-slate-50 focus:bg-white transition-colors"
@@ -5035,9 +5055,9 @@ Deseja fechar mesmo assim?`;
                       onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
                       className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400"
                     >
-                      <option value="petition">Petição</option>
-                      <option value="contestation">Contestação</option>
-                      <option value="impugnation">Impugnação</option>
+                      <option value="petition">Peticao</option>
+                      <option value="contestation">Contestacao</option>
+                      <option value="impugnation">Impugnacao</option>
                       <option value="appeal">Recurso</option>
                     </select>
 
@@ -5045,12 +5065,12 @@ Deseja fechar mesmo assim?`;
                       {selectedStandardTypeId && (
                         <button type="button" onClick={() => setBlockFilterScope('type')}
                           className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'type' ? 'bg-blue-500 text-white' : 'text-slate-600 hover:bg-white'}`}>
-                          Petição
+                          Peticao
                         </button>
                       )}
                       <button type="button" onClick={() => setBlockFilterScope('area')}
                         className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'area' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
-                        Área
+                        Area
                       </button>
                       <button type="button" onClick={() => setBlockFilterScope('global')}
                         className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'global' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
@@ -5067,7 +5087,7 @@ Deseja fechar mesmo assim?`;
                       title="Ordenar por"
                     >
                       <option value="category">Por categoria</option>
-                      <option value="title">Por título A-Z</option>
+                      <option value="title">Por titulo A-Z</option>
                       <option value="updated">Mais recentes</option>
                     </select>
 
@@ -5110,11 +5130,11 @@ Deseja fechar mesmo assim?`;
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Modelo:</span>
                       <button type="button" onClick={() => { setSelectedStandardTypeId(null); setBlockFilterScope('area'); }}
                         className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-slate-50'}`}>
-                        {selectedLegalArea?.name || 'Área'}
+                        {selectedLegalArea?.name || 'Area'}
                       </button>
                       {standardTypes.map((t) => (
                         <button key={t.id} type="button"
-                          onClick={() => { setSelectedStandardTypeId(t.id); setBlockFilterScope('type'); if (t.default_document && editorRef.current) { editorRef.current.loadSfdt(t.default_document); if (t.default_document_name) setPetitionTitle(t.default_document_name); } }}
+                          onClick={() => { setSelectedStandardTypeId(t.id); setBlockFilterScope('type'); if (t.default_document && editorRef.current) { editorRef.current.loadSfdt(t.default_document); if (t.default_document_name) setPetitionTitle(sanitizeText(t.default_document_name)); } }}
                           className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-blue-50/40'}`}>
                           {t.name}
                         </button>
@@ -5140,7 +5160,7 @@ Deseja fechar mesmo assim?`;
                   )}
                   {blockFilterScope === 'type' && selectedStandardTypeId && (
                     <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
-                      Petição padrão
+                      Peticao padrao
                     </span>
                   )}
                   {selectedLegalArea && (
@@ -5221,24 +5241,49 @@ Deseja fechar mesmo assim?`;
         </div>
         );
       })() : (
+      <>
+      {/* Input oculto para importar DOCX */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".docx"
+        className="hidden"
+        onChange={handleImportTemplate}
+      />
+
+      {/* Faixa de opçÃµes (ribbon) estilo Word */}
+      <PetitionRibbon
+        editorRef={editorRef}
+        ready={editorReady}
+        topContent={ribbonTopContent}
+        onNew={() => { editorRef.current?.clear?.(); setHasUnsavedChanges(true); }}
+        onOpen={() => fileInputRef.current?.click()}
+        onSave={() => { void savePetition(); }}
+        onExportDocx={() => { void exportToWord(); }}
+      />
+
       <div className="flex-1 flex min-w-0 max-w-full overflow-hidden">
         {/* Sidebar */}
         {sidebarOpen && (
-          <div className="relative z-[20] bg-[#f8f7f5] border-r border-[#e7e5df] flex flex-col flex-shrink-0" style={{ width: sidebarWidth }}>
+          <div className="relative z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: sidebarWidth }}>
             {/* Tabs */}
-            <div className="flex border-b border-[#e7e5df]">
+            <div className="flex items-end gap-1 border-b border-[#ddd7cd] bg-[#f3eee5] px-2 pt-2">
               <button
                 onClick={() => setSidebarTab('blocks')}
-                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-                  sidebarTab === 'blocks' ? 'text-amber-600 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-700'
+                className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  sidebarTab === 'blocks'
+                    ? 'border border-[#ddd7cd] border-b-transparent bg-[#fbfaf8] text-[#c0531f]'
+                    : 'text-slate-500 hover:bg-[#f8f4ee] hover:text-slate-700'
                 }`}
               >
                 Blocos
               </button>
               <button
                 onClick={() => setSidebarTab('clients')}
-                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-                  sidebarTab === 'clients' ? 'text-amber-600 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-700'
+                className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  sidebarTab === 'clients'
+                    ? 'border border-[#ddd7cd] border-b-transparent bg-[#fbfaf8] text-[#c0531f]'
+                    : 'text-slate-500 hover:bg-[#f8f4ee] hover:text-slate-700'
                 }`}
               >
                 Clientes
@@ -5248,26 +5293,27 @@ Deseja fechar mesmo assim?`;
             {/* Tab: Blocos */}
             {sidebarTab === 'blocks' && (
               <>
-                <div className="p-2 border-b border-slate-100 flex gap-2">
-                  <div className="relative flex-1">
+                <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] p-2.5">
+                  <div className="flex gap-1.5 items-center">
+                  <div className="relative flex-1 min-w-0">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
                       type="text"
                       placeholder="Buscar bloco..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                      className="w-full rounded-lg border border-[#ddd7cd] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
                     />
                   </div>
                   <select
                     value={selectedDocumentType}
                     onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                    className="px-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400 bg-white"
+                    className="w-[110px] shrink-0 rounded-lg border border-[#ddd7cd] bg-white px-2 py-2 text-xs text-slate-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
                     title="Tipo de documento"
                   >
-                    <option value="petition">Petição</option>
-                    <option value="contestation">Contestação</option>
-                    <option value="impugnation">Impugnação</option>
+                    <option value="petition">Peticao</option>
+                    <option value="contestation">Contestacao</option>
+                    <option value="impugnation">Impugnacao</option>
                     <option value="appeal">Recurso</option>
                   </select>
                   <button
@@ -5276,54 +5322,55 @@ Deseja fechar mesmo assim?`;
                       ensureDraftFromCategories(blockCategories);
                       setShowCategoryModal(true);
                     }}
-                    className="p-1.5 border border-[#e7e5df] text-slate-500 rounded hover:bg-slate-50"
+                    className="shrink-0 rounded-lg border border-[#ddd7cd] bg-white p-2 text-slate-500 transition hover:bg-[#f7f1e7] hover:text-[#c0531f]"
                     title="Configurar categorias"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => openBlockModal()}
-                    className="p-1.5 bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors"
+                    className="shrink-0 rounded-lg bg-[#ff9f0a] p-2 text-white shadow-sm transition-colors hover:bg-[#f08c00]"
                     title="Novo bloco"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+                </div>
 
                 {/* Filtro de escopo de blocos */}
-                <div className="px-2 py-1.5 border-b border-slate-100 flex items-center gap-1 bg-slate-50/50">
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">Exibir:</span>
-                  <div className="flex-1 flex gap-0.5">
+                <div className="flex items-center gap-2 border-b border-[#e6dfd3] bg-[#fbfaf8] px-2 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Exibir:</span>
+                  <div className="flex flex-1 gap-1 rounded-xl border border-[#e4ddcf] bg-[#f3eee5] p-1">
                     {selectedStandardTypeId && (
                       <button
                         onClick={() => setBlockFilterScope('type')}
-                        className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                        className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors ${
                           blockFilterScope === 'type'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-[#f8f7f5] text-slate-600 hover:bg-blue-50 border border-[#e7e5df]'
+                            ? 'bg-[#2f6fa8] text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
                         }`}
-                        title="Blocos vinculados à petição padrão selecionada"
+                        title="Blocos vinculados a peticao padrao selecionada"
                       >
-                        Petição
+                        Peticao
                       </button>
                     )}
                     <button
                       onClick={() => setBlockFilterScope('area')}
-                      className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors ${
                         blockFilterScope === 'area'
-                          ? 'bg-amber-500 text-white'
-                          : 'bg-[#f8f7f5] text-slate-600 hover:bg-amber-50 border border-[#e7e5df]'
+                          ? 'bg-[#ff9f0a] text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-white'
                       }`}
-                      title="Blocos da área jurídica selecionada"
+                      title="Blocos da area juridica selecionada"
                     >
-                      Área
+                      Area
                     </button>
                     <button
                       onClick={() => setBlockFilterScope('global')}
-                      className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors ${
                         blockFilterScope === 'global'
-                          ? 'bg-slate-600 text-white'
-                          : 'bg-[#f8f7f5] text-slate-600 hover:bg-slate-100 border border-[#e7e5df]'
+                          ? 'bg-slate-700 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-white'
                       }`}
                       title="Todos os blocos (consulta global)"
                     >
@@ -5333,7 +5380,7 @@ Deseja fechar mesmo assim?`;
                 </div>
 
                 {standardTypes.length > 0 && selectedLegalAreaId && (
-                  <div className="px-2 py-2 border-b border-slate-100">
+                  <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] px-2 py-2">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1">
                         <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
@@ -5342,7 +5389,7 @@ Deseja fechar mesmo assim?`;
                       <button
                         type="button"
                         onClick={() => openStandardTypeModal()}
-                        className="p-1 border border-[#e7e5df] text-slate-500 rounded hover:bg-slate-50"
+                        className="rounded-lg border border-[#ddd7cd] bg-white p-1.5 text-slate-500 transition hover:bg-[#f7f1e7] hover:text-[#c0531f]"
                         title="Gerenciar modelos"
                       >
                         <Settings className="w-3.5 h-3.5" />
@@ -5356,15 +5403,15 @@ Deseja fechar mesmo assim?`;
                           setSelectedStandardTypeId(null);
                           setBlockFilterScope('area');
                         }}
-                        className={`w-full px-2 py-1.5 text-left text-xs rounded border transition-colors ${
+                        className={`w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
                           !selectedStandardTypeId
-                            ? 'bg-amber-50 border-amber-200 text-amber-800'
-                            : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-700 hover:bg-slate-50'
+                            ? 'bg-amber-50 border-amber-200 text-amber-800 shadow-[inset_0_0_0_1px_rgba(255,159,10,0.08)]'
+                            : 'bg-white border-[#ddd7cd] text-slate-700 hover:bg-[#f8f4ee]'
                         }`}
-                        title="Ver todos os blocos da área"
+                        title="Ver todos os blocos da area"
                       >
-                        <span className="font-semibold">Área</span>
-                        {selectedLegalArea?.name ? <span className="text-slate-400"> — {selectedLegalArea.name}</span> : null}
+                        <span className="font-semibold">Area</span>
+                        {selectedLegalArea?.name ? <span className="text-slate-400"> - {selectedLegalArea.name}</span> : null}
                       </button>
 
                       <div className="max-h-36 overflow-y-auto pr-0.5">
@@ -5379,13 +5426,13 @@ Deseja fechar mesmo assim?`;
                                 setBlockFilterScope('type');
                                 if (t.default_document && editorRef.current) {
                                   editorRef.current.loadSfdt(t.default_document);
-                                  if (t.default_document_name) setPetitionTitle(t.default_document_name);
+                                  if (t.default_document_name) setPetitionTitle(sanitizeText(t.default_document_name));
                                 }
                               }}
-                              className={`w-full px-2 py-1.5 mt-1 text-left text-xs rounded border transition-colors ${
+                              className={`mt-1 w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
                                 active
-                                  ? 'bg-blue-50 border-blue-200 text-blue-800'
-                                  : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-700 hover:bg-blue-50/40'
+                                  ? 'bg-blue-50 border-blue-200 text-blue-800 shadow-[inset_0_0_0_1px_rgba(47,111,168,0.08)]'
+                                  : 'bg-white border-[#ddd7cd] text-slate-700 hover:bg-[#f4f7fb]'
                               }`}
                               title={t.description ? t.description : t.name}
                             >
@@ -5402,51 +5449,51 @@ Deseja fechar mesmo assim?`;
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto bg-[#fffdfa]">
                   {sidebarCategoryKeys.map((category) => {
                     const items = (blocksByCategory as any)[category] || [];
                     if (items.length === 0) return null;
                     const isExpanded = expandedCategories.has(category);
                     return (
-                      <div key={category} className="border-b border-slate-100">
+                      <div key={category} className="border-b border-[#ece5d9]">
                         <button
                           onClick={() => toggleCategory(category)}
-                          className="w-full px-2 py-2 flex items-center gap-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                          className="flex w-full items-center gap-1 px-3 py-3 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-[#f8f2e8]"
                         >
                           {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                           {getCategoryLabel(category)}
-                          <span className="ml-auto text-slate-400">({items.length})</span>
+                          <span className="ml-auto text-[11px] font-semibold text-[#8ca1c1]">({items.length})</span>
                         </button>
 
                         {isExpanded && (
-                          <div className="pb-1">
+                          <div className="space-y-1 px-2 pb-2">
                             {(items as PetitionBlock[]).map((block: PetitionBlock) => (
                               <div
                                 key={block.id}
-                                className="group px-2 py-2 hover:bg-amber-50 rounded cursor-pointer transition-colors"
+                                className="group cursor-pointer rounded-xl border border-transparent bg-white px-2.5 py-2.5 transition-colors hover:border-[#efd8b5] hover:bg-[#fff7eb]"
                                 onClick={() => openViewBlock(block)}
                               >
                                 <div className="flex items-center gap-1">
-                                  <span className="flex-1 text-xs text-slate-700 truncate">{block.title}</span>
+                                  <span className="flex-1 truncate text-[13px] font-medium text-slate-700">{block.title}</span>
                                   {block.is_default && <Star className="w-2.5 h-2.5 text-amber-400" />}
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); openBlockModal(block); }}
-                                      className="p-0.5 hover:bg-amber-50 rounded"
+                                      className="rounded p-0.5 hover:bg-amber-100"
                                       title="Editar bloco"
                                     >
                                       <Edit3 className="w-2.5 h-2.5 text-amber-600" />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); openViewBlock(block); }}
-                                      className="p-0.5 hover:bg-slate-100 rounded"
+                                      className="rounded p-0.5 hover:bg-slate-100"
                                       title="Visualizar bloco"
                                     >
                                       <Eye className="w-2.5 h-2.5 text-slate-500" />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); void deleteBlock(block.id); }}
-                                      className="p-0.5 hover:bg-red-100 rounded"
+                                      className="rounded p-0.5 hover:bg-red-100"
                                       title="Excluir bloco"
                                     >
                                       <Trash2 className="w-2.5 h-2.5 text-red-500" />
@@ -5461,12 +5508,12 @@ Deseja fechar mesmo assim?`;
                                   return (
                                     <div className="flex flex-wrap gap-1 mt-1">
                                       {visible.map((t) => (
-                                        <span key={t} className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-medium max-w-[140px] truncate">
+                                        <span key={t} className="inline-flex max-w-[140px] items-center truncate rounded-md border border-[#e5ddd0] bg-[#f6f1e8] px-2 py-0.5 text-[10px] font-medium text-slate-600">
                                           {t}
                                         </span>
                                       ))}
                                       {remaining > 0 && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-medium">
+                                        <span className="inline-flex items-center rounded-md border border-[#e5ddd0] bg-[#f6f1e8] px-2 py-0.5 text-[10px] font-medium text-slate-500">
                                           +{remaining}
                                         </span>
                                       )}
@@ -5487,7 +5534,7 @@ Deseja fechar mesmo assim?`;
             {/* Tab: Clientes */}
             {sidebarTab === 'clients' && (
               <>
-                <div className="p-2 border-b border-slate-100">
+                <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] p-2.5">
                   <div className="relative">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
@@ -5495,12 +5542,12 @@ Deseja fechar mesmo assim?`;
                       placeholder="Buscar cliente..."
                       value={clientSearch}
                       onChange={(e) => setClientSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-[#e7e5df] rounded focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                      className="w-full rounded-lg border border-[#ddd7cd] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto bg-[#fffdfa]">
                   {filteredClients.length === 0 ? (
                     <div className="p-4 text-center text-slate-400">
                       <Users className="w-8 h-8 mx-auto mb-2" />
@@ -5510,21 +5557,21 @@ Deseja fechar mesmo assim?`;
                     filteredClients.map(client => (
                       <div
                         key={client.id}
-                        className={`group px-2 py-2 border-b border-slate-100 hover:bg-amber-50 transition-colors cursor-pointer ${
-                          selectedClient?.id === client.id ? 'bg-amber-50' : ''
+                        className={`group cursor-pointer border-b border-[#ece5d9] px-3 py-3 transition-colors ${
+                          selectedClient?.id === client.id ? 'bg-[#fff4df]' : 'hover:bg-[#f8f2e8]'
                         }`}
                         onClick={() => insertClientQualification(client)}
                       >
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
                             <User className="w-3.5 h-3.5 text-amber-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-slate-700 truncate">{client.full_name}</p>
+                            <p className="truncate text-[13px] font-medium text-slate-700">{client.full_name}</p>
                             <p className="text-[10px] text-slate-400">{client.cpf_cnpj}</p>
                           </div>
                           {selectedClient?.id === client.id && (
-                            <span className="text-[10px] text-amber-600 font-medium">Selecionado</span>
+                            <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">Selecionado</span>
                           )}
                         </div>
                       </div>
@@ -5550,14 +5597,17 @@ Deseja fechar mesmo assim?`;
           />
         )}
 
-        {/* Área do Editor Syncfusion */}
-        <div className="syncfusion-editor-wrapper relative">
-          {/* Overlay de formatação com IA */}
+        {/* Area do Editor Syncfusion */}
+        <div
+          className="syncfusion-editor-wrapper relative flex-1 min-w-0 flex flex-col overflow-hidden"
+          style={{ flex: '1 1 0%', minWidth: 0, width: '100%' }}
+        >
+          {/* Overlay de formataçÃ£o com IA */}
           {formattingWithAI && (
             <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-2xl p-8 max-w-xs w-full mx-4">
                 <div className="flex flex-col items-center text-center space-y-4">
-                  {/* Ícone animado */}
+                  {/* Ãcone animado */}
                   <div className="relative">
                     <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
                       <div className="w-8 h-8 text-white">
@@ -5566,7 +5616,7 @@ Deseja fechar mesmo assim?`;
                         </svg>
                       </div>
                     </div>
-                    {/* Anéis de onda */}
+                    {/* AnÃ©is de onda */}
                     <div className="absolute inset-0 rounded-full border-2 border-orange-400/30 animate-ping"></div>
                     <div className="absolute inset-0 rounded-full border-2 border-orange-400/20 animate-ping" style={{ animationDelay: '200ms' }}></div>
                   </div>
@@ -5574,7 +5624,7 @@ Deseja fechar mesmo assim?`;
                   {/* Texto */}
                   <div className="space-y-2">
                     <h3 className="text-lg font-semibold text-slate-900">Formatando com IA</h3>
-                    <p className="text-sm text-slate-600">Aplicando formatação inteligente...</p>
+                    <p className="text-sm text-slate-600">Aplicando formatacao inteligente...</p>
                   </div>
                   
                   {/* Dots animados */}
@@ -5592,8 +5642,15 @@ Deseja fechar mesmo assim?`;
             id="petition-main-editor"
             height="100%"
             readOnly={!isOnline}
-            showPropertiesPane
+            enableToolbar={false}
+            showPropertiesPane={false}
             showNavigationPane={false}
+            onReady={() => {
+              setEditorReady(true);
+              // Recalcula o layout apÃ³s o wrapper assumir a largura final (evita folha comprimida)
+              window.setTimeout(() => editorRef.current?.refresh?.(), 60);
+              window.setTimeout(() => editorRef.current?.refresh?.(), 320);
+            }}
             onContentChange={handleContentChange}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
@@ -5625,10 +5682,10 @@ Deseja fechar mesmo assim?`;
                       <AlertCircle className="w-5 h-5 text-orange-700" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Sem conexão</div>
-                      <div className="mt-1 text-base font-bold text-slate-900">Você está offline</div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Sem conexao</div>
+                      <div className="mt-1 text-base font-bold text-slate-900">Voce esta offline</div>
                       <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-                        O Peticionamento é <span className="font-semibold">100% online</span> e precisa de conexão com o banco.
+                        O Peticionamento Ã© <span className="font-semibold">100% online</span> e precisa de conexao com o banco.
                         Reconecte para continuar editando e salvando.
                       </p>
                       <p className="mt-2 text-[12px] text-slate-500">
@@ -5643,7 +5700,7 @@ Deseja fechar mesmo assim?`;
                       onClick={handleRetryConnection}
                       className="flex-1 px-4 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-orange"
                     >
-                      Verificar conexão
+                      Verificar conexao
                     </button>
                     <button
                       type="button"
@@ -5660,6 +5717,7 @@ Deseja fechar mesmo assim?`;
         </div>
 
         </div>
+      </>
       )}
 
       {/* Hidden editor for DOCX conversion - always available */}
@@ -5685,7 +5743,7 @@ Deseja fechar mesmo assim?`;
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
-                <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Qualificação Jurídica</div>
+                <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Qualificacao Juridica</div>
                 <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 leading-tight">Buscar Empresa (CNPJ)</h3>
               </div>
               <button
@@ -5708,7 +5766,7 @@ Deseja fechar mesmo assim?`;
                   className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
                   autoFocus
                 />
-                <p className="mt-2 text-[11px] text-slate-400 italic">Aceita CNPJ com ponto, barra e hífen. O sistema considera apenas números.</p>
+                <p className="mt-2 text-[11px] text-slate-400 italic">Aceita CNPJ com ponto, barra e hifen. O sistema considera apenas numeros.</p>
               </div>
 
               <div className="flex gap-3">
@@ -5739,7 +5797,7 @@ Deseja fechar mesmo assim?`;
 
               {companyLookupResultText && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                  <label className="block text-[11px] font-medium text-slate-500 mb-2">Resultado da Qualificação</label>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-2">Resultado da Qualificacao</label>
                   <textarea
                     value={companyLookupResultText}
                     onChange={(e) => setCompanyLookupResultText(e.target.value)}
@@ -5799,12 +5857,12 @@ Deseja fechar mesmo assim?`;
                       onClick={() => setBlockSearchScope('type')}
                       className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                         blockSearchScope === 'type'
-                          ? 'bg-blue-500 text-white shadow-sm'
+                          ? 'bg-amber-500 text-white shadow-sm'
                           : 'text-slate-600 hover:bg-white'
                       }`}
-                      title="Buscar apenas nos blocos vinculados à Petição Padrão"
+                      title="Buscar apenas nos blocos vinculados a Peticao Padrao"
                     >
-                      Petição
+                      Peticao
                     </button>
                   )}
                   <button
@@ -5815,9 +5873,9 @@ Deseja fechar mesmo assim?`;
                         ? 'bg-amber-500 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-white'
                     }`}
-                    title="Buscar nos blocos da Área Jurídica selecionada"
+                    title="Buscar nos blocos da Area Juridica selecionada"
                   >
-                    Área
+                    Area
                   </button>
                   <button
                     type="button"
@@ -5885,9 +5943,9 @@ Deseja fechar mesmo assim?`;
                                 borderColor: area?.color || '#cbd5e1',
                                 color: area?.color || '#475569',
                               }}
-                              title={area?.name ? `Área Jurídica: ${area.name}` : 'Área Jurídica: Sem área'}
+                              title={area?.name ? `Area Juridica: ${area.name}` : 'Area Juridica: Sem area'}
                             >
-                              {area?.name || 'Sem área'}
+                              {area?.name || 'Sem area'}
                             </span>
                           )}
                           {showMatchPct && (
@@ -5924,8 +5982,8 @@ Deseja fechar mesmo assim?`;
                           {(() => {
                             const plain = blockIndexMap.get(b.id)?.plain ?? sfdtToPlainText(b.content);
                             const t = (plain || '').trim();
-                            if (!t) return '—';
-                            if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
+                            if (!t) return '-';
+                            if (t.startsWith('{') || t.startsWith('[')) return 'Pre-visualizacao indisponivel';
                             return t.length > 280 ? `${t.substring(0, 280)}...` : t;
                           })()}
                         </p>
@@ -5948,7 +6006,7 @@ Deseja fechar mesmo assim?`;
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
                 <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">IA no documento</div>
-                <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 leading-tight">Editar seleção com IA</h3>
+                <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 leading-tight">Editar selecao com IA</h3>
                 <div className="mt-1 text-xs text-slate-500">A IA usa os blocos como base de conhecimento para refinar o trecho selecionado.</div>
               </div>
               <button
@@ -5962,13 +6020,13 @@ Deseja fechar mesmo assim?`;
 
             <div className="px-6 py-6 space-y-6">
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-2">Instrução para a IA</label>
+                <label className="block text-[11px] font-medium text-slate-500 mb-2">Instrucao para a IA</label>
                 <textarea
                   value={aiEditInstruction}
                   onChange={(e) => setAiEditInstruction(e.target.value)}
                   rows={4}
                   className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
-                  placeholder="Ex.: Reescreva esse trecho com linguagem mais técnica, mais objetiva e com melhor conexão lógica, sem mudar o pedido."
+                  placeholder="Ex.: Reescreva esse trecho com linguagem mais tecnica, mais objetiva e com melhor conexao logica, sem mudar o pedido."
                   autoFocus
                 />
               </div>
@@ -5994,7 +6052,7 @@ Deseja fechar mesmo assim?`;
                 className="w-full sm:w-auto font-bold px-8 py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 petition-btn-orange disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {formattingWithAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
-                <span>Aplicar edição no documento</span>
+                <span>Aplicar edicao no documento</span>
               </button>
             </footer>
           </main>
@@ -6023,7 +6081,7 @@ Deseja fechar mesmo assim?`;
 
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="flex justify-between items-center">
-                <div className="text-xs text-slate-500">Edite nome e ordem. A ordem (cima → baixo) é a ordem na sidebar.</div>
+                <div className="text-xs text-slate-500">Edite nome e ordem. A ordem de cima para baixo e a ordem na sidebar.</div>
                 <button
                   type="button"
                   onClick={() => {
@@ -6094,7 +6152,7 @@ Deseja fechar mesmo assim?`;
                               className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
                               title="Mover para cima"
                             >
-                              ↑
+                              â†‘
                             </button>
                             <button
                               type="button"
@@ -6111,7 +6169,7 @@ Deseja fechar mesmo assim?`;
                               className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
                               title="Mover para baixo"
                             >
-                              ↓
+                              â†“
                             </button>
                             <button
                               type="button"
@@ -6180,7 +6238,7 @@ Deseja fechar mesmo assim?`;
         </aside>
       )}
 
-      {/* Modal de Áreas Jurídicas */}
+      {/* Modal de Areas JurÃ­dicas */}
       {showLegalAreaModal && (
         <aside id="legal-area-backdrop" className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="legal-area-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
@@ -6188,9 +6246,9 @@ Deseja fechar mesmo assim?`;
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
-                <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Áreas Jurídicas</div>
+                <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Areas Juridicas</div>
                 <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 leading-tight">
-                  {editingLegalArea ? 'Editar Área' : 'Nova Área Jurídica'}
+                  {editingLegalArea ? 'Editar Area' : 'Nova Area Juridica'}
                 </h3>
               </div>
               <button
@@ -6204,30 +6262,30 @@ Deseja fechar mesmo assim?`;
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-2">Nome da Área *</label>
+                <label className="block text-[12px] font-medium text-slate-600 mb-2">Nome da Area *</label>
                 <input
                   type="text"
                   value={legalAreaFormData.name}
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, name: e.target.value })}
-                  placeholder="Ex: Trabalhista, Cível, Penal..."
+                  placeholder="Ex: Trabalhista, Civel, Penal..."
                   className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-2">Descrição (opcional)</label>
+                <label className="block text-[12px] font-medium text-slate-600 mb-2">Descricao (opcional)</label>
                 <textarea
                   value={legalAreaFormData.description}
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, description: e.target.value })}
-                  placeholder="Ex: Direito do Trabalho - CLT, Justiça do Trabalho"
+                  placeholder="Ex: Direito do Trabalho - CLT, Justica do Trabalho"
                   rows={2}
                   className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-2">Cor de Identificação</label>
+                <label className="block text-[12px] font-medium text-slate-600 mb-2">Cor de Identificacao</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
@@ -6249,10 +6307,10 @@ Deseja fechar mesmo assim?`;
                 </div>
               </div>
 
-              {/* Lista de áreas existentes */}
+              {/* Lista de areas existentes */}
               {legalAreas.length > 0 && !editingLegalArea && (
                 <div className="pt-4 border-t border-[#e7e5df]">
-                  <label className="block text-[12px] font-medium text-slate-600 mb-3">Áreas Cadastradas</label>
+                  <label className="block text-[12px] font-medium text-slate-600 mb-3">Areas Cadastradas</label>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {legalAreas.map((area) => (
                       <div
@@ -6280,7 +6338,7 @@ Deseja fechar mesmo assim?`;
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Desativar a área "${area.name}"? Os blocos vinculados a ela ficarão disponíveis para todas as áreas.`)) {
+                              if (confirm(`Desativar a area "${area.name}"? Os blocos vinculados a ela ficarao disponiveis para todas as areas.`)) {
                                 handleDeleteLegalArea(area.id);
                               }
                             }}
@@ -6312,26 +6370,29 @@ Deseja fechar mesmo assim?`;
                 className="font-bold px-8 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 petition-btn-orange disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                <span>{editingLegalArea ? 'Atualizar' : 'Criar Área'}</span>
+                <span>{editingLegalArea ? 'Atualizar' : 'Criar Area'}</span>
               </button>
             </footer>
           </main>
         </aside>
       )}
 
-      {/* Modal de Petições Padrões */}
+      {/* Modal de PetiçÃµes Padroes */}
       {showStandardTypeModal && (
         <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-2 w-full shrink-0 bg-blue-500" />
-            <header className="relative px-6 py-5 border-b border-slate-100">
+            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <FileText className="w-5 h-5 text-white" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+                  <FileText className="w-5 h-5" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900">
-                  {editingStandardType ? 'Editar Petição Padrão' : 'Nova Petição Padrão'}
-                </h3>
+                <div>
+                  <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Peticoes Padrao</div>
+                  <h3 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 leading-tight">
+                    {editingStandardType ? 'Editar Peticao Padrao' : 'Nova Peticao Padrao'}
+                  </h3>
+                </div>
               </div>
               <button
                 onClick={() => setShowStandardTypeModal(false)}
@@ -6349,38 +6410,38 @@ Deseja fechar mesmo assim?`;
                   type="text"
                   value={standardTypeFormData.name}
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, name: e.target.value })}
-                  placeholder="Ex: Auxílio-acidente, BPC, Aposentadoria..."
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
+                  placeholder="Ex: Auxilio-acidente, BPC, Aposentadoria..."
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-2">Descrição</label>
+                <label className="block text-[12px] font-medium text-slate-600 mb-2">Descricao</label>
                 <textarea
                   value={standardTypeFormData.description}
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, description: e.target.value })}
-                  placeholder="Descrição opcional..."
+                  placeholder="Descricao opcional..."
                   rows={2}
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
+                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
-              {/* Área vinculada */}
+              {/* Area vinculada */}
               <div className="p-3 bg-slate-50 rounded-xl border border-[#e7e5df]">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Scale className="w-4 h-4" />
-                  <span>Área Jurídica:</span>
+                  <span>Area Juridica:</span>
                   <span className="font-bold text-slate-700">{selectedLegalArea?.name || 'Nenhuma'}</span>
                 </div>
               </div>
 
-              {/* Documento padrão vinculado */}
+              {/* Documento padrao vinculado */}
               {editingStandardType && (
-                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                    <div className="flex items-center gap-2 text-xs text-amber-700">
                       <FileText className="w-4 h-4" />
-                      <span>Documento padrão:</span>
+                      <span>Documento padrao:</span>
                       <span className="font-bold">
                         {editingStandardType.default_document_name || 'Nenhum vinculado'}
                       </span>
@@ -6388,26 +6449,26 @@ Deseja fechar mesmo assim?`;
                     <button
                       onClick={() => handleSetDefaultDocument(editingStandardType.id)}
                       disabled={saving}
-                      className="px-2 py-1 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
-                      title="Vincular o documento atual do editor como padrão"
+                      className="px-2 py-1 text-[10px] bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors disabled:opacity-50"
+                      title="Vincular o documento atual do editor como padrao"
                     >
                       {saving ? 'Salvando...' : 'Vincular Atual'}
                     </button>
                   </div>
-                  <p className="mt-1 text-[10px] text-blue-500">
-                    Ao selecionar esta petição padrão, o documento vinculado será carregado automaticamente.
+                  <p className="mt-1 text-[10px] text-amber-600">
+                    Ao selecionar esta peticao padrao, o documento vinculado sera carregado automaticamente.
                   </p>
                 </div>
               )}
 
-              {/* Lista de petições padrões cadastradas */}
+              {/* Lista de petiçÃµes padrÃµes cadastradas */}
               <div className="pt-4 border-t border-[#e7e5df]">
                 <label className="block text-[12px] font-medium text-slate-600 mb-3">
-                  Petições Padrões de "{selectedLegalArea?.name}"
+                  Peticoes Padrao de "{selectedLegalArea?.name}"
                 </label>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {standardTypes.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-4">Nenhuma petição padrão cadastrada</p>
+                    <p className="text-xs text-slate-400 text-center py-4">Nenhuma peticao padrao cadastrada</p>
                   ) : (
                     standardTypes.map((type) => (
                       <div
@@ -6415,11 +6476,11 @@ Deseja fechar mesmo assim?`;
                         className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e7e5df]"
                       >
                         <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-blue-500" />
+                          <FileText className="w-4 h-4 text-amber-500" />
                           <div>
                             <span className="text-sm font-medium text-slate-700">{type.name}</span>
                             {type.default_document_name && (
-                              <span className="ml-2 text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                              <span className="ml-2 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
                                 {type.default_document_name}
                               </span>
                             )}
@@ -6428,7 +6489,7 @@ Deseja fechar mesmo assim?`;
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => openStandardTypeModal(type)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                             title="Editar"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -6460,7 +6521,7 @@ Deseja fechar mesmo assim?`;
                 type="button"
                 onClick={handleSaveStandardType}
                 disabled={saving || !standardTypeFormData.name.trim()}
-                className="font-bold px-8 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+                className="font-bold px-8 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 petition-btn-orange disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 <span>{editingStandardType ? 'Atualizar' : 'Criar'}</span>
@@ -6494,7 +6555,7 @@ Deseja fechar mesmo assim?`;
                   type="text"
                   value={blockFormData.title}
                   onChange={(e) => setBlockFormData({ ...blockFormData, title: e.target.value })}
-                  placeholder="Título do bloco"
+                  placeholder="Titulo do bloco"
                   className="mt-0.5 w-full max-w-xl bg-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-semibold text-slate-900 placeholder:text-slate-300 rounded-md outline-none transition hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-amber-500/30"
                 />
               </div>
@@ -6542,7 +6603,7 @@ Deseja fechar mesmo assim?`;
 
               {legalAreas.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Área</label>
+                  <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Area</label>
                   <select
                     value={(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '') as any}
                     onChange={(e) => {
@@ -6581,7 +6642,7 @@ Deseja fechar mesmo assim?`;
                       }
                     }}
                     disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer disabled:opacity-60"
+                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 transition cursor-pointer disabled:opacity-60"
                   >
                     <option value="">Sem modelo</option>
                     {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
@@ -6628,7 +6689,7 @@ Deseja fechar mesmo assim?`;
                     onChange={(e) => setBlockFormData({ ...blockFormData, is_default: e.target.checked })}
                     className="w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500/40 cursor-pointer"
                   />
-                  <span className="text-[12px] font-medium text-amber-700 whitespace-nowrap">Padrão</span>
+                  <span className="text-[12px] font-medium text-amber-700 whitespace-nowrap">Padrao</span>
                 </label>
               </div>
             </div>
@@ -6655,7 +6716,7 @@ Deseja fechar mesmo assim?`;
               <div className="flex items-center gap-2 min-w-0 text-[11px] text-slate-400">
                 <Hash className="w-3.5 h-3.5 shrink-0 text-slate-300" />
                 <span className="truncate">
-                  <span className="font-semibold text-slate-500">Variáveis:</span> [[NOME_CLIENTE]], [[CPF]], [[RG]], [[ENDERECO]], [[CIDADE]], [[UF]]…
+                  <span className="font-semibold text-slate-500">Variaveis:</span> [[NOME_CLIENTE]], [[CPF]], [[RG]], [[ENDERECO]], [[CIDADE]], [[UF]]...
                 </span>
               </div>
               {editingBlock && (
@@ -6677,7 +6738,7 @@ Deseja fechar mesmo assim?`;
 
 // Estilos injetados para vencer regras globais do index.css
 const petitionModalStyles = `
-  /* Botões dos modais de petição — flat, consistentes, sem caixa alta */
+  /* BotÃµes dos modais de petiçÃ£o â€” flat, consistentes, sem caixa alta */
   .petition-btn-orange, .petition-btn-emerald, .petition-btn-slate, .petition-btn-red {
     text-transform: none !important;
     letter-spacing: normal !important;
@@ -6696,7 +6757,7 @@ const petitionModalStyles = `
   .petition-btn-red { background-color: #dc2626 !important; color: #ffffff !important; }
   .petition-btn-red:hover { background-color: #b91c1c !important; }
   
-  /* Garantir que o painel do modal não seja sequestrado */
+  /* Garantir que o painel do modal nÃ£o seja sequestrado */
   main#company-lookup-modal,
   main#block-search-modal,
   main#block-editor-modal {
@@ -6704,7 +6765,7 @@ const petitionModalStyles = `
     color: #0f172a !important;
   }
 
-  /* docx-preview (view do bloco) - restaurar espaçamento de parágrafos e quebras */
+  /* docx-preview (view do bloco) - restaurar espaçamento de parÃ¡grafos e quebras */
   .petition-block-docx-preview .docx-wrapper,
   .petition-block-docx-preview .docx-wrapper * {
     box-sizing: border-box;
@@ -6734,7 +6795,7 @@ if (typeof document !== 'undefined' && !document.getElementById('petition-modal-
   document.head.appendChild(style);
 }
 
-// Estilos específicos do editor de blocos (Syncfusion) para largura total e folha A4 centrada
+// Estilos especÃ­ficos do editor de blocos (Syncfusion) para largura total e folha A4 centrada
 const blockEditorModalStyles = `
   #petition-block-editor {
     width: 100% !important;
@@ -6810,3 +6871,6 @@ if (typeof document !== 'undefined' && !document.getElementById('petition-block-
 }
 
 export default PetitionEditorModule;
+
+
+
