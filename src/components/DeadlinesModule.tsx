@@ -664,7 +664,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         process_id: deadline.process_id,
         requirement_id: deadline.requirement_id,
         client_id: deadline.client_id,
-        responsible_id: deadline.responsible_id,
+        responsible_id: deadline.responsible_id || '',
         notify_days_before: deadline.notify_days_before,
       });
       setDeadlines((prev) => [clone, ...prev]);
@@ -1611,7 +1611,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         process_id: formData.process_id || null,
         requirement_id: formData.requirement_id || null,
         client_id: formData.client_id || null,
-        responsible_id: formData.responsible_id || null,
+        responsible_id: formData.responsible_id,
         notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : defaultNotifyDays,
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,

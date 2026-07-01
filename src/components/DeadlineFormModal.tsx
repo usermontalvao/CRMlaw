@@ -227,6 +227,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
   const handleSubmit = async () => {
     if (!formData.title.trim()) { setError('Informe o título do prazo.'); return; }
     if (!formData.due_date) { setError('Informe a data de vencimento.'); return; }
+    if (!formData.responsible_id) { setError('Selecione o responsÃ¡vel pelo prazo.'); return; }
 
     setSaving(true);
     setError(null);
@@ -241,7 +242,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
         process_id: formData.process_id || null,
         requirement_id: formData.requirement_id || null,
         client_id: formData.client_id || null,
-        responsible_id: formData.responsible_id || null,
+        responsible_id: formData.responsible_id,
         notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : 2,
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,

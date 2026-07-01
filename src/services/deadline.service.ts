@@ -139,6 +139,10 @@ class DeadlineService {
   }
 
   async createDeadline(payload: CreateDeadlineDTO): Promise<Deadline> {
+    if (!payload.responsible_id?.trim()) {
+      throw new Error('Selecione o responsável pelo prazo.');
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
       .insert({
@@ -146,7 +150,7 @@ class DeadlineService {
         status: payload.status ?? 'pendente',
         priority: payload.priority ?? 'media',
         client_id: payload.client_id ?? null,
-        responsible_id: payload.responsible_id ?? null,
+        responsible_id: payload.responsible_id,
       })
       .select()
       .single();
@@ -162,6 +166,10 @@ class DeadlineService {
   }
 
   async updateDeadline(id: string, payload: UpdateDeadlineDTO): Promise<Deadline> {
+    if (Object.prototype.hasOwnProperty.call(payload, 'responsible_id') && !payload.responsible_id?.trim()) {
+      throw new Error('Selecione o responsável pelo prazo.');
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
       .update({

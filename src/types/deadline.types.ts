@@ -45,14 +45,15 @@ export interface CreateDeadlineDTO {
   process_id?: string | null;
   requirement_id?: string | null;
   client_id?: string | null;
-  responsible_id?: string | null;
+  responsible_id: string;
   notify_days_before?: number | null;
   publication_date?: string | null;
   deadline_days?: number | null;
   counting_type?: string | null;
 }
 
-export interface UpdateDeadlineDTO extends Partial<CreateDeadlineDTO> {
+export interface UpdateDeadlineDTO extends Partial<Omit<CreateDeadlineDTO, 'responsible_id'>> {
+  responsible_id?: string | null;
   completed_at?: string | null;
 }
 

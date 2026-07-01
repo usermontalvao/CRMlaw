@@ -2952,7 +2952,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         requirement_id: requirement.id,
         client_id: requirement.client_id ?? null,
         process_id: null,
-        responsible_id: exigencyForm.responsible_id || null,
+        responsible_id: exigencyForm.responsible_id,
         notify_days_before: parseInt(exigencyForm.notify_days_before || '3', 10) || 3,
       };
 

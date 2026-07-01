@@ -935,6 +935,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.283',
+    date: '01/07/2026',
+    summary: 'Os fluxos de prazo passaram a exigir responsavel em toda criacao relevante, incluindo o compose vindo do WhatsApp, eliminando cadastros sem atribuicao.',
+    modules: [
+      { moduleId: 'prazos', changes: [
+        { type: 'fix' as const, title: 'Cadastro de prazo deixou de aceitar responsavel vazio', description: 'O modal principal, os DTOs e o servico de prazos passaram a validar responsible_id de forma obrigatoria, bloqueando salvamento e atualizacao quando nao ha atribuicao valida.' },
+        { type: 'improvement' as const, title: 'Fluxos derivados foram alinhados com a mesma regra', description: 'Intimacoes, requerimentos, duplicacao de prazo e demais pontos que criam registros agora propagam o responsavel de forma consistente para evitar pendencias sem dono.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'fix' as const, title: 'Criacao de prazo a partir de mensagem passou a pedir responsavel', description: 'O modal de acao rapida do WhatsApp agora carrega os perfis ativos e exige a selecao do responsavel antes de concluir a criacao do prazo.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.282',
     date: '01/07/2026',
     summary: 'O compose de email passou a manter rascunhos minimizados entre recargas e retornos ao módulo, enquanto os apoios de IA e ambiente de desenvolvimento desta entrega foram registrados no mesmo checkpoint.',

@@ -3199,6 +3199,9 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
       const responsibleMember = members.find(m => (m.user_id || m.id) === formData.responsible_id);
       const profileId = responsibleMember?.id || null;
       const responsibleAuthId = responsibleMember?.user_id || null;
+      if (!profileId) {
+        throw new Error('Selecione um responsável válido para o prazo.');
+      }
 
       const payload: CreateDeadlineDTO = {
         title: formData.title.trim(),
